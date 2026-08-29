@@ -354,7 +354,7 @@ function makeRuinedVillage(w: WorldData, cx: number, cy: number, rw: number, rh:
 /* ============================== ОВЕРВОРЛД ============================== */
 export function generateOverworld(seed: number): WorldData {
   const rng = mulberry(seed);
-  const W = 128, H = 88;
+  const W = 200, H = 140;
   const w: WorldData = {
     W, H, tiles: new Uint8Array(W * H).fill(Tl.SNOW), nav: null as unknown as NavMesh,
     isDungeon: false, dungeonId: -1, dungeonName: "", bossReward: null,
@@ -365,45 +365,45 @@ export function generateOverworld(seed: number): WorldData {
     mossSpot: { x: 0, y: 0 }, amberSpot: { x: 0, y: 0 }, flowerSpot: { x: 0, y: 0 },
     diarySpot: { x: 0, y: 0 }, bundleSpot: { x: 0, y: 0 }, relicSpot: { x: 0, y: 0 },
     oldAltar: { x: 0, y: 0 }, stashSpot: { x: 0, y: 0 }, ruinedVillage: { x: 0, y: 0 },
-    treeAltar: { x: 64, y: 10 }, arena: { x: 0, y: 0, r: 84 }, snakeSpot: { x: 0, y: 0 },
+    treeAltar: { x: 100, y: 24 }, arena: { x: 0, y: 0, r: 92 }, snakeSpot: { x: 0, y: 0 },
     villageA: { x: 0, y: 0 }, villageB: { x: 0, y: 0 },
     bossRoom: { x: 0, y: 0, w: 0, h: 0 }, bossSpot: { x: 0, y: 0 }, entryStairs: { x: 0, y: 0 },
   };
 
-  /* остров: форма из расстояния до центра + шум, береговая линия */
+  /* ---- БОЛЬШОЙ ОСТРОВ В ЦЕНТРЕ КАРТЫ, ВОКРУГ — МОРЕ ----
+     Форма острова — эллипс; шум лишь размывает береговую линию (±0.1),
+     поэтому все ключевые точки (норм. дистанция ≤ 0.77) гарантированно на суше. */
+  const ICX = W / 2, ICY = H / 2, RX = 94, RY = 64;
   const coastN = makeNoise(seed ^ 0x5ea);
+  const normDist = (x: number, y: number) => Math.hypot((x - ICX) / RX, (y - ICY) / RY);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const dx = x - W / 2, dy = (y - H / 2) * 1.15;
-    const distToCenter = Math.hypot(dx, dy);
-    const islandShape = 1 - Math.min(1, distToCenter / (Math.min(W, H) * 0.52));
-    const cn = coastN(x * 0.05, y * 0.05);
-    const landness = islandShape * 2.4 + (cn - 0.4) * 1.6;
-    if (landness < 0.75) setTile(w, x, y, Tl.WATER);
-    else if (landness < 0.95) setTile(w, x, y, Tl.SHORE);
+    const d = normDist(x, y) + (coastN(x * 0.055, y * 0.055) - 0.5) * 0.22;
+    if (d > 1) setTile(w, x, y, Tl.WATER);
+    else if (d > 0.93) setTile(w, x, y, Tl.SHORE);
   }
 
-  /* радиальные зоны: хребет -> Мёртвый Лес -> Замерзшие Топи -> пустоши */
-  const cx = W / 2 + (rng() * 6 - 3);
-  const cy = H / 2 - 4 + (rng() * 4 - 2);
+  /* радиальные зоны: Хребет Нидов -> Мёртвый Лес -> Замерзшие Топи -> пустоши */
+  const cx = W / 2 + (rng() * 8 - 4);
+  const cy = H / 2 - 4 + (rng() * 6 - 3);
   const n1 = makeNoise(seed ^ 0xa11ce);
   const n2 = makeNoise(seed ^ 0xb0b);
-  const R1 = 14, R2 = 25, R3 = 32;
+  const R1 = 24, R2 = 42, R3 = 54;
   for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
     const cur0 = w.tiles[idx(w, x, y)];
     if (cur0 === Tl.WATER || cur0 === Tl.SHORE) continue;
-    const d = Math.hypot((x - cx) * 0.92, y - cy) + (n1(x * 0.09, y * 0.09) - 0.5) * 11;
+    const d = Math.hypot((x - cx) * 0.92, y - cy) + (n1(x * 0.07, y * 0.07) - 0.5) * 13;
     if (d < R1) setTile(w, x, y, Tl.MTN);
     else if (d < R2) setTile(w, x, y, Tl.FOREST);
     else if (d < R3) setTile(w, x, y, rng() < 0.42 ? Tl.SWAMP : Tl.FOREST);
-    else if (n2(x * 0.06, y * 0.06) < 0.24) setTile(w, x, y, Tl.SNOW2);
+    else if (n2(x * 0.05, y * 0.05) < 0.24) setTile(w, x, y, Tl.SNOW2);
   }
 
-  /* руины на юго-западе */
-  const ruinsC = { x: 26 + Math.floor(rng() * 6), y: 62 + Math.floor(rng() * 5) };
-  for (let y = ruinsC.y - 8; y <= ruinsC.y + 8; y++) for (let x = ruinsC.x - 9; x <= ruinsC.x + 9; x++) {
+  /* руины на юго-западе острова */
+  const ruinsC = { x: 44 + Math.floor(rng() * 8), y: 88 + Math.floor(rng() * 6) };
+  for (let y = ruinsC.y - 10; y <= ruinsC.y + 10; y++) for (let x = ruinsC.x - 11; x <= ruinsC.x + 11; x++) {
     if (!inB(w, x, y)) continue;
     const d = Math.hypot(x - ruinsC.x, (y - ruinsC.y) * 1.2) + (n2(x * 0.2, y * 0.2) - 0.5) * 5;
-    if (d < 8 && w.tiles[idx(w, x, y)] !== Tl.WATER && w.tiles[idx(w, x, y)] !== Tl.SHORE) setTile(w, x, y, Tl.RUINS);
+    if (d < 9 && w.tiles[idx(w, x, y)] !== Tl.WATER && w.tiles[idx(w, x, y)] !== Tl.SHORE) setTile(w, x, y, Tl.RUINS);
   }
 
   /* сглаживание границ */
@@ -425,13 +425,23 @@ export function generateOverworld(seed: number): WorldData {
     }
   }
 
-  /* поселения: целое (юг), форт (восток), сожжённая деревня (запад) */
-  const vA = makeVillage(w, 48 + Math.floor(rng() * 6), H - 24, 15, 12, rng, 4);
-  const vB = makeFort(w, 94 + Math.floor(rng() * 4), 44, 13, 11, rng);
-  const vR = makeRuinedVillage(w, 16 + Math.floor(rng() * 4), 34, 11, 9, rng);
+  /* поселения: целое (юг), форт (восток), сожжённая деревня (запад) —
+     все глубоко на суше, норм. дистанция до кромки острова ≤ 0.61 */
+  const vA = makeVillage(w, 92 + Math.floor(rng() * 5), 96, 15, 12, rng, 4);
+  const vB = makeFort(w, 146 + Math.floor(rng() * 4), 58, 13, 11, rng);
+  const vR = makeRuinedVillage(w, 38 + Math.floor(rng() * 4), 56, 11, 9, rng);
   w.villageA = vA.gate; w.villageB = vB.gate;
   w.ruinedVillage = { x: vR.x0 + 5, y: vR.y0 + 4 };
   const gate = vA.gate;
+  /* страховка: под воротами и стартовой площадью всегда суша */
+  const ensureLand = (px: number, py: number, r: number) => {
+    for (let y = py - r; y <= py + r; y++) for (let x = px - r; x <= px + r; x++) {
+      if (inB(w, x, y) && w.tiles[idx(w, x, y)] === Tl.WATER) setTile(w, x, y, Tl.SNOW);
+    }
+  };
+  ensureLand(gate.x, gate.y, 5);
+  ensureLand(vB.gate.x, vB.gate.y, 4);
+  ensureLand(vR.gate.x, vR.gate.y, 4);
 
   /* алтарь Древа */
   clearAround(w, w.treeAltar.x, w.treeAltar.y + 3, 6, Tl.SNOW2);
@@ -439,29 +449,40 @@ export function generateOverworld(seed: number): WorldData {
   w.arena = { x: w.treeAltar.x * T + 8, y: (w.treeAltar.y + 3) * T + 8, r: 84 };
   w.snakeSpot = { x: w.treeAltar.x * T + 8, y: (w.treeAltar.y + 2) * T };
 
+  const landT = (t: number) => !SOLID.has(t) && t !== Tl.WATER && t !== Tl.POOL && t !== Tl.PATH && t !== Tl.VILLAGE;
   const findFree = (fx: number, fy: number, r: number, pref?: number): Vec => {
     for (let tries = 0; tries < 400; tries++) {
       const x = Math.round(fx + (rng() * 2 - 1) * r);
       const y = Math.round(fy + (rng() * 2 - 1) * r);
       if (!inB(w, x, y)) continue;
       const t = w.tiles[idx(w, x, y)];
-      if (SOLID.has(t) || t === Tl.WATER || t === Tl.SHORE || t === Tl.POOL || t === Tl.PATH || t === Tl.VILLAGE) continue;
+      if (!landT(t)) continue;
       if (pref !== undefined && t !== pref && tries < 300) continue;
       return { x, y };
+    }
+    /* запасной вариант: спиральный поиск ближайшей суши — предмет НИКОГДА не окажется в воде */
+    for (let rad = 1; rad < 90; rad++) {
+      for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+        const x = Math.round(fx) + dx, y = Math.round(fy) + dy;
+        if (!inB(w, x, y)) continue;
+        const t = w.tiles[idx(w, x, y)];
+        if (landT(t) && (pref === undefined || t === pref)) return { x, y };
+      }
     }
     return { x: clampi(Math.round(fx), 2, W - 3), y: clampi(Math.round(fy), 2, H - 3) };
   };
 
   /* входы в три подземелья */
   const mkEntry = (fx: number, fy: number, pref: number, id: number, name: string) => {
-    const p = findFree(fx, fy, 8, pref);
+    const p = findFree(fx, fy, 9, pref);
     setTile(w, p.x, p.y, Tl.STAIRS);
     clearAround(w, p.x, p.y, 1);
     w.dungeonEntries.push({ x: p.x, y: p.y, id, name });
     return p;
   };
-  mkEntry(cx + 4, cy + 2, Tl.MTN, 2, "Каменная Крепость");
-  mkEntry(cx - R1 - 6, cy + 4, Tl.FOREST, 1, "Корень Иггдрасиля");
+  mkEntry(cx + 6, cy + 2, Tl.MTN, 2, "Каменная Крепость");
+  mkEntry(cx - R1 - 10, cy + 6, Tl.FOREST, 1, "Корень Иггдрасиля");
   mkEntry(ruinsC.x, ruinsC.y, Tl.RUINS, 0, "Склеп Хранителя");
 
   /* дороги */
@@ -476,8 +497,8 @@ export function generateOverworld(seed: number): WorldData {
   /* святилища */
   const shrineSpots: Vec[] = [
     { x: vA.x0 - 3, y: vA.y1 - 2 },
-    findFree(cx - R1 - 4, cy - 5, 5),
-    findFree(cx + R1 + 4, cy - 3, 5),
+    findFree(cx - R1 - 8, cy - 10, 6),
+    findFree(cx + R1 + 8, cy - 6, 6),
     { x: vB.x0 - 3, y: vB.y1 },
   ];
   for (const s of shrineSpots) {
@@ -485,22 +506,22 @@ export function generateOverworld(seed: number): WorldData {
     w.shrines.push({ x: s.x, y: s.y });
   }
 
-  /* ключевые точки квестов */
-  w.bearSpot = findFree(cx + R2 + 4, cy + 8, 7);
+  /* ключевые точки квестов — все в глубине острова */
+  w.bearSpot = findFree(cx + R2 + 6, cy + 14, 8, Tl.SWAMP);
   setTile(w, w.bearSpot.x, w.bearSpot.y, Tl.POOL);
-  w.hornSpot = findFree(cx + 6, cy - 4, 8, Tl.MTN);
-  w.meadSpot = findFree(cx - R1 - 8, cy - 3, 8, Tl.FOREST);
-  w.oreSpot = findFree(cx - 4, cy + 4, 8, Tl.MTN);
-  w.mossSpot = findFree(cx + R2 + 2, cy + 2, 8, Tl.SWAMP);
-  w.amberSpot = findFree(cx + 8, cy + 5, 8, Tl.MTN);
-  w.flowerSpot = findFree(ruinsC.x + 4, ruinsC.y - 2, 8, Tl.RUINS);
+  w.hornSpot = findFree(cx + 10, cy - 8, 9, Tl.MTN);
+  w.meadSpot = findFree(cx - R1 - 14, cy - 6, 9, Tl.FOREST);
+  w.oreSpot = findFree(cx - 8, cy + 8, 9, Tl.MTN);
+  w.mossSpot = findFree(cx + R2 + 4, cy + 4, 8, Tl.SWAMP);
+  w.amberSpot = findFree(cx + 14, cy + 8, 9, Tl.MTN);
+  w.flowerSpot = findFree(ruinsC.x + 6, ruinsC.y - 4, 8, Tl.RUINS);
   w.diarySpot = { x: vR.x0 + 2 + Math.floor(rng() * 6), y: vR.y0 + 2 + Math.floor(rng() * 4) };
   setTile(w, w.diarySpot.x, w.diarySpot.y, Tl.RUINS);
-  w.relicSpot = findFree(60, 20, 8);
-  w.oldAltar = findFree(w.relicSpot.x + 6, w.relicSpot.y + 3, 4);
+  w.relicSpot = findFree(44, 50, 9);
+  w.oldAltar = findFree(w.relicSpot.x + 7, w.relicSpot.y + 3, 5);
   setTile(w, w.oldAltar.x, w.oldAltar.y, Tl.ALTAR);
   clearAround(w, w.oldAltar.x, w.oldAltar.y, 1);
-  w.stashSpot = findFree(ruinsC.x - 5, ruinsC.y + 6, 6);
+  w.stashSpot = findFree(ruinsC.x - 4, ruinsC.y + 5, 6);
 
   /* колонны в руинах */
   for (let i = 0; i < 10; i++) {
@@ -514,22 +535,22 @@ export function generateOverworld(seed: number): WorldData {
     ["frost", "raven"], ["draugr", "draugr", "crawler"],
   ];
   const pedestalCenters = [
-    { x: cx - R1 - 7, y: cy + 5 },
-    { x: cx + 7, y: cy - 6 },
-    { x: cx + R2 + 3, y: cy + 4 },
+    { x: cx - R1 - 12, y: cy + 8 },
+    { x: cx + 12, y: cy - 10 },
+    { x: cx + R2 + 5, y: cy + 7 },
     { x: ruinsC.x + 5, y: ruinsC.y + 3 },
-    { x: cx - R2 - 5, y: cy - 4 },
+    { x: cx - R2 - 8, y: cy - 7 },
   ];
   pedestalCenters.forEach((c, i) => {
-    const p = findFree(c.x, c.y, 5);
+    const p = findFree(c.x, c.y, 6);
     clearAround(w, p.x, p.y, 2);
     w.pedestals.push({ x: p.x, y: p.y, guards: guardPool[i] });
   });
 
   /* сундуки на поверхности */
-  const bowSpot = findFree(cx - R1 - 5, cy + 7, 8, Tl.FOREST);
-  const arrowsSpot = findFree(cx + 3, cy - 7, 8, Tl.MTN);
-  const heartSpot = findFree(cx + R2 + 5, cy + 1, 8);
+  const bowSpot = findFree(cx - R1 - 8, cy + 12, 9, Tl.FOREST);
+  const arrowsSpot = findFree(cx + 6, cy - 12, 9, Tl.MTN);
+  const heartSpot = findFree(cx + R2 + 8, cy + 2, 9);
   w.chests.push(
     { x: bowSpot.x, y: bowSpot.y, item: "bow" },
     { x: arrowsSpot.x, y: arrowsSpot.y, item: "arrows" },
@@ -543,7 +564,7 @@ export function generateOverworld(seed: number): WorldData {
     { id: "astrid", name: "Астрид", x: gate.x + 3, y: gate.y - 8 },
     { id: "harald", name: "Харальд", x: gate.x - 4, y: gate.y - 3 },
     { id: "raven", name: "Ворон-Говорун", x: gate.x + 3, y: gate.y - 3 },
-    { id: "daughter", name: "Безымянная Дочь", x: Math.round(cx - R1 - 6), y: Math.round(cy + 3) },
+    { id: "daughter", name: "Безымянная Дочь", x: Math.round(cx - R1 - 10), y: Math.round(cy + 6) },
     { id: "sigrid", name: "Сигрид", x: vB.gate.x - 3, y: vB.gate.y - 5 },
     { id: "brand", name: "Бранд", x: vB.gate.x + 2, y: vB.gate.y - 6 },
     { id: "shaman", name: "Шаман Ульв", x: vB.gate.x, y: vB.gate.y - 4 },
@@ -560,22 +581,23 @@ export function generateOverworld(seed: number): WorldData {
 
   /* души-странники */
   const soulSpots = [
-    findFree(cx - R2 - 3, cy + 8, 4),
-    findFree(cx + R2 + 6, cy - 6, 4),
-    { x: ruinsC.x - 6, y: ruinsC.y - 4 },
+    findFree(cx - R2 - 6, cy + 12, 5),
+    findFree(cx + R2 + 10, cy - 10, 5),
+    { x: ruinsC.x - 8, y: ruinsC.y - 6 },
   ];
   for (const s of soulSpots) { clearAround(w, s.x, s.y, 1); w.souls.push(s); }
 
-  /* ледяные осколки и кости */
-  for (let i = 0; i < 16; i++) {
-    const p = findFree(cx + (rng() * 2 - 1) * 44, cy + (rng() * 2 - 1) * 36, 3);
-    if (!w.ambient.some((a) => Math.abs(a.x - p.x) < 4 && Math.abs(a.y - p.y) < 4)) {
+  /* ледяные осколки и кости — только на суше (findFree со спиральным fallback) */
+  for (let i = 0; i < 24; i++) {
+    const a = rng() * Math.PI * 2, rr = 12 + rng() * 46;
+    const p = findFree(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.75, 3);
+    if (!w.ambient.some((x) => Math.abs(x.x - p.x) < 4 && Math.abs(x.y - p.y) < 4)) {
       w.ambient.push({ kind: "shard", x: p.x, y: p.y });
     }
   }
-  for (let i = 0; i < 8; i++) {
-    const p = findFree(ruinsC.x + (rng() * 2 - 1) * 10, ruinsC.y + (rng() * 2 - 1) * 9, 3, Tl.RUINS);
-    if (!w.ambient.some((a) => Math.abs(a.x - p.x) < 4 && Math.abs(a.y - p.y) < 4)) {
+  for (let i = 0; i < 10; i++) {
+    const p = findFree(ruinsC.x + (rng() * 2 - 1) * 12, ruinsC.y + (rng() * 2 - 1) * 11, 3, Tl.RUINS);
+    if (!w.ambient.some((x) => Math.abs(x.x - p.x) < 4 && Math.abs(x.y - p.y) < 4)) {
       w.ambient.push({ kind: "bones", x: p.x, y: p.y });
     }
   }
@@ -624,15 +646,15 @@ export function generateOverworld(seed: number): WorldData {
     ...w.pedestals.map((p) => ({ x: p.x, y: p.y })),
   ];
   let placed = 0;
-  for (let tries = 0; tries < 1500 && placed < 48; tries++) {
+  for (let tries = 0; tries < 4000 && placed < 84; tries++) {
     const x = 3 + Math.floor(rng() * (W - 6));
     const y = 3 + Math.floor(rng() * (H - 6));
     const t = w.tiles[idx(w, x, y)];
-    if (SOLID.has(t) || t === Tl.PATH || t === Tl.POOL || t === Tl.VILLAGE) continue;
-    if (x >= vA.x0 - 4 && x <= vA.x1 + 4 && y >= vA.y0 - 4 && y <= vA.y1 + 4) continue;
-    if (x >= vB.x0 - 4 && x <= vB.x1 + 4 && y >= vB.y0 - 4 && y <= vB.y1 + 4) continue;
-    if (Math.hypot(gate.x - x, gate.y + 2 - y) < 34) continue;
-    if (pois.some((p) => Math.hypot(p.x - x, p.y - y) < 7)) continue;
+    if (SOLID.has(t) || t === Tl.PATH || t === Tl.POOL || t === Tl.VILLAGE || t === Tl.WATER || t === Tl.SHORE) continue;
+    if (x >= vA.x0 - 6 && x <= vA.x1 + 6 && y >= vA.y0 - 6 && y <= vA.y1 + 6) continue;
+    if (x >= vB.x0 - 6 && x <= vB.x1 + 6 && y >= vB.y0 - 6 && y <= vB.y1 + 6) continue;
+    if (Math.hypot(gate.x - x, gate.y + 2 - y) < 40) continue;
+    if (pois.some((p) => Math.hypot(p.x - x, p.y - y) < 8)) continue;
     const d = Math.hypot((x - cx) * 0.92, y - cy);
     const kinds = kindsFor(t, d);
     w.spawns.push({ kind: kinds[Math.floor(rng() * kinds.length)], x: x * T + 8, y: y * T + 8 });
@@ -667,11 +689,11 @@ export function generateOverworld(seed: number): WorldData {
     { x: vA.x0, y: vA.y0, w: vA.x1 - vA.x0, h: vA.y1 - vA.y0, name: "Поселение выживших" },
     { x: vB.x0, y: vB.y0, w: vB.x1 - vB.x0, h: vB.y1 - vB.y0, name: "Воронья Гавань" },
     { x: vR.x0, y: vR.y0, w: vR.x1 - vR.x0, h: vR.y1 - vR.y0, name: "Сожжённая Деревня" },
-    { x: w.treeAltar.x - 6, y: w.treeAltar.y - 2, w: 13, h: 13, name: "Корни Иггдрасиля" },
-    { x: Math.round(cx - R1 - 12), y: Math.round(cy - 12), w: 24, h: 24, name: "Мёртвый Лес" },
-    { x: Math.round(cx - 14), y: Math.round(cy - 13), w: 28, h: 26, name: "Хребет Нидов" },
-    { x: Math.round(cx + R1 - 2), y: Math.round(cy - 6), w: 26, h: 26, name: "Замерзшие Топи" },
-    { x: ruinsC.x - 11, y: ruinsC.y - 10, w: 22, h: 20, name: "Руины Времени" },
+    { x: w.treeAltar.x - 8, y: w.treeAltar.y - 3, w: 17, h: 17, name: "Корни Иггдрасиля" },
+    { x: Math.round(cx - R1 - 20), y: Math.round(cy - 20), w: 40, h: 40, name: "Мёртвый Лес" },
+    { x: Math.round(cx - 24), y: Math.round(cy - 22), w: 48, h: 44, name: "Хребет Нидов" },
+    { x: Math.round(cx + R1 - 4), y: Math.round(cy - 10), w: 44, h: 44, name: "Замерзшие Топи" },
+    { x: ruinsC.x - 14, y: ruinsC.y - 12, w: 28, h: 24, name: "Руины Времени" },
   ];
 
   // герой приходит в себя рядом с Эйриком

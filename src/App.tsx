@@ -357,20 +357,33 @@ export default function App() {
     eng()?.advanceDialogue();
   };
 
-  /* тач-управление */
-  const onPadStart = (e: React.PointerEvent) => {
-    const r = padRef.current!.getBoundingClientRect();
-    const move = (ev: React.PointerEvent) => {
-      const dx = (ev.clientX - (r.left + r.width / 2)) / (r.width / 2);
-      const dy = (ev.clientY - (r.top + r.height / 2)) / (r.height / 2);
-      const m = Math.hypot(dx, dy) || 1;
-      const k = Math.min(1, m);
-      eng()?.setVirtual({ x: (dx / m) * k, y: (dy / m) * k });
-    };
-    move(e);
-    const up = () => { eng()?.setVirtual({ x: 0, y: 0 }); };
-    (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
-    window.addEventListener("pointerup", up, { once: true });
+  /* тач-управление: классический джойстик — большой круг + ручка */
+  const knobRef = useRef<HTMLDivElement>(null);
+  const STICK_MAX = 44; // максимальное смещение ручки, px
+  const updateStick = (clientX: number, clientY: number) => {
+    const base = padRef.current, knob = knobRef.current;
+    if (!base || !knob) return;
+    const r = base.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    let dx = clientX - cx, dy = clientY - cy;
+    const m = Math.hypot(dx, dy);
+    if (m > STICK_MAX) { dx = (dx / m) * STICK_MAX; dy = (dy / m) * STICK_MAX; }
+    knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+    const nx = dx / STICK_MAX, ny = dy / STICK_MAX;
+    const len = Math.hypot(nx, ny);
+    const dead = 0.14; // мёртвая зона в центре
+    eng()?.setVirtual({ x: len < dead ? 0 : nx, y: len < dead ? 0 : ny });
+  };
+  const resetStick = () => {
+    if (knobRef.current) knobRef.current.style.transform = "translate(-50%, -50%)";
+    eng()?.setVirtual({ x: 0, y: 0 });
+  };
+  const onPadDown = (e: React.PointerEvent) => {
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    updateStick(e.clientX, e.clientY);
+  };
+  const onPadMove = (e: React.PointerEvent) => {
+    if ((e.currentTarget as HTMLElement).hasPointerCapture?.(e.pointerId)) updateStick(e.clientX, e.clientY);
   };
   const bindBtn = (key: "atk" | "axe" | "bow" | "act") => ({
     onPointerDown: () => eng()?.setVirtual({ [key]: true } as any),
@@ -455,9 +468,13 @@ export default function App() {
           {/* тач */}
           {coarse && screen === "play" && (
             <>
-              <div ref={padRef} className="absolute bottom-16 left-5 w-32 h-32 rounded-full border border-[#33475a] bg-[#0a101855] touch-none z-20"
-                onPointerDown={onPadStart}>
-                <div className="absolute inset-0 flex items-center justify-center text-[#6e7f8d] text-[10px] tracking-widest">ИДТИ</div>
+              <div ref={padRef}
+                className="absolute bottom-16 left-5 w-36 h-36 rounded-full border-2 border-[#33475a] bg-[#0a101866] touch-none z-20"
+                onPointerDown={onPadDown} onPointerMove={onPadMove}
+                onPointerUp={resetStick} onPointerCancel={resetStick}>
+                <div ref={knobRef}
+                  className="absolute left-1/2 top-1/2 w-16 h-16 rounded-full border-2 border-[#8fd8e8] bg-[#1a2833cc] shadow-[0_0_14px_rgba(143,216,232,0.35)] pointer-events-none"
+                  style={{ transform: "translate(-50%, -50%)" }} />
               </div>
               <div className="absolute bottom-16 right-5 grid grid-cols-2 gap-2.5 z-20">
                 <button className="touch-btn w-14 h-14" {...bindBtn("atk")}><SwordIco /></button>
