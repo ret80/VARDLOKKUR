@@ -2,47 +2,12 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "node",
-      "request": "launch",
-      "name": "Start Vite Dev Server",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 9229,
-      "autoAttachChildProcesses": true,
-      "serverReadyAction": {
-        "action": "openExternally",
-        "pattern": "Local:\\s+http://localhost:3000"
-      }
-    },
-    {
       "type": "pwa-chrome",
+      "name": "Run & Deploy",
       "request": "launch",
-      "name": "Debug Vite",
       "url": "http://localhost:3000",
       "webRoot": "${workspaceFolder}",
-      "preLaunchTask": [
-        { "label": "Type Check" },
-        { "label": "Build" }
-      ],
-      "serverReadyAction": {
-        "action": "openExternally",
-        "pattern": "Local:\\s+http://localhost:3000"
-      }
-    }
-  ],
-  "compounds": [
-    {
-      "name": "Run & Deploy",
-      "configurations": ["Start Vite Dev Server"],
-      "preLaunchTask": [
-        { "label": "Type Check" },
-        { "label": "Build" }
-      ],
-      "presentation": {
-        "hidden": false,
-        "group": "run",
-        "order": 1
-      }
+      "preLaunchTask": "Run & Deploy"
     }
   ]
 }

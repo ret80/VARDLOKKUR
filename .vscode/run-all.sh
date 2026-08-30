@@ -15,7 +15,7 @@ else
     DEV_PID=$!
     echo $DEV_PID > .vite-dev.pid
 
-    # Ждём пока сервер поднимется (до 30 секунд)
+    # Ждём пока сервер поднимется
     for i in $(seq 1 60); do
         if lsof -Pi :3000 -sTCP:LISTEN -t >/dev/null 2>&1 ; then
             echo "✅ Vite сервер запущен"
@@ -37,4 +37,4 @@ done
 # 4. Открываем в Chrome
 open -a "Google Chrome" http://localhost:3000
 
-echo "✅ Готово!"
+echo "✅ Готово! http://localhost:3000"
