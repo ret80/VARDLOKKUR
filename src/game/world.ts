@@ -267,8 +267,8 @@ function clearAround(w: WorldData, cx: number, cy: number, r: number, floor?: nu
 }
 
 /* ============================== ПОСЕЛЕНИЯ ============================== */
+export interface HouseDef { x: number; y: number; w: number; h: number }
 interface VillageBox { x0: number; y0: number; x1: number; y1: number; gate: Vec; houses: HouseDef[] }
-interface HouseDef { x: number; y: number; w: number; h: number }
 
 const HOUSE_SIZES = [
   { w: 2, h: 2 },
