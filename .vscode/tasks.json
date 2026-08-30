@@ -20,20 +20,6 @@
         "reveal": "always",
         "panel": "new"
       }
-    },
-    {
-      "label": "Run & Deploy",
-      "type": "shell",
-      "command": "${workspaceFolder}/.vscode/run-all.sh",
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "always",
-        "panel": "new"
-      },
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      }
     }
   ]
 }
