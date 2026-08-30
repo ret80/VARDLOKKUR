@@ -1,16 +1,25 @@
-/* Движок "Вардлокур": PixiJS v8 + navmesh (пути врагов) + kinetics.ts (расталкивание тел). */
+/* engine.ts – Полностью переработанный движок с рендерерами из entities.ts */
+
 import { Application, Container, Graphics, Sprite, Texture, Text } from "pixi.js";
 import { System as PhysSystem, Circle as PhysCircle, Vector as PhysVector } from "kinetics.ts";
 import {
-  T, Tl, WorldData, Vec,
+  T, Tl, WorldData, Vec, DropKind,
   generateOverworld, generateDungeon, solidTileAt, tileAt, zoneFor, DUNGEONS,
 } from "./world";
 import {
-  Player, Enemy, Projectile, Drop, DropKind,
-  makeEnemy, drawPlayer, drawEnemy, drawNpc, drawChest, drawPedestal, drawShrine,
-  drawDoor, drawBarrier, drawAltar, drawDrop, drawProjectile,
+  Player, Enemy, Projectile, Drop,
+  makeEnemy,
 } from "./entities";
 import { audio } from "./audio";
+
+// Новые импорты из entities.ts (рендереры и интерфейсы данных)
+import {
+  IPlayerData, IEnemyData, INpcData, IDropData, IProjectileData,
+  IChestData, IPedestalData, IShrineData, IDoorData, IBarrierData, IAltarData,
+  IPlayerExtra,
+  PlayerRenderer, EnemyRenderer, NpcRenderer, DropRenderer, ProjectileRenderer,
+  ChestRenderer, PedestalRenderer, ShrineRenderer, DoorRenderer, BarrierRenderer, AltarRenderer
+} from "./entities";
 
 export type Screen = "title" | "play" | "pause" | "death" | "victory" | "quests" | "inventory" | "map";
 
@@ -47,7 +56,7 @@ interface DoorRt { x: number; y: number; open: number; locked: boolean; g: Graph
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const dist2 = (ax: number, ay: number, bx: number, by: number) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
-const ZOOM = 1.18; // камера чуть ближе к герою
+const ZOOM = 1.18;
 
 const TILE_COLORS: Record<number, string> = {
   [Tl.WATER]: "#0a1620", [Tl.SHORE]: "#4a5a64", [Tl.SNOW]: "#8b98a6", [Tl.SNOW2]: "#7e8b99",
@@ -78,7 +87,7 @@ export class Engine {
   private particleG = new Graphics();
   private canvasEl: HTMLCanvasElement | null = null;
 
-  // вьюпорт (портрет и ландшафт — мир заполняет весь экран)
+  // вьюпорт
   private viewW = 480;
   private viewH = 270;
 
@@ -178,6 +187,21 @@ export class Engine {
   private snow: { x: number; y: number; s: number; d: number; w: number }[] = [];
   private wallTexCache = new Map<string, Texture>();
 
+  // Рендереры (все в одном объекте)
+  private renderers = {
+    player: new PlayerRenderer(),
+    enemy: new EnemyRenderer(),
+    npc: new NpcRenderer(),
+    drop: new DropRenderer(),
+    projectile: new ProjectileRenderer(),
+    chest: new ChestRenderer(),
+    pedestal: new PedestalRenderer(),
+    shrine: new ShrineRenderer(),
+    door: new DoorRenderer(),
+    barrier: new BarrierRenderer(),
+    altar: new AltarRenderer(),
+  };
+
   constructor(container: HTMLElement, cbs: EngineCallbacks) {
     this.container = container;
     this.cbs = cbs;
@@ -212,7 +236,7 @@ export class Engine {
     this.world.addChild(this.floatLayer);
     app.stage.addChild(this.world);
 
-    // туман-мгла (радиальный градиент)
+    // туман-мгла
     const fc = document.createElement("canvas");
     fc.width = 512; fc.height = 512;
     const fctx = fc.getContext("2d")!;
@@ -240,7 +264,6 @@ export class Engine {
     window.addEventListener("resize", this.onResize);
     window.addEventListener("orientationchange", this.onResize);
 
-    // физика kinetics.ts: одна система на игру. cellSize — битовый сдвиг (4 => ячейка 16px).
     this.phys = new PhysSystem({
       tickRate: 60, friction: 0,
       collisionInfo: { cellSize: 4 }, useRAF: false,
@@ -338,7 +361,6 @@ export class Engine {
     this.playTime = 0; this.zone = ""; this.talkCount = 0;
     this.fogTimer = 42; this.fogActive = false; this.fogRadius = 2600;
     audio.setFog(false);
-    // загрузка синхронная — старт не может «зависнуть»
     try {
       this.loadMap(this.ow, this.ow.spawn);
       this.setScreen("play");
@@ -481,14 +503,14 @@ export class Engine {
       const key = c.x + "_" + c.y;
       const rt: ChestRt = { x: c.x * T + 8, y: c.y * T + 8, item: c.item, opened: this.openedChests.has(key), g: new Graphics() };
       rt.g.position.set(rt.x, rt.y);
-      drawChest(rt.g, rt.opened);
+      this.renderers.chest.render(rt.g, { opened: rt.opened } as IChestData);
       this.chests.push(rt); this.dynamic.addChild(rt.g);
     }
     if (!map.isDungeon && this.flags.secretKnown) {
       const sk = map.stashSpot.x + "_" + map.stashSpot.y;
       const rt: ChestRt = { x: map.stashSpot.x * T + 8, y: map.stashSpot.y * T + 8, item: "heartPiece", opened: this.openedChests.has(sk), g: new Graphics() };
       rt.g.position.set(rt.x, rt.y);
-      drawChest(rt.g, rt.opened);
+      this.renderers.chest.render(rt.g, { opened: rt.opened } as IChestData);
       this.chests.push(rt); this.dynamic.addChild(rt.g);
     }
     map.pedestals.forEach((pd) => {
@@ -580,7 +602,8 @@ export class Engine {
     this.dynamic.removeChildren();
   }
 
-  private farBody(b: PhysCircle) {
+  private farBody(b: PhysCircle | null) {
+    if (!b) return;
     b.position.x = -9999; b.position.y = -9999;
     b.velocity.x = 0; b.velocity.y = 0;
   }
@@ -607,7 +630,6 @@ export class Engine {
   }
 
   private ensureSpawnSafety(map: WorldData, spawn: Vec) {
-    // враги не должны встречать героя прямо на экране появления
     const safeR = map.isDungeon ? 170 : 300;
     for (const e of this.enemies) {
       const r = map.isDungeon ? 170 : e.kind === "crawler" ? 250 : safeR;
@@ -717,38 +739,85 @@ export class Engine {
     const shx = (Math.random() - 0.5) * this.shake, shy = (Math.random() - 0.5) * this.shake;
     this.world.position.set(-Math.round(this.cam.x + shx), -Math.round(this.cam.y + shy));
 
-    // позиция и глубина
+    // ==================== ОТРИСОВКА ЧЕРЕЗ РЕНДЕРЕРЫ ====================
+    // 1. Игрок
+    const playerExtra: IPlayerExtra = {
+      hasSword: this.flags.hasSword,
+      runes: this.flags.runes,
+      swingDir: this.player.dir,
+      aiming: this.bowHeld,
+    };
+    this.renderers.player.render(this.playerG, this.player as IPlayerData, this.realT, playerExtra);
     this.playerG.position.set(Math.round(this.player.x), Math.round(this.player.y));
     this.playerG.zIndex = this.player.y;
+
+    // 2. Враги
     for (const e of this.enemies) {
       e.g.zIndex = e.kind === "raven" ? 100000 + e.y : e.y;
       e.g.visible = !e.dead && !(e.hidden && dist2(e.x, e.y, this.player.x, this.player.y) > 46 * 46);
+      if (!e.dead) this.renderers.enemy.render(e.g, e as IEnemyData, this.realT);
     }
-    for (const d of this.drops) d.g.zIndex = d.y;
-    for (const c of this.chests) c.g.zIndex = c.y;
-    for (const p of this.pedestals) p.g.zIndex = p.y;
-    for (const s of this.shrines) s.g.zIndex = s.y;
+
+    // 3. NPC
     for (const n of this.npcs) {
       n.g.zIndex = n.y;
-      drawNpc(n.g, n.id, this.realT, this.npcHasMark(n.id));
+      const mark = this.npcHasMark(n.id);
+      this.renderers.npc.render(n.g, { id: n.id, name: n.name } as INpcData, this.realT, { mark });
     }
-    for (const d of this.doors) { d.g.zIndex = d.y; drawDoor(d.g, d.open, d.locked); }
+
+    // 4. Снаряды
+    for (const p of this.projectiles) {
+      p.g.zIndex = p.y;
+      this.renderers.projectile.render(p.g, p as IProjectileData, this.realT);
+    }
+
+    // 5. Дроп
+    for (const d of this.drops) {
+      if (!d.taken) {
+        d.g.zIndex = d.y;
+        this.renderers.drop.render(d.g, d as IDropData, this.realT);
+      }
+    }
+
+    // 6. Сундуки
+    for (const c of this.chests) {
+      c.g.zIndex = c.y;
+      this.renderers.chest.render(c.g, { opened: c.opened } as IChestData);
+    }
+
+    // 7. Пьедесталы
+    for (const p of this.pedestals) {
+      p.g.zIndex = p.y;
+      this.renderers.pedestal.render(p.g, { taken: p.taken, guardsLeft: p.guardsLeft } as IPedestalData, this.realT);
+    }
+
+    // 8. Святилища
+    for (const s of this.shrines) {
+      s.g.zIndex = s.y;
+      const lit = this.flags.shrineIdx >= this.shrines.indexOf(s);
+      this.renderers.shrine.render(s.g, { lit } as IShrineData, this.realT);
+    }
+
+    // 9. Двери
+    for (const d of this.doors) {
+      d.g.zIndex = d.y;
+      this.renderers.door.render(d.g, { open: d.open, locked: d.locked } as IDoorData);
+    }
+
+    // 10. Барьер
     if (this.barrier) {
-      this.barrier.active = this.flags.runes < 5 && !this.flags.snakeStarted;
       this.barrier.g.zIndex = this.barrier.y;
       this.barrier.g.visible = this.barrier.active;
-      if (this.barrier.active) drawBarrier(this.barrier.g, this.realT, true);
+      if (this.barrier.active) {
+        this.renderers.barrier.render(this.barrier.g, { active: true } as IBarrierData, this.realT);
+      }
     }
-    if (this.altar) { this.altar.g.zIndex = this.altar.y - 1; drawAltar(this.altar.g, this.flags.runes, this.realT); }
 
-    drawPlayer(this.playerG, this.player, this.realT, {
-      hasSword: this.flags.hasSword, runes: this.flags.runes, swingDir: this.player.dir, aiming: this.bowHeld,
-    });
-    for (const e of this.enemies) if (!e.dead) drawEnemy(e, this.realT);
-    for (const p of this.projectiles) { drawProjectile(p, this.realT); p.g.zIndex = p.y; }
-    for (const d of this.drops) if (!d.taken) drawDrop(d, this.realT);
-    for (const p of this.pedestals) drawPedestal(p.g, p.guardsLeft > 0 && !p.taken, !p.taken, this.realT);
-    for (const s of this.shrines) drawShrine(s.g, this.flags.shrineIdx >= this.shrines.indexOf(s), this.realT);
+    // 11. Алтарь
+    if (this.altar) {
+      this.altar.g.zIndex = this.altar.y - 1;
+      this.renderers.altar.render(this.altar.g, { runes: this.flags.runes } as IAltarData, this.realT);
+    }
 
     this.fadeG.clear();
     if (this.fadeA > 0.01) this.fadeG.rect(-4, -4, this.viewW + 8, this.viewH + 8).fill({ color: 0x04060a, alpha: this.fadeA });
@@ -1045,7 +1114,7 @@ export class Engine {
   }
 
   private stepPhysics(dt: number) {
-    const bodies: { e: { x: number; y: number; vx: number; vy: number; r: number }; b: PhysCircle; safe: Vec }[] = [];
+    const bodies: { e: { x: number; y: number; vx: number; vy: number; r: number }; b: PhysCircle | null; safe: Vec }[] = [];
     bodies.push({ e: this.player, b: this.playerBody, safe: { x: this.player.x, y: this.player.y } });
     for (const en of this.enemies) {
       if (en.dead || en.kind === "raven" || en.kind === "snake" || en.kind === "spider") {
@@ -1055,13 +1124,15 @@ export class Engine {
       bodies.push({ e: en, b: en.body, safe: { x: en.x, y: en.y } });
     }
     for (const { e, b } of bodies) {
+      if (!b) continue;
       this.moveWithCollisions(e, e.vx * dt, e.vy * dt);
       b.position.x = e.x; b.position.y = e.y;
       b.velocity.x = 0; b.velocity.y = 0;
     }
     try { (this.phys as any).update(); } catch { /* физика не критична */ }
-    for (const { b } of bodies) { b.velocity.x = 0; b.velocity.y = 0; }
+    for (const { b } of bodies) { if (b) { b.velocity.x = 0; b.velocity.y = 0; } }
     for (const { e, b, safe } of bodies) {
+      if (!b) continue;
       if (b.position.x !== e.x || b.position.y !== e.y) { e.x = b.position.x; e.y = b.position.y; }
       for (const rc of this.solidRects()) {
         const cx = clamp(e.x, rc.x, rc.x + rc.w), cy = clamp(e.y, rc.y, rc.y + rc.h);
@@ -1931,7 +2002,7 @@ export class Engine {
   private openChest(c: ChestRt) {
     c.opened = true;
     this.openedChests.add(Math.round((c.x - 8) / T) + "_" + Math.round((c.y - 8) / T));
-    drawChest(c.g, true);
+    this.renderers.chest.render(c.g, { opened: true } as IChestData);
     audio.chest();
     this.burst(c.x, c.y - 6, 0xc9a24b, 14, 70, 0.8, 2, -20);
     switch (c.item) {
@@ -2640,7 +2711,6 @@ export class Engine {
         ctx.fillRect(px, py, 1, 1);
       }
     };
-    // тематические палитры подземелий
     const pals: Record<number, { f: [string, string, string]; w: [string, string] }> = {
       0: { f: ["#39424e", "#2f3844", "#445060"], w: ["#10151c", "#232c38"] },
       1: { f: ["#3d4a3e", "#2f3830", "#4e5a4e"], w: ["#1c261c", "#2c362c"] },
@@ -2705,10 +2775,10 @@ export class Engine {
           gx.fillRect(X, Y, T, T);
       }
       if (
-        t === Tl.TREE || t === Tl.ROCK || t === Tl.PALISADE || t === Tl.HOUSE ||
+        t === Tl.TREE || t === Tl.ROCK || t === Tl.PALISADE ||
         t === Tl.COLUMN || t === Tl.DWALL || t === Tl.CAVEWALL
       ) {
-        const ws = this.wallSprite(t, rnd(x, y, 11), rnd(x, y, 13), map.dungeonId);
+        const ws = this.wallSprite(t, 0, 0, rnd(x, y, 11), rnd(x, y, 13), map.dungeonId);
         ws.position.set(X - 8, Y - 20);
         ws.zIndex = Y + T;
         this.wallTiles.push(ws);
@@ -2722,28 +2792,63 @@ export class Engine {
     this.fxWorld.zIndex = 400;
     this.floatLayer.zIndex = 500;
     this.world.addChildAt(this.groundSpr, 0);
+
+    const houseSeen = new Set<string>();
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const t = map.tiles[y * W + x];
+      if (t !== Tl.HOUSE) continue;
+      const key = `${x},${y}`;
+      if (houseSeen.has(key)) continue;
+
+      let hw = 1, hh = 1;
+      while (x + hw < W && map.tiles[y * W + (x + hw)] === Tl.HOUSE) hw++;
+      while (y + hh < H) {
+        let rowOk = true;
+        for (let dx = 0; dx < hw; dx++) {
+          if (map.tiles[(y + hh) * W + (x + dx)] !== Tl.HOUSE) { rowOk = false; break; }
+        }
+        if (!rowOk) break;
+        hh++;
+      }
+
+      for (let dy = 0; dy < hh; dy++) for (let dx = 0; dx < hw; dx++) {
+        houseSeen.add(`${x + dx},${y + dy}`);
+      }
+
+      const ws = this.wallSprite(Tl.HOUSE, hw, hh, rnd(x, y, 11), rnd(x, y, 13), map.dungeonId);
+      ws.position.set(x * T - 8, y * T - 20);
+      ws.zIndex = y * T + T;
+      this.wallTiles.push(ws);
+      this.dynamic.addChild(ws);
+    }
   }
 
-  private wallSprite(t: number, r1: number, r2: number, dungeonId: number): Sprite {
+  private wallSprite(t: number, hwOrR1: number, hhOrR2: number, r1: number, r2: number, dungeonId: number, houseW = 0, houseH = 0): Sprite {
     let v = 0;
     if (t === Tl.TREE) v = (r2 > 0.5 ? 1 : 0) | (r2 > 0.7 ? 2 : 0);
     else if (t === Tl.ROCK) v = r1 > 0.5 ? 1 : 0;
-    else if (t === Tl.HOUSE) v = r1 > 0.55 ? 1 : 0;
     else if (t === Tl.COLUMN) v = (r1 > 0.5 ? 1 : 0) | (r2 > 0.7 ? 2 : 0);
-    const key = t + "_" + v + "_" + dungeonId;
+
+    const key = t + "_" + v + "_" + dungeonId + (houseW ? "_" + houseW + "x" + houseH : "");
     let tex = this.wallTexCache.get(key);
     if (!tex) {
       const c = document.createElement("canvas");
-      c.width = 32; c.height = 44;
+      if (t === Tl.HOUSE && houseW > 0) {
+        const spriteW = Math.max(32, houseW * T + 16);
+        const spriteH = 44 + houseH * 2;
+        c.width = spriteW; c.height = spriteH;
+      } else {
+        c.width = 32; c.height = 44;
+      }
       const cx = c.getContext("2d")!;
-      this.paintWall(cx, t, v, dungeonId);
+      this.paintWall(cx, t, v, dungeonId, houseW, houseH);
       tex = Texture.from(c);
       this.wallTexCache.set(key, tex);
     }
     return new Sprite(tex);
   }
 
-  private paintWall(ctx: CanvasRenderingContext2D, t: number, v: number, dungeonId: number) {
+  private paintWall(ctx: CanvasRenderingContext2D, t: number, v: number, dungeonId: number, houseW = 0, houseH = 0) {
     const ox = 8, oy = 20;
     const P = (x: number, y: number, w: number, h: number, c: number, a = 1) => {
       ctx.globalAlpha = a;
@@ -2753,7 +2858,6 @@ export class Engine {
     switch (t) {
       case Tl.TREE:
         if (v & 1) {
-          // ель в снегу: тёмная хвоя и белые шапки
           P(7, 4, 3, 12, 0x241d14); P(7, 4, 1, 12, 0x2f2618);
           P(3, 2, 11, 3, 0x1d2b22); P(4, 2, 9, 1, 0xc8d3dc);
           P(4, -2, 9, 3, 0x24352a); P(5, -2, 7, 1, 0xc8d3dc);
@@ -2762,7 +2866,6 @@ export class Engine {
           P(7, -13, 3, 3, 0x1d2b22); P(8, -13, 1, 1, 0xc8d3dc);
           P(6, 14, 5, 2, 0x8b98a6);
         } else {
-          // мёртвое дерево: чёрный голый ствол, иней на ветвях
           P(7, 0, 3, 16, 0x1a1611); P(7, 0, 1, 16, 0x262015);
           P(4, -6, 3, 2, 0x1a1611); P(3, -8, 2, 3, 0x1a1611);
           P(10, -4, 3, 2, 0x1a1611); P(12, -7, 2, 4, 0x1a1611);
@@ -2778,7 +2881,6 @@ export class Engine {
         if (v & 1) P(4, 4, 2, 1, 0x8f9aa8);
         break;
       case Tl.PALISADE:
-        // частокол: заострённые колья с горизонтальной жердью
         for (let i = 0; i < 4; i++) {
           const px = 1 + i * 4;
           P(px, -4, 3, 19, 0x4e3c28);
@@ -2791,37 +2893,45 @@ export class Engine {
         P(0, 3, 16, 1, 0x5a4632);
         break;
       case Tl.HOUSE: {
-        // длинный дом викингов: крутая дерновая крыша, тёмные брёвна,
-        // маленькая дверь и одно крошечное окно-щель
-        // стены — вертикальные брёвна
-        P(0, 3, 16, 13, 0x221a10);
-        for (let i = 0; i < 8; i++) P(i * 2, 3, 1, 13, 0x2c2316);
-        P(0, 3, 2, 13, 0x33291a); P(14, 3, 2, 13, 0x33291a);
-        P(0, 3, 16, 1, 0x171008);
-        // крыша — ступени, чуть изогнутая, как у ладьи
-        P(6, -12, 4, 2, 0x4d5f44);
-        P(4, -10, 8, 2, 0x41503a);
-        P(3, -8, 10, 2, 0x4a3e2c);
-        P(2, -6, 12, 2, 0x4a3e2c);
-        P(1, -4, 14, 2, 0x4a3e2c);
-        P(0, -2, 16, 2, 0x4a3e2c);
-        P(-1, 0, 18, 3, 0x3d3324);
-        P(4, -10, 1, 2, 0x4d5f44);
-        // снег/мох на коньке
-        P(6, -13, 4, 1, 0xc8d3dc);
-        P(5, -12, 1, 1, 0x4d5f44); P(10, -12, 1, 1, 0x4d5f44);
-        // дверь — маленькая, тёмная, арочная
-        P(6, 8, 4, 8, 0x120d06);
-        P(7, 7, 2, 1, 0x120d06);
-        P(6, 8, 1, 8, 0x33291a);
-        // одно крошечное окно-щель
-        P(12, 6, 1, 3, v & 1 ? 0xe8c979 : 0x9fb4c4);
-        // снег у основания
-        P(0, 15, 16, 1, 0x8b98a6);
+        const w = houseW || 2, h = houseH || 2;
+        const wallW = w * T;
+        const wallH = h * 13;
+        const roofOverhang = 4;
+        const roofBaseW = wallW + roofOverhang * 2;
+
+        P(0, 3, wallW, wallH, 0x221a10);
+        for (let i = 0; i < wallW; i += 2) P(i, 3, 1, wallH, 0x2c2316);
+        P(0, 3, 2, wallH, 0x33291a);
+        P(wallW - 2, 3, 2, wallH, 0x33291a);
+        P(0, 3, wallW, 1, 0x171008);
+
+        const peakX = wallW / 2;
+        const peakY = -14 - w;
+        const tiers = 2 * w + 2;
+        for (let i = 0; i < tiers; i++) {
+          const progress = i / (tiers - 1);
+          const halfW = Math.ceil(peakX * (1 - progress)) + roofOverhang;
+          const y = peakY + i * 2;
+          const x = peakX - halfW;
+          const color = i < 2 ? 0x4d5f44 : i < 4 ? 0x41503a : 0x4a3e2c;
+          P(x, y, halfW * 2, 2, color);
+        }
+        P(peakX - Math.ceil(roofOverhang * 0.6), peakY + 2,
+          Math.floor(roofOverhang * 1.2), 1, 0x3a4a34);
+        P(peakX - 2, peakY - 1, 4, 1, 0xc8d3dc);
+        P(-2, 3 + wallH, wallW + 4, 2, 0x3d3324);
+        P(-2, 5 + wallH, wallW + 4, 1, 0x8b98a6);
+
+        const doorX = Math.floor(peakX) - 2;
+        P(doorX, 3 + wallH - 8, 4, 8, 0x120d06);
+        P(doorX + 1, 3 + wallH - 9, 2, 1, 0x120d06);
+        P(doorX, 3 + wallH - 8, 1, 8, 0x33291a);
+
+        const winX = doorX + 6;
+        P(winX, 3 + wallH - 12, 1, 3, v & 1 ? 0xe8c979 : 0x9fb4c4);
         break;
       }
       case Tl.COLUMN: {
-        // рунический менгир: сужающийся кверху камень с царапинами-рунами
         P(5, -10, 7, 24, 0x515d6a);
         P(5, -10, 2, 24, 0x62707e);
         P(11, -10, 1, 24, 0x3f4a56);
