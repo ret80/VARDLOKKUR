@@ -186,32 +186,59 @@ function renderPlayer(g: Graphics, data: IPlayerData, time: number, extra: IPlay
   const alpha = blink ? 0.35 : 1;
   const legSwing = p.moving ? Math.sin(p.animT * 12) * 2.5 : 0;
 
+  // направление: +1 вправо, -1 влево
+  const f = p.dir.x > 0.3 ? 1 : p.dir.x < -0.3 ? -1 : 0;
+
   // тень
   g.ellipse(0, 5, 6, 2.4).fill({ color: 0x05080d, alpha: 0.5 * alpha });
 
-  // ноги
+  // ноги (центрированы)
   P(g, -4, 1 + legSwing * 0.3, 3, 4, 0x2c3038, alpha);
   P(g, 1, 1 - legSwing * 0.3, 3, 4, 0x2c3038, alpha);
 
-  // плащ
+  // плащ (сзади, сдвигается в сторону, противоположную направлению)
   const cape = Math.sin(time * 3) * 1;
-  P(g, -6 + cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, alpha);
-  P(g, -5 + cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, alpha);
+  if (f >= 0) {
+    P(g, -6 + cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, alpha);
+    P(g, -5 + cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, alpha);
+  } else {
+    P(g, 2 - cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, alpha);
+    P(g, 3 - cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, alpha);
+  }
 
-  // тело
+  // тело (центрировано)
   P(g, -4, -8 + bob, 8, 9, 0x4e5a68, alpha);
   P(g, -4, -8 + bob, 8, 2, 0x5c6875, alpha);
   P(g, -4, -1 + bob, 8, 2, 0x3a3226, alpha);
   if (extra.runes > 0) P(g, -3, -1 + bob, Math.min(6, extra.runes * 2), 1, 0x63d8c8, alpha);
 
-  // голова
-  P(g, -3, -14 + bob, 7, 6, 0xc8a88a, alpha);
-  P(g, -4, -15 + bob, 9, 3, 0x2c3038, alpha);
-  P(g, -4, -13 + bob, 1, 4, 0x2c3038, alpha);
-  P(g, -2, -9 + bob, 5, 2, 0x8a7a62, alpha);
+  // голова (смещена в сторону взгляда)
+  if (f >= 0) {
+    P(g, -3, -14 + bob, 7, 6, 0xc8a88a, alpha);
+    P(g, -4, -15 + bob, 9, 3, 0x2c3038, alpha);
+    P(g, -4, -13 + bob, 1, 4, 0x2c3038, alpha);
+  } else {
+    P(g, -4, -14 + bob, 7, 6, 0xc8a88a, alpha);
+    P(g, -5, -15 + bob, 9, 3, 0x2c3038, alpha);
+    P(g, 3, -13 + bob, 1, 4, 0x2c3038, alpha);
+  }
+  // борода (смещена в сторону взгляда)
+  if (f >= 0) {
+    P(g, -2, -9 + bob, 5, 2, 0x8a7a62, alpha);
+  } else {
+    P(g, -3, -9 + bob, 5, 2, 0x8a7a62, alpha);
+  }
   const ex = p.dir.x > 0.3 ? 1 : p.dir.x < -0.3 ? -1 : 0;
-  P(g, -1 + ex, -12 + bob, 1, 1, 0x0d1218, alpha);
-  P(g, 2 + ex, -12 + bob, 1, 1, 0x0d1218, alpha);
+  if (ex > 0) {
+    P(g, 0, -12 + bob, 1, 1, 0x0d1218, alpha);
+    P(g, 3, -12 + bob, 1, 1, 0x0d1218, alpha);
+  } else if (ex < 0) {
+    P(g, -3, -12 + bob, 1, 1, 0x0d1218, alpha);
+    P(g, 0, -12 + bob, 1, 1, 0x0d1218, alpha);
+  } else {
+    P(g, -1, -12 + bob, 1, 1, 0x0d1218, alpha);
+    P(g, 2, -12 + bob, 1, 1, 0x0d1218, alpha);
+  }
 
   // меч
   if (extra.hasSword && p.swingT > 0) {
@@ -227,8 +254,13 @@ function renderPlayer(g: Graphics, data: IPlayerData, time: number, extra: IPlay
     g.arc(0, -4 + bob, 14, baseA - 1.2, baseA - 1.2 + prog * 2.4)
       .stroke({ color: 0xe8f4fc, width: 1.5, alpha: 0.5 * (1 - prog) });
   } else if (extra.hasSword) {
-    P(g, 5, -10 + bob, 2, 8, 0xb9c2c9, alpha);
-    P(g, 4, -4 + bob, 4, 1, 0x5a4632, alpha);
+    if (f >= 0) {
+      P(g, 5, -10 + bob, 2, 8, 0xb9c2c9, alpha);
+      P(g, 4, -4 + bob, 4, 1, 0x5a4632, alpha);
+    } else {
+      P(g, -7, -10 + bob, 2, 8, 0xb9c2c9, alpha);
+      P(g, -8, -4 + bob, 4, 1, 0x5a4632, alpha);
+    }
   }
 
   if (extra.aiming) {
@@ -264,8 +296,13 @@ function renderEnemy(g: Graphics, data: IEnemyData, time: number) {
       P(g, -4, -8 + bob, 8, 9, 0x55606c, a);
       P(g, -3, -13 + bob, 7, 6, 0x8f9aa8, a);
       P(g, -1 * fx + 0, -11 + bob, 1, 1, 0xe05050, a); P(g, 2 * fx, -11 + bob, 1, 1, 0xe05050, a);
-      P(g, fx * 5, -8 + bob, 3 * fx, 8, tint(0x4a3e2e), a);
-      P(g, fx * 6, -6 + bob, 1 * fx, 3, 0x8a744a, a);
+      if (fx >= 0) {
+        P(g, 5, -8 + bob, 3, 8, tint(0x4a3e2e), a);
+        P(g, 6, -6 + bob, 1, 3, 0x8a744a, a);
+      } else {
+        P(g, -8, -8 + bob, 3, 8, tint(0x4a3e2e), a);
+        P(g, -7, -6 + bob, 1, 3, 0x8a744a, a);
+      }
       break;
     }
     case "varg": {
@@ -274,11 +311,19 @@ function renderEnemy(g: Graphics, data: IEnemyData, time: number) {
       P(g, -6, 0 + run * 0.3, 3, 4, 0xc8d3dc, a); P(g, 3, 0 - run * 0.3, 3, 4, 0xc8d3dc, a);
       P(g, -7, -6 + bob, 13, 6, tint(0xd8e2ea), a);
       P(g, -7, -6 + bob, 13, 2, tint(0xe8f0f6), a);
-      P(g, fx * 5, -9 + bob, 5 * fx, 5, tint(0xd8e2ea), a);
-      P(g, fx * 8, -8 + bob, 2 * fx, 1, 0xe05050, a);
-      P(g, fx * 6, -11 + bob, 2 * fx, 3, tint(0xc8d3dc), a);
-      P(g, -fx * 8, -6 + bob, 3 * -fx, 2, tint(0xc8d3dc), a);
-      if (e.lungeT > 0) P(g, fx * 7, -6 + bob, 3 * fx, 1, 0xffffff, a);
+      if (fx >= 0) {
+        P(g, 5, -9 + bob, 5, 5, tint(0xd8e2ea), a);
+        P(g, 8, -8 + bob, 2, 1, 0xe05050, a);
+        P(g, 6, -11 + bob, 2, 3, tint(0xc8d3dc), a);
+        P(g, -8, -6 + bob, 3, 2, tint(0xc8d3dc), a);
+        if (e.lungeT > 0) P(g, 7, -6 + bob, 3, 1, 0xffffff, a);
+      } else {
+        P(g, -10, -9 + bob, 5, 5, tint(0xd8e2ea), a);
+        P(g, -10, -8 + bob, 2, 1, 0xe05050, a);
+        P(g, -8, -11 + bob, 2, 3, tint(0xc8d3dc), a);
+        P(g, 5, -6 + bob, 3, 2, tint(0xc8d3dc), a);
+        if (e.lungeT > 0) P(g, -10, -6 + bob, 3, 1, 0xffffff, a);
+      }
       break;
     }
     case "raven": {
