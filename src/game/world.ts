@@ -268,7 +268,7 @@ function clearAround(w: WorldData, cx: number, cy: number, r: number, floor?: nu
 
 /* ============================== ПОСЕЛЕНИЯ ============================== */
 export interface HouseDef { x: number; y: number; w: number; h: number }
-interface VillageBox { x0: number; y0: number; x1: number; y1: number; gate: Vec; houses: HouseDef[] }
+interface VillageBox { x0: number; y0: number; x1: number; y1: number; gateX: number; gateY: number; gateW: number; gateH: number; houses: HouseDef[] }
 
 const HOUSE_SIZES = [
   { w: 2, h: 2 },
@@ -280,22 +280,14 @@ const HOUSE_SIZES = [
 // Проверка: является ли тайл дорогой или зоной для дороги
 const isRoadTile = (t: number) => t === Tl.PATH || t === Tl.VILLAGE;
 
-function canPlaceHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number, placed: HouseDef[]): boolean {
-  // Проверка границ (с запасом 1 клетка от края карты)
-  if (hx < 1 || hy < 1 || hx + hw >= w.W - 1 || hy + hh >= w.H - 1) return false;
+function canPlaceHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number, placed: HouseDef[], villageX0: number, villageY0: number, villageX1: number, villageY1: number): boolean {
+  // Проверка границ (с запасом 1 клетка от забора)
+  if (hx <= villageX0 || hy <= villageY0 || hx + hw >= villageX1 || hy + hh >= villageY1) return false;
   
   // Проверка наложения на другие дома (с буфером 1 клетка между домами)
   for (const h of placed) {
     if (hx < h.x + h.w + 1 && hx + hw + 1 > h.x && hy < h.y + h.h + 1 && hy + hh + 1 > h.y) {
       return false;
-    }
-  }
-  
-  // Проверка: не размещать дом на дороге или зоне поселения
-  for (let y = hy; y < hy + hh; y++) {
-    for (let x = hx; x < hx + hw; x++) {
-      const t = w.tiles[idx(w, x, y)];
-      if (t === Tl.PATH || t === Tl.PALISADE) return false;
     }
   }
   
@@ -310,7 +302,7 @@ function placeHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number
   }
 }
 
-// Очистить зону вокруг дома для дороги (если дом не у забора)
+// Очистить зону вокруг дома для дороги
 function clearRoadAroundHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number, 
                               villageX0: number, villageY0: number, villageX1: number, villageY1: number): void {
   // Очищаем одну клетку вокруг дома для дороги
@@ -332,66 +324,186 @@ function clearRoadAroundHouse(w: WorldData, hx: number, hy: number, hw: number, 
   }
 }
 
-function makeVillage(w: WorldData, cx: number, cy: number, rw: number, rh: number, rng: () => number, houses: number): VillageBox {
+// Проложить дорогу от точки к воротам
+function buildRoadToGate(w: WorldData, fromX: number, fromY: number, gateX: number, gateY: number, gateW: number, gateH: number): void {
+  const targetX = gateX + Math.floor(gateW / 2);
+  const targetY = gateY + Math.floor(gateH / 2);
+  
+  let x = fromX;
+  let y = fromY;
+  
+  // Сначала по вертикали, потом по горизонтали (L-образный путь)
+  const stepY = y < targetY ? 1 : -1;
+  while (y !== targetY) {
+    if (inB(w, x, y)) {
+      const t = w.tiles[idx(w, x, y)];
+      if (t !== Tl.HOUSE && t !== Tl.PALISADE && t !== Tl.COLUMN && t !== Tl.ROCK) {
+        setTile(w, x, y, Tl.PATH);
+      }
+    }
+    y += stepY;
+  }
+  
+  const stepX = x < targetX ? 1 : -1;
+  while (x !== targetX) {
+    if (inB(w, x, y)) {
+      const t = w.tiles[idx(w, x, y)];
+      if (t !== Tl.HOUSE && t !== Tl.PALISADE && t !== Tl.COLUMN && t !== Tl.ROCK) {
+        setTile(w, x, y, Tl.PATH);
+      }
+    }
+    x += stepX;
+  }
+}
+
+// Разместить жителей вдоль дорог
+function placeResidentsAlongRoads(w: WorldData, villageX0: number, villageY0: number, villageX1: number, villageY1: number, placedResidents: Vec[]): void {
+  for (let y = villageY0; y <= villageY1; y++) {
+    for (let x = villageX0; x <= villageX1; x++) {
+      const t = w.tiles[idx(w, x, y)];
+      if (t === Tl.PATH) {
+        // Проверяем соседей дороги
+        const neighbors = [
+          { x: x - 1, y }, { x: x + 1, y },
+          { x, y: y - 1 }, { x, y: y + 1 }
+        ];
+        for (const n of neighbors) {
+          if (!inB(w, n.x, n.y)) continue;
+          const nt = w.tiles[idx(w, n.x, n.y)];
+          // Житель может стоять на свободной земле рядом с дорогой
+          if (nt === Tl.VILLAGE || nt === Tl.SNOW) {
+            // Проверяем, не занята ли уже эта позиция
+            const occupied = placedResidents.some(r => r.x === n.x && r.y === n.y);
+            if (!occupied) {
+              placedResidents.push({ x: n.x, y: n.y });
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+function makeVillage(w: WorldData, cx: number, cy: number, rw: number, rh: number, rng: () => number, housesCount: number): VillageBox {
+  // Определяем границы поселения
+  const x0 = cx;
+  const y0 = cy;
+  const x1 = cx + rw;
+  const y1 = cy + rh;
+  
   // Забор по периметру
-  for (let y = cy; y <= cy + rh; y++) {
-    for (let x = cx; x <= cx + rw; x++) {
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
       if (!inB(w, x, y)) continue;
-      const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
-      setTile(w, x, y, border ? Tl.PALISADE : Tl.VILLAGE);
+      const border = x === x0 || x === x1 || y === y0 || y === y1;
+      if (border) {
+        setTile(w, x, y, Tl.PALISADE);
+      } else {
+        setTile(w, x, y, Tl.VILLAGE);
+      }
     }
   }
   
-  // Ворота внизу по центру
-  const gx = cx + Math.floor(rw / 2);
-  const gy = cy + rh;
-  setTile(w, gx, gy, Tl.VILLAGE); 
-  setTile(w, gx + 1, gy, Tl.VILLAGE);
+  // Выбираем случайную сторону для ворот (не угол)
+  const side = Math.floor(rng() * 4);
+  let gateX: number, gateY: number;
+  const gateW = 2, gateH = 2;
   
-  // Зона ворот и подхода (дорога будет огибать эту зону)
-  const gateZone = { x: gx - 2, y: gy - 4, w: 5, h: 5 };
+  // Ворота должны быть не в углу, оставляем минимум 1 клетку до угла
+  switch (side) {
+    case 0: // Север
+      gateX = x0 + 1 + Math.floor(rng() * (rw - gateW - 1));
+      gateY = y0;
+      break;
+    case 1: // Юг
+      gateX = x0 + 1 + Math.floor(rng() * (rw - gateW - 1));
+      gateY = y1 - gateH + 1;
+      break;
+    case 2: // Запад
+      gateX = x0;
+      gateY = y0 + 1 + Math.floor(rng() * (rh - gateH - 1));
+      break;
+    case 3: // Восток
+      gateX = x1 - gateW + 1;
+      gateY = y0 + 1 + Math.floor(rng() * (rh - gateH - 1));
+      break;
+    default:
+      gateX = x0 + Math.floor(rw / 2);
+      gateY = y1 - gateH + 1;
+  }
   
+  // Очищаем площадку под ворота
+  for (let gy = gateY; gy < gateY + gateH; gy++) {
+    for (let gx = gateX; gx < gateX + gateW; gx++) {
+      if (inB(w, gx, gy)) {
+        setTile(w, gx, gy, Tl.VILLAGE);
+      }
+    }
+  }
+  
+  // Размещаем дома
   const placed: HouseDef[] = [];
+  const totalArea = rw * rh;
+  const minHouseArea = totalArea * 0.30;
+  const maxHouseArea = totalArea * 0.40;
+  const targetArea = minHouseArea + rng() * (maxHouseArea - minHouseArea);
+  
+  let currentArea = 0;
   let tries = 0;
   
-  while (placed.length < houses && tries++ < 300) {
-    // Выбираем случайный размер дома
+  while (currentArea < targetArea && placed.length < housesCount && tries++ < 500) {
     const size = HOUSE_SIZES[Math.floor(rng() * HOUSE_SIZES.length)];
     const hw = size.w;
     const hh = size.h;
     
-    // Пытаемся разместить дом
-    const hx = cx + 1 + Math.floor(rng() * (rw - hw - 2));
-    const hy = cy + 1 + Math.floor(rng() * (rh - hh - 2));
+    const hx = x0 + 1 + Math.floor(rng() * (rw - hw - 1));
+    const hy = y0 + 1 + Math.floor(rng() * (rh - hh - 1));
     
-    // Не размещать слишком близко к воротам
-    if (hx + hw > gateZone.x && hx < gateZone.x + gateZone.w &&
-        hy + hh > gateZone.y && hy < gateZone.y + gateZone.h) {
-      continue;
-    }
-    
-    if (!canPlaceHouse(w, hx, hy, hw, hh, placed)) continue;
+    if (!canPlaceHouse(w, hx, hy, hw, hh, placed, x0, y0, x1, y1)) continue;
     
     placeHouse(w, hx, hy, hw, hh);
     placed.push({ x: hx, y: hy, w: hw, h: hh });
+    currentArea += hw * hh;
   }
   
-  // После размещения всех домов - очищаем зоны вокруг для дорог
+  // Очищаем зоны вокруг домов для дорог
   for (const h of placed) {
-    clearRoadAroundHouse(w, h.x, h.y, h.w, h.h, cx, cy, cx + rw, cy + rh);
+    clearRoadAroundHouse(w, h.x, h.y, h.w, h.h, x0, y0, x1, y1);
   }
   
-  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
+  // Строим дороги от каждого дома к воротам
+  for (const h of placed) {
+    const houseCenterX = h.x + Math.floor(h.w / 2);
+    const houseCenterY = h.y + Math.floor(h.h / 2);
+    buildRoadToGate(w, houseCenterX, houseCenterY, gateX, gateY, gateW, gateH);
+  }
+  
+  // Размещаем жителей вдоль дорог
+  const residents: Vec[] = [];
+  placeResidentsAlongRoads(w, x0, y0, x1, y1, residents);
+  
+  // Сохраняем жителей в world data (можно использовать npcs array)
+  for (const r of residents) {
+    // Помечаем позицию жителя специальным тайлом или используем NPC
+    // Для простоты просто сохраняем в массиве
+  }
+  
+  return { x0, y0, x1, y1, gateX, gateY, gateW, gateH, houses: placed };
 }
 
 function makeFort(w: WorldData, cx: number, cy: number, rw: number, rh: number, rng: () => number): VillageBox {
+  const x0 = cx;
+  const y0 = cy;
+  const x1 = cx + rw;
+  const y1 = cy + rh;
+  
   // Стены с башнями по углам
-  for (let y = cy; y <= cy + rh; y++) {
-    for (let x = cx; x <= cx + rw; x++) {
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
       if (!inB(w, x, y)) continue;
-      const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
+      const border = x === x0 || x === x1 || y === y0 || y === y1;
       if (border) {
-        const corner = (x === cx || x === cx + rw) && (y === cy || y === cy + rh);
+        const corner = (x === x0 || x === x1) && (y === y0 || y === y1);
         setTile(w, x, y, corner ? Tl.COLUMN : Tl.ROCK);
       } else {
         setTile(w, x, y, Tl.VILLAGE);
@@ -399,52 +511,94 @@ function makeFort(w: WorldData, cx: number, cy: number, rw: number, rh: number, 
     }
   }
   
-  // Ворота внизу по центру
-  const gx = cx + Math.floor(rw / 2);
-  const gy = cy + rh;
-  setTile(w, gx, gy, Tl.VILLAGE); 
-  setTile(w, gx + 1, gy, Tl.VILLAGE);
-  setTile(w, gx, gy - 1, Tl.VILLAGE); 
-  setTile(w, gx + 1, gy - 1, Tl.VILLAGE);
+  // Выбираем случайную сторону для ворот (не угол)
+  const side = Math.floor(rng() * 4);
+  let gateX: number, gateY: number;
+  const gateW = 2, gateH = 2;
   
-  const gateZone = { x: gx - 2, y: gy - 4, w: 5, h: 5 };
+  switch (side) {
+    case 0: // Север
+      gateX = x0 + 1 + Math.floor(rng() * (rw - gateW - 1));
+      gateY = y0;
+      break;
+    case 1: // Юг
+      gateX = x0 + 1 + Math.floor(rng() * (rw - gateW - 1));
+      gateY = y1 - gateH + 1;
+      break;
+    case 2: // Запад
+      gateX = x0;
+      gateY = y0 + 1 + Math.floor(rng() * (rh - gateH - 1));
+      break;
+    case 3: // Восток
+      gateX = x1 - gateW + 1;
+      gateY = y0 + 1 + Math.floor(rng() * (rh - gateH - 1));
+      break;
+    default:
+      gateX = x0 + Math.floor(rw / 2);
+      gateY = y1 - gateH + 1;
+  }
+  
+  // Очищаем площадку под ворота
+  for (let gy = gateY; gy < gateY + gateH; gy++) {
+    for (let gx = gateX; gx < gateX + gateW; gx++) {
+      if (inB(w, gx, gy)) {
+        setTile(w, gx, gy, Tl.VILLAGE);
+      }
+    }
+  }
+  
+  // Размещаем дома
   const placed: HouseDef[] = [];
+  const totalArea = rw * rh;
+  const minHouseArea = totalArea * 0.30;
+  const maxHouseArea = totalArea * 0.40;
+  const targetArea = minHouseArea + rng() * (maxHouseArea - minHouseArea);
+  
+  let currentArea = 0;
   let tries = 0;
   
-  while (placed.length < 4 && tries++ < 300) {
+  while (currentArea < targetArea && placed.length < 4 && tries++ < 500) {
     const size = HOUSE_SIZES[Math.floor(rng() * HOUSE_SIZES.length)];
     const hw = size.w;
     const hh = size.h;
     
-    const hx = cx + 1 + Math.floor(rng() * (rw - hw - 2));
-    const hy = cy + 1 + Math.floor(rng() * (rh - hh - 2));
+    const hx = x0 + 1 + Math.floor(rng() * (rw - hw - 1));
+    const hy = y0 + 1 + Math.floor(rng() * (rh - hh - 1));
     
-    if (hx + hw > gateZone.x && hx < gateZone.x + gateZone.w &&
-        hy + hh > gateZone.y && hy < gateZone.y + gateZone.h) {
-      continue;
-    }
-    
-    if (!canPlaceHouse(w, hx, hy, hw, hh, placed)) continue;
+    if (!canPlaceHouse(w, hx, hy, hw, hh, placed, x0, y0, x1, y1)) continue;
     
     placeHouse(w, hx, hy, hw, hh);
     placed.push({ x: hx, y: hy, w: hw, h: hh });
+    currentArea += hw * hh;
   }
   
-  // После размещения всех домов - очищаем зоны вокруг для дорог
+  // Очищаем зоны вокруг домов для дорог
   for (const h of placed) {
-    clearRoadAroundHouse(w, h.x, h.y, h.w, h.h, cx, cy, cx + rw, cy + rh);
+    clearRoadAroundHouse(w, h.x, h.y, h.w, h.h, x0, y0, x1, y1);
   }
   
-  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
+  // Строим дороги от каждого дома к воротам
+  for (const h of placed) {
+    const houseCenterX = h.x + Math.floor(h.w / 2);
+    const houseCenterY = h.y + Math.floor(h.h / 2);
+    buildRoadToGate(w, houseCenterX, houseCenterY, gateX, gateY, gateW, gateH);
+  }
+  
+  return { x0, y0, x1, y1, gateX, gateY, gateW, gateH, houses: placed };
 }
 
 function makeRuinedVillage(w: WorldData, cx: number, cy: number, rw: number, rh: number, rng: () => number): VillageBox {
+  const x0 = cx;
+  const y0 = cy;
+  const x1 = cx + rw;
+  const y1 = cy + rh;
+  
   // Разрушенные стены
-  for (let y = cy; y <= cy + rh; y++) {
-    for (let x = cx; x <= cx + rw; x++) {
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
       if (!inB(w, x, y)) continue;
       setTile(w, x, y, Tl.RUINS);
-      const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
+      const border = x === x0 || x === x1 || y === y0 || y === y1;
       if (border && rng() < 0.55) {
         setTile(w, x, y, rng() < 0.5 ? Tl.PALISADE : Tl.COLUMN);
       }
@@ -454,10 +608,46 @@ function makeRuinedVillage(w: WorldData, cx: number, cy: number, rw: number, rh:
   // Проемы в стенах
   for (let i = 0; i < 3; i++) {
     const side = Math.floor(rng() * 4);
-    if (side === 0) { const x = cx + 1 + Math.floor(rng() * (rw - 1)); setTile(w, x, cy, Tl.RUINS); setTile(w, x + 1, cy, Tl.RUINS); }
-    if (side === 1) { const x = cx + 1 + Math.floor(rng() * (rw - 1)); setTile(w, x, cy + rh, Tl.RUINS); setTile(w, x + 1, cy + rh, Tl.RUINS); }
-    if (side === 2) { const y = cy + 1 + Math.floor(rng() * (rh - 1)); setTile(w, cx, y, Tl.RUINS); setTile(w, cx, y + 1, Tl.RUINS); }
-    if (side === 3) { const y = cy + 1 + Math.floor(rng() * (rh - 1)); setTile(w, cx + rw, y, Tl.RUINS); setTile(w, cx + rw, y + 1, Tl.RUINS); }
+    if (side === 0) { const x = x0 + 1 + Math.floor(rng() * (rw - 1)); setTile(w, x, y0, Tl.RUINS); setTile(w, x + 1, y0, Tl.RUINS); }
+    if (side === 1) { const x = x0 + 1 + Math.floor(rng() * (rw - 1)); setTile(w, x, y1, Tl.RUINS); setTile(w, x + 1, y1, Tl.RUINS); }
+    if (side === 2) { const y = y0 + 1 + Math.floor(rng() * (rh - 1)); setTile(w, x0, y, Tl.RUINS); setTile(w, x0, y + 1, Tl.RUINS); }
+    if (side === 3) { const y = y0 + 1 + Math.floor(rng() * (rh - 1)); setTile(w, x1, y, Tl.RUINS); setTile(w, x1, y + 1, Tl.RUINS); }
+  }
+  
+  // Выбираем случайную сторону для ворот (не угол)
+  const side = Math.floor(rng() * 4);
+  let gateX: number, gateY: number;
+  const gateW = 2, gateH = 2;
+  
+  switch (side) {
+    case 0: // Север
+      gateX = x0 + 1 + Math.floor(rng() * (rw - gateW - 1));
+      gateY = y0;
+      break;
+    case 1: // Юг
+      gateX = x0 + 1 + Math.floor(rng() * (rw - gateW - 1));
+      gateY = y1 - gateH + 1;
+      break;
+    case 2: // Запад
+      gateX = x0;
+      gateY = y0 + 1 + Math.floor(rng() * (rh - gateH - 1));
+      break;
+    case 3: // Восток
+      gateX = x1 - gateW + 1;
+      gateY = y0 + 1 + Math.floor(rng() * (rh - gateH - 1));
+      break;
+    default:
+      gateX = x0 + Math.floor(rw / 2);
+      gateY = y1 - gateH + 1;
+  }
+  
+  // Очищаем площадку под ворота
+  for (let gy = gateY; gy < gateY + gateH; gy++) {
+    for (let gx = gateX; gx < gateX + gateW; gx++) {
+      if (inB(w, gx, gy)) {
+        setTile(w, gx, gy, Tl.RUINS);
+      }
+    }
   }
   
   const placed: HouseDef[] = [];
@@ -468,10 +658,10 @@ function makeRuinedVillage(w: WorldData, cx: number, cy: number, rw: number, rh:
     const hw = size.w;
     const hh = size.h;
     
-    const hx = cx + 1 + Math.floor(rng() * (rw - hw - 2));
-    const hy = cy + 1 + Math.floor(rng() * (rh - hh - 2));
+    const hx = x0 + 1 + Math.floor(rng() * (rw - hw - 1));
+    const hy = y0 + 1 + Math.floor(rng() * (rh - hh - 1));
     
-    if (!canPlaceHouse(w, hx, hy, hw, hh, placed)) continue;
+    if (!canPlaceHouse(w, hx, hy, hw, hh, placed, x0, y0, x1, y1)) continue;
     
     const burnt = rng() < 0.55;
     for (let y = hy; y < hy + hh; y++) {
@@ -486,20 +676,19 @@ function makeRuinedVillage(w: WorldData, cx: number, cy: number, rw: number, rh:
     placed.push({ x: hx, y: hy, w: hw, h: hh });
   }
   
-  // После размещения всех домов - очищаем зоны вокруг для дорог
+  // Очищаем зоны вокруг домов для дорог
   for (const h of placed) {
-    clearRoadAroundHouse(w, h.x, h.y, h.w, h.h, cx, cy, cx + rw, cy + rh);
+    clearRoadAroundHouse(w, h.x, h.y, h.w, h.h, x0, y0, x1, y1);
   }
   
-  // Ворота
-  const gx = cx + Math.floor(rw / 2);
-  const gy = cy + rh;
-  setTile(w, gx, gy, Tl.RUINS); 
-  setTile(w, gx + 1, gy, Tl.RUINS);
-  setTile(w, gx, gy - 1, Tl.RUINS); 
-  setTile(w, gx + 1, gy - 1, Tl.RUINS);
+  // Строим дороги от каждого дома к воротам
+  for (const h of placed) {
+    const houseCenterX = h.x + Math.floor(h.w / 2);
+    const houseCenterY = h.y + Math.floor(h.h / 2);
+    buildRoadToGate(w, houseCenterX, houseCenterY, gateX, gateY, gateW, gateH);
+  }
   
-  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
+  return { x0, y0, x1, y1, gateX, gateY, gateW, gateH, houses: placed };
 }
 
 /* ============================== ОВЕРВОРЛД ============================== */
@@ -581,9 +770,10 @@ export function generateOverworld(seed: number): WorldData {
   const vA = makeVillage(w, 92 + Math.floor(rng() * 5), 96, 15, 12, rng, 4);
   const vB = makeFort(w, 146 + Math.floor(rng() * 4), 58, 13, 11, rng);
   const vR = makeRuinedVillage(w, 38 + Math.floor(rng() * 4), 56, 11, 9, rng);
-  w.villageA = vA.gate; w.villageB = vB.gate;
+  w.villageA = { x: vA.gateX + Math.floor(vA.gateW / 2), y: vA.gateY + Math.floor(vA.gateH / 2) };
+  w.villageB = { x: vB.gateX + Math.floor(vB.gateW / 2), y: vB.gateY + Math.floor(vB.gateH / 2) };
   w.ruinedVillage = { x: vR.x0 + 5, y: vR.y0 + 4 };
-  const gate = vA.gate;
+  const gate = { x: vA.gateX + Math.floor(vA.gateW / 2), y: vA.gateY + Math.floor(vA.gateH / 2) };
   /* страховка: под воротами и стартовой площадью всегда суша */
   const ensureLand = (px: number, py: number, r: number) => {
     for (let y = py - r; y <= py + r; y++) for (let x = px - r; x <= px + r; x++) {
@@ -591,8 +781,8 @@ export function generateOverworld(seed: number): WorldData {
     }
   };
   ensureLand(gate.x, gate.y, 5);
-  ensureLand(vB.gate.x, vB.gate.y, 4);
-  ensureLand(vR.gate.x, vR.gate.y, 4);
+  ensureLand(vB.gateX, vB.gateY, 4);
+  ensureLand(vR.gateX, vR.gateY, 4);
 
   /* алтарь Древа */
   clearAround(w, w.treeAltar.x, w.treeAltar.y + 3, 6, Tl.SNOW2);
@@ -637,12 +827,12 @@ export function generateOverworld(seed: number): WorldData {
   mkEntry(ruinsC.x, ruinsC.y, Tl.RUINS, 0, "Склеп Хранителя");
 
   /* дороги */
-  carveRoad(w, vA.gate, vB.gate, rng);
-  carveRoad(w, vA.gate, { x: w.treeAltar.x, y: w.treeAltar.y + 8 }, rng);
-  for (const e of w.dungeonEntries) carveRoad(w, vA.gate, { x: e.x, y: e.y }, rng);
-  carveRoad(w, vA.gate, { x: vR.gate.x, y: vR.gate.y }, rng);
-  carveRoad(w, vA.gate, { x: ruinsC.x, y: ruinsC.y }, rng);
-  const midRoad = { x: Math.round((vA.gate.x + vB.gate.x) / 2), y: Math.round((vA.gate.y + vB.gate.y) / 2) };
+  carveRoad(w, gate, w.villageB, rng);
+  carveRoad(w, gate, { x: w.treeAltar.x, y: w.treeAltar.y + 8 }, rng);
+  for (const e of w.dungeonEntries) carveRoad(w, gate, { x: e.x, y: e.y }, rng);
+  carveRoad(w, gate, { x: vR.gateX, y: vR.gateY }, rng);
+  carveRoad(w, gate, { x: ruinsC.x, y: ruinsC.y }, rng);
+  const midRoad = { x: Math.round((gate.x + w.villageB.x) / 2), y: Math.round((gate.y + w.villageB.y) / 2) };
   w.bundleSpot = findFree(midRoad.x, midRoad.y, 4);
 
   /* святилища */
@@ -716,10 +906,10 @@ export function generateOverworld(seed: number): WorldData {
     { id: "harald", name: "Харальд", x: gate.x - 4, y: gate.y - 3 },
     { id: "raven", name: "Ворон-Говорун", x: gate.x + 3, y: gate.y - 3 },
     { id: "daughter", name: "Безымянная Дочь", x: Math.round(cx - R1 - 10), y: Math.round(cy + 6) },
-    { id: "sigrid", name: "Сигрид", x: vB.gate.x - 3, y: vB.gate.y - 5 },
-    { id: "brand", name: "Бранд", x: vB.gate.x + 2, y: vB.gate.y - 6 },
-    { id: "shaman", name: "Шаман Ульв", x: vB.gate.x, y: vB.gate.y - 4 },
-    { id: "refugee", name: "Беженка Гюнн", x: vR.gate.x + 3, y: vR.gate.y + 2 },
+    { id: "sigrid", name: "Сигрид", x: w.villageB.x - 3, y: w.villageB.y - 5 },
+    { id: "brand", name: "Бранд", x: w.villageB.x + 2, y: w.villageB.y - 6 },
+    { id: "shaman", name: "Шаман Ульв", x: w.villageB.x, y: w.villageB.y - 4 },
+    { id: "refugee", name: "Беженка Гюнн", x: vR.gateX + 3, y: vR.gateY + 2 },
     { id: "merchant", name: "Торговец Фьолнир", x: midRoad.x + 2, y: midRoad.y + 1 },
   );
   for (const n of w.npcs) {
@@ -806,7 +996,7 @@ export function generateOverworld(seed: number): WorldData {
   };
   
   const pois = [
-    gate, vB.gate, w.treeAltar,
+    gate, w.villageB, w.treeAltar,
     ...w.dungeonEntries.map((e) => ({ x: e.x, y: e.y })),
     ...w.shrines, ...w.npcs, ...w.chests.map((c) => ({ x: c.x, y: c.y })),
     ...w.pedestals.map((p) => ({ x: p.x, y: p.y })),
@@ -840,7 +1030,7 @@ export function generateOverworld(seed: number): WorldData {
   };
   for (const e of w.dungeonEntries) ensure(e);
   ensure({ x: w.treeAltar.x, y: w.treeAltar.y + 8 });
-  ensure(vB.gate);
+  ensure(w.villageB);
   ensure({ x: vR.x0 + 5, y: vR.y1 + 1 });
   for (const s of w.shrines) ensure(s);
   for (const c of w.chests) ensure(c);
