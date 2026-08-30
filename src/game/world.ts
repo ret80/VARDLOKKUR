@@ -651,7 +651,8 @@ class GlobalRoadGenerator {
         case Tl.POOL: return 4;
         case Tl.RUINS: return 1.9;
         case Tl.SHORE: return 1.4;
-        case Tl.VILLAGE: case Tl.STAIRS: case Tl.ALTAR: return 1;
+        case Tl.VILLAGE: return 50;
+        case Tl.STAIRS: case Tl.ALTAR: return 1;
         default: return 1.2;
       }
     };
@@ -701,7 +702,7 @@ class GlobalRoadGenerator {
     for (const i of path) {
       const x = i % W, y = Math.floor(i / W);
       const t = w.tiles[i];
-      if (t !== Tl.WATER && t !== Tl.PALISADE && t !== Tl.HOUSE && t !== Tl.STAIRS && t !== Tl.ALTAR) {
+      if (t !== Tl.WATER && t !== Tl.PALISADE && t !== Tl.HOUSE && t !== Tl.STAIRS && t !== Tl.ALTAR && t !== Tl.VILLAGE) {
         setTile(w, x, y, Tl.PATH);
       }
     }
@@ -713,7 +714,7 @@ class GlobalRoadGenerator {
         const xx = x + dx, yy = y + dy;
         if (!inB(w, xx, yy)) continue;
         const cur = w.tiles[idx(w, xx, yy)];
-        if (cur === Tl.WATER || cur === Tl.PALISADE || cur === Tl.HOUSE) continue;
+        if (cur === Tl.WATER || cur === Tl.PALISADE || cur === Tl.HOUSE || cur === Tl.VILLAGE) continue;
         setTile(w, xx, yy, Tl.PATH);
       }
     };
