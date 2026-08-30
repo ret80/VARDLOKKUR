@@ -116,6 +116,16 @@ export class Engine {
   private axeProj: Projectile | null = null;
   private axeState: "ready" | "out" = "ready";
   private takenAmbient = new Set<number>();
+  private roofSnow = true;
+  private houseSprites: { spr: Sprite; hw: number; hh: number; v: number }[] = [];
+
+  /** Вкл/выкл снег на крышах домов (можно вызывать из UI). */
+  setRoofSnow(on: boolean) {
+    if (this.roofSnow === on) return;
+    this.roofSnow = on;
+    for (const h of this.houseSprites) h.spr.texture = this.houseTexture(h.hw, h.hh, h.v);
+    audio.uiClick();
+  }
 
   // состояние
   screen: Screen = "title";
@@ -678,6 +688,10 @@ export class Engine {
     }
     if (e.code === "KeyM") this.toggleMute();
     if (e.code === "KeyF" && this.screen === "play") this.useStoredHeart();
+    if (e.code === "KeyN") {
+      this.setRoofSnow(!this.roofSnow);
+      this.toast(this.roofSnow ? "Снег на крышах: вкл" : "Снег на крышах: выкл");
+    }
   }
 
   private useStoredHeart() {
@@ -2693,6 +2707,7 @@ export class Engine {
     this.groundSpr?.destroy();
     for (const wt of this.wallTiles) wt.destroy();
     this.wallTiles = [];
+    this.houseSprites = [];
     const { W, H } = map;
     const gc = document.createElement("canvas"); gc.width = W * T; gc.height = H * T;
     const gx = gc.getContext("2d")!;
@@ -2778,7 +2793,7 @@ export class Engine {
         t === Tl.TREE || t === Tl.ROCK || t === Tl.PALISADE ||
         t === Tl.COLUMN || t === Tl.DWALL || t === Tl.CAVEWALL
       ) {
-        const ws = this.wallSprite(t, 0, 0, rnd(x, y, 11), rnd(x, y, 13), map.dungeonId);
+        const ws = this.wallSprite(t, rnd(x, y, 11), rnd(x, y, 13), map.dungeonId);
         ws.position.set(X - 8, Y - 20);
         ws.zIndex = Y + T;
         this.wallTiles.push(ws);
@@ -2815,40 +2830,35 @@ export class Engine {
         houseSeen.add(`${x + dx},${y + dy}`);
       }
 
-      const ws = this.wallSprite(Tl.HOUSE, hw, hh, rnd(x, y, 11), rnd(x, y, 13), map.dungeonId);
-      ws.position.set(x * T - 8, y * T - 20);
-      ws.zIndex = y * T + T;
+      const m = this.houseMetrics(hw, hh);
+      const v = (rnd(x, y, 13) > 0.5 ? 1 : 0) | (rnd(x, y, 11) > 0.6 ? 2 : 0);
+      const ws = new Sprite(this.houseTexture(hw, hh, v));
+      ws.position.set(x * T - m.marginX, y * T + 1 - m.wallTop - m.foundH);
+      ws.zIndex = y * T + hh * T;
       this.wallTiles.push(ws);
+      this.houseSprites.push({ spr: ws, hw, hh, v });
       this.dynamic.addChild(ws);
     }
   }
 
-  private wallSprite(t: number, hwOrR1: number, hhOrR2: number, r1: number, r2: number, dungeonId: number, houseW = 0, houseH = 0): Sprite {
+  private wallSprite(t: number, r1: number, r2: number, dungeonId: number): Sprite {
     let v = 0;
     if (t === Tl.TREE) v = (r2 > 0.5 ? 1 : 0) | (r2 > 0.7 ? 2 : 0);
     else if (t === Tl.ROCK) v = r1 > 0.5 ? 1 : 0;
     else if (t === Tl.COLUMN) v = (r1 > 0.5 ? 1 : 0) | (r2 > 0.7 ? 2 : 0);
-
-    const key = t + "_" + v + "_" + dungeonId + (houseW ? "_" + houseW + "x" + houseH : "");
+    const key = t + "_" + v + "_" + dungeonId;
     let tex = this.wallTexCache.get(key);
     if (!tex) {
       const c = document.createElement("canvas");
-      if (t === Tl.HOUSE && houseW > 0) {
-        const spriteW = Math.max(32, houseW * T + 16);
-        const spriteH = 44 + houseH * 2;
-        c.width = spriteW; c.height = spriteH;
-      } else {
-        c.width = 32; c.height = 44;
-      }
-      const cx = c.getContext("2d")!;
-      this.paintWall(cx, t, v, dungeonId, houseW, houseH);
+      c.width = 32; c.height = 44;
+      this.paintWall(c.getContext("2d")!, t, v, dungeonId);
       tex = Texture.from(c);
       this.wallTexCache.set(key, tex);
     }
     return new Sprite(tex);
   }
 
-  private paintWall(ctx: CanvasRenderingContext2D, t: number, v: number, dungeonId: number, houseW = 0, houseH = 0) {
+  private paintWall(ctx: CanvasRenderingContext2D, t: number, v: number, dungeonId: number) {
     const ox = 8, oy = 20;
     const P = (x: number, y: number, w: number, h: number, c: number, a = 1) => {
       ctx.globalAlpha = a;
@@ -2892,45 +2902,6 @@ export class Engine {
         P(0, 3, 16, 2, 0x463626);
         P(0, 3, 16, 1, 0x5a4632);
         break;
-      case Tl.HOUSE: {
-        const w = houseW || 2, h = houseH || 2;
-        const wallW = w * T;
-        const wallH = h * 13;
-        const roofOverhang = 4;
-        const roofBaseW = wallW + roofOverhang * 2;
-
-        P(0, 3, wallW, wallH, 0x221a10);
-        for (let i = 0; i < wallW; i += 2) P(i, 3, 1, wallH, 0x2c2316);
-        P(0, 3, 2, wallH, 0x33291a);
-        P(wallW - 2, 3, 2, wallH, 0x33291a);
-        P(0, 3, wallW, 1, 0x171008);
-
-        const peakX = wallW / 2;
-        const peakY = -14 - w;
-        const tiers = 2 * w + 2;
-        for (let i = 0; i < tiers; i++) {
-          const progress = i / (tiers - 1);
-          const halfW = Math.ceil(peakX * (1 - progress)) + roofOverhang;
-          const y = peakY + i * 2;
-          const x = peakX - halfW;
-          const color = i < 2 ? 0x4d5f44 : i < 4 ? 0x41503a : 0x4a3e2c;
-          P(x, y, halfW * 2, 2, color);
-        }
-        P(peakX - Math.ceil(roofOverhang * 0.6), peakY + 2,
-          Math.floor(roofOverhang * 1.2), 1, 0x3a4a34);
-        P(peakX - 2, peakY - 1, 4, 1, 0xc8d3dc);
-        P(-2, 3 + wallH, wallW + 4, 2, 0x3d3324);
-        P(-2, 5 + wallH, wallW + 4, 1, 0x8b98a6);
-
-        const doorX = Math.floor(peakX) - 2;
-        P(doorX, 3 + wallH - 8, 4, 8, 0x120d06);
-        P(doorX + 1, 3 + wallH - 9, 2, 1, 0x120d06);
-        P(doorX, 3 + wallH - 8, 1, 8, 0x33291a);
-
-        const winX = doorX + 6;
-        P(winX, 3 + wallH - 12, 1, 3, v & 1 ? 0xe8c979 : 0x9fb4c4);
-        break;
-      }
       case Tl.COLUMN: {
         P(5, -10, 7, 24, 0x515d6a);
         P(5, -10, 2, 24, 0x62707e);
@@ -2958,6 +2929,157 @@ export class Engine {
         P(2, 8, 3, 3, 0x0d1218); P(10, 10, 3, 3, 0x0d1218);
         break;
     }
+  }
+
+  private houseMetrics(hw: number, hh: number) {
+    const wallW = hw * T, wallH = hh * T;
+    const roofH = Math.min(34, Math.max(20, Math.round(wallW * 0.62)));
+    const topPad = 10, marginX = 12, foundH = 3, bottomPad = 3;
+    const wallTop = topPad + roofH;
+    return { wallW, wallH, roofH, topPad, marginX, foundH, wallTop,
+             canvasW: wallW + marginX * 2, canvasH: wallTop + wallH + foundH + bottomPad };
+  }
+
+  private houseTexture(hw: number, hh: number, v: number): Texture {
+    const key = `house_${hw}x${hh}_v${v}_snow${this.roofSnow ? 1 : 0}`;
+    let tex = this.wallTexCache.get(key);
+    if (!tex) {
+      const m = this.houseMetrics(hw, hh);
+      const c = document.createElement("canvas");
+      c.width = m.canvasW; c.height = m.canvasH;
+      this.paintHouse(c.getContext("2d")!, hw, hh, v);
+      tex = Texture.from(c);
+      this.wallTexCache.set(key, tex);
+    }
+    return tex;
+  }
+
+  private paintHouse(ctx: CanvasRenderingContext2D, hw: number, hh: number, v: number) {
+    const { wallW, wallH, roofH, topPad, marginX, foundH, wallTop } = this.houseMetrics(hw, hh);
+    const wx = marginX, cx = marginX + wallW / 2, overhang = 7, snow = this.roofSnow;
+    const SNOW = 0xeef6fc, SNOW2 = 0xc8d8e8, ICE = 0xbdeef8;
+    const R = (x: number, y: number, w: number, h: number, c: number, a = 1) => {
+      ctx.globalAlpha = a;
+      ctx.fillStyle = "#" + c.toString(16).padStart(6, "0");
+      ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
+    };
+    const CIRC = (x: number, y: number, r: number, c: number, a = 1) => {
+      ctx.globalAlpha = a;
+      ctx.fillStyle = "#" + c.toString(16).padStart(6, "0");
+      ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    };
+
+    // ===== фундамент из камня =====
+    R(wx - 2, wallTop + wallH, wallW + 4, foundH, 0x3f444c);
+    R(wx - 2, wallTop + wallH, wallW + 4, 1, 0x5a616c);
+    for (let sx = wx - 1; sx < wx + wallW; sx += 6) R(sx, wallTop + wallH + 1, 3, 2, 0x4a505a);
+
+    // ===== бревенчатый сруб =====
+    R(wx, wallTop, wallW, wallH, 0x4a3624);
+    for (let ly = 0; ly < wallH; ly += 4) {
+      R(wx, wallTop + ly, wallW, 1, 0x6a543c);
+      R(wx, wallTop + ly + 1, wallW, 2, 0x5a4430);
+      R(wx, wallTop + ly + 3, wallW, 1, 0x2e2012);
+    }
+    // выпуски брёвен по углам
+    for (let ly = 2; ly + 4 < wallH; ly += 8) {
+      R(wx - 3, wallTop + ly, 3, 5, 0x2e2012);
+      R(wx - 3, wallTop + ly + 1, 2, 3, 0x6a543c);
+      R(wx + wallW, wallTop + ly, 3, 5, 0x2e2012);
+      R(wx + wallW + 1, wallTop + ly + 1, 2, 3, 0x6a543c);
+    }
+
+    // ===== дверь =====
+    const doorW = Math.max(10, Math.floor(wallW / 3));
+    const doorH = Math.min(wallH - 4, Math.max(16, Math.floor(wallH * 0.6)));
+    const doorX = Math.round(cx - doorW / 2);
+    const doorY = wallTop + wallH - doorH;
+    R(doorX - 2, doorY - 2, doorW + 4, doorH + 2, 0x241a10);
+    R(doorX - 1, doorY - 3, doorW + 2, 1, 0x241a10);
+    R(doorX, doorY, doorW, doorH, 0x38281a);
+    for (let px = 3; px < doorW - 1; px += 4) R(doorX + px, doorY + 1, 1, doorH - 1, 0x241809);
+    R(doorX, doorY + 4, doorW, 1, 0x262b33);           // железные полосы
+    R(doorX, doorY + doorH - 6, doorW, 1, 0x262b33);
+    R(doorX + doorW - 3, doorY + (doorH >> 1), 1, 2, 0x9aa4b2); // ручка
+    if (snow) R(doorX - 2, doorY - 4, doorW + 4, 1, SNOW2, 0.9);
+
+    // ===== щит на стене =====
+    const gapL = doorX - 2 - wx;
+    if (gapL >= 9) {
+      const shX = wx + (gapL >> 1), shY = wallTop + Math.floor(wallH * 0.62);
+      CIRC(shX, shY, 5, 0x262b33);
+      CIRC(shX, shY, 4, v & 2 ? 0x8a3a34 : 0x3d5a66);
+      CIRC(shX, shY, 1.5, 0xc9a24b);
+      if (snow) R(shX - 4, shY - 6, 8, 1, SNOW2, 0.8);
+    }
+
+    // ===== окна =====
+    const winS = 7, winY = wallTop + Math.floor(wallH * 0.3);
+    const glow = v & 1 ? 0xf8e0a0 : 0xb8d0e8;
+    const drawWin = (x0: number) => {
+      R(x0 - 1, winY - 1, winS + 2, winS + 2, 0x2e2012);
+      R(x0, winY, winS, winS, glow);
+      R(x0 + 3, winY, 1, winS, 0x2e2012);
+      R(x0, winY + 3, winS, 1, 0x2e2012);
+      if (snow) R(x0 - 1, winY - 2, winS + 2, 1, SNOW, 0.9); // снежная полка над окном
+    };
+    const gapR = wx + wallW - (doorX + doorW + 2);
+    if (gapR >= winS + 2) drawWin(doorX + doorW + 2 + ((gapR - winS) >> 1));
+    if (hw >= 3 && gapL >= winS + 2) drawWin(wx + ((gapL - winS) >> 1));
+
+    // ===== фронтон: вертикальные доски =====
+    const rows = Math.floor(roofH / 2), halfMax = wallW / 2 + overhang;
+    for (let i = 0; i < rows; i++) {
+      const halfW = 2 + (halfMax - 2) * ((i + 1) / rows);
+      const y = topPad + i * 2;
+      for (let x = Math.ceil(cx - halfW); x < cx + halfW; x += 3) {
+        R(x, y, Math.min(3, Math.ceil(cx + halfW) - x), 2,
+          (Math.floor(x / 3) & 1) === 0 ? 0x4a3a28 : 0x403020);
+      }
+    }
+    // круглое чердачное окошко
+    const ly0 = topPad + Math.floor(roofH * 0.5);
+    CIRC(cx, ly0, 4, 0x2e2012);
+    CIRC(cx, ly0, 3, v & 1 ? 0xf8e0a0 : 0x241809);
+    R(cx - 1, ly0 - 3, 1, 6, 0x2e2012);
+    R(cx - 3, ly0 - 1, 6, 1, 0x2e2012);
+
+    // ===== баржборды (доски по скатам) + снег =====
+    for (let i = 0; i < rows; i++) {
+      const halfW = 2 + (halfMax - 2) * ((i + 1) / rows);
+      const y = topPad + i * 2;
+      R(cx - halfW - 2, y - 1, 3, 2, 0x6a5a40);
+      R(cx + halfW - 1, y - 1, 3, 2, 0x6a5a40);
+      if (snow) {
+        R(cx - halfW - 2, y - 2, 3, 1, SNOW);
+        R(cx + halfW - 1, y - 2, 3, 1, SNOW);
+      }
+    }
+    // ===== карниз + снежная полка + сосульки =====
+    const eaveL = wx - overhang, eaveR = wx + wallW + overhang;
+    R(eaveL, wallTop - 2, eaveR - eaveL, 2, 0x6a5a40);
+    if (snow) {
+      R(eaveL, wallTop - 4, eaveR - eaveL, 2, SNOW);
+      R(eaveL, wallTop - 2, eaveR - eaveL, 1, SNOW2, 0.7);
+      const off = (v & 1) ? 3 : 0;
+      for (let ix = eaveL + 2 + off; ix < eaveR - 2; ix += 7)
+        R(ix, wallTop, 1, (ix >> 3) & 1 ? 3 : 2, ICE, 0.9);
+      R(cx - 4, topPad - 3, 9, 2, SNOW); // снежная шапка на коньке
+    }
+    // ===== перекрещенные слеги на коньке =====
+    for (let i = 0; i < 5; i++) {
+      R(cx - 5 + i, topPad - 2 - i, 2, 2, 0x3a2c1c);
+      R(cx + 3 - i, topPad - 2 - i, 2, 2, 0x3a2c1c);
+    }
+    if (snow) { R(cx - 5, topPad - 7, 2, 1, SNOW); R(cx + 3, topPad - 7, 2, 1, SNOW); }
+
+    // ===== сугробы у основания =====
+    if (snow) {
+      R(wx - 3, wallTop + wallH + foundH - 2, wallW + 6, 1, SNOW2, 0.8);
+      R(wx - 3, wallTop + wallH + foundH - 3, 6, 2, SNOW, 0.9);
+      R(wx + wallW - 3, wallTop + wallH + foundH - 3, 6, 2, SNOW, 0.9);
+    }
+    ctx.globalAlpha = 1;
   }
 
   destroy() {
