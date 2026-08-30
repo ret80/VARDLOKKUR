@@ -790,53 +790,104 @@ export function generateOverworld(seed: number): WorldData {
   roadGen.buildRoad(w, gate, { x: vR.gate.x, y: vR.gate.y });
   roadGen.buildRoad(w, gate, { x: ruinsC.x, y: ruinsC.y });
 
-  // 4. NPC и жители
-  // Собираем свободные места внутри vA (основная деревня)
-  const freeSpots: Vec[] = [];
-  for (let y = vA.y0 + 2; y < vA.y1 - 1; y++) {
-    for (let x = vA.x0 + 2; x < vA.x1 - 1; x++) {
-      if (!inB(w, x, y)) continue;
-      const tile = w.tiles[y * w.W + x];
-      if (tile === Tl.VILLAGE) {
-        let blocked = false;
-        for (let dy = -1; dy <= 1; dy++) {
-          for (let dx = -1; dx <= 1; dx++) {
-            const nx = x + dx, ny = y + dy;
-            if (!inB(w, nx, ny)) continue;
-            if (w.tiles[ny * w.W + nx] === Tl.HOUSE || w.tiles[ny * w.W + nx] === Tl.PALISADE) {
-              blocked = true;
-              break;
-            }
-          }
-          if (blocked) break;
-        }
-        if (!blocked) freeSpots.push({ x, y });
-      }
-    }
-  }
-
-  // Перемешиваем
-  for (let i = freeSpots.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [freeSpots[i], freeSpots[j]] = [freeSpots[j], freeSpots[i]];
-  }
-
+  // 4. NPC и жители — распределение по локациям (task_01.md)
   const allNpcs: NpcDef[] = [];
 
-  // Основные NPC (10 человек)
-  const mainNpcIds = ["eirik", "astrid", "harald", "raven", "daughter", "sigrid", "brand", "shaman", "refugee", "merchant"];
-  const mainNpcNames = ["Эйрик Старший", "Астрид", "Харальд", "Ворон-Говорун", "Безымянная Дочь", "Сигрид", "Бранд", "Шаман Ульв", "Беженка Гюнн", "Торговец Фьолнир"];
+  // Вспомогательная: добавить NPC и очистить вокруг
+  const addNpc = (id: string, name: string, x: number, y: number) => {
+    allNpcs.push({ id, name, x, y });
+    clearAround(w, x, y, 1);
+  };
 
-  for (let i = 0; i < mainNpcIds.length && i < freeSpots.length; i++) {
-    allNpcs.push({
-      id: mainNpcIds[i],
-      name: mainNpcNames[i],
-      x: freeSpots[i].x,
-      y: freeSpots[i].y
-    });
+  // --- Поселение выживших (vA) ---
+  // Эйрик Старший — центральная площадь
+  {
+    const cx = Math.round((vA.x0 + vA.x1) / 2);
+    const cy = Math.round((vA.y0 + vA.y1) / 2);
+    const p = findWalkableNear(w, cx, cy, 4, rng);
+    addNpc("eirik", "Эйрик Старший", p.x, p.y);
   }
 
-  // Добавляем 3 статистов (жителей) из vA.residentSpots, если они есть
+  // Астрид — восточная часть (у дома с травами)
+  {
+    const ex = vA.x1 - 3;
+    const ey = Math.round((vA.y0 + vA.y1) / 2);
+    const p = findWalkableNear(w, ex, ey, 3, rng);
+    addNpc("astrid", "Астрид", p.x, p.y);
+  }
+
+  // Харальд — южная окраина (у кузницы/горна)
+  {
+    const hx = Math.round((vA.x0 + vA.x1) / 2);
+    const hy = vA.y1 - 2;
+    const p = findWalkableNear(w, hx, hy, 3, rng);
+    addNpc("harald", "Харальд", p.x, p.y);
+  }
+
+  // --- Воронья Гавань (vB) ---
+  // Сигрид — у северных ворот
+  {
+    const sx = Math.round((vB.x0 + vB.x1) / 2);
+    const sy = vB.y0 + 2;
+    const p = findWalkableNear(w, sx, sy, 3, rng);
+    addNpc("sigrid", "Сигрид", p.x, p.y);
+  }
+
+  // Бранд — западная стена, ближе к лесу
+  {
+    const bx = vB.x0 + 2;
+    const by = Math.round((vB.y0 + vB.y1) / 2);
+    const p = findWalkableNear(w, bx, by, 3, rng);
+    addNpc("brand", "Бранд", p.x, p.y);
+  }
+
+  // --- Сожжённая Деревня (vR) ---
+  // Беженка Гюнн — у входа в руины
+  {
+    const rx = vR.x0 + Math.round((vR.x1 - vR.x0) / 2);
+    const ry = vR.y0 + 2;
+    const p = findWalkableNear(w, rx, ry, 3, rng);
+    addNpc("refugee", "Беженка Гюнн", p.x, p.y);
+  }
+
+  // --- Мёртвый Лес ---
+  // Шаман Ульв — поляна в центре лесной зоны (за пределами R1)
+  {
+    const forestCX = Math.round(cx - R1 - 14);
+    const forestCY = Math.round(cy - 14);
+    const p = findWalkableNear(w, forestCX, forestCY, 8, rng);
+    addNpc("shaman", "Шаман Ульв", p.x, p.y);
+  }
+
+  // --- Перекрёсток дорог между vA и vB ---
+  // Торговец Фьолнир — примерно на полпути
+  {
+    const midX = Math.round((vA.gate.x + vB.gate.x) / 2);
+    const midY = Math.round((vA.gate.y + vB.gate.y) / 2);
+    const p = findWalkableNear(w, midX, midY, 6, rng);
+    addNpc("merchant", "Торговец Фьолнир", p.x, p.y);
+  }
+
+  // --- Корни Иггдрасиля ---
+  // Безымянная Дочь — у подножия алтаря (рядом с деревом)
+  {
+    const dtx = treeAltar.x;
+    const dty = treeAltar.y + 4;
+    const p = findWalkableNear(w, dtx, dty, 4, rng);
+    addNpc("daughter", "Безымянная Дочь", p.x, p.y);
+  }
+
+  // --- Руины Времени ---
+  // Ворон-Говорун — на вершине разрушенной колонны (рядом с ruinsC)
+  {
+    const rtx = ruinsC.x;
+    const rty = ruinsC.y - 3;
+    const p = findWalkableNear(w, rtx, rty, 6, rng);
+    addNpc("raven", "Ворон-Говорун", p.x, p.y);
+  }
+
+  // --- Статисты (жители) ---
+  // 3 статиста из vA
   for (let i = 0; i < Math.min(3, vA.residentSpots.length); i++) {
     const pos = vA.residentSpots[i];
     allNpcs.push({
@@ -847,7 +898,7 @@ export function generateOverworld(seed: number): WorldData {
     });
   }
 
-  // Добавляем 3 статистов из vB, если есть места
+  // 3 статиста из vB
   for (let i = 0; i < Math.min(3, vB.residentSpots.length); i++) {
     const pos = vB.residentSpots[i];
     allNpcs.push({
@@ -1045,15 +1096,34 @@ export function generateOverworld(seed: number): WorldData {
     { x: ruinsC.x - 14, y: ruinsC.y - 12, w: 28, h: 24, name: "Руины Времени" },
   ];
 
-  // Стартовая позиция
-  const spawnTile: Vec = { x: 0, y: 0 };
-  switch (vA.gateEdge) {
-    case Edge.South: spawnTile.x = gate.x + 1; spawnTile.y = gate.y - 2; break;
-    case Edge.North: spawnTile.x = gate.x + 1; spawnTile.y = gate.y + 2; break;
-    case Edge.West: spawnTile.x = gate.x + 2; spawnTile.y = gate.y + 1; break;
-    case Edge.East: spawnTile.x = gate.x - 2; spawnTile.y = gate.y + 1; break;
+  // Стартовая позиция — рядом с Эйриком Старшим (главный наставник в vA)
+  const eirikNpc = w.npcs.find((n) => n.id === "eirik");
+  if (eirikNpc) {
+    // Спавним на 2 клетки "перед" Эйриком (в сторону ворот, чтобы игрок выходил к нему)
+    const spawnTileNearEirik: Vec = { x: eirikNpc.x, y: eirikNpc.y };
+    // Ищем свободную клетку рядом с Эйриком
+    const spawnSpot = findWalkableNear(w, spawnTileNearEirik.x, spawnTileNearEirik.y, 2, rng);
+    // Убедимся, что спавн не совпадает с Эйриком
+    if (spawnSpot.x === eirikNpc.x && spawnSpot.y === eirikNpc.y) {
+      // Пробуем сдвинуться в сторону центра деревни
+      spawnSpot.x = Math.round((vA.x0 + vA.x1) / 2);
+      spawnSpot.y = eirikNpc.y + 2;
+      const alt = findWalkableNear(w, spawnSpot.x, spawnSpot.y, 2, rng);
+      spawnSpot.x = alt.x;
+      spawnSpot.y = alt.y;
+    }
+    w.spawn = px(spawnSpot.x, spawnSpot.y);
+  } else {
+    // Фоллбэк: старые ворота
+    const spawnTile: Vec = { x: 0, y: 0 };
+    switch (vA.gateEdge) {
+      case Edge.South: spawnTile.x = gate.x + 1; spawnTile.y = gate.y - 2; break;
+      case Edge.North: spawnTile.x = gate.x + 1; spawnTile.y = gate.y + 2; break;
+      case Edge.West: spawnTile.x = gate.x + 2; spawnTile.y = gate.y + 1; break;
+      case Edge.East: spawnTile.x = gate.x - 2; spawnTile.y = gate.y + 1; break;
+    }
+    w.spawn = px(spawnTile.x, spawnTile.y);
   }
-  w.spawn = px(spawnTile.x, spawnTile.y);
 
   const navBuilder = new NavBuilder();
   w.nav = navBuilder.build(w);
@@ -1062,6 +1132,44 @@ export function generateOverworld(seed: number): WorldData {
 }
 
 /* ============================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============================== */
+
+/** Найти проходимую клетку (VILLAGE/PATH/FOREST/SNOW и т.д.) рядом с ориентиром.
+  * Предпочитает VILLAGE и PATH, избегает твёрдых тайлов. */
+function findWalkableNear(w: WorldData, fx: number, fy: number, r: number, rng: () => number): Vec {
+  const walkable = (t: number) => !SOLID.has(t) && t !== Tl.WATER && t !== Tl.POOL;
+  const villagePref = (t: number) => t === Tl.VILLAGE || t === Tl.PATH;
+  // Сначала пытаемся найти VILLAGE/PATH рядом
+  for (let tries = 0; tries < 300; tries++) {
+    const x = Math.round(fx + (rng() * 2 - 1) * r);
+    const y = Math.round(fy + (rng() * 2 - 1) * r);
+    if (!inB(w, x, y)) continue;
+    const t = w.tiles[idx(w, x, y)];
+    if (!walkable(t)) continue;
+    if (villagePref(t)) return { x, y };
+  }
+  // Затем любая проходимая
+  for (let tries = 0; tries < 300; tries++) {
+    const x = Math.round(fx + (rng() * 2 - 1) * r);
+    const y = Math.round(fy + (rng() * 2 - 1) * r);
+    if (!inB(w, x, y)) continue;
+    const t = w.tiles[idx(w, x, y)];
+    if (walkable(t)) return { x, y };
+  }
+  // Фоллбэк: расширяем радиус
+  for (let rad = 1; rad < 90; rad++) {
+    for (let dy = -rad; dy <= rad; dy++) {
+      for (let dx = -rad; dx <= rad; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+        const x = Math.round(fx) + dx, y = Math.round(fy) + dy;
+        if (!inB(w, x, y)) continue;
+        const t = w.tiles[idx(w, x, y)];
+        if (walkable(t)) return { x, y };
+      }
+    }
+  }
+  return { x: clampi(Math.round(fx), 2, w.W - 3), y: clampi(Math.round(fy), 2, w.H - 3) };
+}
+
 function clearAround(w: WorldData, cx: number, cy: number, r: number, floor?: number): void {
   for (let y = cy - r; y <= cy + r; y++) {
     for (let x = cx - r; x <= cx + r; x++) {
