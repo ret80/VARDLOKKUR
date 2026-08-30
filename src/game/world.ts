@@ -277,18 +277,28 @@ const HOUSE_SIZES = [
   { w: 3, h: 3 },
 ];
 
+// Проверка: является ли тайл дорогой или зоной для дороги
+const isRoadTile = (t: number) => t === Tl.PATH || t === Tl.VILLAGE;
+
 function canPlaceHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number, placed: HouseDef[]): boolean {
-  // Проверка границ
+  // Проверка границ (с запасом 1 клетка от края карты)
   if (hx < 1 || hy < 1 || hx + hw >= w.W - 1 || hy + hh >= w.H - 1) return false;
   
-  // Проверка наложения на другие дома (с буфером 1 клетка)
+  // Проверка наложения на другие дома (с буфером 1 клетка между домами)
   for (const h of placed) {
     if (hx < h.x + h.w + 1 && hx + hw + 1 > h.x && hy < h.y + h.h + 1 && hy + hh + 1 > h.y) {
       return false;
     }
   }
   
-  // Проверка: не перекрывать ли ворота и подход к ним
+  // Проверка: не размещать дом на дороге или зоне поселения
+  for (let y = hy; y < hy + hh; y++) {
+    for (let x = hx; x < hx + hw; x++) {
+      const t = w.tiles[idx(w, x, y)];
+      if (t === Tl.PATH || t === Tl.PALISADE) return false;
+    }
+  }
+  
   return true;
 }
 
@@ -296,6 +306,28 @@ function placeHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number
   for (let y = hy; y < hy + hh; y++) {
     for (let x = hx; x < hx + hw; x++) {
       setTile(w, x, y, Tl.HOUSE);
+    }
+  }
+}
+
+// Очистить зону вокруг дома для дороги (если дом не у забора)
+function clearRoadAroundHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number, 
+                              villageX0: number, villageY0: number, villageX1: number, villageY1: number): void {
+  // Очищаем одну клетку вокруг дома для дороги
+  for (let y = hy - 1; y <= hy + hh; y++) {
+    for (let x = hx - 1; x <= hx + hw; x++) {
+      if (!inB(w, x, y)) continue;
+      // Не трогаем забор и сам дом
+      if (x >= hx && x < hx + hw && y >= hy && y < hy + hh) continue;
+      const t = w.tiles[idx(w, x, y)];
+      // Если это не забор и не другой дом - можно сделать дорогой/землей
+      if (t !== Tl.PALISADE && t !== Tl.HOUSE && t !== Tl.COLUMN && t !== Tl.ROCK) {
+        // Проверяем, не у забора ли мы (если у забора - дорогу не делаем)
+        const atFence = x === villageX0 || x === villageX1 || y === villageY0 || y === villageY1;
+        if (!atFence && t !== Tl.PATH) {
+          setTile(w, x, y, Tl.VILLAGE);
+        }
+      }
     }
   }
 }
@@ -342,6 +374,11 @@ function makeVillage(w: WorldData, cx: number, cy: number, rw: number, rh: numbe
     
     placeHouse(w, hx, hy, hw, hh);
     placed.push({ x: hx, y: hy, w: hw, h: hh });
+  }
+  
+  // После размещения всех домов - очищаем зоны вокруг для дорог
+  for (const h of placed) {
+    clearRoadAroundHouse(w, h.x, h.y, h.w, h.h, cx, cy, cx + rw, cy + rh);
   }
   
   return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
@@ -393,6 +430,11 @@ function makeFort(w: WorldData, cx: number, cy: number, rw: number, rh: number, 
     placed.push({ x: hx, y: hy, w: hw, h: hh });
   }
   
+  // После размещения всех домов - очищаем зоны вокруг для дорог
+  for (const h of placed) {
+    clearRoadAroundHouse(w, h.x, h.y, h.w, h.h, cx, cy, cx + rw, cy + rh);
+  }
+  
   return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
 }
 
@@ -442,6 +484,11 @@ function makeRuinedVillage(w: WorldData, cx: number, cy: number, rw: number, rh:
       }
     }
     placed.push({ x: hx, y: hy, w: hw, h: hh });
+  }
+  
+  // После размещения всех домов - очищаем зоны вокруг для дорог
+  for (const h of placed) {
+    clearRoadAroundHouse(w, h.x, h.y, h.w, h.h, cx, cy, cx + rw, cy + rh);
   }
   
   // Ворота
