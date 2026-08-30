@@ -267,63 +267,149 @@ function clearAround(w: WorldData, cx: number, cy: number, r: number, floor?: nu
 }
 
 /* ============================== ПОСЕЛЕНИЯ ============================== */
-interface VillageBox { x0: number; y0: number; x1: number; y1: number; gate: Vec }
+interface VillageBox { x0: number; y0: number; x1: number; y1: number; gate: Vec; houses: HouseDef[] }
+interface HouseDef { x: number; y: number; w: number; h: number }
+
+const HOUSE_SIZES = [
+  { w: 2, h: 2 },
+  { w: 2, h: 3 },
+  { w: 3, h: 2 },
+  { w: 3, h: 3 },
+];
+
+function canPlaceHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number, placed: HouseDef[]): boolean {
+  // Проверка границ
+  if (hx < 1 || hy < 1 || hx + hw >= w.W - 1 || hy + hh >= w.H - 1) return false;
+  
+  // Проверка наложения на другие дома (с буфером 1 клетка)
+  for (const h of placed) {
+    if (hx < h.x + h.w + 1 && hx + hw + 1 > h.x && hy < h.y + h.h + 1 && hy + hh + 1 > h.y) {
+      return false;
+    }
+  }
+  
+  // Проверка: не перекрывать ли ворота и подход к ним
+  return true;
+}
+
+function placeHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number): void {
+  for (let y = hy; y < hy + hh; y++) {
+    for (let x = hx; x < hx + hw; x++) {
+      setTile(w, x, y, Tl.HOUSE);
+    }
+  }
+}
 
 function makeVillage(w: WorldData, cx: number, cy: number, rw: number, rh: number, rng: () => number, houses: number): VillageBox {
-  for (let y = cy; y <= cy + rh; y++) for (let x = cx; x <= cx + rw; x++) {
-    if (!inB(w, x, y)) continue;
-    const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
-    setTile(w, x, y, border ? Tl.PALISADE : Tl.VILLAGE);
+  // Забор по периметру
+  for (let y = cy; y <= cy + rh; y++) {
+    for (let x = cx; x <= cx + rw; x++) {
+      if (!inB(w, x, y)) continue;
+      const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
+      setTile(w, x, y, border ? Tl.PALISADE : Tl.VILLAGE);
+    }
   }
+  
+  // Ворота внизу по центру
   const gx = cx + Math.floor(rw / 2);
   const gy = cy + rh;
-  setTile(w, gx, gy, Tl.VILLAGE); setTile(w, gx + 1, gy, Tl.VILLAGE);
-  const placed: Vec[] = [];
+  setTile(w, gx, gy, Tl.VILLAGE); 
+  setTile(w, gx + 1, gy, Tl.VILLAGE);
+  
+  // Зона ворот и подхода (дорога будет огибать эту зону)
+  const gateZone = { x: gx - 2, y: gy - 4, w: 5, h: 5 };
+  
+  const placed: HouseDef[] = [];
   let tries = 0;
-  while (placed.length < houses && tries++ < 200) {
-    const hx = cx + 1 + Math.floor(rng() * (rw - 3));
-    const hy = cy + 1 + Math.floor(rng() * (rh - 3));
-    if (Math.abs(hx - gx) < 3 && hy + 2 >= gy - 1) continue;
-    if (placed.some((p) => Math.abs(p.x - hx) < 4 && Math.abs(p.y - hy) < 4)) continue;
-    for (let y = hy; y < hy + 3; y++) for (let x = hx; x < hx + 3; x++) setTile(w, x, y, Tl.HOUSE);
-    placed.push({ x: hx, y: hy });
+  
+  while (placed.length < houses && tries++ < 300) {
+    // Выбираем случайный размер дома
+    const size = HOUSE_SIZES[Math.floor(rng() * HOUSE_SIZES.length)];
+    const hw = size.w;
+    const hh = size.h;
+    
+    // Пытаемся разместить дом
+    const hx = cx + 1 + Math.floor(rng() * (rw - hw - 2));
+    const hy = cy + 1 + Math.floor(rng() * (rh - hh - 2));
+    
+    // Не размещать слишком близко к воротам
+    if (hx + hw > gateZone.x && hx < gateZone.x + gateZone.w &&
+        hy + hh > gateZone.y && hy < gateZone.y + gateZone.h) {
+      continue;
+    }
+    
+    if (!canPlaceHouse(w, hx, hy, hw, hh, placed)) continue;
+    
+    placeHouse(w, hx, hy, hw, hh);
+    placed.push({ x: hx, y: hy, w: hw, h: hh });
   }
-  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy } };
+  
+  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
 }
 
 function makeFort(w: WorldData, cx: number, cy: number, rw: number, rh: number, rng: () => number): VillageBox {
-  for (let y = cy; y <= cy + rh; y++) for (let x = cx; x <= cx + rw; x++) {
-    if (!inB(w, x, y)) continue;
-    const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
-    if (border) {
-      const corner = (x === cx || x === cx + rw) && (y === cy || y === cy + rh);
-      setTile(w, x, y, corner ? Tl.COLUMN : Tl.ROCK);
-    } else setTile(w, x, y, Tl.VILLAGE);
+  // Стены с башнями по углам
+  for (let y = cy; y <= cy + rh; y++) {
+    for (let x = cx; x <= cx + rw; x++) {
+      if (!inB(w, x, y)) continue;
+      const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
+      if (border) {
+        const corner = (x === cx || x === cx + rw) && (y === cy || y === cy + rh);
+        setTile(w, x, y, corner ? Tl.COLUMN : Tl.ROCK);
+      } else {
+        setTile(w, x, y, Tl.VILLAGE);
+      }
+    }
   }
+  
+  // Ворота внизу по центру
   const gx = cx + Math.floor(rw / 2);
   const gy = cy + rh;
-  setTile(w, gx, gy, Tl.VILLAGE); setTile(w, gx + 1, gy, Tl.VILLAGE);
-  setTile(w, gx, gy - 1, Tl.VILLAGE); setTile(w, gx + 1, gy - 1, Tl.VILLAGE);
-  const placed: Vec[] = [];
+  setTile(w, gx, gy, Tl.VILLAGE); 
+  setTile(w, gx + 1, gy, Tl.VILLAGE);
+  setTile(w, gx, gy - 1, Tl.VILLAGE); 
+  setTile(w, gx + 1, gy - 1, Tl.VILLAGE);
+  
+  const gateZone = { x: gx - 2, y: gy - 4, w: 5, h: 5 };
+  const placed: HouseDef[] = [];
   let tries = 0;
-  while (placed.length < 4 && tries++ < 200) {
-    const hx = cx + 1 + Math.floor(rng() * (rw - 3));
-    const hy = cy + 1 + Math.floor(rng() * (rh - 3));
-    if (Math.abs(hx - gx) < 3 && hy + 2 >= gy - 2) continue;
-    if (placed.some((p) => Math.abs(p.x - hx) < 4 && Math.abs(p.y - hy) < 4)) continue;
-    for (let y = hy; y < hy + 3; y++) for (let x = hx; x < hx + 3; x++) setTile(w, x, y, Tl.HOUSE);
-    placed.push({ x: hx, y: hy });
+  
+  while (placed.length < 4 && tries++ < 300) {
+    const size = HOUSE_SIZES[Math.floor(rng() * HOUSE_SIZES.length)];
+    const hw = size.w;
+    const hh = size.h;
+    
+    const hx = cx + 1 + Math.floor(rng() * (rw - hw - 2));
+    const hy = cy + 1 + Math.floor(rng() * (rh - hh - 2));
+    
+    if (hx + hw > gateZone.x && hx < gateZone.x + gateZone.w &&
+        hy + hh > gateZone.y && hy < gateZone.y + gateZone.h) {
+      continue;
+    }
+    
+    if (!canPlaceHouse(w, hx, hy, hw, hh, placed)) continue;
+    
+    placeHouse(w, hx, hy, hw, hh);
+    placed.push({ x: hx, y: hy, w: hw, h: hh });
   }
-  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy } };
+  
+  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
 }
 
 function makeRuinedVillage(w: WorldData, cx: number, cy: number, rw: number, rh: number, rng: () => number): VillageBox {
-  for (let y = cy; y <= cy + rh; y++) for (let x = cx; x <= cx + rw; x++) {
-    if (!inB(w, x, y)) continue;
-    const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
-    setTile(w, x, y, Tl.RUINS);
-    if (border && rng() < 0.55) setTile(w, x, y, rng() < 0.5 ? Tl.PALISADE : Tl.COLUMN);
+  // Разрушенные стены
+  for (let y = cy; y <= cy + rh; y++) {
+    for (let x = cx; x <= cx + rw; x++) {
+      if (!inB(w, x, y)) continue;
+      setTile(w, x, y, Tl.RUINS);
+      const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
+      if (border && rng() < 0.55) {
+        setTile(w, x, y, rng() < 0.5 ? Tl.PALISADE : Tl.COLUMN);
+      }
+    }
   }
+  
+  // Проемы в стенах
   for (let i = 0; i < 3; i++) {
     const side = Math.floor(rng() * 4);
     if (side === 0) { const x = cx + 1 + Math.floor(rng() * (rw - 1)); setTile(w, x, cy, Tl.RUINS); setTile(w, x + 1, cy, Tl.RUINS); }
@@ -331,24 +417,42 @@ function makeRuinedVillage(w: WorldData, cx: number, cy: number, rw: number, rh:
     if (side === 2) { const y = cy + 1 + Math.floor(rng() * (rh - 1)); setTile(w, cx, y, Tl.RUINS); setTile(w, cx, y + 1, Tl.RUINS); }
     if (side === 3) { const y = cy + 1 + Math.floor(rng() * (rh - 1)); setTile(w, cx + rw, y, Tl.RUINS); setTile(w, cx + rw, y + 1, Tl.RUINS); }
   }
-  const placed: Vec[] = [];
+  
+  const placed: HouseDef[] = [];
   let tries = 0;
-  while (placed.length < 5 && tries++ < 200) {
-    const hx = cx + 1 + Math.floor(rng() * (rw - 3));
-    const hy = cy + 1 + Math.floor(rng() * (rh - 3));
-    if (placed.some((p) => Math.abs(p.x - hx) < 4 && Math.abs(p.y - hy) < 4)) continue;
+  
+  while (placed.length < 5 && tries++ < 300) {
+    const size = HOUSE_SIZES[Math.floor(rng() * HOUSE_SIZES.length)];
+    const hw = size.w;
+    const hh = size.h;
+    
+    const hx = cx + 1 + Math.floor(rng() * (rw - hw - 2));
+    const hy = cy + 1 + Math.floor(rng() * (rh - hh - 2));
+    
+    if (!canPlaceHouse(w, hx, hy, hw, hh, placed)) continue;
+    
     const burnt = rng() < 0.55;
-    for (let y = hy; y < hy + 3; y++) for (let x = hx; x < hx + 3; x++) {
-      if (burnt) setTile(w, x, y, (x + y) % 2 === 0 ? Tl.COLUMN : Tl.RUINS);
-      else setTile(w, x, y, Tl.HOUSE);
+    for (let y = hy; y < hy + hh; y++) {
+      for (let x = hx; x < hx + hw; x++) {
+        if (burnt) {
+          setTile(w, x, y, (x + y) % 2 === 0 ? Tl.COLUMN : Tl.RUINS);
+        } else {
+          setTile(w, x, y, Tl.HOUSE);
+        }
+      }
     }
-    placed.push({ x: hx, y: hy });
+    placed.push({ x: hx, y: hy, w: hw, h: hh });
   }
+  
+  // Ворота
   const gx = cx + Math.floor(rw / 2);
   const gy = cy + rh;
-  setTile(w, gx, gy, Tl.RUINS); setTile(w, gx + 1, gy, Tl.RUINS);
-  setTile(w, gx, gy - 1, Tl.RUINS); setTile(w, gx + 1, gy - 1, Tl.RUINS);
-  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy } };
+  setTile(w, gx, gy, Tl.RUINS); 
+  setTile(w, gx + 1, gy, Tl.RUINS);
+  setTile(w, gx, gy - 1, Tl.RUINS); 
+  setTile(w, gx + 1, gy - 1, Tl.RUINS);
+  
+  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
 }
 
 /* ============================== ОВЕРВОРЛД ============================== */
@@ -628,7 +732,7 @@ export function generateOverworld(seed: number): WorldData {
   clearAround(w, w.oldAltar.x, w.oldAltar.y, 1);
   setTile(w, w.oldAltar.x, w.oldAltar.y, Tl.ALTAR);
 
-  /* враги по экосистеме колец */
+  /* враги по экосистеме колец — спавн только в разрешённых зонах */
   const kindsFor = (t: number, d: number): EnemyKind[] => {
     if (d < R1 + 2) return ["frost", "varg", "frost"];
     switch (t) {
@@ -639,6 +743,21 @@ export function generateOverworld(seed: number): WorldData {
       default: return ["varg", "raven", "draugr"];
     }
   };
+  
+  // Зоны где монстры НЕ могут спавниться (поселения + буфер вокруг)
+  const noSpawnZones = [
+    { x0: vA.x0 - 8, y0: vA.y0 - 8, x1: vA.x1 + 8, y1: vA.y1 + 8 },
+    { x0: vB.x0 - 8, y0: vB.y0 - 8, x1: vB.x1 + 8, y1: vB.y1 + 8 },
+    { x0: vR.x0 - 6, y0: vR.y0 - 6, x1: vR.x1 + 6, y1: vR.y1 + 6 },
+  ];
+  
+  const isInNoSpawnZone = (x: number, y: number): boolean => {
+    for (const z of noSpawnZones) {
+      if (x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1) return true;
+    }
+    return false;
+  };
+  
   const pois = [
     gate, vB.gate, w.treeAltar,
     ...w.dungeonEntries.map((e) => ({ x: e.x, y: e.y })),
@@ -651,8 +770,8 @@ export function generateOverworld(seed: number): WorldData {
     const y = 3 + Math.floor(rng() * (H - 6));
     const t = w.tiles[idx(w, x, y)];
     if (SOLID.has(t) || t === Tl.PATH || t === Tl.POOL || t === Tl.VILLAGE || t === Tl.WATER || t === Tl.SHORE) continue;
-    if (x >= vA.x0 - 6 && x <= vA.x1 + 6 && y >= vA.y0 - 6 && y <= vA.y1 + 6) continue;
-    if (x >= vB.x0 - 6 && x <= vB.x1 + 6 && y >= vB.y0 - 6 && y <= vB.y1 + 6) continue;
+    // Проверка: не в поселении ли
+    if (isInNoSpawnZone(x, y)) continue;
     if (Math.hypot(gate.x - x, gate.y + 2 - y) < 40) continue;
     if (pois.some((p) => Math.hypot(p.x - x, p.y - y) < 8)) continue;
     const d = Math.hypot((x - cx) * 0.92, y - cy);
@@ -660,6 +779,7 @@ export function generateOverworld(seed: number): WorldData {
     w.spawns.push({ kind: kinds[Math.floor(rng() * kinds.length)], x: x * T + 8, y: y * T + 8 });
     placed++;
   }
+  // В сожжённой деревне можно спавнить немного врагов (она разрушена)
   for (let i = 0; i < 3; i++) {
     const x = vR.x0 + 2 + Math.floor(rng() * (vR.x1 - vR.x0 - 4));
     const y = vR.y0 + 2 + Math.floor(rng() * (vR.y1 - vR.y0 - 4));

@@ -1,0 +1,22 @@
+{
+  "name": "kinetics.ts",
+  "version": "1.4.1",
+  "description": "A TypeScript physics engine for 2D Space.",
+  "main": "dist/Index.js",
+  "scripts": {
+    "build": "tsc -p .",
+    "start": "node dist/Index.js",
+    "debug": "nodemon --exec \"npx webpack\" --watch src --ext ts"
+  },
+  "keywords": ["physics", "engine", "typescript", "2d", "space", "kinetics", "kinetics.ts", "kineticsjs", "kinetics.js", "kinetics-js"],
+  "author": "Altanis",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^18.15.3",
+    "ts-loader": "^9.4.2",
+    "webpack-cli": "^5.0.1"
+  },
+  "dependencies": {
+    "terser-webpack-plugin": "^5.3.7"
+  }
+}
