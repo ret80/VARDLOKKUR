@@ -18,6 +18,8 @@ export const isSolidTileId = (id: number) => SOLID.has(id);
 export type ChestItem = "bow" | "arrows" | "heartPiece" | "key";
 export type EnemyKind = "draugr" | "varg" | "raven" | "shroom" | "crawler" | "frost" | "reaper" | "spider" | "giant" | "snake";
 export type BossReward = "axe" | "bow" | "hammer";
+export type DropKind = "heart" | "arrows" | "axe" | "sword" | "bear" | "hammer" | "bow" | "horn" | "mead" | "ore" | "moss" | "amber" | "flower" | "diary" | "bundle" | "relic" | "shard" | "bones" | "rune";
+export type ProjectileKind = "arrow" | "axe" | "spore" | "fire";
 
 export interface Vec { x: number; y: number }
 export interface ChestDef { x: number; y: number; item: ChestItem }
@@ -82,77 +84,1018 @@ export function mulberry(seed: number) {
   };
 }
 
-/* многослойный сглаженный решёточный шум */
-function makeNoise(seed: number) {
-  const perm = new Uint8Array(512);
-  const rng = mulberry(seed);
-  const p = new Uint8Array(256);
-  for (let i = 0; i < 256; i++) p[i] = i;
-  for (let i = 255; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
-  for (let i = 0; i < 512; i++) perm[i] = p[i & 255];
-  const hash = (x: number, y: number) => perm[(perm[x & 255] + y) & 255] / 255;
-  const sm = (t: number) => t * t * (3 - 2 * t);
-  const noise = (x: number, y: number) => {
+/* ============================== ШУМ ============================== */
+class NoiseGenerator {
+  private perm: Uint8Array;
+  constructor(seed: number) {
+    this.perm = new Uint8Array(512);
+    const rng = mulberry(seed);
+    const p = new Uint8Array(256);
+    for (let i = 0; i < 256; i++) p[i] = i;
+    for (let i = 255; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [p[i], p[j]] = [p[j], p[i]]; }
+    for (let i = 0; i < 512; i++) this.perm[i] = p[i & 255];
+  }
+  private hash(x: number, y: number): number {
+    return this.perm[(this.perm[x & 255] + y) & 255] / 255;
+  }
+  private smooth(t: number): number { return t * t * (3 - 2 * t); }
+  public value(x: number, y: number): number {
     const ix = Math.floor(x), iy = Math.floor(y);
-    const fx = sm(x - ix), fy = sm(y - iy);
-    const a = hash(ix, iy), b = hash(ix + 1, iy), c = hash(ix, iy + 1), d = hash(ix + 1, iy + 1);
+    const fx = this.smooth(x - ix), fy = this.smooth(y - iy);
+    const a = this.hash(ix, iy), b = this.hash(ix + 1, iy);
+    const c = this.hash(ix, iy + 1), d = this.hash(ix + 1, iy + 1);
     return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
-  };
-  return (x: number, y: number, octaves = 4) => {
+  }
+  public fbm(x: number, y: number, octaves = 4): number {
     let v = 0, amp = 1, f = 1, norm = 0;
     for (let o = 0; o < octaves; o++) {
-      v += noise(x * f, y * f) * amp;
+      v += this.value(x * f, y * f) * amp;
       norm += amp; amp *= 0.5; f *= 2;
     }
     return v / norm;
-  };
+  }
 }
 
-/* навигационная сетка: сливаем проходимые тайлы в прямоугольники */
-function buildNav(w: WorldData): NavMesh {
-  const { W, H } = w;
-  const walk = (x: number, y: number) => inB(w, x, y) && !SOLID.has(w.tiles[idx(w, x, y)]);
-  interface Run { x: number; y: number; len: number; id: number }
-  const rows: Run[][] = [];
-  let id = 0;
-  for (let y = 0; y < H; y++) {
-    const rs: Run[] = [];
-    let x = 0;
-    while (x < W) {
-      if (walk(x, y)) {
-        let len = 0;
-        while (x + len < W && walk(x + len, y)) len++;
-        rs.push({ x, y, len, id: id++ });
-        x += len;
-      } else x++;
-    }
-    rows.push(rs);
-  }
-  const polys: { x: number; y: number }[][] = [];
-  const used = new Set<number>();
-  for (let y = 0; y < H; y++) {
-    for (const r of rows[y]) {
-      if (used.has(r.id)) continue;
-      used.add(r.id);
-      let x0 = r.x, len = r.len, yy = y;
-      outer: while (yy + 1 < H) {
-        const below = rows[yy + 1];
-        const match = below.find((b) => b.x <= x0 && b.x + b.len >= x0 + len);
-        if (!match) break;
-        for (let cx = x0; cx < x0 + len; cx++) if (!walk(cx, yy + 1)) break outer;
-        for (const b of below) if (b.x < x0 + len && b.x + b.len > x0) used.add(b.id);
-        yy++;
+/* ============================== НАВИГАЦИЯ ============================== */
+class NavBuilder {
+  public build(w: WorldData): NavMesh {
+    const { W, H } = w;
+    const walk = (x: number, y: number) => inB(w, x, y) && !SOLID.has(w.tiles[idx(w, x, y)]);
+    interface Run { x: number; y: number; len: number; id: number }
+    const rows: Run[][] = [];
+    let id = 0;
+    for (let y = 0; y < H; y++) {
+      const rs: Run[] = [];
+      let x = 0;
+      while (x < W) {
+        if (walk(x, y)) {
+          let len = 0;
+          while (x + len < W && walk(x + len, y)) len++;
+          rs.push({ x, y, len, id: id++ });
+          x += len;
+        } else x++;
       }
-      const shrink = 1.2;
-      polys.push([
-        { x: x0 * T + shrink, y: y * T + shrink },
-        { x: (x0 + len) * T - shrink, y: y * T + shrink },
-        { x: (x0 + len) * T - shrink, y: (yy + 1) * T - shrink },
-        { x: x0 * T + shrink, y: (yy + 1) * T - shrink },
-      ]);
+      rows.push(rs);
+    }
+    const polys: { x: number; y: number }[][] = [];
+    const used = new Set<number>();
+    for (let y = 0; y < H; y++) {
+      for (const r of rows[y]) {
+        if (used.has(r.id)) continue;
+        used.add(r.id);
+        let x0 = r.x, len = r.len, yy = y;
+        outer: while (yy + 1 < H) {
+          const below = rows[yy + 1];
+          const match = below.find((b) => b.x <= x0 && b.x + b.len >= x0 + len);
+          if (!match) break;
+          for (let cx = x0; cx < x0 + len; cx++) if (!walk(cx, yy + 1)) break outer;
+          for (const b of below) if (b.x < x0 + len && b.x + b.len > x0) used.add(b.id);
+          yy++;
+        }
+        const shrink = 1.2;
+        polys.push([
+          { x: x0 * T + shrink, y: y * T + shrink },
+          { x: (x0 + len) * T - shrink, y: y * T + shrink },
+          { x: (x0 + len) * T - shrink, y: (yy + 1) * T - shrink },
+          { x: x0 * T + shrink, y: (yy + 1) * T - shrink },
+        ]);
+      }
+    }
+    return new NavMesh(polys, 1.2);
+  }
+}
+
+/* ============================== ГЕНЕРАТОР ОСТРОВА ============================== */
+class IslandGenerator {
+  private W: number = 200;
+  private H: number = 140;
+  private tiles!: Uint8Array;
+  private rng: () => number;
+  private noise: NoiseGenerator;
+
+  constructor(seed: number) {
+    this.rng = mulberry(seed);
+    this.noise = new NoiseGenerator(seed ^ 0x5ea);
+    this.tiles = new Uint8Array(this.W * this.H).fill(Tl.SNOW);
+  }
+
+  public generate(): { w: WorldData; cx: number; cy: number; R1: number; R2: number; ruinsC: { x: number; y: number } } {
+    this.buildIsland();
+    const { cx, cy, R1, R2 } = this.buildBiomes();
+    const ruinsC = this.buildRuins();
+    this.smoothBiomes();
+    const w = this.createWorldData();
+    return { w, cx, cy, R1, R2, ruinsC };
+  }
+
+  private buildIsland(): void {
+    const ICX = this.W / 2, ICY = this.H / 2, RX = 94, RY = 64;
+    const normDist = (x: number, y: number) => Math.hypot((x - ICX) / RX, (y - ICY) / RY);
+    for (let y = 0; y < this.H; y++) {
+      for (let x = 0; x < this.W; x++) {
+        const d = normDist(x, y) + (this.noise.value(x * 0.055, y * 0.055) - 0.5) * 0.22;
+        if (d > 1) this.setTile(x, y, Tl.WATER);
+        else if (d > 0.93) this.setTile(x, y, Tl.SHORE);
+      }
     }
   }
-  return new NavMesh(polys, 1.2);
+
+  private buildBiomes(): { cx: number; cy: number; R1: number; R2: number } {
+    const cx = this.W / 2 + (this.rng() * 8 - 4);
+    const cy = this.H / 2 - 4 + (this.rng() * 6 - 3);
+    const R1 = 24, R2 = 42, R3 = 54;
+    const n1 = new NoiseGenerator(this.rng() * 100000 | 0);
+    const n2 = new NoiseGenerator(this.rng() * 100000 | 0);
+    
+    for (let y = 2; y < this.H - 2; y++) {
+      for (let x = 2; x < this.W - 2; x++) {
+        const cur = this.getTile(x, y);
+        if (cur === Tl.WATER || cur === Tl.SHORE) continue;
+        const d = Math.hypot((x - cx) * 0.92, y - cy) + (n1.value(x * 0.07, y * 0.07) - 0.5) * 13;
+        if (d < R1) this.setTile(x, y, Tl.MTN);
+        else if (d < R2) this.setTile(x, y, Tl.FOREST);
+        else if (d < R3) this.setTile(x, y, this.rng() < 0.42 ? Tl.SWAMP : Tl.FOREST);
+        else if (n2.value(x * 0.05, y * 0.05) < 0.24) this.setTile(x, y, Tl.SNOW2);
+      }
+    }
+    return { cx, cy, R1, R2 };
+  }
+
+  private buildRuins(): { x: number; y: number } {
+    const ruinsC = { x: 44 + Math.floor(this.rng() * 8), y: 88 + Math.floor(this.rng() * 6) };
+    const n2 = new NoiseGenerator(this.rng() * 100000 | 0);
+    for (let y = ruinsC.y - 10; y <= ruinsC.y + 10; y++) {
+      for (let x = ruinsC.x - 11; x <= ruinsC.x + 11; x++) {
+        if (!this.inBounds(x, y)) continue;
+        const d = Math.hypot(x - ruinsC.x, (y - ruinsC.y) * 1.2) + (n2.value(x * 0.2, y * 0.2) - 0.5) * 5;
+        if (d < 9 && this.getTile(x, y) !== Tl.WATER && this.getTile(x, y) !== Tl.SHORE) {
+          this.setTile(x, y, Tl.RUINS);
+        }
+      }
+    }
+    return ruinsC;
+  }
+
+  private smoothBiomes(): void {
+    const baseOf = (t: number) => (t === Tl.FOREST || t === Tl.MTN || t === Tl.SWAMP || t === Tl.RUINS || t === Tl.SNOW) ? t : -1;
+    for (let iter = 0; iter < 2; iter++) {
+      const copy = this.tiles.slice();
+      for (let y = 2; y < this.H - 2; y++) {
+        for (let x = 2; x < this.W - 2; x++) {
+          const t = copy[idx({ W: this.W }, x, y)];
+          if (baseOf(t) < 0) continue;
+          const cnt = new Map<number, number>();
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const b = baseOf(copy[idx({ W: this.W }, x + dx, y + dy)]);
+              if (b >= 0) cnt.set(b, (cnt.get(b) ?? 0) + 1);
+            }
+          }
+          const own = cnt.get(t) ?? 0;
+          let maj = t, mv = 0;
+          cnt.forEach((v, k) => { if (v > mv) { mv = v; maj = k; } });
+          if (own <= 2 && mv >= 5) this.setTile(x, y, maj);
+        }
+      }
+    }
+  }
+
+  private createWorldData(): WorldData {
+    const w: WorldData = {
+      W: this.W, H: this.H, tiles: this.tiles, nav: null as unknown as NavMesh,
+      isDungeon: false, dungeonId: -1, dungeonName: "", bossReward: null,
+      spawn: { x: 0, y: 0 }, zones: [], shrines: [], npcs: [], chests: [],
+      pedestals: [], spawns: [], doors: [], souls: [], ambient: [], dungeonEntries: [],
+      exitSpot: { x: 0, y: 0 }, hornSpot: { x: 0, y: 0 }, meadSpot: { x: 0, y: 0 },
+      oreSpot: { x: 0, y: 0 }, bearSpot: { x: 0, y: 0 },
+      mossSpot: { x: 0, y: 0 }, amberSpot: { x: 0, y: 0 }, flowerSpot: { x: 0, y: 0 },
+      diarySpot: { x: 0, y: 0 }, bundleSpot: { x: 0, y: 0 }, relicSpot: { x: 0, y: 0 },
+      oldAltar: { x: 0, y: 0 }, stashSpot: { x: 0, y: 0 }, ruinedVillage: { x: 0, y: 0 },
+      treeAltar: { x: 100, y: 24 }, arena: { x: 0, y: 0, r: 92 }, snakeSpot: { x: 0, y: 0 },
+      villageA: { x: 0, y: 0 }, villageB: { x: 0, y: 0 },
+      bossRoom: { x: 0, y: 0, w: 0, h: 0 }, bossSpot: { x: 0, y: 0 }, entryStairs: { x: 0, y: 0 },
+    };
+    return w;
+  }
+
+  private setTile(x: number, y: number, t: number): void {
+    if (this.inBounds(x, y)) this.tiles[idx({ W: this.W }, x, y)] = t;
+  }
+  private getTile(x: number, y: number): number {
+    return this.inBounds(x, y) ? this.tiles[idx({ W: this.W }, x, y)] : Tl.WATER;
+  }
+  private inBounds(x: number, y: number): boolean {
+    return x >= 0 && y >= 0 && x < this.W && y < this.H;
+  }
+}
+
+/* ============================== ГЕНЕРАТОР ПОСЕЛЕНИЙ ============================== */
+enum Edge { North = 0, East = 1, South = 2, West = 3 }
+
+interface GateDef { x: number; y: number; edge: Edge }
+export interface HouseDef { x: number; y: number; w: number; h: number }
+export interface VillageResult { 
+  x0: number; y0: number; x1: number; y1: number; 
+  gate: Vec; gateEdge: Edge; 
+  houses: HouseDef[];
+  // Возвращаем только позиции для жителей (статистов), но не более 3
+  residentSpots: Vec[];
+}
+
+class VillageGenerator {
+  private rng: () => number;
+  private houseSizes = [
+    { w: 2, h: 2 },
+    { w: 2, h: 3 },
+    { w: 3, h: 2 },
+    { w: 3, h: 3 },
+  ];
+
+  constructor(rng: () => number) {
+    this.rng = rng;
+  }
+
+  public generate(w: WorldData, cx: number, cy: number, rw: number, rh: number): VillageResult {
+    // Матрица занятости
+    const occupied: boolean[][] = [];
+    for (let y = 0; y < rh; y++) {
+      occupied[y] = new Array(rw).fill(false);
+    }
+
+    const isOccupied = (lx: number, ly: number): boolean => {
+      if (lx < 0 || lx >= rw || ly < 0 || ly >= rh) return true;
+      return occupied[ly][lx];
+    };
+
+    const isFree = (x: number, y: number): boolean => {
+      const lx = x - cx, ly = y - cy;
+      return !isOccupied(lx, ly);
+    };
+
+    const isFreeArea = (x: number, y: number, w: number, h: number, margin = 1): boolean => {
+      for (let dy = -margin; dy < h + margin; dy++) {
+        for (let dx = -margin; dx < w + margin; dx++) {
+          const lx = (x + dx) - cx, ly = (y + dy) - cy;
+          if (lx < 0 || lx >= rw || ly < 0 || ly >= rh) return false;
+          if (occupied[ly][lx]) return false;
+        }
+      }
+      return true;
+    };
+
+    const mark = (x: number, y: number) => {
+      const lx = x - cx, ly = y - cy;
+      if (lx >= 0 && lx < rw && ly >= 0 && ly < rh) {
+        occupied[ly][lx] = true;
+      }
+    };
+
+    const markArea = (x: number, y: number, w: number, h: number) => {
+      for (let dy = 0; dy < h; dy++) {
+        for (let dx = 0; dx < w; dx++) {
+          mark(x + dx, y + dy);
+        }
+      }
+    };
+
+    // ШАГ 1: Ворота (2x2)
+    const gate = this.placeGate(w, cx, cy, rw, rh);
+    markArea(gate.x, gate.y, 2, 2);
+
+    // ШАГ 2: Забор (периметр, кроме ворот)
+    this.buildFence(w, cx, cy, rw, rh, gate, mark);
+
+    // ШАГ 3: Дома
+    const houses = this.placeHouses(w, cx, cy, rw, rh, gate, isFreeArea, markArea);
+
+    // ШАГ 4: Дороги от домов к воротам
+    this.buildRoads(w, houses, gate, cx, cy, rw, rh, isFree, mark);
+
+    // ШАГ 5: Собираем свободные места для жителей (не более 3)
+    const residentSpots = this.collectResidentSpots(w, cx, cy, rw, rh, isFree);
+
+    const gateCenter: Vec = { x: gate.x + 1, y: gate.y + 1 };
+    return { 
+      x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, 
+      gate: gateCenter, gateEdge: gate.edge, 
+      houses,
+      residentSpots
+    };
+  }
+
+  private placeGate(w: WorldData, cx: number, cy: number, rw: number, rh: number): GateDef {
+    const edges: Edge[] = [Edge.North, Edge.East, Edge.South, Edge.West];
+    const edge = edges[Math.floor(this.rng() * edges.length)];
+    const gs = 2;
+
+    let gx: number, gy: number;
+    switch (edge) {
+      case Edge.North:
+        gx = cx + 1 + Math.floor(this.rng() * Math.max(1, rw - gs - 1));
+        gy = cy;
+        break;
+      case Edge.South:
+        gx = cx + 1 + Math.floor(this.rng() * Math.max(1, rw - gs - 1));
+        gy = cy + rh - gs + 1;
+        break;
+      case Edge.West:
+        gx = cx;
+        gy = cy + 1 + Math.floor(this.rng() * Math.max(1, rh - gs - 1));
+        break;
+      case Edge.East:
+        gx = cx + rw - gs + 1;
+        gy = cy + 1 + Math.floor(this.rng() * Math.max(1, rh - gs - 1));
+        break;
+    }
+
+    for (let dy = 0; dy < gs; dy++) {
+      for (let dx = 0; dx < gs; dx++) {
+        const tx = gx + dx, ty = gy + dy;
+        if (inB(w, tx, ty)) setTile(w, tx, ty, Tl.VILLAGE);
+      }
+    }
+    return { x: gx, y: gy, edge };
+  }
+
+  private buildFence(w: WorldData, cx: number, cy: number, rw: number, rh: number, gate: GateDef, mark: (x: number, y: number) => void): void {
+    for (let y = cy; y <= cy + rh; y++) {
+      for (let x = cx; x <= cx + rw; x++) {
+        if (!inB(w, x, y)) continue;
+        if (x >= gate.x && x < gate.x + 2 && y >= gate.y && y < gate.y + 2) continue;
+        const isBorder = (x === cx || x === cx + rw || y === cy || y === cy + rh);
+        if (isBorder) {
+          setTile(w, x, y, Tl.PALISADE);
+          mark(x, y);
+        } else {
+          setTile(w, x, y, Tl.VILLAGE);
+        }
+      }
+    }
+  }
+
+  private placeHouses(
+    w: WorldData, cx: number, cy: number, rw: number, rh: number,
+    gate: GateDef,
+    isFreeArea: (x: number, y: number, w: number, h: number, margin?: number) => boolean,
+    markArea: (x: number, y: number, w: number, h: number) => void
+  ): HouseDef[] {
+    const houses: HouseDef[] = [];
+    let mainHousePlaced = false;
+    
+    let freeVillage = 0;
+    for (let y = cy; y < cy + rh; y++) {
+      for (let x = cx; x < cx + rw; x++) {
+        if (w.tiles[y * w.W + x] === Tl.VILLAGE) freeVillage++;
+      }
+    }
+
+    const targetArea = Math.floor(freeVillage * 0.35);
+    let occupiedArea = 0;
+    let attempts = 0;
+    const maxAttempts = 5000;
+
+    while (occupiedArea < targetArea && attempts < maxAttempts) {
+      attempts++;
+      
+      let sizeIndex = Math.floor(this.rng() * this.houseSizes.length);
+      let size = this.houseSizes[sizeIndex];
+      
+      if (size.w === 3 && size.h === 3 && mainHousePlaced) {
+        let found = false;
+        for (let i = 0; i < this.houseSizes.length; i++) {
+          const s = this.houseSizes[i];
+          if (s.w !== 3 || s.h !== 3) {
+            size = s;
+            found = true;
+            break;
+          }
+        }
+        if (!found) continue;
+      }
+
+      const hx = cx + 1 + Math.floor(this.rng() * (rw - size.w - 2));
+      const hy = cy + 1 + Math.floor(this.rng() * (rh - size.h - 2));
+
+      if (!isFreeArea(hx, hy, size.w, size.h, 1)) continue;
+
+      const gateDist = Math.max(
+        Math.abs(hx + size.w/2 - (gate.x + 1)),
+        Math.abs(hy + size.h/2 - (gate.y + 1))
+      );
+      if (gateDist < 4) continue;
+
+      for (let dy = 0; dy < size.h; dy++) {
+        for (let dx = 0; dx < size.w; dx++) {
+          setTile(w, hx + dx, hy + dy, Tl.HOUSE);
+        }
+      }
+      markArea(hx, hy, size.w, size.h);
+      
+      if (size.w === 3 && size.h === 3) mainHousePlaced = true;
+      houses.push({ x: hx, y: hy, w: size.w, h: size.h });
+      occupiedArea += size.w * size.h;
+    }
+    return houses;
+  }
+
+  private buildRoads(
+    w: WorldData, houses: HouseDef[], gate: GateDef,
+    cx: number, cy: number, rw: number, rh: number,
+    isFree: (x: number, y: number) => boolean,
+    mark: (x: number, y: number) => void
+  ): void {
+    const gateCX = gate.x + 1;
+    const gateCY = gate.y + 1;
+
+    for (const house of houses) {
+      const startX = house.x + Math.floor(house.w / 2);
+      const startY = house.y + Math.floor(house.h / 2);
+      
+      let path: Vec[] = [];
+      let curX = startX;
+      let curY = startY;
+      
+      // Вертикальная часть
+      const stepY = curY < gateCY ? 1 : -1;
+      let hitRoad = false;
+      
+      while (curY !== gateCY && !hitRoad) {
+        const nextY = curY + stepY;
+        if (nextY < cy || nextY >= cy + rh) break;
+        
+        if (isFree(curX, nextY)) {
+          const tile = w.tiles[nextY * w.W + curX];
+          if (tile === Tl.PALISADE || tile === Tl.HOUSE || tile === Tl.WATER) break;
+          if (tile === Tl.PATH) { hitRoad = true; break; }
+          path.push({ x: curX, y: nextY });
+          curY = nextY;
+        } else {
+          const tile = w.tiles[nextY * w.W + curX];
+          if (tile === Tl.PATH) { hitRoad = true; }
+          break;
+        }
+      }
+
+      // Горизонтальная часть, если не дошли до ворот и не уперлись в дорогу
+      if (curY !== gateCY && !hitRoad && path.length > 0) {
+        const last = path[path.length - 1];
+        curX = last.x;
+        curY = last.y;
+        
+        const stepX = curX < gateCX ? 1 : -1;
+        while (curX !== gateCX && !hitRoad) {
+          const nextX = curX + stepX;
+          if (nextX < cx || nextX >= cx + rw) break;
+          
+          if (isFree(nextX, curY)) {
+            const tile = w.tiles[curY * w.W + nextX];
+            if (tile === Tl.PALISADE || tile === Tl.HOUSE || tile === Tl.WATER) break;
+            if (tile === Tl.PATH) { hitRoad = true; break; }
+            path.push({ x: nextX, y: curY });
+            curX = nextX;
+          } else {
+            const tile = w.tiles[curY * w.W + nextX];
+            if (tile === Tl.PATH) { hitRoad = true; }
+            break;
+          }
+        }
+      }
+
+      // Если дорога не дошла до ворот и не уперлась в дорогу, обрезаем
+      if (!hitRoad && (curX !== gateCX || curY !== gateCY)) {
+        const dist = Math.abs(curX - gateCX) + Math.abs(curY - gateCY);
+        if (dist > 2 && path.length > 0) {
+          const last = path[path.length - 1];
+          const lastDist = Math.abs(last.x - gateCX) + Math.abs(last.y - gateCY);
+          if (lastDist > 3) path.pop();
+        }
+      }
+
+      // Размещаем дорогу
+      for (const p of path) {
+        if (isFree(p.x, p.y)) {
+          const tile = w.tiles[p.y * w.W + p.x];
+          if (tile !== Tl.PALISADE && tile !== Tl.HOUSE && tile !== Tl.WATER) {
+            setTile(w, p.x, p.y, Tl.PATH);
+            mark(p.x, p.y);
+          }
+        }
+      }
+    }
+  }
+
+  private collectResidentSpots(
+    w: WorldData, cx: number, cy: number, rw: number, rh: number,
+    isFree: (x: number, y: number) => boolean
+  ): Vec[] {
+    // Собираем все свободные клетки (VILLAGE или PATH) внутри деревни
+    const candidates: Vec[] = [];
+    for (let y = cy + 1; y < cy + rh; y++) {
+      for (let x = cx + 1; x < cx + rw; x++) {
+        if (!inB(w, x, y)) continue;
+        const tile = w.tiles[y * w.W + x];
+        if ((tile === Tl.VILLAGE || tile === Tl.PATH) && isFree(x, y)) {
+          candidates.push({ x, y });
+        }
+      }
+    }
+
+    // Перемешиваем
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(this.rng() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+
+    // Сортируем: сначала те, у кого есть сосед-дорога
+    const hasRoadNeighbor = (pos: Vec): boolean => {
+      for (const [dx, dy] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+        const nx = pos.x + dx, ny = pos.y + dy;
+        if (!inB(w, nx, ny)) continue;
+        if (w.tiles[ny * w.W + nx] === Tl.PATH) return true;
+      }
+      return false;
+    };
+
+    const withRoad = candidates.filter(p => hasRoadNeighbor(p));
+    const withoutRoad = candidates.filter(p => !hasRoadNeighbor(p));
+    const sorted = [...withRoad, ...withoutRoad];
+
+    // Берём максимум 3 места
+    const count = Math.min(3, sorted.length);
+    return sorted.slice(0, count);
+  }
+}
+
+/* ============================== ГЕНЕРАТОР ГЛОБАЛЬНЫХ ДОРОГ ============================== */
+class GlobalRoadGenerator {
+  private rng: () => number;
+
+  constructor(rng: () => number) {
+    this.rng = rng;
+  }
+
+  public buildRoad(w: WorldData, from: Vec, to: Vec): void {
+    const { W, H } = w;
+    const cost = (x: number, y: number): number => {
+      const t = w.tiles[idx(w, x, y)];
+      if (SOLID.has(t) && t !== Tl.PALISADE) return Infinity;
+      switch (t) {
+        case Tl.WATER: case Tl.PALISADE: case Tl.HOUSE: return Infinity;
+        case Tl.PATH: return 0.35;
+        case Tl.SNOW: case Tl.SNOW2: return 1;
+        case Tl.FOREST: return 2.4;
+        case Tl.MTN: return 2.8;
+        case Tl.SWAMP: return 3.4;
+        case Tl.POOL: return 4;
+        case Tl.RUINS: return 1.9;
+        case Tl.SHORE: return 1.4;
+        case Tl.VILLAGE: case Tl.STAIRS: case Tl.ALTAR: return 1;
+        default: return 1.2;
+      }
+    };
+
+    const sx = clampi(from.x, 1, W - 2), sy = clampi(from.y, 1, H - 2);
+    const gx = clampi(to.x, 1, W - 2), gy = clampi(to.y, 1, H - 2);
+    const N = W * H;
+    const g = new Float64Array(N).fill(Infinity);
+    const came = new Int32Array(N).fill(-1);
+    const closed = new Uint8Array(N);
+    const h = (x: number, y: number) => Math.abs(x - gx) + Math.abs(y - gy);
+    const open: { i: number; f: number }[] = [{ i: sy * W + sx, f: h(sx, sy) }];
+    g[sy * W + sx] = 0;
+    let found = false, iter = 0;
+
+    while (open.length && iter++ < 14000) {
+      let bi = 0;
+      for (let k = 1; k < open.length; k++) if (open[k].f < open[bi].f) bi = k;
+      const cur = open.splice(bi, 1)[0].i;
+      if (closed[cur]) continue;
+      closed[cur] = 1;
+      const cx = cur % W, cy = Math.floor(cur / W);
+      if (cx === gx && cy === gy) { found = true; break; }
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const ni = ny * W + nx;
+        if (closed[ni]) continue;
+        const c = cost(nx, ny);
+        if (c === Infinity) continue;
+        const ng = g[cur] + c;
+        if (ng < g[ni]) {
+          g[ni] = ng; came[ni] = cur;
+          open.push({ i: ni, f: ng + h(nx, ny) });
+        }
+      }
+    }
+
+    if (!found) {
+      this.carvePath(w, sx, sy, gx, gy);
+      return;
+    }
+
+    const path: number[] = [];
+    let c = gy * W + gx;
+    while (c !== -1) { path.push(c); c = came[c]; }
+    for (const i of path) {
+      const x = i % W, y = Math.floor(i / W);
+      const t = w.tiles[i];
+      if (t !== Tl.WATER && t !== Tl.PALISADE && t !== Tl.HOUSE && t !== Tl.STAIRS && t !== Tl.ALTAR) {
+        setTile(w, x, y, Tl.PATH);
+      }
+    }
+  }
+
+  private carvePath(w: WorldData, x0: number, y0: number, x1: number, y1: number): void {
+    const put = (x: number, y: number) => {
+      for (const [dx, dy] of [[0, 0], [1, 0], [0, 1]]) {
+        const xx = x + dx, yy = y + dy;
+        if (!inB(w, xx, yy)) continue;
+        const cur = w.tiles[idx(w, xx, yy)];
+        if (cur === Tl.WATER || cur === Tl.PALISADE || cur === Tl.HOUSE) continue;
+        setTile(w, xx, yy, Tl.PATH);
+      }
+    };
+    const horizFirst = this.rng() < 0.5;
+    if (horizFirst) {
+      for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) put(x, y0);
+      for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) put(x1, y);
+    } else {
+      for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) put(x0, y);
+      for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) put(x, y1);
+    }
+  }
+}
+
+/* ============================== ГЕНЕРАТОР МИРА ============================== */
+export function generateOverworld(seed: number): WorldData {
+  const rng = mulberry(seed);
+  const W = 200, H = 140;
+
+  // 1. Остров
+  const islandGen = new IslandGenerator(seed);
+  const { w: baseWorld, cx, cy, R1, R2, ruinsC } = islandGen.generate();
+  const w = baseWorld;
+
+  // 2. Поселения
+  const villageGen = new VillageGenerator(rng);
+  const vA = villageGen.generate(w, 92 + Math.floor(rng() * 5), 96, 15, 12);
+  const vB = villageGen.generate(w, 146 + Math.floor(rng() * 4), 58, 13, 11);
+  const vR = villageGen.generate(w, 38 + Math.floor(rng() * 4), 56, 11, 9);
+  
+  // Разрушаем сожжённую деревню
+  for (let y = vR.y0; y <= vR.y1; y++) {
+    for (let x = vR.x0; x <= vR.x1; x++) {
+      if (!inB(w, x, y)) continue;
+      const t = w.tiles[y * w.W + x];
+      if (t === Tl.HOUSE && rng() < 0.5) {
+        setTile(w, x, y, rng() < 0.5 ? Tl.COLUMN : Tl.RUINS);
+      }
+      if (t === Tl.PALISADE && rng() < 0.4) {
+        setTile(w, x, y, rng() < 0.5 ? Tl.COLUMN : Tl.RUINS);
+      }
+    }
+  }
+
+  w.villageA = vA.gate;
+  w.villageB = vB.gate;
+  w.ruinedVillage = { x: vR.x0 + 5, y: vR.y0 + 4 };
+
+  // 3. Глобальные дороги
+  const roadGen = new GlobalRoadGenerator(rng);
+  const gate = vA.gate;
+
+  const treeAltar = { x: 100, y: 24 };
+  clearAround(w, treeAltar.x, treeAltar.y + 3, 6, Tl.SNOW2);
+  setTile(w, treeAltar.x, treeAltar.y, Tl.ALTAR);
+  w.treeAltar = treeAltar;
+  w.arena = { x: treeAltar.x * T + 8, y: (treeAltar.y + 3) * T + 8, r: 84 };
+  w.snakeSpot = { x: treeAltar.x * T + 8, y: (treeAltar.y + 2) * T };
+
+  const dungeonEntries: { x: number; y: number; id: number; name: string }[] = [];
+  const mkEntry = (fx: number, fy: number, pref: number, id: number, name: string) => {
+    const p = findFree(w, fx, fy, 9, pref, rng);
+    setTile(w, p.x, p.y, Tl.STAIRS);
+    clearAround(w, p.x, p.y, 1);
+    dungeonEntries.push({ x: p.x, y: p.y, id, name });
+    return p;
+  };
+  mkEntry(cx + 6, cy + 2, Tl.MTN, 2, "Каменная Крепость");
+  mkEntry(cx - R1 - 10, cy + 6, Tl.FOREST, 1, "Корень Иггдрасиля");
+  mkEntry(ruinsC.x, ruinsC.y, Tl.RUINS, 0, "Склеп Хранителя");
+  w.dungeonEntries = dungeonEntries;
+
+  roadGen.buildRoad(w, gate, vB.gate);
+  roadGen.buildRoad(w, gate, { x: treeAltar.x, y: treeAltar.y + 8 });
+  for (const e of dungeonEntries) roadGen.buildRoad(w, gate, { x: e.x, y: e.y });
+  roadGen.buildRoad(w, gate, { x: vR.gate.x, y: vR.gate.y });
+  roadGen.buildRoad(w, gate, { x: ruinsC.x, y: ruinsC.y });
+
+  // 4. NPC и жители
+  // Собираем свободные места внутри vA (основная деревня)
+  const freeSpots: Vec[] = [];
+  for (let y = vA.y0 + 2; y < vA.y1 - 1; y++) {
+    for (let x = vA.x0 + 2; x < vA.x1 - 1; x++) {
+      if (!inB(w, x, y)) continue;
+      const tile = w.tiles[y * w.W + x];
+      if (tile === Tl.VILLAGE) {
+        let blocked = false;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (!inB(w, nx, ny)) continue;
+            if (w.tiles[ny * w.W + nx] === Tl.HOUSE || w.tiles[ny * w.W + nx] === Tl.PALISADE) {
+              blocked = true;
+              break;
+            }
+          }
+          if (blocked) break;
+        }
+        if (!blocked) freeSpots.push({ x, y });
+      }
+    }
+  }
+
+  // Перемешиваем
+  for (let i = freeSpots.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [freeSpots[i], freeSpots[j]] = [freeSpots[j], freeSpots[i]];
+  }
+
+  const allNpcs: NpcDef[] = [];
+
+  // Основные NPC (10 человек)
+  const mainNpcIds = ["eirik", "astrid", "harald", "raven", "daughter", "sigrid", "brand", "shaman", "refugee", "merchant"];
+  const mainNpcNames = ["Эйрик Старший", "Астрид", "Харальд", "Ворон-Говорун", "Безымянная Дочь", "Сигрид", "Бранд", "Шаман Ульв", "Беженка Гюнн", "Торговец Фьолнир"];
+
+  for (let i = 0; i < mainNpcIds.length && i < freeSpots.length; i++) {
+    allNpcs.push({
+      id: mainNpcIds[i],
+      name: mainNpcNames[i],
+      x: freeSpots[i].x,
+      y: freeSpots[i].y
+    });
+  }
+
+  // Добавляем 3 статистов (жителей) из vA.residentSpots, если они есть
+  for (let i = 0; i < Math.min(3, vA.residentSpots.length); i++) {
+    const pos = vA.residentSpots[i];
+    allNpcs.push({
+      id: `villager_A_${i}`,
+      name: "Поселенец",
+      x: pos.x,
+      y: pos.y
+    });
+  }
+
+  // Добавляем 3 статистов из vB, если есть места
+  for (let i = 0; i < Math.min(3, vB.residentSpots.length); i++) {
+    const pos = vB.residentSpots[i];
+    allNpcs.push({
+      id: `villager_B_${i}`,
+      name: "Поселенец",
+      x: pos.x,
+      y: pos.y
+    });
+  }
+
+  w.npcs = allNpcs;
+
+  // Остальные элементы (святилища, сундуки, души и т.д.)
+  const midRoad = { x: Math.round((vA.gate.x + vB.gate.x) / 2), y: Math.round((vA.gate.y + vB.gate.y) / 2) };
+  w.bundleSpot = findFree(w, midRoad.x, midRoad.y, 4, undefined, rng);
+
+  const shrineSpots: Vec[] = [
+    { x: vA.x0 - 3, y: vA.y1 - 2 },
+    findFree(w, cx - R1 - 8, cy - 10, 6, undefined, rng),
+    findFree(w, cx + R1 + 8, cy - 6, 6, undefined, rng),
+    { x: vB.x0 - 3, y: vB.y1 },
+  ];
+  for (const s of shrineSpots) {
+    clearAround(w, s.x, s.y, 1);
+    w.shrines.push({ x: s.x, y: s.y });
+  }
+
+  w.bearSpot = findFree(w, cx + R2 + 6, cy + 14, 8, Tl.SWAMP, rng);
+  setTile(w, w.bearSpot.x, w.bearSpot.y, Tl.POOL);
+  w.hornSpot = findFree(w, cx + 10, cy - 8, 9, Tl.MTN, rng);
+  w.meadSpot = findFree(w, cx - R1 - 14, cy - 6, 9, Tl.FOREST, rng);
+  w.oreSpot = findFree(w, cx - 8, cy + 8, 9, Tl.MTN, rng);
+  w.mossSpot = findFree(w, cx + R2 + 4, cy + 4, 8, Tl.SWAMP, rng);
+  w.amberSpot = findFree(w, cx + 14, cy + 8, 9, Tl.MTN, rng);
+  w.flowerSpot = findFree(w, ruinsC.x + 6, ruinsC.y - 4, 8, Tl.RUINS, rng);
+  w.diarySpot = { x: vR.x0 + 2 + Math.floor(rng() * 6), y: vR.y0 + 2 + Math.floor(rng() * 4) };
+  setTile(w, w.diarySpot.x, w.diarySpot.y, Tl.RUINS);
+  w.relicSpot = findFree(w, 44, 50, 9, undefined, rng);
+  w.oldAltar = findFree(w, w.relicSpot.x + 7, w.relicSpot.y + 3, 5, undefined, rng);
+  setTile(w, w.oldAltar.x, w.oldAltar.y, Tl.ALTAR);
+  clearAround(w, w.oldAltar.x, w.oldAltar.y, 1);
+  w.stashSpot = findFree(w, ruinsC.x - 4, ruinsC.y + 5, 6, undefined, rng);
+
+  // Сундуки
+  const bowSpot = findFree(w, cx - R1 - 8, cy + 12, 9, Tl.FOREST, rng);
+  const arrowsSpot = findFree(w, cx + 6, cy - 12, 9, Tl.MTN, rng);
+  const heartSpot = findFree(w, cx + R2 + 8, cy + 2, 9, undefined, rng);
+  w.chests = [
+    { x: bowSpot.x, y: bowSpot.y, item: "bow" },
+    { x: arrowsSpot.x, y: arrowsSpot.y, item: "arrows" },
+    { x: heartSpot.x, y: heartSpot.y, item: "heartPiece" },
+  ];
+
+  // Души
+  const soulSpots = [
+    findFree(w, cx - R2 - 6, cy + 12, 5, undefined, rng),
+    findFree(w, cx + R2 + 10, cy - 10, 5, undefined, rng),
+    { x: ruinsC.x - 8, y: ruinsC.y - 6 },
+  ];
+  w.souls = soulSpots;
+
+  // Колонны в руинах
+  for (let i = 0; i < 10; i++) {
+    const p = findFree(w, ruinsC.x, ruinsC.y, 8, Tl.RUINS, rng);
+    setTile(w, p.x, p.y, Tl.COLUMN);
+  }
+
+  // Пьедесталы
+  const guardPool: EnemyKind[][] = [
+    ["draugr", "raven"], ["varg", "varg"], ["draugr", "shroom"],
+    ["frost", "raven"], ["draugr", "draugr", "crawler"],
+  ];
+  const pedestalCenters = [
+    { x: cx - R1 - 12, y: cy + 8 },
+    { x: cx + 12, y: cy - 10 },
+    { x: cx + R2 + 5, y: cy + 7 },
+    { x: ruinsC.x + 5, y: ruinsC.y + 3 },
+    { x: cx - R2 - 8, y: cy - 7 },
+  ];
+  pedestalCenters.forEach((c, i) => {
+    const p = findFree(w, c.x, c.y, 6, undefined, rng);
+    clearAround(w, p.x, p.y, 2);
+    w.pedestals.push({ x: p.x, y: p.y, guards: guardPool[i] });
+  });
+
+  // Украшения
+  const n3 = new NoiseGenerator(rng() * 100000 | 0);
+  for (let y = 2; y < H - 2; y++) {
+    for (let x = 2; x < W - 2; x++) {
+      const i = idx(w, x, y);
+      const t = w.tiles[i];
+      const v = n3.value(x * 0.16, y * 0.16);
+      if (t === Tl.FOREST) { if (v > 0.5) setTile(w, x, y, Tl.TREE); }
+      else if (t === Tl.MTN) { if (v > 0.56) setTile(w, x, y, Tl.ROCK); }
+      else if (t === Tl.SWAMP) { if (v > 0.66) setTile(w, x, y, Tl.POOL); }
+      else if (t === Tl.SNOW) {
+        if (v > 0.74) setTile(w, x, y, Tl.TREE);
+        else if (v < 0.24) setTile(w, x, y, Tl.SNOW2);
+      } else if (t === Tl.RUINS) { if (v > 0.76) setTile(w, x, y, Tl.COLUMN); }
+    }
+  }
+
+  // Чистка
+  for (const n of w.npcs) clearAround(w, n.x, n.y, 1);
+  for (const c of w.chests) clearAround(w, c.x, c.y, 1);
+  for (const p of w.pedestals) clearAround(w, p.x, p.y, 1);
+  for (const e of w.dungeonEntries) clearAround(w, e.x, e.y, 1);
+  for (const s of w.shrines) clearAround(w, s.x, s.y, 1);
+  for (const s of w.souls) clearAround(w, s.x, s.y, 1);
+  for (const a of w.ambient) clearAround(w, a.x, a.y, 0);
+  clearAround(w, treeAltar.x, treeAltar.y + 3, 5, Tl.SNOW2);
+  setTile(w, treeAltar.x, treeAltar.y, Tl.ALTAR);
+  clearAround(w, w.oldAltar.x, w.oldAltar.y, 1);
+  setTile(w, w.oldAltar.x, w.oldAltar.y, Tl.ALTAR);
+
+  // Враги
+  const kindsFor = (t: number, d: number): EnemyKind[] => {
+    if (d < R1 + 2) return ["frost", "varg", "frost"];
+    switch (t) {
+      case Tl.FOREST: return ["shroom", "raven", "draugr"];
+      case Tl.MTN: return ["frost", "varg", "draugr"];
+      case Tl.SWAMP: return ["crawler", "draugr", "crawler"];
+      case Tl.RUINS: return ["draugr", "frost", "crawler"];
+      default: return ["varg", "raven", "draugr"];
+    }
+  };
+  
+  const noSpawnZones = [
+    { x0: vA.x0 - 8, y0: vA.y0 - 8, x1: vA.x1 + 8, y1: vA.y1 + 8 },
+    { x0: vB.x0 - 8, y0: vB.y0 - 8, x1: vB.x1 + 8, y1: vB.y1 + 8 },
+    { x0: vR.x0 - 6, y0: vR.y0 - 6, x1: vR.x1 + 6, y1: vR.y1 + 6 },
+  ];
+  
+  const isInNoSpawnZone = (x: number, y: number): boolean => {
+    for (const z of noSpawnZones) {
+      if (x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1) return true;
+    }
+    return false;
+  };
+  
+  const pois = [
+    gate, vB.gate, treeAltar,
+    ...w.dungeonEntries.map((e) => ({ x: e.x, y: e.y })),
+    ...w.shrines, ...w.npcs, ...w.chests.map((c) => ({ x: c.x, y: c.y })),
+    ...w.pedestals.map((p) => ({ x: p.x, y: p.y })),
+  ];
+  let placed = 0;
+  for (let tries = 0; tries < 4000 && placed < 84; tries++) {
+    const x = 3 + Math.floor(rng() * (W - 6));
+    const y = 3 + Math.floor(rng() * (H - 6));
+    const t = w.tiles[idx(w, x, y)];
+    if (SOLID.has(t) || t === Tl.PATH || t === Tl.POOL || t === Tl.VILLAGE || t === Tl.WATER || t === Tl.SHORE) continue;
+    if (isInNoSpawnZone(x, y)) continue;
+    if (Math.hypot(gate.x - x, gate.y + 2 - y) < 40) continue;
+    if (pois.some((p) => Math.hypot(p.x - x, p.y - y) < 8)) continue;
+    const d = Math.hypot((x - cx) * 0.92, y - cy);
+    const kinds = kindsFor(t, d);
+    w.spawns.push({ kind: kinds[Math.floor(rng() * kinds.length)], x: x * T + 8, y: y * T + 8 });
+    placed++;
+  }
+  for (let i = 0; i < 3; i++) {
+    const x = vR.x0 + 2 + Math.floor(rng() * (vR.x1 - vR.x0 - 4));
+    const y = vR.y0 + 2 + Math.floor(rng() * (vR.y1 - vR.y0 - 4));
+    if (!SOLID.has(tileAt(w, x, y))) w.spawns.push({ kind: i === 2 ? "crawler" : "draugr", x: x * T + 8, y: y * T + 8 });
+  }
+
+  // Связность
+  const reach = floodReach(w, gate.x, gate.y - 1);
+  const ensure = (p: Vec) => {
+    if (!inB(w, p.x, p.y) || !reach[idx(w, p.x, p.y)]) roadGen.buildRoad(w, gate, p);
+  };
+  for (const e of w.dungeonEntries) ensure(e);
+  ensure({ x: treeAltar.x, y: treeAltar.y + 8 });
+  ensure(vB.gate);
+  ensure({ x: vR.x0 + 5, y: vR.y1 + 1 });
+  for (const s of w.shrines) ensure(s);
+  for (const c of w.chests) ensure(c);
+  for (const p of w.pedestals) ensure(p);
+  for (const n of w.npcs) ensure(n);
+  for (const s of w.souls) ensure(s);
+  for (const p of [w.bearSpot, w.hornSpot, w.meadSpot, w.oreSpot, w.mossSpot,
+    w.amberSpot, w.flowerSpot, w.diarySpot, w.bundleSpot, w.relicSpot, w.oldAltar, w.stashSpot]) {
+    ensure(p);
+  }
+
+  // Зоны
+  w.zones = [
+    { x: vA.x0, y: vA.y0, w: vA.x1 - vA.x0, h: vA.y1 - vA.y0, name: "Поселение выживших" },
+    { x: vB.x0, y: vB.y0, w: vB.x1 - vB.x0, h: vB.y1 - vB.y0, name: "Воронья Гавань" },
+    { x: vR.x0, y: vR.y0, w: vR.x1 - vR.x0, h: vR.y1 - vR.y0, name: "Сожжённая Деревня" },
+    { x: treeAltar.x - 8, y: treeAltar.y - 3, w: 17, h: 17, name: "Корни Иггдрасиля" },
+    { x: Math.round(cx - R1 - 20), y: Math.round(cy - 20), w: 40, h: 40, name: "Мёртвый Лес" },
+    { x: Math.round(cx - 24), y: Math.round(cy - 22), w: 48, h: 44, name: "Хребет Нидов" },
+    { x: Math.round(cx + R1 - 4), y: Math.round(cy - 10), w: 44, h: 44, name: "Замерзшие Топи" },
+    { x: ruinsC.x - 14, y: ruinsC.y - 12, w: 28, h: 24, name: "Руины Времени" },
+  ];
+
+  // Стартовая позиция
+  const spawnTile: Vec = { x: 0, y: 0 };
+  switch (vA.gateEdge) {
+    case Edge.South: spawnTile.x = gate.x + 1; spawnTile.y = gate.y - 2; break;
+    case Edge.North: spawnTile.x = gate.x + 1; spawnTile.y = gate.y + 2; break;
+    case Edge.West: spawnTile.x = gate.x + 2; spawnTile.y = gate.y + 1; break;
+    case Edge.East: spawnTile.x = gate.x - 2; spawnTile.y = gate.y + 1; break;
+  }
+  w.spawn = px(spawnTile.x, spawnTile.y);
+
+  const navBuilder = new NavBuilder();
+  w.nav = navBuilder.build(w);
+
+  return w;
+}
+
+/* ============================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============================== */
+function clearAround(w: WorldData, cx: number, cy: number, r: number, floor?: number): void {
+  for (let y = cy - r; y <= cy + r; y++) {
+    for (let x = cx - r; x <= cx + r; x++) {
+      if (!inB(w, x, y)) continue;
+      const cur = w.tiles[idx(w, x, y)];
+      if (cur === Tl.WATER || cur === Tl.PALISADE || cur === Tl.HOUSE) continue;
+      if (isSolidTileId(cur)) setTile(w, x, y, floor !== undefined ? floor : Tl.SNOW);
+    }
+  }
+}
+
+function findFree(w: WorldData, fx: number, fy: number, r: number, pref: number | undefined, rng: () => number): Vec {
+  const landT = (t: number) => !SOLID.has(t) && t !== Tl.WATER && t !== Tl.POOL && t !== Tl.PATH && t !== Tl.VILLAGE;
+  for (let tries = 0; tries < 400; tries++) {
+    const x = Math.round(fx + (rng() * 2 - 1) * r);
+    const y = Math.round(fy + (rng() * 2 - 1) * r);
+    if (!inB(w, x, y)) continue;
+    const t = w.tiles[idx(w, x, y)];
+    if (!landT(t)) continue;
+    if (pref !== undefined && t !== pref && tries < 300) continue;
+    return { x, y };
+  }
+  for (let rad = 1; rad < 90; rad++) {
+    for (let dy = -rad; dy <= rad; dy++) {
+      for (let dx = -rad; dx <= rad; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+        const x = Math.round(fx) + dx, y = Math.round(fy) + dy;
+        if (!inB(w, x, y)) continue;
+        const t = w.tiles[idx(w, x, y)];
+        if (landT(t) && (pref === undefined || t === pref)) return { x, y };
+      }
+    }
+  }
+  return { x: clampi(Math.round(fx), 2, w.W - 3), y: clampi(Math.round(fy), 2, w.H - 3) };
 }
 
 function floodReach(w: WorldData, sx: number, sy: number): Uint8Array {
@@ -171,660 +1114,6 @@ function floodReach(w: WorldData, sx: number, sy: number): Uint8Array {
     }
   }
   return reach;
-}
-
-function carvePath(w: WorldData, x0: number, y0: number, x1: number, y1: number, horizFirst: boolean) {
-  const put = (x: number, y: number) => {
-    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1]]) {
-      const xx = x + dx, yy = y + dy;
-      if (!inB(w, xx, yy)) continue;
-      const cur = w.tiles[idx(w, xx, yy)];
-      if (cur === Tl.WATER || cur === Tl.PALISADE || cur === Tl.HOUSE) continue;
-      setTile(w, xx, yy, Tl.PATH);
-    }
-  };
-  if (horizFirst) {
-    for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) put(x, y0);
-    for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) put(x1, y);
-  } else {
-    for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) put(x0, y);
-    for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) put(x, y1);
-  }
-}
-
-/* умная дорога: A* по стоимости рельефа */
-function carveRoad(w: WorldData, a: Vec, b: Vec, rng: () => number) {
-  const { W, H } = w;
-  const cost = (x: number, y: number): number => {
-    const t = w.tiles[idx(w, x, y)];
-    if (SOLID.has(t) && t !== Tl.PALISADE) return Infinity;
-    switch (t) {
-      case Tl.WATER: case Tl.PALISADE: case Tl.HOUSE: return Infinity;
-      case Tl.PATH: return 0.35;
-      case Tl.SNOW: case Tl.SNOW2: return 1;
-      case Tl.FOREST: return 2.4;
-      case Tl.MTN: return 2.8;
-      case Tl.SWAMP: return 3.4;
-      case Tl.POOL: return 4;
-      case Tl.RUINS: return 1.9;
-      case Tl.SHORE: return 1.4;
-      case Tl.VILLAGE: case Tl.STAIRS: case Tl.ALTAR: return 1;
-      default: return 1.2;
-    }
-  };
-  const sx = clampi(a.x, 1, W - 2), sy = clampi(a.y, 1, H - 2);
-  const gx = clampi(b.x, 1, W - 2), gy = clampi(b.y, 1, H - 2);
-  const N = W * H;
-  const g = new Float64Array(N).fill(Infinity);
-  const came = new Int32Array(N).fill(-1);
-  const closed = new Uint8Array(N);
-  const h = (x: number, y: number) => Math.abs(x - gx) + Math.abs(y - gy);
-  const open: { i: number; f: number }[] = [{ i: sy * W + sx, f: h(sx, sy) }];
-  g[sy * W + sx] = 0;
-  let found = false, iter = 0;
-  while (open.length && iter++ < 14000) {
-    let bi = 0;
-    for (let k = 1; k < open.length; k++) if (open[k].f < open[bi].f) bi = k;
-    const cur = open.splice(bi, 1)[0].i;
-    if (closed[cur]) continue;
-    closed[cur] = 1;
-    const cx = cur % W, cy = Math.floor(cur / W);
-    if (cx === gx && cy === gy) { found = true; break; }
-    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = cx + dx, ny = cy + dy;
-      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-      const ni = ny * W + nx;
-      if (closed[ni]) continue;
-      const c = cost(nx, ny);
-      if (c === Infinity) continue;
-      const ng = g[cur] + c;
-      if (ng < g[ni]) {
-        g[ni] = ng; came[ni] = cur;
-        open.push({ i: ni, f: ng + h(nx, ny) });
-      }
-    }
-  }
-  if (!found) { carvePath(w, sx, sy, gx, gy, rng() < 0.5); return; }
-  const path: number[] = [];
-  let c = gy * W + gx;
-  while (c !== -1) { path.push(c); c = came[c]; }
-  for (const i of path) {
-    const x = i % W, y = Math.floor(i / W);
-    const t = w.tiles[i];
-    if (t !== Tl.WATER && t !== Tl.PALISADE && t !== Tl.HOUSE && t !== Tl.STAIRS && t !== Tl.ALTAR && t !== Tl.VILLAGE) {
-      setTile(w, x, y, Tl.PATH);
-    }
-  }
-}
-
-function clearAround(w: WorldData, cx: number, cy: number, r: number, floor?: number) {
-  for (let y = cy - r; y <= cy + r; y++) for (let x = cx - r; x <= cx + r; x++) {
-    if (!inB(w, x, y)) continue;
-    const cur = w.tiles[idx(w, x, y)];
-    if (cur === Tl.WATER || cur === Tl.PALISADE || cur === Tl.HOUSE) continue;
-    if (isSolidTileId(cur)) setTile(w, x, y, floor !== undefined ? floor : Tl.SNOW);
-  }
-}
-
-/* ============================== ПОСЕЛЕНИЯ ============================== */
-export interface HouseDef { x: number; y: number; w: number; h: number }
-interface VillageBox { x0: number; y0: number; x1: number; y1: number; gate: Vec; houses: HouseDef[] }
-
-const HOUSE_SIZES = [
-  { w: 2, h: 2 },
-  { w: 2, h: 3 },
-  { w: 3, h: 2 },
-  { w: 3, h: 3 },
-];
-
-function canPlaceHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number, placed: HouseDef[]): boolean {
-  // Проверка границ
-  if (hx < 1 || hy < 1 || hx + hw >= w.W - 1 || hy + hh >= w.H - 1) return false;
-  
-  // Проверка наложения на другие дома (с буфером 1 клетка)
-  for (const h of placed) {
-    if (hx < h.x + h.w + 1 && hx + hw + 1 > h.x && hy < h.y + h.h + 1 && hy + hh + 1 > h.y) {
-      return false;
-    }
-  }
-  
-  // Проверка: не перекрывать ли ворота и подход к ним
-  return true;
-}
-
-function placeHouse(w: WorldData, hx: number, hy: number, hw: number, hh: number): void {
-  for (let y = hy; y < hy + hh; y++) {
-    for (let x = hx; x < hx + hw; x++) {
-      setTile(w, x, y, Tl.HOUSE);
-    }
-  }
-}
-
-function makeVillage(w: WorldData, cx: number, cy: number, rw: number, rh: number, rng: () => number, houses: number): VillageBox {
-  // Забор по периметру
-  for (let y = cy; y <= cy + rh; y++) {
-    for (let x = cx; x <= cx + rw; x++) {
-      if (!inB(w, x, y)) continue;
-      const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
-      setTile(w, x, y, border ? Tl.PALISADE : Tl.VILLAGE);
-    }
-  }
-  
-  // Ворота внизу по центру
-  const gx = cx + Math.floor(rw / 2);
-  const gy = cy + rh;
-  setTile(w, gx, gy, Tl.VILLAGE); 
-  setTile(w, gx + 1, gy, Tl.VILLAGE);
-  
-  // Зона ворот и подхода (дорога будет огибать эту зону)
-  const gateZone = { x: gx - 2, y: gy - 4, w: 5, h: 5 };
-  
-  const placed: HouseDef[] = [];
-  let tries = 0;
-  
-  while (placed.length < houses && tries++ < 300) {
-    // Выбираем случайный размер дома
-    const size = HOUSE_SIZES[Math.floor(rng() * HOUSE_SIZES.length)];
-    const hw = size.w;
-    const hh = size.h;
-    
-    // Пытаемся разместить дом
-    const hx = cx + 1 + Math.floor(rng() * (rw - hw - 2));
-    const hy = cy + 1 + Math.floor(rng() * (rh - hh - 2));
-    
-    // Не размещать слишком близко к воротам
-    if (hx + hw > gateZone.x && hx < gateZone.x + gateZone.w &&
-        hy + hh > gateZone.y && hy < gateZone.y + gateZone.h) {
-      continue;
-    }
-    
-    if (!canPlaceHouse(w, hx, hy, hw, hh, placed)) continue;
-    
-    placeHouse(w, hx, hy, hw, hh);
-    placed.push({ x: hx, y: hy, w: hw, h: hh });
-  }
-  
-  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
-}
-
-function makeFort(w: WorldData, cx: number, cy: number, rw: number, rh: number, rng: () => number): VillageBox {
-  // Стены с башнями по углам
-  for (let y = cy; y <= cy + rh; y++) {
-    for (let x = cx; x <= cx + rw; x++) {
-      if (!inB(w, x, y)) continue;
-      const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
-      if (border) {
-        const corner = (x === cx || x === cx + rw) && (y === cy || y === cy + rh);
-        setTile(w, x, y, corner ? Tl.COLUMN : Tl.ROCK);
-      } else {
-        setTile(w, x, y, Tl.VILLAGE);
-      }
-    }
-  }
-  
-  // Ворота внизу по центру
-  const gx = cx + Math.floor(rw / 2);
-  const gy = cy + rh;
-  setTile(w, gx, gy, Tl.VILLAGE); 
-  setTile(w, gx + 1, gy, Tl.VILLAGE);
-  setTile(w, gx, gy - 1, Tl.VILLAGE); 
-  setTile(w, gx + 1, gy - 1, Tl.VILLAGE);
-  
-  const gateZone = { x: gx - 2, y: gy - 4, w: 5, h: 5 };
-  const placed: HouseDef[] = [];
-  let tries = 0;
-  
-  while (placed.length < 4 && tries++ < 300) {
-    const size = HOUSE_SIZES[Math.floor(rng() * HOUSE_SIZES.length)];
-    const hw = size.w;
-    const hh = size.h;
-    
-    const hx = cx + 1 + Math.floor(rng() * (rw - hw - 2));
-    const hy = cy + 1 + Math.floor(rng() * (rh - hh - 2));
-    
-    if (hx + hw > gateZone.x && hx < gateZone.x + gateZone.w &&
-        hy + hh > gateZone.y && hy < gateZone.y + gateZone.h) {
-      continue;
-    }
-    
-    if (!canPlaceHouse(w, hx, hy, hw, hh, placed)) continue;
-    
-    placeHouse(w, hx, hy, hw, hh);
-    placed.push({ x: hx, y: hy, w: hw, h: hh });
-  }
-  
-  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
-}
-
-function makeRuinedVillage(w: WorldData, cx: number, cy: number, rw: number, rh: number, rng: () => number): VillageBox {
-  // Разрушенные стены
-  for (let y = cy; y <= cy + rh; y++) {
-    for (let x = cx; x <= cx + rw; x++) {
-      if (!inB(w, x, y)) continue;
-      setTile(w, x, y, Tl.RUINS);
-      const border = x === cx || x === cx + rw || y === cy || y === cy + rh;
-      if (border && rng() < 0.55) {
-        setTile(w, x, y, rng() < 0.5 ? Tl.PALISADE : Tl.COLUMN);
-      }
-    }
-  }
-  
-  // Проемы в стенах
-  for (let i = 0; i < 3; i++) {
-    const side = Math.floor(rng() * 4);
-    if (side === 0) { const x = cx + 1 + Math.floor(rng() * (rw - 1)); setTile(w, x, cy, Tl.RUINS); setTile(w, x + 1, cy, Tl.RUINS); }
-    if (side === 1) { const x = cx + 1 + Math.floor(rng() * (rw - 1)); setTile(w, x, cy + rh, Tl.RUINS); setTile(w, x + 1, cy + rh, Tl.RUINS); }
-    if (side === 2) { const y = cy + 1 + Math.floor(rng() * (rh - 1)); setTile(w, cx, y, Tl.RUINS); setTile(w, cx, y + 1, Tl.RUINS); }
-    if (side === 3) { const y = cy + 1 + Math.floor(rng() * (rh - 1)); setTile(w, cx + rw, y, Tl.RUINS); setTile(w, cx + rw, y + 1, Tl.RUINS); }
-  }
-  
-  const placed: HouseDef[] = [];
-  let tries = 0;
-  
-  while (placed.length < 5 && tries++ < 300) {
-    const size = HOUSE_SIZES[Math.floor(rng() * HOUSE_SIZES.length)];
-    const hw = size.w;
-    const hh = size.h;
-    
-    const hx = cx + 1 + Math.floor(rng() * (rw - hw - 2));
-    const hy = cy + 1 + Math.floor(rng() * (rh - hh - 2));
-    
-    if (!canPlaceHouse(w, hx, hy, hw, hh, placed)) continue;
-    
-    const burnt = rng() < 0.55;
-    for (let y = hy; y < hy + hh; y++) {
-      for (let x = hx; x < hx + hw; x++) {
-        if (burnt) {
-          setTile(w, x, y, (x + y) % 2 === 0 ? Tl.COLUMN : Tl.RUINS);
-        } else {
-          setTile(w, x, y, Tl.HOUSE);
-        }
-      }
-    }
-    placed.push({ x: hx, y: hy, w: hw, h: hh });
-  }
-  
-  // Ворота
-  const gx = cx + Math.floor(rw / 2);
-  const gy = cy + rh;
-  setTile(w, gx, gy, Tl.RUINS); 
-  setTile(w, gx + 1, gy, Tl.RUINS);
-  setTile(w, gx, gy - 1, Tl.RUINS); 
-  setTile(w, gx + 1, gy - 1, Tl.RUINS);
-  
-  return { x0: cx, y0: cy, x1: cx + rw, y1: cy + rh, gate: { x: gx, y: gy }, houses: placed };
-}
-
-/* ============================== ОВЕРВОРЛД ============================== */
-export function generateOverworld(seed: number): WorldData {
-  const rng = mulberry(seed);
-  const W = 200, H = 140;
-  const w: WorldData = {
-    W, H, tiles: new Uint8Array(W * H).fill(Tl.SNOW), nav: null as unknown as NavMesh,
-    isDungeon: false, dungeonId: -1, dungeonName: "", bossReward: null,
-    spawn: { x: 0, y: 0 }, zones: [], shrines: [], npcs: [], chests: [],
-    pedestals: [], spawns: [], doors: [], souls: [], ambient: [], dungeonEntries: [],
-    exitSpot: { x: 0, y: 0 }, hornSpot: { x: 0, y: 0 }, meadSpot: { x: 0, y: 0 },
-    oreSpot: { x: 0, y: 0 }, bearSpot: { x: 0, y: 0 },
-    mossSpot: { x: 0, y: 0 }, amberSpot: { x: 0, y: 0 }, flowerSpot: { x: 0, y: 0 },
-    diarySpot: { x: 0, y: 0 }, bundleSpot: { x: 0, y: 0 }, relicSpot: { x: 0, y: 0 },
-    oldAltar: { x: 0, y: 0 }, stashSpot: { x: 0, y: 0 }, ruinedVillage: { x: 0, y: 0 },
-    treeAltar: { x: 100, y: 24 }, arena: { x: 0, y: 0, r: 92 }, snakeSpot: { x: 0, y: 0 },
-    villageA: { x: 0, y: 0 }, villageB: { x: 0, y: 0 },
-    bossRoom: { x: 0, y: 0, w: 0, h: 0 }, bossSpot: { x: 0, y: 0 }, entryStairs: { x: 0, y: 0 },
-  };
-
-  /* ---- БОЛЬШОЙ ОСТРОВ В ЦЕНТРЕ КАРТЫ, ВОКРУГ — МОРЕ ----
-     Форма острова — эллипс; шум лишь размывает береговую линию (±0.1),
-     поэтому все ключевые точки (норм. дистанция ≤ 0.77) гарантированно на суше. */
-  const ICX = W / 2, ICY = H / 2, RX = 94, RY = 64;
-  const coastN = makeNoise(seed ^ 0x5ea);
-  const normDist = (x: number, y: number) => Math.hypot((x - ICX) / RX, (y - ICY) / RY);
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const d = normDist(x, y) + (coastN(x * 0.055, y * 0.055) - 0.5) * 0.22;
-    if (d > 1) setTile(w, x, y, Tl.WATER);
-    else if (d > 0.93) setTile(w, x, y, Tl.SHORE);
-  }
-
-  /* радиальные зоны: Хребет Нидов -> Мёртвый Лес -> Замерзшие Топи -> пустоши */
-  const cx = W / 2 + (rng() * 8 - 4);
-  const cy = H / 2 - 4 + (rng() * 6 - 3);
-  const n1 = makeNoise(seed ^ 0xa11ce);
-  const n2 = makeNoise(seed ^ 0xb0b);
-  const R1 = 24, R2 = 42, R3 = 54;
-  for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
-    const cur0 = w.tiles[idx(w, x, y)];
-    if (cur0 === Tl.WATER || cur0 === Tl.SHORE) continue;
-    const d = Math.hypot((x - cx) * 0.92, y - cy) + (n1(x * 0.07, y * 0.07) - 0.5) * 13;
-    if (d < R1) setTile(w, x, y, Tl.MTN);
-    else if (d < R2) setTile(w, x, y, Tl.FOREST);
-    else if (d < R3) setTile(w, x, y, rng() < 0.42 ? Tl.SWAMP : Tl.FOREST);
-    else if (n2(x * 0.05, y * 0.05) < 0.24) setTile(w, x, y, Tl.SNOW2);
-  }
-
-  /* руины на юго-западе острова */
-  const ruinsC = { x: 44 + Math.floor(rng() * 8), y: 88 + Math.floor(rng() * 6) };
-  for (let y = ruinsC.y - 10; y <= ruinsC.y + 10; y++) for (let x = ruinsC.x - 11; x <= ruinsC.x + 11; x++) {
-    if (!inB(w, x, y)) continue;
-    const d = Math.hypot(x - ruinsC.x, (y - ruinsC.y) * 1.2) + (n2(x * 0.2, y * 0.2) - 0.5) * 5;
-    if (d < 9 && w.tiles[idx(w, x, y)] !== Tl.WATER && w.tiles[idx(w, x, y)] !== Tl.SHORE) setTile(w, x, y, Tl.RUINS);
-  }
-
-  /* сглаживание границ */
-  const baseOf = (t: number) => (t === Tl.FOREST || t === Tl.MTN || t === Tl.SWAMP || t === Tl.RUINS || t === Tl.SNOW) ? t : -1;
-  for (let iter = 0; iter < 2; iter++) {
-    const copy = w.tiles.slice();
-    for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
-      const t = copy[idx(w, x, y)];
-      if (baseOf(t) < 0) continue;
-      const cnt = new Map<number, number>();
-      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-        const b = baseOf(copy[idx(w, x + dx, y + dy)]);
-        if (b >= 0) cnt.set(b, (cnt.get(b) ?? 0) + 1);
-      }
-      const own = cnt.get(t) ?? 0;
-      let maj = t, mv = 0;
-      cnt.forEach((v, k) => { if (v > mv) { mv = v; maj = k; } });
-      if (own <= 2 && mv >= 5) setTile(w, x, y, maj);
-    }
-  }
-
-  /* поселения: целое (юг), форт (восток), сожжённая деревня (запад) —
-     все глубоко на суше, норм. дистанция до кромки острова ≤ 0.61 */
-  const vA = makeVillage(w, 92 + Math.floor(rng() * 5), 96, 15, 12, rng, 4);
-  const vB = makeFort(w, 146 + Math.floor(rng() * 4), 58, 13, 11, rng);
-  const vR = makeRuinedVillage(w, 38 + Math.floor(rng() * 4), 56, 11, 9, rng);
-  w.villageA = vA.gate; w.villageB = vB.gate;
-  w.ruinedVillage = { x: vR.x0 + 5, y: vR.y0 + 4 };
-  const gate = vA.gate;
-  /* страховка: под воротами и стартовой площадью всегда суша */
-  const ensureLand = (px: number, py: number, r: number) => {
-    for (let y = py - r; y <= py + r; y++) for (let x = px - r; x <= px + r; x++) {
-      if (inB(w, x, y) && w.tiles[idx(w, x, y)] === Tl.WATER) setTile(w, x, y, Tl.SNOW);
-    }
-  };
-  ensureLand(gate.x, gate.y, 5);
-  ensureLand(vB.gate.x, vB.gate.y, 4);
-  ensureLand(vR.gate.x, vR.gate.y, 4);
-
-  /* алтарь Древа */
-  clearAround(w, w.treeAltar.x, w.treeAltar.y + 3, 6, Tl.SNOW2);
-  setTile(w, w.treeAltar.x, w.treeAltar.y, Tl.ALTAR);
-  w.arena = { x: w.treeAltar.x * T + 8, y: (w.treeAltar.y + 3) * T + 8, r: 84 };
-  w.snakeSpot = { x: w.treeAltar.x * T + 8, y: (w.treeAltar.y + 2) * T };
-
-  const landT = (t: number) => !SOLID.has(t) && t !== Tl.WATER && t !== Tl.POOL && t !== Tl.PATH && t !== Tl.VILLAGE;
-  const findFree = (fx: number, fy: number, r: number, pref?: number): Vec => {
-    for (let tries = 0; tries < 400; tries++) {
-      const x = Math.round(fx + (rng() * 2 - 1) * r);
-      const y = Math.round(fy + (rng() * 2 - 1) * r);
-      if (!inB(w, x, y)) continue;
-      const t = w.tiles[idx(w, x, y)];
-      if (!landT(t)) continue;
-      if (pref !== undefined && t !== pref && tries < 300) continue;
-      return { x, y };
-    }
-    /* запасной вариант: спиральный поиск ближайшей суши — предмет НИКОГДА не окажется в воде */
-    for (let rad = 1; rad < 90; rad++) {
-      for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
-        const x = Math.round(fx) + dx, y = Math.round(fy) + dy;
-        if (!inB(w, x, y)) continue;
-        const t = w.tiles[idx(w, x, y)];
-        if (landT(t) && (pref === undefined || t === pref)) return { x, y };
-      }
-    }
-    return { x: clampi(Math.round(fx), 2, W - 3), y: clampi(Math.round(fy), 2, H - 3) };
-  };
-
-  /* входы в три подземелья */
-  const mkEntry = (fx: number, fy: number, pref: number, id: number, name: string) => {
-    const p = findFree(fx, fy, 9, pref);
-    setTile(w, p.x, p.y, Tl.STAIRS);
-    clearAround(w, p.x, p.y, 1);
-    w.dungeonEntries.push({ x: p.x, y: p.y, id, name });
-    return p;
-  };
-  mkEntry(cx + 6, cy + 2, Tl.MTN, 2, "Каменная Крепость");
-  mkEntry(cx - R1 - 10, cy + 6, Tl.FOREST, 1, "Корень Иггдрасиля");
-  mkEntry(ruinsC.x, ruinsC.y, Tl.RUINS, 0, "Склеп Хранителя");
-
-  /* дороги */
-  carveRoad(w, vA.gate, vB.gate, rng);
-  carveRoad(w, vA.gate, { x: w.treeAltar.x, y: w.treeAltar.y + 8 }, rng);
-  for (const e of w.dungeonEntries) carveRoad(w, vA.gate, { x: e.x, y: e.y }, rng);
-  carveRoad(w, vA.gate, { x: vR.gate.x, y: vR.gate.y }, rng);
-  carveRoad(w, vA.gate, { x: ruinsC.x, y: ruinsC.y }, rng);
-  const midRoad = { x: Math.round((vA.gate.x + vB.gate.x) / 2), y: Math.round((vA.gate.y + vB.gate.y) / 2) };
-  w.bundleSpot = findFree(midRoad.x, midRoad.y, 4);
-
-  /* святилища */
-  const shrineSpots: Vec[] = [
-    { x: vA.x0 - 3, y: vA.y1 - 2 },
-    findFree(cx - R1 - 8, cy - 10, 6),
-    findFree(cx + R1 + 8, cy - 6, 6),
-    { x: vB.x0 - 3, y: vB.y1 },
-  ];
-  for (const s of shrineSpots) {
-    clearAround(w, s.x, s.y, 1);
-    w.shrines.push({ x: s.x, y: s.y });
-  }
-
-  /* ключевые точки квестов — все в глубине острова */
-  w.bearSpot = findFree(cx + R2 + 6, cy + 14, 8, Tl.SWAMP);
-  setTile(w, w.bearSpot.x, w.bearSpot.y, Tl.POOL);
-  w.hornSpot = findFree(cx + 10, cy - 8, 9, Tl.MTN);
-  w.meadSpot = findFree(cx - R1 - 14, cy - 6, 9, Tl.FOREST);
-  w.oreSpot = findFree(cx - 8, cy + 8, 9, Tl.MTN);
-  w.mossSpot = findFree(cx + R2 + 4, cy + 4, 8, Tl.SWAMP);
-  w.amberSpot = findFree(cx + 14, cy + 8, 9, Tl.MTN);
-  w.flowerSpot = findFree(ruinsC.x + 6, ruinsC.y - 4, 8, Tl.RUINS);
-  w.diarySpot = { x: vR.x0 + 2 + Math.floor(rng() * 6), y: vR.y0 + 2 + Math.floor(rng() * 4) };
-  setTile(w, w.diarySpot.x, w.diarySpot.y, Tl.RUINS);
-  w.relicSpot = findFree(44, 50, 9);
-  w.oldAltar = findFree(w.relicSpot.x + 7, w.relicSpot.y + 3, 5);
-  setTile(w, w.oldAltar.x, w.oldAltar.y, Tl.ALTAR);
-  clearAround(w, w.oldAltar.x, w.oldAltar.y, 1);
-  w.stashSpot = findFree(ruinsC.x - 4, ruinsC.y + 5, 6);
-
-  /* колонны в руинах */
-  for (let i = 0; i < 10; i++) {
-    const p = findFree(ruinsC.x, ruinsC.y, 8, Tl.RUINS);
-    setTile(w, p.x, p.y, Tl.COLUMN);
-  }
-
-  /* пьедесталы Забытых Рун */
-  const guardPool: EnemyKind[][] = [
-    ["draugr", "raven"], ["varg", "varg"], ["draugr", "shroom"],
-    ["frost", "raven"], ["draugr", "draugr", "crawler"],
-  ];
-  const pedestalCenters = [
-    { x: cx - R1 - 12, y: cy + 8 },
-    { x: cx + 12, y: cy - 10 },
-    { x: cx + R2 + 5, y: cy + 7 },
-    { x: ruinsC.x + 5, y: ruinsC.y + 3 },
-    { x: cx - R2 - 8, y: cy - 7 },
-  ];
-  pedestalCenters.forEach((c, i) => {
-    const p = findFree(c.x, c.y, 6);
-    clearAround(w, p.x, p.y, 2);
-    w.pedestals.push({ x: p.x, y: p.y, guards: guardPool[i] });
-  });
-
-  /* сундуки на поверхности */
-  const bowSpot = findFree(cx - R1 - 8, cy + 12, 9, Tl.FOREST);
-  const arrowsSpot = findFree(cx + 6, cy - 12, 9, Tl.MTN);
-  const heartSpot = findFree(cx + R2 + 8, cy + 2, 9);
-  w.chests.push(
-    { x: bowSpot.x, y: bowSpot.y, item: "bow" },
-    { x: arrowsSpot.x, y: arrowsSpot.y, item: "arrows" },
-    { x: heartSpot.x, y: heartSpot.y, item: "heartPiece" },
-  );
-  for (const c of w.chests) clearAround(w, c.x, c.y, 1);
-
-  /* NPC */
-  w.npcs.push(
-    { id: "eirik", name: "Эйрик Старший", x: gate.x - 4, y: gate.y - 7 },
-    { id: "astrid", name: "Астрид", x: gate.x + 3, y: gate.y - 8 },
-    { id: "harald", name: "Харальд", x: gate.x - 4, y: gate.y - 3 },
-    { id: "raven", name: "Ворон-Говорун", x: gate.x + 3, y: gate.y - 3 },
-    { id: "daughter", name: "Безымянная Дочь", x: Math.round(cx - R1 - 10), y: Math.round(cy + 6) },
-    { id: "sigrid", name: "Сигрид", x: vB.gate.x - 3, y: vB.gate.y - 5 },
-    { id: "brand", name: "Бранд", x: vB.gate.x + 2, y: vB.gate.y - 6 },
-    { id: "shaman", name: "Шаман Ульв", x: vB.gate.x, y: vB.gate.y - 4 },
-    { id: "refugee", name: "Беженка Гюнн", x: vR.gate.x + 3, y: vR.gate.y + 2 },
-    { id: "merchant", name: "Торговец Фьолнир", x: midRoad.x + 2, y: midRoad.y + 1 },
-  );
-  for (const n of w.npcs) {
-    if (!inB(w, n.x, n.y) || SOLID.has(tileAt(w, n.x, n.y))) {
-      const p = findFree(n.x, n.y, 3);
-      n.x = p.x; n.y = p.y;
-    }
-    clearAround(w, n.x, n.y, 1);
-  }
-
-  /* души-странники */
-  const soulSpots = [
-    findFree(cx - R2 - 6, cy + 12, 5),
-    findFree(cx + R2 + 10, cy - 10, 5),
-    { x: ruinsC.x - 8, y: ruinsC.y - 6 },
-  ];
-  for (const s of soulSpots) { clearAround(w, s.x, s.y, 1); w.souls.push(s); }
-
-  /* ледяные осколки и кости — только на суше (findFree со спиральным fallback) */
-  for (let i = 0; i < 24; i++) {
-    const a = rng() * Math.PI * 2, rr = 12 + rng() * 46;
-    const p = findFree(cx + Math.cos(a) * rr, cy + Math.sin(a) * rr * 0.75, 3);
-    if (!w.ambient.some((x) => Math.abs(x.x - p.x) < 4 && Math.abs(x.y - p.y) < 4)) {
-      w.ambient.push({ kind: "shard", x: p.x, y: p.y });
-    }
-  }
-  for (let i = 0; i < 10; i++) {
-    const p = findFree(ruinsC.x + (rng() * 2 - 1) * 12, ruinsC.y + (rng() * 2 - 1) * 11, 3, Tl.RUINS);
-    if (!w.ambient.some((x) => Math.abs(x.x - p.x) < 4 && Math.abs(x.y - p.y) < 4)) {
-      w.ambient.push({ kind: "bones", x: p.x, y: p.y });
-    }
-  }
-
-  /* украшение биомов */
-  const n3 = makeNoise(seed ^ 0xdeed);
-  for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
-    const i = idx(w, x, y);
-    const t = w.tiles[i];
-    const v = n3(x * 0.16, y * 0.16);
-    if (t === Tl.FOREST) { if (v > 0.5) setTile(w, x, y, Tl.TREE); }
-    else if (t === Tl.MTN) { if (v > 0.56) setTile(w, x, y, Tl.ROCK); }
-    else if (t === Tl.SWAMP) { if (v > 0.66) setTile(w, x, y, Tl.POOL); }
-    else if (t === Tl.SNOW) {
-      if (v > 0.74) setTile(w, x, y, Tl.TREE);
-      else if (v < 0.24) setTile(w, x, y, Tl.SNOW2);
-    } else if (t === Tl.RUINS) { if (v > 0.76) setTile(w, x, y, Tl.COLUMN); }
-  }
-  for (const n of w.npcs) clearAround(w, n.x, n.y, 1);
-  for (const c of w.chests) clearAround(w, c.x, c.y, 1);
-  for (const p of w.pedestals) clearAround(w, p.x, p.y, 1);
-  for (const e of w.dungeonEntries) clearAround(w, e.x, e.y, 1);
-  for (const s of w.shrines) clearAround(w, s.x, s.y, 1);
-  for (const s of w.souls) clearAround(w, s.x, s.y, 1);
-  for (const a of w.ambient) clearAround(w, a.x, a.y, 0);
-  clearAround(w, w.treeAltar.x, w.treeAltar.y + 3, 5, Tl.SNOW2);
-  setTile(w, w.treeAltar.x, w.treeAltar.y, Tl.ALTAR);
-  clearAround(w, w.oldAltar.x, w.oldAltar.y, 1);
-  setTile(w, w.oldAltar.x, w.oldAltar.y, Tl.ALTAR);
-
-  /* враги по экосистеме колец — спавн только в разрешённых зонах */
-  const kindsFor = (t: number, d: number): EnemyKind[] => {
-    if (d < R1 + 2) return ["frost", "varg", "frost"];
-    switch (t) {
-      case Tl.FOREST: return ["shroom", "raven", "draugr"];
-      case Tl.MTN: return ["frost", "varg", "draugr"];
-      case Tl.SWAMP: return ["crawler", "draugr", "crawler"];
-      case Tl.RUINS: return ["draugr", "frost", "crawler"];
-      default: return ["varg", "raven", "draugr"];
-    }
-  };
-  
-  // Зоны где монстры НЕ могут спавниться (поселения + буфер вокруг)
-  const noSpawnZones = [
-    { x0: vA.x0 - 8, y0: vA.y0 - 8, x1: vA.x1 + 8, y1: vA.y1 + 8 },
-    { x0: vB.x0 - 8, y0: vB.y0 - 8, x1: vB.x1 + 8, y1: vB.y1 + 8 },
-    { x0: vR.x0 - 6, y0: vR.y0 - 6, x1: vR.x1 + 6, y1: vR.y1 + 6 },
-  ];
-  
-  const isInNoSpawnZone = (x: number, y: number): boolean => {
-    for (const z of noSpawnZones) {
-      if (x >= z.x0 && x <= z.x1 && y >= z.y0 && y <= z.y1) return true;
-    }
-    return false;
-  };
-  
-  const pois = [
-    gate, vB.gate, w.treeAltar,
-    ...w.dungeonEntries.map((e) => ({ x: e.x, y: e.y })),
-    ...w.shrines, ...w.npcs, ...w.chests.map((c) => ({ x: c.x, y: c.y })),
-    ...w.pedestals.map((p) => ({ x: p.x, y: p.y })),
-  ];
-  let placed = 0;
-  for (let tries = 0; tries < 4000 && placed < 84; tries++) {
-    const x = 3 + Math.floor(rng() * (W - 6));
-    const y = 3 + Math.floor(rng() * (H - 6));
-    const t = w.tiles[idx(w, x, y)];
-    if (SOLID.has(t) || t === Tl.PATH || t === Tl.POOL || t === Tl.VILLAGE || t === Tl.WATER || t === Tl.SHORE) continue;
-    // Проверка: не в поселении ли
-    if (isInNoSpawnZone(x, y)) continue;
-    if (Math.hypot(gate.x - x, gate.y + 2 - y) < 40) continue;
-    if (pois.some((p) => Math.hypot(p.x - x, p.y - y) < 8)) continue;
-    const d = Math.hypot((x - cx) * 0.92, y - cy);
-    const kinds = kindsFor(t, d);
-    w.spawns.push({ kind: kinds[Math.floor(rng() * kinds.length)], x: x * T + 8, y: y * T + 8 });
-    placed++;
-  }
-  // В сожжённой деревне можно спавнить немного врагов (она разрушена)
-  for (let i = 0; i < 3; i++) {
-    const x = vR.x0 + 2 + Math.floor(rng() * (vR.x1 - vR.x0 - 4));
-    const y = vR.y0 + 2 + Math.floor(rng() * (vR.y1 - vR.y0 - 4));
-    if (!SOLID.has(tileAt(w, x, y))) w.spawns.push({ kind: i === 2 ? "crawler" : "draugr", x: x * T + 8, y: y * T + 8 });
-  }
-
-  /* связность: всё важное достижимо от ворот */
-  const reach = floodReach(w, gate.x, gate.y - 1);
-  const ensure = (p: Vec) => {
-    if (!inB(w, p.x, p.y) || !reach[idx(w, p.x, p.y)]) carveRoad(w, gate, p, rng);
-  };
-  for (const e of w.dungeonEntries) ensure(e);
-  ensure({ x: w.treeAltar.x, y: w.treeAltar.y + 8 });
-  ensure(vB.gate);
-  ensure({ x: vR.x0 + 5, y: vR.y1 + 1 });
-  for (const s of w.shrines) ensure(s);
-  for (const c of w.chests) ensure(c);
-  for (const p of w.pedestals) ensure(p);
-  for (const n of w.npcs) ensure(n);
-  for (const s of w.souls) ensure(s);
-  for (const p of [w.bearSpot, w.hornSpot, w.meadSpot, w.oreSpot, w.mossSpot,
-    w.amberSpot, w.flowerSpot, w.diarySpot, w.bundleSpot, w.relicSpot, w.oldAltar, w.stashSpot]) {
-    ensure(p);
-  }
-
-  w.zones = [
-    { x: vA.x0, y: vA.y0, w: vA.x1 - vA.x0, h: vA.y1 - vA.y0, name: "Поселение выживших" },
-    { x: vB.x0, y: vB.y0, w: vB.x1 - vB.x0, h: vB.y1 - vB.y0, name: "Воронья Гавань" },
-    { x: vR.x0, y: vR.y0, w: vR.x1 - vR.x0, h: vR.y1 - vR.y0, name: "Сожжённая Деревня" },
-    { x: w.treeAltar.x - 8, y: w.treeAltar.y - 3, w: 17, h: 17, name: "Корни Иггдрасиля" },
-    { x: Math.round(cx - R1 - 20), y: Math.round(cy - 20), w: 40, h: 40, name: "Мёртвый Лес" },
-    { x: Math.round(cx - 24), y: Math.round(cy - 22), w: 48, h: 44, name: "Хребет Нидов" },
-    { x: Math.round(cx + R1 - 4), y: Math.round(cy - 10), w: 44, h: 44, name: "Замерзшие Топи" },
-    { x: ruinsC.x - 14, y: ruinsC.y - 12, w: 28, h: 24, name: "Руины Времени" },
-  ];
-
-  // герой приходит в себя рядом с Эйриком
-  for (let y = gate.y - 6; y <= gate.y - 3; y++) for (let x = gate.x - 4; x <= gate.x + 2; x++) {
-    if (!inB(w, x, y)) continue;
-    const t = w.tiles[idx(w, x, y)];
-    if (t === Tl.HOUSE || t === Tl.TREE || t === Tl.ROCK || t === Tl.COLUMN) setTile(w, x, y, Tl.VILLAGE);
-  }
-  w.spawn = px(gate.x, gate.y - 5);
-  w.nav = buildNav(w);
-  return w;
 }
 
 export function zoneFor(w: WorldData, tx: number, ty: number): string {
@@ -893,10 +1182,11 @@ function finalizeDungeon(w: WorldData, rng: () => number, cfg: DungeonCfg, pool:
   for (const s of w.spawns) {
     if (!pool.includes(s.kind)) s.kind = pool[Math.floor(rng() * pool.length)];
   }
-  w.nav = buildNav(w);
+  const navBuilder = new NavBuilder();
+  w.nav = navBuilder.build(w);
 }
 
-/* Склеп Хранителя: лабиринт коридоров с камерами-усыпальницами */
+// Склеп Хранителя
 function genCrypt(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   const rng = mulberry((seed ^ 0x5eed) + cfg.id * 7919);
   const w = baseDungeon(cfg, 60, 45, exitSpot);
@@ -968,7 +1258,6 @@ function genCrypt(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   for (let i = 0; i < cells.length; i++) if (dist[i] > dist[far]) far = i;
   const farCell = cells[far];
   w.chests.push({ x: cellX(farCell.c) + 3, y: cellY(farCell.r) + 2, item: "key" });
-  // дополнительные сундуки в каждой второй камере
   cells.forEach((cell, i) => {
     if (i % 2 === 0 || i === ci(ec, ROWS - 1) || i === far) return;
     if (rng() < 0.5) {
@@ -991,7 +1280,7 @@ function genCrypt(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   return w;
 }
 
-/* Корень Иггдрасиля: органичные пещеры (клеточный автомат + flood fill) */
+// Корень Иггдрасиля
 function genRoot(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   const rng = mulberry((seed ^ 0x5eed) + cfg.id * 7919);
   const W = 60, H = 45;
@@ -1084,7 +1373,6 @@ function genRoot(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
     w.chests.push({ x: kx, y: ky, item: "key" });
     w.spawns.push({ kind: "shroom", x: kx * T + 8, y: (ky - 2) * T + 8 });
     w.spawns.push({ kind: "shroom", x: (kx + 2) * T + 8, y: ky * T + 8 });
-    // сундуки в средних гротах
     for (let r = 1; r < Math.min(4, regions.length); r++) {
       const reg = regions[r];
       w.chests.push({ x: clampi(Math.round(reg.cx) + 1, 2, W - 3), y: clampi(Math.round(reg.cy), 2, H - 3), item: rng() < 0.5 ? "arrows" : "heartPiece" });
@@ -1119,7 +1407,7 @@ function genRoot(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   return w;
 }
 
-/* Каменная Крепость: форт с башнями и широкими маршами */
+// Каменная Крепость
 function genFortress(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   const rng = mulberry((seed ^ 0x5eed) + cfg.id * 7919);
   const w = baseDungeon(cfg, 60, 45, exitSpot);
@@ -1156,7 +1444,6 @@ function genFortress(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   w.chests.push({ x: roomX(kc[0]) + 2, y: roomY(kc[1]) + 2, item: "key" });
   const oc = corners.filter((c) => c !== kc)[Math.floor(rng() * 3)];
   w.chests.push({ x: roomX(oc[0]) + RW - 3, y: roomY(oc[1]) + 2, item: rng() < 0.5 ? "arrows" : "heartPiece" });
-  // сундук в каждой оставшейся башне
   for (const [c, r] of [[1, 0], [0, 1], [2, 1]] as [number, number][]) {
     if (rng() < 0.6) w.chests.push({ x: roomX(c) + 3, y: roomY(r) + 3, item: "arrows" });
   }
@@ -1182,7 +1469,6 @@ export function generateDungeon(seed: number, cfg: DungeonCfg, exitSpot: Vec): W
   return genFortress(seed, cfg, exitSpot);
 }
 
-/* три подземелья основной саги */
 export const DUNGEONS: DungeonCfg[] = [
   { id: 0, name: "Склеп Хранителя", boss: "reaper", bossReward: "axe", pool: ["draugr", "crawler", "raven"] },
   { id: 1, name: "Корень Иггдрасиля", boss: "spider", bossReward: "bow", pool: ["shroom", "crawler", "raven"] },

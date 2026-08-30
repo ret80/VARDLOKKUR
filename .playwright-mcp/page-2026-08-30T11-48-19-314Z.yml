@@ -1,0 +1,8 @@
+- generic [ref=f1e6]:
+  - generic [ref=f1e7]: ᛒ
+  - heading "ВАРДЛОКУР" [level=1] [ref=f1e17]
+  - generic [ref=f1e18]: Эхо Ветвей Иггдрасиля
+  - generic [ref=f1e19]:
+    - button "⟡ Начать сагу ⟡" [ref=f1e20] [cursor=pointer]
+    - button "Помощь" [ref=f1e21] [cursor=pointer]
+  - generic [ref=f1e22]: ДУХОВНЫЙ НАСЛЕДНИК LINK'S AWAKENING · МИР ГЕНЕРИРУЕТСЯ ЗАНОВО В КАЖДОЙ САГЕ
