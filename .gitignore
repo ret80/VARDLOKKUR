@@ -16,7 +16,6 @@ dist/
 *.log
 
 # Editor/IDE
-.vscode/
 .idea/
 
 # Python
