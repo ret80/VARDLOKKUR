@@ -57,7 +57,8 @@ export interface WorldData {
   oldAltar: Vec; stashSpot: Vec; ruinedVillage: Vec;
   treeAltar: Vec; arena: { x: number; y: number; r: number }; snakeSpot: Vec;
   villageA: Vec; villageB: Vec;
-  bossRoom: { x: number; y: number; w: number; h: number }; bossSpot: Vec; entryStairs: Vec;
+   bossRoom: { x: number; y: number; w: number; h: number }; bossSpot: Vec; entryStairs: Vec;
+   ruinedHouses: HouseDef[];
 }
 
 export const idx = (w: { W: number }, x: number, y: number) => y * w.W + x;
@@ -274,6 +275,7 @@ class IslandGenerator {
       treeAltar: { x: 100, y: 24 }, arena: { x: 0, y: 0, r: 92 }, snakeSpot: { x: 0, y: 0 },
       villageA: { x: 0, y: 0 }, villageB: { x: 0, y: 0 },
       bossRoom: { x: 0, y: 0, w: 0, h: 0 }, bossSpot: { x: 0, y: 0 }, entryStairs: { x: 0, y: 0 },
+      ruinedHouses: [],
     };
     return w;
   }
@@ -742,17 +744,23 @@ export function generateOverworld(seed: number): WorldData {
   const vB = villageGen.generate(w, 146 + Math.floor(rng() * 4), 58, 13, 11);
   const vR = villageGen.generate(w, 38 + Math.floor(rng() * 4), 56, 11, 9);
   
-  // Разрушаем сожжённую деревню
+  // Разрушаем сожжённую деревню: часть домов в угли, часть — разломанные
+  w.ruinedHouses = [];
+  for (const h of vR.houses) {
+    if (rng() < 0.4) {
+      // сгорел дотла
+      for (let y = h.y; y < h.y + h.h; y++)
+        for (let x = h.x; x < h.x + h.w; x++)
+          setTile(w, x, y, rng() < 0.5 ? Tl.COLUMN : Tl.RUINS);
+    } else {
+      w.ruinedHouses.push({ x: h.x, y: h.y, w: h.w, h: h.h });
+    }
+  }
   for (let y = vR.y0; y <= vR.y1; y++) {
     for (let x = vR.x0; x <= vR.x1; x++) {
       if (!inB(w, x, y)) continue;
-      const t = w.tiles[y * w.W + x];
-      if (t === Tl.HOUSE && rng() < 0.5) {
+      if (w.tiles[y * w.W + x] === Tl.PALISADE && rng() < 0.4)
         setTile(w, x, y, rng() < 0.5 ? Tl.COLUMN : Tl.RUINS);
-      }
-      if (t === Tl.PALISADE && rng() < 0.4) {
-        setTile(w, x, y, rng() < 0.5 ? Tl.COLUMN : Tl.RUINS);
-      }
     }
   }
 
@@ -1261,9 +1269,10 @@ function baseDungeon(cfg: DungeonCfg, W: number, H: number, exitSpot: Vec): Worl
     relicSpot: { x: 0, y: 0 }, oldAltar: { x: 0, y: 0 }, stashSpot: { x: 0, y: 0 },
     ruinedVillage: { x: 0, y: 0 }, treeAltar: { x: 0, y: 0 }, arena: { x: 0, y: 0, r: 0 },
     snakeSpot: { x: 0, y: 0 }, villageA: { x: 0, y: 0 }, villageB: { x: 0, y: 0 },
-    bossRoom: { x: 0, y: 0, w: 0, h: 0 }, bossSpot: { x: 0, y: 0 }, entryStairs: { x: 0, y: 0 },
-  };
-}
+     bossRoom: { x: 0, y: 0, w: 0, h: 0 }, bossSpot: { x: 0, y: 0 }, entryStairs: { x: 0, y: 0 },
+     ruinedHouses: [],
+   };
+ }
 
 function finalizeDungeon(w: WorldData, rng: () => number, cfg: DungeonCfg, pool: EnemyKind[]) {
   const br = w.bossRoom;
