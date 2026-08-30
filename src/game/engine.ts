@@ -908,9 +908,8 @@ export class Engine {
     if (this.screen !== "play" || this.dialogueActive || !this.map) return;
     const p = this.player;
     const tgt = this.trackedTarget();
-    let wantA: number | null = null;
-    if (p.moving && (p.vx !== 0 || p.vy !== 0)) wantA = Math.atan2(p.vy, p.vx);
-    else if (tgt) wantA = Math.atan2(tgt.y - p.y, tgt.x - p.x);
+    if (!tgt) return;
+    let wantA: number | null = Math.atan2(tgt.y - p.y, tgt.x - p.x);
     if (wantA !== null) {
       let da = wantA - this.arrowA;
       while (da > Math.PI) da -= Math.PI * 2;
