@@ -1,13 +1,4 @@
 {
   "version": "0.2.0",
-  "configurations": [
-    {
-      "type": "pwa-chrome",
-      "name": "Run & Deploy",
-      "request": "launch",
-      "url": "http://localhost:3000",
-      "preLaunchTask": "Run & Deploy",
-      "webRoot": "${workspaceFolder}"
-    }
-  ]
+  "configurations": []
 }

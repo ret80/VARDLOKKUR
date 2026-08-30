@@ -25,7 +25,16 @@ else
     done
 fi
 
-# 3. Открываем в Chrome
+# 3. Проверяем что сервер отвечает
+for i in $(seq 1 30); do
+    if curl -s http://localhost:3000 > /dev/null 2>&1 ; then
+        echo "✅ Сервер отвечает"
+        break
+    fi
+    sleep 0.5
+done
+
+# 4. Открываем в Chrome
 open -a "Google Chrome" http://localhost:3000
 
 echo "✅ Готово!"
