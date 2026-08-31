@@ -1,6 +1,6 @@
 /* engine.ts – Полностью переработанный движок с рендерерами из entities.ts */
 
-import { Application, Container, Graphics, Sprite, Texture, Text } from "pixi.js";
+import { Application, Container, Graphics, RenderTexture, Sprite, Texture, Text } from "pixi.js";
 import { System as PhysSystem, Circle as PhysCircle, Vector as PhysVector } from "kinetics.ts";
 import {
   T, Tl, WorldData, Vec, DropKind,
@@ -11,6 +11,7 @@ import {
   makeEnemy,
 } from "./entities";
 import { audio } from "./audio";
+import { NoiseGenerator } from "./noise";
 
 // Новые импорты из entities.ts (рендереры и интерфейсы данных)
 import {
@@ -81,7 +82,17 @@ export class Engine {
   private groundSpr: Sprite | null = null;
   private wallTiles: (Graphics | Sprite)[] = [];
   private fxScreen = new Graphics();
-  private fogSpr: Sprite | null = null;
+  private fogVignette: Sprite | null = null;
+  private fogCanvas: HTMLCanvasElement | null = null;
+  private fogCtx: CanvasRenderingContext2D | null = null;
+  private fogTex: Texture | null = null;
+  private fogRT: RenderTexture | null = null;
+  private fogCopySpr: Sprite | null = null;
+  private fogMaskCanvas: HTMLCanvasElement | null = null;
+  private fogMaskCtx: CanvasRenderingContext2D | null = null;
+  private noiseCanvas: HTMLCanvasElement | null = null;
+  private fogNoiseT = 0;
+  private fogNoiseGen = new NoiseGenerator(0x51ab); // фикс. сид — текстура дыма
   private vignette: Sprite | null = null;
   private fadeG = new Graphics();
   private particleG = new Graphics();
@@ -246,23 +257,15 @@ export class Engine {
     this.world.addChild(this.floatLayer);
     app.stage.addChild(this.world);
 
-    // туман-мгла
-    const fc = document.createElement("canvas");
-    fc.width = 512; fc.height = 512;
-    const fctx = fc.getContext("2d")!;
-    const fg = fctx.createRadialGradient(256, 256, 96, 256, 256, 256);
-    fg.addColorStop(0, "rgba(10,16,22,0)");
-    fg.addColorStop(0.55, "rgba(10,16,22,0.55)");
-    fg.addColorStop(1, "rgba(8,12,18,0.94)");
-    fctx.fillStyle = fg; fctx.fillRect(0, 0, 512, 512);
-    this.fogSpr = new Sprite(Texture.from(fc));
-    this.fogSpr.anchor.set(0.5);
-    this.fogSpr.visible = false;
-    app.stage.addChild(this.fogSpr);
-
     app.stage.addChild(this.fxScreen);
     this.buildVignette();
     if (this.vignette) app.stage.addChild(this.vignette);
+
+    // туман‑виньетка — ПОВЫШЕ статичной виньетки, чтобы быть видимой
+    this.buildFogVignette();
+    this.buildNoiseTexture();
+    if (this.fogVignette) app.stage.addChild(this.fogVignette);
+
     app.stage.addChild(this.fadeG);
 
     for (let i = 0; i < 130; i++) {
@@ -306,19 +309,182 @@ export class Engine {
     if ((this.viewW !== ow || this.viewH !== oh) && this.app) {
       this.app.renderer.resize(this.viewW, this.viewH);
       this.buildVignette();
+      this.buildFogVignette(); // <-- добавлено
     }
   }
 
   private buildVignette() {
+    const vw = Math.ceil(this.viewW * 1.1);
+    const vh = Math.ceil(this.viewH * 1.1);
     const vc = document.createElement("canvas");
-    vc.width = this.viewW; vc.height = this.viewH;
+    vc.width = vw; vc.height = vh;
     const vx = vc.getContext("2d")!;
-    const grad = vx.createRadialGradient(this.viewW / 2, this.viewH / 2, this.viewH * 0.36, this.viewW / 2, this.viewH / 2, this.viewH * 0.8);
+    const grad = vx.createRadialGradient(vw / 2, vh / 2, vh * 0.36, vw / 2, vh / 2, vh * 0.85);
     grad.addColorStop(0, "rgba(5,8,13,0)");
     grad.addColorStop(1, "rgba(4,6,10,0.66)");
-    vx.fillStyle = grad; vx.fillRect(0, 0, this.viewW, this.viewH);
+    vx.fillStyle = grad; vx.fillRect(0, 0, vw, vh);
     if (this.vignette) { this.vignette.texture.destroy(true); this.vignette.texture = Texture.from(vc); }
     else this.vignette = new Sprite(Texture.from(vc));
+    // 110% экрана, по центру с запасом
+    this.vignette!.width = vw;
+    this.vignette!.height = vh;
+    this.vignette!.position.set(-this.viewW * 0.05, -this.viewH * 0.05);
+  }
+
+  /* ============ туман‑виньетка ============ */
+
+  // Создаёт/пересоздаёт спрайт и канвас под текущий размер (110% экрана, половинное разрешение).
+  private buildFogVignette() {
+    const scale = 0.5; // половинное разрешение: дым мягкий, пикселизация не видна
+    const targetW = this.viewW * 1.1;
+    const targetH = this.viewH * 1.1;
+    const cw = Math.max(4, Math.ceil(targetW * scale));
+    const ch = Math.max(4, Math.ceil(targetH * scale));
+
+    if (!this.fogCanvas) {
+      this.fogCanvas = document.createElement("canvas");
+      this.fogCtx = this.fogCanvas.getContext("2d")!;
+    }
+    const sizeChanged = this.fogCanvas.width !== cw || this.fogCanvas.height !== ch;
+    if (sizeChanged) {
+      this.fogCanvas.width = cw;
+      this.fogCanvas.height = ch;
+
+      // уничтожаем старые текстуры
+      if (this.fogTex) { this.fogTex.destroy(true); this.fogTex = null; }
+      if (this.fogRT)  { this.fogRT.destroy(true);  this.fogRT  = null; }
+
+      // CanvasSource-текстура (для копирования канваса)
+      this.fogTex = Texture.from(this.fogCanvas);
+      // RenderTexture того же размера — именно его показываем на спрайте
+      this.fogRT = RenderTexture.create({ width: cw, height: ch });
+    }
+    if (!this.fogTex) this.fogTex = Texture.from(this.fogCanvas);
+    if (!this.fogRT)  this.fogRT  = RenderTexture.create({ width: cw, height: ch });
+
+    if (!this.fogVignette) this.fogVignette = new Sprite(this.fogRT);
+    this.fogVignette.texture = this.fogRT;   // спрайт смотрит на RenderTexture
+    // размер спрайта ФИКСИРОВАН = 110% экрана, никогда не сжимается
+    this.fogVignette.width = targetW;
+    this.fogVignette.height = targetH;
+    this.fogVignette.position.set(-this.viewW * 0.05, -this.viewH * 0.05);
+    this.fogVignette.visible = false;
+  }
+
+  // Один раз генерируем шумовую текстуру дыма (128×128) через общий NoiseGenerator.
+  private buildNoiseTexture() {
+    if (this.noiseCanvas) return;
+    const size = 128;
+    const c = document.createElement("canvas");
+    c.width = size; c.height = size;
+    const ctx = c.getContext("2d")!;
+    const img = ctx.createImageData(size, size);
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        // тот же fBm, что используется для острова
+        const n = this.fogNoiseGen.fbm(x * 0.05, y * 0.05, 3);
+        const i = (y * size + x) * 4;
+        img.data[i] = 105; img.data[i + 1] = 118; img.data[i + 2] = 132; // дымчатый
+        img.data[i + 3] = Math.floor(Math.max(0, n - 0.25) * 255);
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    this.noiseCanvas = c;
+  }
+
+  // Плавный шум по углу для «рваного» края дыма.
+  private fogWaveNoise(a: number, t: number): number {
+    return (
+      Math.sin(a * 3 + t * 0.9) * 0.5 +
+      Math.sin(a * 7 - t * 1.3 + 1.7) * 0.3 +
+      Math.sin(a * 13 + t * 2.1 + 4.2) * 0.2
+    );
+  }
+
+  // Перерисовка содержания виньетки. Спрайт не меняет размер — меняется только «окошко».
+  private redrawFog(rdt: number) {
+    if (!this.fogCanvas || !this.fogCtx || !this.fogVignette) return;
+    const active = this.fogRadius < 2300;
+    this.fogVignette.visible = active;
+    if (!active) return;
+
+    this.fogNoiseT += rdt;
+    const cw = this.fogCanvas.width, ch = this.fogCanvas.height;
+    const ctx = this.fogCtx;
+    const canvasW = cw, canvasH = ch;
+    // позиция игрока в координатах канваса
+    const px = (this.player.x - this.cam.x + this.viewW * 0.05) * (cw / (this.viewW * 1.1));
+    const py = (this.player.y - this.cam.y + this.viewH * 0.05) * (cw / (this.viewW * 1.1));
+
+    const fogK = clamp(1 - this.fogRadius / 2300, 0, 1); // сила тумана 0..1
+    // радиус окошка в канвас-пикселях: пропорция размера канваса
+    const maxCanvas = Math.max(cw, ch);
+    const holeR = maxCanvas * (0.12 + 0.35 * (1 - fogK)); // от 12% (полный) до 47% (слабый)
+
+    ctx.clearRect(0, 0, cw, ch);
+
+    // 1. Дымчатый градиент: прозрачный центр -> дым к краям
+    const outerR = maxCanvas * 0.75;
+    const g = ctx.createRadialGradient(px, py, holeR * 0.7, px, py, Math.max(holeR * 1.6, outerR));
+    g.addColorStop(0, "rgba(126,140,155,0)");
+    g.addColorStop(0.4, `rgba(110,122,138,${(0.28 + 0.2 * fogK).toFixed(3)})`);
+    g.addColorStop(1, "rgba(78,88,104,0.95)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, cw, ch);
+
+    // 2. Рваный край: клубы дыма по границе видимости
+    const steps = 34;
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      const n = this.fogWaveNoise(a, this.fogNoiseT);
+      const rr = holeR * (1 + 0.18 * n);
+      const bx = px + Math.cos(a) * rr;
+      const by = py + Math.sin(a) * rr;
+      const blobR = holeR * (0.10 + 0.10 * Math.abs(this.fogWaveNoise(a * 1.7 + 3.1, this.fogNoiseT * 0.7)));
+      const bg = ctx.createRadialGradient(bx, by, 0, bx, by, Math.max(1, blobR));
+      bg.addColorStop(0, `rgba(96,108,124,${(0.28 * fogK + 0.08).toFixed(3)})`);
+      bg.addColorStop(1, "rgba(96,108,124,0)");
+      ctx.fillStyle = bg;
+      ctx.beginPath();
+      ctx.arc(bx, by, Math.max(1, blobR), 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 3. Шум Перлина по краям виньетки (НЕ над игроком) — через радиальную маску
+    if (this.noiseCanvas) {
+      if (!this.fogMaskCanvas) {
+        this.fogMaskCanvas = document.createElement("canvas");
+        this.fogMaskCtx = this.fogMaskCanvas.getContext("2d")!;
+      }
+      if (this.fogMaskCanvas.width !== cw) this.fogMaskCanvas.width = cw;
+      if (this.fogMaskCanvas.height !== ch) this.fogMaskCanvas.height = ch;
+      const mc = this.fogMaskCtx!;
+      mc.globalCompositeOperation = "source-over";
+      mc.clearRect(0, 0, cw, ch);
+      mc.drawImage(this.noiseCanvas, 0, 0, cw, ch);
+      mc.globalCompositeOperation = "destination-in";
+      const mg = mc.createRadialGradient(px, py, holeR * 1.15, px, py, holeR * 2.2);
+      mg.addColorStop(0, "rgba(0,0,0,0)");
+      mg.addColorStop(1, "rgba(0,0,0,1)");
+      mc.fillStyle = mg;
+      mc.fillRect(0, 0, cw, ch);
+      mc.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 0.25 + 0.35 * fogK;
+      ctx.drawImage(this.fogMaskCanvas, 0, 0);
+      ctx.globalAlpha = 1;
+    }
+
+    // принудительно обновляем CanvasSource и копируем в RenderTexture
+    if (this.fogTex && this.fogRT && this.app) {
+      this.fogTex.source.update();
+      if (!this.fogCopySpr) this.fogCopySpr = new Sprite(this.fogTex);
+      else this.fogCopySpr.texture = this.fogTex;
+      this.app.renderer.render({
+        container: this.fogCopySpr,
+        target: this.fogRT,
+        clear: true,
+      });
+    }
   }
 
   /* ================= публичное API ================= */
@@ -742,7 +908,6 @@ export class Engine {
       }
     }
     this.drawGuide(fx);
-    this.drawFog();
     this.drawWorldFx(rdt);
 
     const m = this.map;
@@ -752,6 +917,7 @@ export class Engine {
     this.cam.y += (ty - this.cam.y) * Math.min(1, rdt * 6);
     const shx = (Math.random() - 0.5) * this.shake, shy = (Math.random() - 0.5) * this.shake;
     this.world.position.set(-Math.round(this.cam.x + shx), -Math.round(this.cam.y + shy));
+    this.drawFog(rdt);   // <-- после обновления камеры
 
     // ==================== ОТРИСОВКА ЧЕРЕЗ РЕНДЕРЕРЫ ====================
     // 1. Игрок
@@ -877,16 +1043,10 @@ export class Engine {
     }
   }
 
-  private drawFog() {
-    const px = this.player.x - this.cam.x, py = this.player.y - this.cam.y;
-    if (this.fogSpr) {
-      if (this.fogRadius < 2300) {
-        this.fogSpr.visible = true;
-        this.fogSpr.position.set(px, py);
-        this.fogSpr.scale.set(this.fogRadius / 96);
-        this.fogSpr.alpha = 1;
-      } else this.fogSpr.visible = false;
-    }
+  private drawFog(rdt: number) {
+    this.redrawFog(rdt);
+
+    // угловые «руны» при сильном тумане (оставлено как было)
     const k = clamp(1 - this.fogRadius / 2300, 0, 1);
     if (k > 0.05) {
       const fx = this.fxScreen;
@@ -2123,12 +2283,12 @@ export class Engine {
   /* ================= туман ================= */
   private updateFog(dt: number, rdt: number) {
     if (this.map.isDungeon || this.flags.snakeDead) {
-      this.fogRadius += (2600 - this.fogRadius) * Math.min(1, rdt * 2);
+      this.fogRadius += (2600 - this.fogRadius) * Math.min(1, rdt * 0.8);
       return;
     }
     if (!this.fogActive) {
       this.fogTimer -= dt;
-      this.fogRadius += (2600 - this.fogRadius) * Math.min(1, rdt * 2);
+      this.fogRadius += (2600 - this.fogRadius) * Math.min(1, rdt * 0.8);
       if (!this.fogWarned && this.fogTimer < 4 && this.fogTimer > 0 && this.flags.hasSword) {
         this.fogWarned = true;
         audio.setFog(true);
@@ -2139,12 +2299,14 @@ export class Engine {
         this.fogActive = true;
         this.fogLeft = 13;
         this.fogSpawned = false;
+        this.fogRadius = 900;          // стартуем уже в видимой зоне канваса
         audio.setFog(true);
         this.toast("ВОЛНА ТУМАНА. Ниды шепчут...");
       }
     } else {
       this.fogLeft -= dt;
-      this.fogRadius += (78 - this.fogRadius) * Math.min(1, rdt * 1.4);
+      // медленное сжатие: волна тумана видна 5-8 секунд
+      this.fogRadius += (78 - this.fogRadius) * Math.min(1, rdt * 0.35);
       if (!this.fogSpawned && this.fogLeft < 11.5) {
         this.fogSpawned = true;
         const p = this.player;
