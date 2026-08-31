@@ -11,7 +11,7 @@ import {
   makeEnemy,
 } from "./entities";
 import { audio } from "./audio";
-import { NoiseGenerator } from "./noise";
+import { FxManager } from "./fx";
 import {
   TILE_COLORS,
   HouseSpriteEntry,
@@ -59,7 +59,6 @@ export interface EngineCallbacks {
   onStats: (s: Stats) => void;
 }
 
-interface Particle { x: number; y: number; vx: number; vy: number; life: number; max: number; size: number; color: number; grav: number; alpha: number }
 interface FloatText { txt: Text; life: number }
 interface SlamZone { x: number; y: number; r: number; t: number; boom: boolean }
 interface ChestRt { x: number; y: number; item: string; opened: boolean; g: Graphics }
@@ -86,20 +85,8 @@ export class Engine {
   private groundSpr: Sprite | null = null;
   private wallTiles: (Graphics | Sprite)[] = [];
   private fxScreen = new Graphics();
-  private fogVignette: Sprite | null = null;
-  private fogCanvas: HTMLCanvasElement | null = null;
-  private fogCtx: CanvasRenderingContext2D | null = null;
-  private fogTex: Texture | null = null;
-  private fogRT: RenderTexture | null = null;
-  private fogCopySpr: Sprite | null = null;
-  private fogMaskCanvas: HTMLCanvasElement | null = null;
-  private fogMaskCtx: CanvasRenderingContext2D | null = null;
-  private noiseCanvas: HTMLCanvasElement | null = null;
-  private fogNoiseT = 0;
-  private fogNoiseGen = new NoiseGenerator(0x51ab); // фикс. сид — текстура дыма
-  private vignette: Sprite | null = null;
+  private fx = new FxManager();
   private fadeG = new Graphics();
-  private particleG = new Graphics();
   private canvasEl: HTMLCanvasElement | null = null;
 
   // вьюпорт
@@ -209,9 +196,7 @@ export class Engine {
 
   private minimap: HTMLCanvasElement | null = null;
   private mmBase: ImageData | null = null;
-  private particles: Particle[] = [];
   private floats: FloatText[] = [];
-  private snow: { x: number; y: number; s: number; d: number; w: number }[] = [];
 
   // Рендереры (все в одном объекте)
   private renderers = {
@@ -254,29 +239,29 @@ export class Engine {
     this.applyViewSize();
     app.renderer.resize(this.viewW, this.viewH);
 
+    // Инициализация FX-менеджера
+    this.fx.init(app, this.viewW, this.viewH);
+
     this.world.sortableChildren = true;
     this.dynamic.sortableChildren = true;
-    this.fxWorld.addChild(this.particleG);
+    this.fxWorld.addChild(this.fx.worldParticleGraphics);
     this.world.addChild(this.dynamic);
     this.world.addChild(this.fxWorld);
     this.world.addChild(this.floatLayer);
     app.stage.addChild(this.world);
 
     app.stage.addChild(this.fxScreen);
-    this.buildVignette();
-    if (this.vignette) app.stage.addChild(this.vignette);
+    this.fx.buildVignette();
+    if (this.fx.vignette) app.stage.addChild(this.fx.vignette);
 
     // туман‑виньетка — ПОВЫШЕ статичной виньетки, чтобы быть видимой
-    this.buildFogVignette();
-    this.buildNoiseTexture();
-    if (this.fogVignette) app.stage.addChild(this.fogVignette);
+    this.fx.buildFogVignette();
+    this.fx.buildNoiseTexture();
+    if (this.fx.fogVignette) app.stage.addChild(this.fx.fogVignette!);
 
     app.stage.addChild(this.fadeG);
 
-    for (let i = 0; i < 130; i++) {
-      this.snow.push({ x: Math.random() * 640, y: Math.random() * 560, s: 14 + Math.random() * 26, d: Math.random() * 6, w: Math.random() < 0.3 ? 2 : 1 });
-    }
-
+    this.fx.initSnow();
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     window.addEventListener("resize", this.onResize);
@@ -313,184 +298,18 @@ export class Engine {
     this.applyViewSize();
     if ((this.viewW !== ow || this.viewH !== oh) && this.app) {
       this.app.renderer.resize(this.viewW, this.viewH);
-      this.buildVignette();
-      this.buildFogVignette(); // <-- добавлено
+      this.fx.buildVignette();
+      this.fx.buildFogVignette(); // <-- добавлено
     }
   }
 
-  private buildVignette() {
-    const vw = Math.ceil(this.viewW * 1.1);
-    const vh = Math.ceil(this.viewH * 1.1);
-    const vc = document.createElement("canvas");
-    vc.width = vw; vc.height = vh;
-    const vx = vc.getContext("2d")!;
-    const grad = vx.createRadialGradient(vw / 2, vh / 2, vh * 0.36, vw / 2, vh / 2, vh * 0.85);
-    grad.addColorStop(0, "rgba(5,8,13,0)");
-    grad.addColorStop(1, "rgba(4,6,10,0.66)");
-    vx.fillStyle = grad; vx.fillRect(0, 0, vw, vh);
-    if (this.vignette) { this.vignette.texture.destroy(true); this.vignette.texture = Texture.from(vc); }
-    else this.vignette = new Sprite(Texture.from(vc));
-    // 110% экрана, по центру с запасом
-    this.vignette!.width = vw;
-    this.vignette!.height = vh;
-    this.vignette!.position.set(-this.viewW * 0.05, -this.viewH * 0.05);
-  }
 
-  /* ============ туман‑виньетка ============ */
-
-  // Создаёт/пересоздаёт спрайт и канвас под текущий размер (110% экрана, половинное разрешение).
-  private buildFogVignette() {
-    const scale = 0.5; // половинное разрешение: дым мягкий, пикселизация не видна
-    const targetW = this.viewW * 1.1;
-    const targetH = this.viewH * 1.1;
-    const cw = Math.max(4, Math.ceil(targetW * scale));
-    const ch = Math.max(4, Math.ceil(targetH * scale));
-
-    if (!this.fogCanvas) {
-      this.fogCanvas = document.createElement("canvas");
-      this.fogCtx = this.fogCanvas.getContext("2d")!;
-    }
-    const sizeChanged = this.fogCanvas.width !== cw || this.fogCanvas.height !== ch;
-    if (sizeChanged) {
-      this.fogCanvas.width = cw;
-      this.fogCanvas.height = ch;
-
-      // уничтожаем старые текстуры
-      if (this.fogTex) { this.fogTex.destroy(true); this.fogTex = null; }
-      if (this.fogRT)  { this.fogRT.destroy(true);  this.fogRT  = null; }
-
-      // CanvasSource-текстура (для копирования канваса)
-      this.fogTex = Texture.from(this.fogCanvas);
-      // RenderTexture того же размера — именно его показываем на спрайте
-      this.fogRT = RenderTexture.create({ width: cw, height: ch });
-    }
-    if (!this.fogTex) this.fogTex = Texture.from(this.fogCanvas);
-    if (!this.fogRT)  this.fogRT  = RenderTexture.create({ width: cw, height: ch });
-
-    if (!this.fogVignette) this.fogVignette = new Sprite(this.fogRT);
-    this.fogVignette.texture = this.fogRT;   // спрайт смотрит на RenderTexture
-    // размер спрайта ФИКСИРОВАН = 110% экрана, никогда не сжимается
-    this.fogVignette.width = targetW;
-    this.fogVignette.height = targetH;
-    this.fogVignette.position.set(-this.viewW * 0.05, -this.viewH * 0.05);
-    this.fogVignette.visible = false;
-  }
 
   // Один раз генерируем шумовую текстуру дыма (128×128) через общий NoiseGenerator.
-  private buildNoiseTexture() {
-    if (this.noiseCanvas) return;
-    const size = 128;
-    const c = document.createElement("canvas");
-    c.width = size; c.height = size;
-    const ctx = c.getContext("2d")!;
-    const img = ctx.createImageData(size, size);
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        // тот же fBm, что используется для острова
-        const n = this.fogNoiseGen.fbm(x * 0.05, y * 0.05, 3);
-        const i = (y * size + x) * 4;
-        img.data[i] = 105; img.data[i + 1] = 118; img.data[i + 2] = 132; // дымчатый
-        img.data[i + 3] = Math.floor(Math.max(0, n - 0.25) * 255);
-      }
-    }
-    ctx.putImageData(img, 0, 0);
-    this.noiseCanvas = c;
-  }
 
   // Плавный шум по углу для «рваного» края дыма.
-  private fogWaveNoise(a: number, t: number): number {
-    return (
-      Math.sin(a * 3 + t * 0.9) * 0.5 +
-      Math.sin(a * 7 - t * 1.3 + 1.7) * 0.3 +
-      Math.sin(a * 13 + t * 2.1 + 4.2) * 0.2
-    );
-  }
 
   // Перерисовка содержания виньетки. Спрайт не меняет размер — меняется только «окошко».
-  private redrawFog(rdt: number) {
-    if (!this.fogCanvas || !this.fogCtx || !this.fogVignette) return;
-    const active = this.fogRadius < 2300;
-    this.fogVignette.visible = active;
-    if (!active) return;
-
-    this.fogNoiseT += rdt;
-    const cw = this.fogCanvas.width, ch = this.fogCanvas.height;
-    const ctx = this.fogCtx;
-    const canvasW = cw, canvasH = ch;
-    // позиция игрока в координатах канваса
-    const px = (this.player.x - this.cam.x + this.viewW * 0.05) * (cw / (this.viewW * 1.1));
-    const py = (this.player.y - this.cam.y + this.viewH * 0.05) * (cw / (this.viewW * 1.1));
-
-    const fogK = clamp(1 - this.fogRadius / 2300, 0, 1); // сила тумана 0..1
-    // радиус окошка в канвас-пикселях: пропорция размера канваса
-    const maxCanvas = Math.max(cw, ch);
-    const holeR = maxCanvas * (0.12 + 0.35 * (1 - fogK)); // от 12% (полный) до 47% (слабый)
-
-    ctx.clearRect(0, 0, cw, ch);
-
-    // 1. Дымчатый градиент: прозрачный центр -> дым к краям
-    const outerR = maxCanvas * 0.75;
-    const g = ctx.createRadialGradient(px, py, holeR * 0.7, px, py, Math.max(holeR * 1.6, outerR));
-    g.addColorStop(0, "rgba(126,140,155,0)");
-    g.addColorStop(0.4, `rgba(110,122,138,${(0.28 + 0.2 * fogK).toFixed(3)})`);
-    g.addColorStop(1, "rgba(78,88,104,0.95)");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, cw, ch);
-
-    // 2. Рваный край: клубы дыма по границе видимости
-    const steps = 34;
-    for (let i = 0; i < steps; i++) {
-      const a = (i / steps) * Math.PI * 2;
-      const n = this.fogWaveNoise(a, this.fogNoiseT);
-      const rr = holeR * (1 + 0.18 * n);
-      const bx = px + Math.cos(a) * rr;
-      const by = py + Math.sin(a) * rr;
-      const blobR = holeR * (0.10 + 0.10 * Math.abs(this.fogWaveNoise(a * 1.7 + 3.1, this.fogNoiseT * 0.7)));
-      const bg = ctx.createRadialGradient(bx, by, 0, bx, by, Math.max(1, blobR));
-      bg.addColorStop(0, `rgba(96,108,124,${(0.28 * fogK + 0.08).toFixed(3)})`);
-      bg.addColorStop(1, "rgba(96,108,124,0)");
-      ctx.fillStyle = bg;
-      ctx.beginPath();
-      ctx.arc(bx, by, Math.max(1, blobR), 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // 3. Шум Перлина по краям виньетки (НЕ над игроком) — через радиальную маску
-    if (this.noiseCanvas) {
-      if (!this.fogMaskCanvas) {
-        this.fogMaskCanvas = document.createElement("canvas");
-        this.fogMaskCtx = this.fogMaskCanvas.getContext("2d")!;
-      }
-      if (this.fogMaskCanvas.width !== cw) this.fogMaskCanvas.width = cw;
-      if (this.fogMaskCanvas.height !== ch) this.fogMaskCanvas.height = ch;
-      const mc = this.fogMaskCtx!;
-      mc.globalCompositeOperation = "source-over";
-      mc.clearRect(0, 0, cw, ch);
-      mc.drawImage(this.noiseCanvas, 0, 0, cw, ch);
-      mc.globalCompositeOperation = "destination-in";
-      const mg = mc.createRadialGradient(px, py, holeR * 1.15, px, py, holeR * 2.2);
-      mg.addColorStop(0, "rgba(0,0,0,0)");
-      mg.addColorStop(1, "rgba(0,0,0,1)");
-      mc.fillStyle = mg;
-      mc.fillRect(0, 0, cw, ch);
-      mc.globalCompositeOperation = "source-over";
-      ctx.globalAlpha = 0.25 + 0.35 * fogK;
-      ctx.drawImage(this.fogMaskCanvas, 0, 0);
-      ctx.globalAlpha = 1;
-    }
-
-    // принудительно обновляем CanvasSource и копируем в RenderTexture
-    if (this.fogTex && this.fogRT && this.app) {
-      this.fogTex.source.update();
-      if (!this.fogCopySpr) this.fogCopySpr = new Sprite(this.fogTex);
-      else this.fogCopySpr.texture = this.fogTex;
-      this.app.renderer.render({
-        container: this.fogCopySpr,
-        target: this.fogRT,
-        clear: true,
-      });
-    }
-  }
 
   /* ================= публичное API ================= */
   async startGame() {
@@ -597,7 +416,7 @@ export class Engine {
       f.hasSword = true;
       audio.rune();
       this.toast("Ржавый Меч вернулся к тебе");
-      this.burst(p.x, p.y, 0xc9a24b, 18, 90, 1.0, 2, -10);
+      this.fx.burst(p.x, p.y, 0xc9a24b, 18, 90, 1.0, 2, -10);
       this.pushHud(true);
     }
     if (last === "astrid") {
@@ -608,7 +427,7 @@ export class Engine {
       } else {
         p.hp = p.maxHp; audio.heal();
       }
-      this.burst(p.x, p.y, 0x7ee2a8, 12, 60, 0.8, 2, -20);
+      this.fx.burst(p.x, p.y, 0x7ee2a8, 12, 60, 0.8, 2, -20);
       this.pushHud(true);
     }
     if (last === "sigrid" && f.horn && !f.hornDone) {
@@ -648,7 +467,7 @@ export class Engine {
       p.maxHp += 2; p.hp = p.maxHp;
       audio.rune();
       this.toast("Кровавая Слеза: максимальное здоровье +2");
-      this.burst(p.x, p.y, 0xc03050, 16, 80, 1.0, 2, -10);
+      this.fx.burst(p.x, p.y, 0xc03050, 16, 80, 1.0, 2, -10);
       this.pushHud(true);
     }
   }
@@ -872,7 +691,7 @@ export class Engine {
     this.flags.hearts--;
     p.hp = Math.min(p.maxHp, p.hp + 4);
     audio.heal();
-    this.burst(p.x, p.y, 0x7ee2a8, 10, 50, 0.8, 2, -20);
+    this.fx.burst(p.x, p.y, 0x7ee2a8, 10, 50, 0.8, 2, -20);
     this.float(p.x, p.y - 10, "+4", 0x7ee2a8);
     this.pushHud(true);
   }
@@ -896,7 +715,6 @@ export class Engine {
       this.pressed.clear();
       if (this.screen === "death") {
         this.deathT -= rdt;
-        this.updateParticles(rdt);
         if (this.deathT <= 0 && this.screen === "death") this.respawn();
       }
     }
@@ -904,7 +722,7 @@ export class Engine {
     const fx = this.fxScreen;
     fx.clear();
     if (!this.map?.isDungeon) {
-      for (const f of this.snow) {
+      for (const f of this.fx.snow) {
         f.y += f.s * rdt;
         f.x += Math.sin(this.realT * 0.8 + f.d) * 8 * rdt - 4 * rdt;
         if (f.y > this.viewH) { f.y = -2; f.x = Math.random() * this.viewW; }
@@ -913,7 +731,30 @@ export class Engine {
       }
     }
     this.drawGuide(fx);
-    this.drawWorldFx(rdt);
+    this.fx.updateParticles(rdt);
+    // Обновление всплывающего текста (HUD, не FX)
+    for (let i = this.floats.length - 1; i >= 0; i--) {
+      const f = this.floats[i];
+      f.life -= rdt;
+      f.txt.y -= 14 * rdt;
+      f.txt.alpha = Math.max(0, f.life / 0.8);
+      if (f.life <= 0) { f.txt.destroy(); this.floats.splice(i, 1); }
+    }
+    this.fx.drawWorldFx(rdt, this.realT);
+    // SlamZones и спутники — геймплей, не FX
+    const sg = this.fx.worldParticleG;
+    for (const z of this.slamZones) {
+      const pr = 1 - z.t / 0.9;
+      if (!z.boom) {
+        sg.circle(z.x, z.y, z.r * pr).stroke({ color: 0xe05050, width: 1.5, alpha: 0.5 + pr * 0.4 });
+        sg.circle(z.x, z.y, 2).fill({ color: 0xe08a3c, alpha: 0.8 });
+      }
+    }
+    for (let i = 0; i < 3; i++) {
+      const a = this.realT * 0.7 + i * 2.1;
+      const wx = this.player.x + Math.cos(a) * 26, wy = this.player.y - 8 + Math.sin(a * 1.7) * 10;
+      sg.circle(wx, wy, 1.5).fill({ color: 0x8fd8e8, alpha: 0.5 + Math.sin(this.realT * 3 + i) * 0.3 });
+    }
 
     const m = this.map;
     const tx = m ? (m.W * T > this.viewW ? clamp(this.player.x - this.viewW / 2, 0, m.W * T - this.viewW) : (m.W * T - this.viewW) / 2) : 0;
@@ -922,7 +763,8 @@ export class Engine {
     this.cam.y += (ty - this.cam.y) * Math.min(1, rdt * 6);
     const shx = (Math.random() - 0.5) * this.shake, shy = (Math.random() - 0.5) * this.shake;
     this.world.position.set(-Math.round(this.cam.x + shx), -Math.round(this.cam.y + shy));
-    this.drawFog(rdt);   // <-- после обновления камеры
+    this.fx.updateFog(rdt, this.fogRadius, this.fogActive, this.map?.isDungeon ?? false, this.player.x, this.player.y, this.cam.x, this.cam.y, this.viewW, this.viewH);
+    this.fx.drawFogRunes(fx, this.fogRadius, this.viewW, this.viewH);   // <-- после обновления камеры
 
     // ==================== ОТРИСОВКА ЧЕРЕЗ РЕНДЕРЕРЫ ====================
     // 1. Игрок
@@ -1064,26 +906,6 @@ export class Engine {
     }
   }
 
-  private drawFog(rdt: number) {
-    this.redrawFog(rdt);
-
-    // угловые «руны» при сильном тумане (оставлено как было)
-    const k = clamp(1 - this.fogRadius / 2300, 0, 1);
-    if (k > 0.05) {
-      const fx = this.fxScreen;
-      const W = this.viewW, H = this.viewH;
-      const L = 34 * k;
-      fx.strokeStyle = { color: 0xbdeef8, width: 1, alpha: 0.5 * k };
-      const corners: [number, number, number, number][] = [[0, 0, 1, 1], [W, 0, -1, 1], [0, H, 1, -1], [W, H, -1, -1]];
-      for (const [cx0, cy0, sx, sy] of corners) {
-        fx.moveTo(cx0, cy0).lineTo(cx0 + sx * L, cy0);
-        fx.moveTo(cx0, cy0).lineTo(cx0, cy0 + sy * L);
-        fx.moveTo(cx0 + sx * L * 0.4, cy0).lineTo(cx0 + sx * L * 0.4, cy0 + sy * L * 0.4);
-        fx.moveTo(cx0, cy0 + sy * L * 0.4).lineTo(cx0 + sx * L * 0.4, cy0 + sy * L * 0.4);
-      }
-      fx.stroke();
-    }
-  }
 
   private drawGuide(fx: Graphics) {
     if (this.screen !== "play" || this.dialogueActive || !this.map) return;
@@ -1115,26 +937,6 @@ export class Engine {
     }
   }
 
-  private drawWorldFx(rdt: number) {
-    this.updateParticles(rdt);
-    const g = this.particleG;
-    g.clear();
-    for (const p of this.particles) {
-      g.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size).fill({ color: p.color, alpha: p.alpha * (p.life / p.max) });
-    }
-    for (const z of this.slamZones) {
-      const pr = 1 - z.t / 0.9;
-      if (!z.boom) {
-        g.circle(z.x, z.y, z.r * pr).stroke({ color: 0xe05050, width: 1.5, alpha: 0.5 + pr * 0.4 });
-        g.circle(z.x, z.y, 2).fill({ color: 0xe08a3c, alpha: 0.8 });
-      }
-    }
-    for (let i = 0; i < 3; i++) {
-      const a = this.realT * 0.7 + i * 2.1;
-      const wx = this.player.x + Math.cos(a) * 26, wy = this.player.y - 8 + Math.sin(a * 1.7) * 10;
-      g.circle(wx, wy, 1.5).fill({ color: 0x8fd8e8, alpha: 0.5 + Math.sin(this.realT * 3 + i) * 0.3 });
-    }
-  }
 
   /* ================= обновление ================= */
   private update(dt: number, rdt: number) {
@@ -1160,7 +962,7 @@ export class Engine {
       speed = 48;
       if (Math.floor(this.realT * 1.4) !== Math.floor((this.realT - dt) * 1.4)) {
         this.damagePlayer(1, p.x, p.y + 10, true);
-        this.burst(p.x, p.y + 4, 0x3a6a5c, 3, 20, 0.5, 2, -20);
+        this.fx.burst(p.x, p.y + 4, 0x3a6a5c, 3, 20, 0.5, 2, -20);
       }
     }
     p.moving = mag > 0.12;
@@ -1409,7 +1211,7 @@ export class Engine {
       if (fromX * e.facing.x + fromY * e.facing.y > 0.35) {
         audio.clang();
         this.float(e.x, e.y - 10, "Щит!", 0x8f9aa8);
-        this.burst(e.x + e.facing.x * 6, e.y + e.facing.y * 6, 0xc9a24b, 4, 50, 0.4, 1, 0);
+        this.fx.burst(e.x + e.facing.x * 6, e.y + e.facing.y * 6, 0xc9a24b, 4, 50, 0.4, 1, 0);
         return;
       }
     }
@@ -1419,7 +1221,7 @@ export class Engine {
     this.float(e.x, e.y - 8, String(dmg), 0xe8dcc0);
     const d = Math.hypot(e.x - sx, e.y - sy) || 1;
     this.moveWithCollisions(e, ((e.x - sx) / d) * 5, ((e.y - sy) / d) * 5);
-    this.burst(e.x, e.y - 4, 0xa03232, 5, 60, 0.5, 2, 30);
+    this.fx.burst(e.x, e.y - 4, 0xa03232, 5, 60, 0.5, 2, 30);
     this.hitstop = 0.03;
     if (e.hp <= 0) this.killEnemy(e);
   }
@@ -1433,8 +1235,8 @@ export class Engine {
     this.flags.killsByKind[e.kind] = (this.flags.killsByKind[e.kind] ?? 0) + 1;
     if (this.flags.kills === 1) this.revealQuest("s_hunt");
     audio.kill();
-    this.burst(e.x, e.y - 4, 0x1d232c, 10, 70, 0.7, 2, 20);
-    this.burst(e.x, e.y - 4, 0xa03232, 6, 50, 0.6, 2, 30);
+    this.fx.burst(e.x, e.y - 4, 0x1d232c, 10, 70, 0.7, 2, 20);
+    this.fx.burst(e.x, e.y - 4, 0xa03232, 6, 50, 0.6, 2, 30);
     this.hitstop = 0.05;
     if (e.guardOf >= 0 && e.guardOf < this.pedestals.length) {
       const pd = this.pedestals[e.guardOf];
@@ -1443,7 +1245,7 @@ export class Engine {
         if (pd.guardsLeft === 0) {
           audio.chime();
           this.toast("Печать пьедестала пала");
-          this.burst(pd.x, pd.y - 6, 0x63d8c8, 16, 80, 0.8, 2, 0);
+          this.fx.burst(pd.x, pd.y - 6, 0x63d8c8, 16, 80, 0.8, 2, 0);
         }
       }
     }
@@ -1461,7 +1263,7 @@ export class Engine {
     e.flashT = 0.15;
     audio.hit();
     this.float(e.x, e.y - 28, "1", 0xe8c979);
-    this.burst(e.x, e.y - 8, 0xe8c979, 10, 80, 0.7, 2, -10);
+    this.fx.burst(e.x, e.y - 8, 0xe8c979, 10, 80, 0.7, 2, -10);
     this.shakeIt(3);
     if (e.hp <= 0) this.onSnakeDeath(e);
   }
@@ -1473,8 +1275,8 @@ export class Engine {
     this.flags.snakeDead = true;
     audio.bossDie();
     this.shakeIt(10);
-    this.burst(e.x, e.y - 8, 0xe8c979, 40, 140, 1.4, 3, -20);
-    this.burst(e.x, e.y - 8, 0x24352c, 30, 100, 1.2, 3, 40);
+    this.fx.burst(e.x, e.y - 8, 0xe8c979, 40, 140, 1.4, 3, -20);
+    this.fx.burst(e.x, e.y - 8, 0x24352c, 30, 100, 1.2, 3, 40);
     this.slamZones = [];
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       if (this.projectiles[i].kind === "fire") this.removeProjectile(i);
@@ -1518,7 +1320,7 @@ export class Engine {
     p.hurtT = 1.05;
     audio.hurt();
     this.shakeIt(4);
-    this.burst(p.x, p.y - 4, 0xc03050, 8, 70, 0.6, 2, 20);
+    this.fx.burst(p.x, p.y - 4, 0xc03050, 8, 70, 0.6, 2, 20);
     this.float(p.x, p.y - 10, "-" + dmg, 0xe06060);
     const d = Math.hypot(p.x - sx, p.y - sy) || 1;
     this.moveWithCollisions(p, ((p.x - sx) / d) * 8, ((p.y - sy) / d) * 8);
@@ -1533,7 +1335,7 @@ export class Engine {
     this.dialogueActive = false;
     this.cbs.onDialogue(null);
     audio.death();
-    this.burst(this.player.x, this.player.y, 0x1d232c, 24, 90, 1.2, 2, -10);
+    this.fx.burst(this.player.x, this.player.y, 0x1d232c, 24, 90, 1.2, 2, -10);
     this.shakeIt(8);
     this.deathT = 2.4;
     this.cbs.onStats({ time: this.fmtTime(this.playTime), kills: this.flags.kills, deaths: this.flags.deaths, runes: this.flags.runes });
@@ -1571,7 +1373,7 @@ export class Engine {
       if (e.freezeT > 0) {
         e.freezeT -= dt;
         e.vx = 0; e.vy = 0;
-        if (Math.random() < dt * 6) this.burst(e.x, e.y - 4, 0x9fe0ee, 1, 12, 0.5, 1, -10);
+        if (Math.random() < dt * 6) this.fx.burst(e.x, e.y - 4, 0x9fe0ee, 1, 12, 0.5, 1, -10);
         continue;
       }
       if (e.kind === "reaper") { this.updateReaper(e, dt); continue; }
@@ -1662,7 +1464,7 @@ export class Engine {
             } else if (e.stateT <= 0) {
               e.state = "cool"; e.stateT = 2.5;
               this.fireProjectile("spore", e.x, e.y - 4, ((p.x - e.x) / d) * 74, ((p.y - e.y) / d) * 74, 1);
-              this.burst(e.x, e.y - 6, 0x6a8a3a, 5, 30, 0.5, 2, -14);
+              this.fx.burst(e.x, e.y - 6, 0x6a8a3a, 5, 30, 0.5, 2, -14);
               audio.splash();
             }
           } else { e.state = "idle"; }
@@ -1672,7 +1474,7 @@ export class Engine {
           if (e.hidden) {
             if (d2p < 40 * 40) {
               e.hidden = false;
-              this.burst(e.x, e.y, 0x3a3226, 10, 60, 0.5, 2, 40);
+              this.fx.burst(e.x, e.y, 0x3a3226, 10, 60, 0.5, 2, 40);
               audio.splash();
               e.aggro = true;
             }
@@ -1731,7 +1533,7 @@ export class Engine {
     audio.horn();
     this.toast(`${m.dungeonName}: страж пробудился`);
     this.shakeIt(5);
-    this.burst(e.x, e.y, 0x8fd0e0, 20, 100, 1.0, 2, 0);
+    this.fx.burst(e.x, e.y, 0x8fd0e0, 20, 100, 1.0, 2, 0);
     this.pushHud(true);
   }
 
@@ -1760,7 +1562,7 @@ export class Engine {
         if (e.contactCd <= 0 && d < 40) { this.damagePlayer(2, e.x, e.y); e.contactCd = 0.6; }
         if (e.stateT <= 0) {
           e.state = "stuck"; e.stateT = phase2 ? 1.25 : 1.8;
-          this.burst(e.x + e.facing.x * 12, e.y + e.facing.y * 12, 0x39424e, 8, 50, 0.5, 2, 30);
+          this.fx.burst(e.x + e.facing.x * 12, e.y + e.facing.y * 12, 0x39424e, 8, 50, 0.5, 2, 30);
         }
         break;
       case "stuck":
@@ -1799,7 +1601,7 @@ export class Engine {
       const a = Math.random() * Math.PI * 2;
       const c = this.spawnEnemy("crawler", e.x + Math.cos(a) * 26, e.y + Math.sin(a) * 26);
       c.hidden = false; c.aggro = true;
-      this.burst(c.x, c.y, 0x3a3226, 8, 50, 0.5, 2, 30);
+      this.fx.burst(c.x, c.y, 0x3a3226, 8, 50, 0.5, 2, 30);
     }
     if (e.hp <= 0 && !e.dead) { e.dead = true; this.farBody(e.body); this.onDungeonBossDeath(e); }
   }
@@ -1848,8 +1650,8 @@ export class Engine {
     this.bossRef = null;
     audio.bossDie();
     this.shakeIt(8);
-    this.burst(e.x, e.y, 0x8fd0e0, 30, 130, 1.2, 3, 0);
-    this.burst(e.x, e.y, 0x0d0f14, 20, 90, 1.0, 3, -20);
+    this.fx.burst(e.x, e.y, 0x8fd0e0, 30, 130, 1.2, 3, 0);
+    this.fx.burst(e.x, e.y, 0x0d0f14, 20, 90, 1.0, 3, -20);
     const reward = m.bossReward;
     if (reward) this.spawnDrop(reward, e.x, e.y);
     const d = this.doors[0];
@@ -1875,7 +1677,7 @@ export class Engine {
     audio.horn();
     this.toast("МИРАЖ ЁРМУНГАНДА");
     this.shakeIt(8);
-    this.burst(e.x, e.y, 0x24352c, 26, 120, 1.2, 3, 0);
+    this.fx.burst(e.x, e.y, 0x24352c, 26, 120, 1.2, 3, 0);
     this.pushHud(true);
   }
 
@@ -1912,7 +1714,7 @@ export class Engine {
       z.t -= dt;
       if (z.t <= 0 && !z.boom) {
         z.boom = true;
-        this.burst(z.x, z.y, 0xe08a3c, 14, 90, 0.7, 2, 30);
+        this.fx.burst(z.x, z.y, 0xe08a3c, 14, 90, 0.7, 2, 30);
         this.shakeIt(5);
         audio.hit();
         if (dist2(p.x, p.y, z.x, z.y) < z.r * z.r) this.damagePlayer(1, z.x, z.y);
@@ -1954,7 +1756,7 @@ export class Engine {
       pr.x += pr.vx * dt; pr.y += pr.vy * dt;
       pr.g.position.set(pr.x, pr.y);
       if (pr.kind !== "axe" && this.pointSolid(pr.x, pr.y)) {
-        this.burst(pr.x, pr.y, 0x6e7f8d, 4, 40, 0.3, 1, 0);
+        this.fx.burst(pr.x, pr.y, 0x6e7f8d, 4, 40, 0.3, 1, 0);
         this.removeProjectile(i);
         continue;
       }
@@ -1976,7 +1778,7 @@ export class Engine {
             if (pr.kind === "axe") {
               e.freezeT = 2.6;
               audio.freeze();
-              this.burst(e.x, e.y, 0x9fe0ee, 12, 70, 0.7, 2, -10);
+              this.fx.burst(e.x, e.y, 0x9fe0ee, 12, 70, 0.7, 2, -10);
               this.float(e.x, e.y, "Заморожен", 0x9fe0ee);
               if (e.kind === "raven" || e.kind === "crawler") this.hitEnemy(e, pr.dmg, pr.x, pr.y, true);
             } else {
@@ -2039,7 +1841,7 @@ export class Engine {
           p.hp = Math.min(p.maxHp, p.hp + 3);
           audio.pickup();
           this.float(p.x, p.y - 10, "+3", 0x7ee2a8);
-          this.burst(p.x, p.y, 0x7ee2a8, 6, 40, 0.6, 2, -20);
+          this.fx.burst(p.x, p.y, 0x7ee2a8, 6, 40, 0.6, 2, -20);
         } else if (f.hearts < 9) {
           f.hearts++;
           audio.pickup();
@@ -2058,19 +1860,19 @@ export class Engine {
         f.hasAxe = true;
         audio.rune();
         this.toast("Ледяная Секира [J] — замораживает врагов и возвращается");
-        this.burst(p.x, p.y, 0x9fe0ee, 20, 100, 1.0, 2, -10);
+        this.fx.burst(p.x, p.y, 0x9fe0ee, 20, 100, 1.0, 2, -10);
         break;
       case "bow":
         f.hasBow = true;
         audio.rune();
         this.toast("Лук Сумерек [удерживай L] — время замирает, стрела летит");
-        this.burst(p.x, p.y, 0xe8c979, 20, 100, 1.0, 2, -10);
+        this.fx.burst(p.x, p.y, 0xe8c979, 20, 100, 1.0, 2, -10);
         break;
       case "hammer":
         f.hasHammer = true;
         audio.rune();
         this.toast("Рунический Молот — удары меча оглушают врагов");
-        this.burst(p.x, p.y, 0x63d8c8, 20, 100, 1.0, 2, -10);
+        this.fx.burst(p.x, p.y, 0x63d8c8, 20, 100, 1.0, 2, -10);
         break;
       case "bear":
         f.bear = true; audio.pickup();
@@ -2127,7 +1929,7 @@ export class Engine {
         audio.rune();
         this.shakeIt(3);
         this.toast(`Забытая Руна ${f.runes}/5 впитана`);
-        this.burst(p.x, p.y, 0x63d8c8, 22, 110, 1.1, 2, -14);
+        this.fx.burst(p.x, p.y, 0x63d8c8, 22, 110, 1.1, 2, -14);
         this.tsTarget = 0.35;
         window.setTimeout(() => { this.tsTarget = 1; }, 700);
         break;
@@ -2181,7 +1983,7 @@ export class Engine {
           audio.rune();
           this.shakeIt(3);
           this.toast("Норны приняли дар: пьедесталы Рун видны на карте");
-          this.burst(this.map.oldAltar.x * T + 8, this.map.oldAltar.y * T + 8, 0x63d8c8, 24, 110, 1.1, 2, -14);
+          this.fx.burst(this.map.oldAltar.x * T + 8, this.map.oldAltar.y * T + 8, 0x63d8c8, 24, 110, 1.1, 2, -14);
           this.pushHud(true);
         }
         break;
@@ -2198,7 +2000,7 @@ export class Engine {
     this.openedChests.add(Math.round((c.x - 8) / T) + "_" + Math.round((c.y - 8) / T));
     this.renderers.chest.render(c.g, { opened: true } as IChestData);
     audio.chest();
-    this.burst(c.x, c.y - 6, 0xc9a24b, 14, 70, 0.8, 2, -20);
+    this.fx.burst(c.x, c.y - 6, 0xc9a24b, 14, 70, 0.8, 2, -20);
     switch (c.item) {
       case "bow":
         this.flags.hasBow = true;
@@ -2234,7 +2036,7 @@ export class Engine {
           const e = this.spawnEnemy(k, pd.x + Math.cos(a) * 26, pd.y + Math.sin(a) * 26);
           e.aggro = true;
           e.guardOf = this.pedestals.indexOf(pd);
-          this.burst(e.x, e.y, 0xe05050, 8, 60, 0.6, 2, 0);
+          this.fx.burst(e.x, e.y, 0xe05050, 8, 60, 0.6, 2, 0);
         }
         this.toast("Стражи пьедестала восстали!");
         audio.horn();
@@ -2245,7 +2047,7 @@ export class Engine {
     this.takenPedestals.add(this.pedestals.indexOf(pd));
     audio.chime();
     this.spawnDrop("rune", pd.x, pd.y - 6);
-    this.burst(pd.x, pd.y - 6, 0x63d8c8, 16, 80, 0.9, 2, -10);
+    this.fx.burst(pd.x, pd.y - 6, 0x63d8c8, 16, 80, 0.9, 2, -10);
   }
 
   private useShrine(i: number) {
@@ -2259,7 +2061,7 @@ export class Engine {
     audio.chime();
     audio.heal();
     this.toast("Святилище запомнило тебя. Раны затянулись");
-    this.burst(this.player.x, this.player.y, 0x8fd8e8, 16, 70, 1.0, 2, -20);
+    this.fx.burst(this.player.x, this.player.y, 0x8fd8e8, 16, 70, 1.0, 2, -20);
     this.pushHud(true);
   }
 
@@ -2339,7 +2141,7 @@ export class Engine {
           if (!solidTileAt(this.map, tx, ty) && x > T && y > T && x < (this.map.W - 1) * T && y < (this.map.H - 1) * T) {
             const e = this.spawnEnemy(Math.random() < 0.6 ? "frost" : "draugr", x, y);
             e.aggro = true;
-            this.burst(x, y, 0x9fe0ee, 10, 60, 0.7, 2, 0);
+            this.fx.burst(x, y, 0x9fe0ee, 10, 60, 0.7, 2, 0);
           }
         }
       }
@@ -2766,36 +2568,7 @@ export class Engine {
     });
   }
 
-  /* ================= частицы/текст ================= */
-  private burst(x: number, y: number, color: number, n: number, speed: number, life: number, size: number, grav: number) {
-    if (this.particles.length > 420) return;
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const v = speed * (0.4 + Math.random() * 0.8);
-      this.particles.push({
-        x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-        life: life * (0.5 + Math.random() * 0.7), max: life, size: size * (0.7 + Math.random() * 0.7),
-        color, grav, alpha: 0.95,
-      });
-    }
-  }
 
-  private updateParticles(rdt: number) {
-    for (let i = this.particles.length - 1; i >= 0; i--) {
-      const p = this.particles[i];
-      p.life -= rdt;
-      if (p.life <= 0) { this.particles.splice(i, 1); continue; }
-      p.vy += p.grav * rdt;
-      p.x += p.vx * rdt; p.y += p.vy * rdt;
-    }
-    for (let i = this.floats.length - 1; i >= 0; i--) {
-      const f = this.floats[i];
-      f.life -= rdt;
-      f.txt.y -= 14 * rdt;
-      f.txt.alpha = Math.max(0, f.life / 0.8);
-      if (f.life <= 0) { f.txt.destroy(); this.floats.splice(i, 1); }
-    }
-  }
 
   private float(x: number, y: number, text: string, color: number) {
     const t = new Text({
@@ -2861,5 +2634,6 @@ export class Engine {
     this.wallCache.destroy();
     this.houseCache.destroy();
     if (this.app) this.app.destroy(true);
+    this.fx.destroy();
   }
 }
