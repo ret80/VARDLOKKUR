@@ -306,26 +306,39 @@ function renderEnemy(g: Graphics, data: IEnemyData, time: number) {
       break;
     }
     case "varg": {
-      g.ellipse(0, 4, 7, 2.4).fill({ color: 0x05080d, alpha: 0.5 * a });
-      const run = Math.sin(e.t * 14) * 2.5;
-      P(g, -6, 0 + run * 0.3, 3, 4, 0xc8d3dc, a); P(g, 3, 0 - run * 0.3, 3, 4, 0xc8d3dc, a);
-      P(g, -7, -6 + bob, 13, 6, tint(0xd8e2ea), a);
-      P(g, -7, -6 + bob, 13, 2, tint(0xe8f0f6), a);
-      if (fx >= 0) {
-        P(g, 5, -9 + bob, 5, 5, tint(0xd8e2ea), a);
-        P(g, 8, -8 + bob, 2, 1, 0xe05050, a);
-        P(g, 6, -11 + bob, 2, 3, tint(0xc8d3dc), a);
-        P(g, -8, -6 + bob, 3, 2, tint(0xc8d3dc), a);
-        if (e.lungeT > 0) P(g, 7, -6 + bob, 3, 1, 0xffffff, a);
-      } else {
-        P(g, -10, -9 + bob, 5, 5, tint(0xd8e2ea), a);
-        P(g, -10, -8 + bob, 2, 1, 0xe05050, a);
-        P(g, -8, -11 + bob, 2, 3, tint(0xc8d3dc), a);
-        P(g, 5, -6 + bob, 3, 2, tint(0xc8d3dc), a);
-        if (e.lungeT > 0) P(g, -10, -6 + bob, 3, 1, 0xffffff, a);
-      }
-      break;
-    }
+  g.ellipse(0, 4, 8, 2.4).fill({ color: 0x05080d, alpha: 0.5 * a });
+  const run = Math.sin(e.t * 14) * 2.5;
+  // зеркало: все прямоугольники описаны "вправо",
+  // при взгляде влево x заменяется на -x - w (ширина всегда > 0)
+  const M = (x: number, w: number) => (fx >= 0 ? x : -x - w);
+  // лапы 3×4 (старый стиль, run-анимация)
+  P(g, M(-6, 3), 0 + run * 0.3, 3, 4, tint(0x9fb0c0), a);
+  P(g, M(-1, 3), 0 - run * 0.3, 3, 4, tint(0x9fb0c0), a);
+  // тело + спина + брюхо
+  P(g, M(-7, 9), -5 + bob, 9, 5, tint(0xd8e2ea), a);
+  P(g, M(-7, 9), -5 + bob, 9, 1, tint(0xe8f0f6), a);
+  P(g, M(-7, 9), -1 + bob, 9, 1, tint(0xb9c8d6), a);
+  // голова + уши
+  P(g, M(1, 6), -7 + bob, 6, 5, tint(0xd8e2ea), a);
+  P(g, M(2, 2), -9 + bob, 2, 2, tint(0xd8e2ea), a);
+  P(g, M(5, 2), -9 + bob, 2, 2, tint(0xd8e2ea), a);
+  P(g, M(2, 1), -8 + bob, 1, 1, tint(0x9fb0c0), a);
+  P(g, M(5, 1), -8 + bob, 1, 1, tint(0x9fb0c0), a);
+  // морда, нос, челюсть, глаз
+  P(g, M(6, 3), -5 + bob, 3, 2, tint(0xf2f8fc), a);
+  P(g, M(8, 1), -5 + bob, 1, 1, 0x0d1218, a);
+  P(g, M(6, 2), -3 + bob, 2, 1, tint(0x9fb0c0), a);
+  P(g, M(4, 1), -6 + bob, 1, 1, 0xe05050, a);
+  // зубы при атаке
+  if (e.lungeT > 0) {
+    P(g, M(6, 2), -3 + bob, 2, 1, 0xffffff, a);
+    P(g, M(7, 1), -2 + bob, 1, 1, 0xffffff, a);
+  }
+  // хвост: основание (взахлёст на тело) + светлый кончик
+  P(g, M(-8, 2), -5 + bob, 2, 3, tint(0xd8e2ea), a);
+  P(g, M(-9, 2), -7 + bob, 2, 2, tint(0xf2f8fc), a);
+  break;
+}
     case "raven": {
       const flap = Math.sin(e.t * 16) * 4;
       P(g, -3, -3 + bob, 6, 5, tint(0x1d232c), a);
@@ -682,31 +695,41 @@ function renderPedestal(g: Graphics, data: IPedestalData, time: number) {
   g.ellipse(0, 7, 8, 2.6).fill({ color: 0x05080d, alpha: 0.5 });
   P(g, -6, 2, 12, 4, 0x4e5a68); P(g, -6, 2, 12, 1, 0x5c6875);
   P(g, -4, -6, 8, 8, 0x39424e); P(g, -4, -6, 8, 1, 0x4e5a68);
-  const hasRune = !data.taken && data.guardsLeft === 0;
-  if (hasRune) {
-    const pulse = 0.6 + Math.sin(time * 3) * 0.4;
-    P(g, -2, -12, 4, 6, 0x4e5a68);
-    P(g, -1, -11, 2, 4, 0x63d8c8, pulse);
-    g.circle(0, -9, 6).stroke({ color: 0x63d8c8, width: 1, alpha: pulse * 0.5 });
-  }
-  if (data.guardsLeft > 0 && !data.taken) {
-    const pulse = 0.5 + Math.sin(time * 5) * 0.3;
-    g.circle(0, -2, 10).stroke({ color: 0xe05050, width: 1.5, alpha: pulse });
+  // камень с окошком — виден ВСЕГДА (пока руна не взята)
+  P(g, -2, -12, 4, 6, 0x4e5a68);
+  if (!data.taken) {
+    const sealed = data.guardsLeft > 0;
+    const col = sealed ? 0xe05050 : 0x63d8c8;   // печать крепка — красный, пала — бирюза
+    const core = sealed ? 0xf8a0a0 : 0xbdeef8;
+    const pulse = 0.6 + Math.sin(time * (sealed ? 5 : 3)) * 0.4;
+    P(g, -1, -11, 2, 4, col, pulse);
+    P(g, -1, -10, 1, 2, core, pulse);
+    // кольцо ТЕПЕРЬ вокруг окошка (на месте бывшего голубого)
+    g.circle(0, -9, 6).stroke({ color: col, width: 1, alpha: pulse * 0.6 });
+  } else {
+    P(g, -1, -11, 2, 4, 0x232c38); // пустое окошко
   }
 }
 
 // ---- renderShrine ----
 function renderShrine(g: Graphics, data: IShrineData, time: number) {
   g.clear();
-  g.ellipse(0, 7, 7, 2.4).fill({ color: 0x05080d, alpha: 0.5 });
-  P(g, -5, 2, 10, 4, 0x4e5a68);
-  P(g, -3, -8, 6, 10, 0x5c6875); P(g, -3, -8, 6, 1, 0x6a7580);
-  P(g, -1, -10, 2, 3, 0x4e5a68);
+  g.ellipse(0, 4, 6, 1.5).fill({ color: 0x05080d, alpha: 0.5 });
+  // камень, воткнутый в землю: шапка, верх, тело с гранями
+  P(g, -2, -11, 4, 1, 0xc8d3dc);
+  P(g, -3, -10, 6, 1, 0x39424e);
+  P(g, -4, -9, 8, 11, 0x232c38);
+  P(g, -4, -9, 2, 11, 0x2c3642);
+  P(g, 3, -9, 1, 11, 0x141a22);
+  P(g, -5, 2, 10, 2, 0x1a222c);
+  // «ушко» почти на верху
+  P(g, -1, -8, 2, 1, 0x0a0e14);
+  P(g, -2, -7, 4, 4, 0x0a0e14);
   if (data.lit) {
-    const fl = Math.sin(time * 8) * 1.5;
-    P(g, -1, -14 + fl, 2, 4, 0x8fd8e8, 0.9);
-    P(g, 0, -15 + fl, 1, 2, 0xbdeef8);
-    g.circle(0, -12 + fl, 5).stroke({ color: 0x8fd8e8, width: 1, alpha: 0.4 });
+    const fl = Math.round(Math.sin(time * 8) * 0.7);
+    g.circle(0, -5, 4).fill({ color: 0x8fd8e8, alpha: 0.18 });
+    P(g, -1, -6 + fl, 2, 3, 0x8fd8e8, 0.9);
+    P(g, 0, -7 + fl, 1, 2, 0xbdeef8);
   }
 }
 
@@ -738,19 +761,43 @@ function renderBarrier(g: Graphics, data: IBarrierData, time: number) {
 // ---- renderAltar ----
 function renderAltar(g: Graphics, data: IAltarData, time: number) {
   g.clear();
-  g.ellipse(0, 8, 12, 3).fill({ color: 0x05080d, alpha: 0.5 });
-  P(g, -10, 2, 20, 5, 0x4e5a68); P(g, -10, 2, 20, 1, 0x5c6875);
-  P(g, -7, -6, 14, 8, 0x39424e); P(g, -7, -6, 14, 1, 0x4e5a68);
-  for (let i = -2; i <= 2; i++) {
-    P(g, i * 5 - 1, -26 + Math.sin(time * 1.5 + i) * 2, 2, 20, 0x2c3626);
-  }
+  g.ellipse(0, 6, 8, 2).fill({ color: 0x05080d, alpha: 0.45 });
+  const eyeP = 0.7 + Math.sin(time * 2.5) * 0.3;
+  g.circle(0, -11, 5).fill({ color: 0xe8c979, alpha: 0.12 });
+  // постамент со слотами рун
+  P(g, -6, 2, 12, 4, 0x241a10);
+  P(g, -6, 2, 12, 1, 0x3a2c1c);
   for (let i = 0; i < 5; i++) {
     const on = i < data.runes;
-    P(g, -6 + i * 3, -3, 2, 2, on ? 0x63d8c8 : 0x232c38, on ? 0.9 : 1);
+    P(g, -5 + i * 2, 3, 1, 1, on ? 0x63d8c8 : 0x1d1610, on ? 0.9 : 1);
   }
+  // тело идола
+  P(g, -3, -9, 6, 11, 0x5a4632);
+  P(g, -3, -9, 2, 11, 0x6a543c);
+  P(g, 2, -9, 1, 11, 0x3a2c1c);
+  // руки
+  P(g, -4, -6, 8, 2, 0x4a3624);
+  P(g, -4, -6, 1, 2, 0x6a543c);
+  P(g, 3, -6, 1, 2, 0x6a543c);
+  // руна на груди
+  P(g, -1, -3, 2, 3, 0x63d8c8, 0.8);
+  P(g, -1, -2, 1, 1, 0xbdeef8, 0.9);
+  // голова со снежной шапкой
+  P(g, -4, -14, 8, 6, 0x6a543c);
+  P(g, -4, -14, 8, 1, 0x7a6248);
+  P(g, -4, -15, 8, 1, 0xeef6fc);
+  // золотые глаза (пульсируют)
+  P(g, -3, -12, 2, 2, 0xe8c979, eyeP);
+  P(g, 1, -12, 2, 2, 0xe8c979, eyeP);
+  P(g, -3, -12, 1, 1, 0xf8e0a0, eyeP);
+  P(g, 1, -12, 1, 1, 0xf8e0a0, eyeP);
+  P(g, -2, -10, 4, 1, 0x3a2c1c);
+  // снег у основания
+  P(g, -6, 1, 3, 1, 0xeef6fc);
+  P(g, 3, 1, 3, 1, 0xeef6fc);
   if (data.runes >= 5) {
     const pulse = 0.6 + Math.sin(time * 4) * 0.4;
-    g.circle(0, -2, 14).stroke({ color: 0x63d8c8, width: 1.5, alpha: pulse });
+    g.circle(0, -4, 14).stroke({ color: 0x63d8c8, width: 1.5, alpha: pulse });
   }
 }
 

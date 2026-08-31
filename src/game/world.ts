@@ -13,7 +13,7 @@ export const Tl = {
 } as const;
 
 const SOLID = new Set<number>([
-  Tl.WATER, Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.HOUSE, Tl.COLUMN, Tl.CAVEWALL, Tl.DWALL,
+  Tl.WATER, Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.HOUSE, Tl.COLUMN, Tl.CAVEWALL, Tl.DWALL, Tl.ALTAR,
 ]);
 export const isSolidTileId = (id: number) => SOLID.has(id);
 
