@@ -177,12 +177,14 @@ export class Engine {
   private cam = { x: 0, y: 0 };
 
   // туман
-  private fogTimer = 42;
+  private fogTimer = 60;
   private fogActive = false;
   private fogLeft = 0;
   private fogRadius = 2600;
   private fogSpawned = false;
   private fogWarned = false;
+  private fogAmbient = false;
+  private ghostClangT = 0;
 
   // ввод
   private keys = new Set<string>();
@@ -348,6 +350,7 @@ export class Engine {
     f.killsByKind = {};
     f.reaperDead = false; f.spiderDead = false; f.giantDead = false;
     f.snakeStarted = false; f.snakeDead = false;
+    f.ghostBane = false; f.dew = 0; f.fogWaves = 0;
     f.kills = 0; f.deaths = 0; f.shrineIdx = -1; f.shrineQuestDone = false; f.huntDone = false;
     this.visitedShrines.clear();
     this.takenPedestals.clear();
@@ -359,7 +362,7 @@ export class Engine {
     this.revealed.add("m1");
     this.player.hp = this.player.maxHp = 12;
     this.playTime = 0; this.zone = ""; this.talkCount = 0;
-    this.fogTimer = 42; this.fogActive = false; this.fogRadius = 2600;
+    this.fogTimer = 60; this.fogActive = false; this.fogRadius = 2600;
     audio.setFog(false);
     try {
       this.loadMap(this.ow, this.ow.spawn);
@@ -443,6 +446,11 @@ export class Engine {
     if (last === "shaman" && f.moss && f.amber && f.flower && !f.shamanDone) {
       f.moss = false; f.amber = false; f.flower = false; f.shamanDone = true; f.furyRune = true;
       audio.rune(); this.toast("Отвар Норн выпит. Руна Ярости: замах быстрее");
+      this.pushHud(true);
+    }
+    if (last === "shaman" && f.dew >= 3 && !f.ghostBane) {
+      f.dew = 0; f.ghostBane = true;
+      audio.rune(); this.toast("Клинок освящён — сталь бьёт призраков");
       this.pushHud(true);
     }
     if (last === "refugee" && f.diary && !f.refugeeDone) {
@@ -624,7 +632,7 @@ export class Engine {
     this.enemies.push(e);
     this.dynamic.addChild(e.g);
     e.body = this.makeBody(e.r);
-    if (kind === "raven" || kind === "snake" || kind === "spider") this.farBody(e.body);
+    if (kind === "raven" || kind === "snake" || kind === "spider" || kind === "ghost") this.farBody(e.body);
     else { e.body.position.x = x; e.body.position.y = y; }
     return e;
   }
@@ -763,8 +771,11 @@ export class Engine {
     this.cam.y += (ty - this.cam.y) * Math.min(1, rdt * 6);
     const shx = (Math.random() - 0.5) * this.shake, shy = (Math.random() - 0.5) * this.shake;
     this.world.position.set(-Math.round(this.cam.x + shx), -Math.round(this.cam.y + shy));
-    this.fx.updateFog(rdt, this.fogRadius, this.fogActive, this.map?.isDungeon ?? false, this.player.x, this.player.y, this.cam.x, this.cam.y, this.viewW, this.viewH);
+    const shrineSpots = this.fogActive && !this.map?.isDungeon ? this.map!.shrines.map((s) => ({ x: s.x * T + 8, y: s.y * T + 8 })) : [];
+    const fogHoles = this.fogHoles();
+    this.fx.updateFog(rdt, this.fogRadius, this.fogActive, this.map?.isDungeon ?? false, this.player.x, this.player.y, this.cam.x, this.cam.y, this.viewW, this.viewH, fogHoles);
     this.fx.drawFogRunes(fx, this.fogRadius, this.viewW, this.viewH);   // <-- после обновления камеры
+    if (this.fogWarned) this.fx.drawFogEyes(fx, true, this.realT, this.viewW, this.viewH);
 
     // ==================== ОТРИСОВКА ЧЕРЕЗ РЕНДЕРЕРЫ ====================
     // 1. Игрок
@@ -894,6 +905,8 @@ export class Engine {
       case "harald": return f.oreDone ? "done" : f.ore ? "ret" : "";
       case "shaman": {
         const got = [f.moss, f.amber, f.flower].filter(Boolean).length;
+        if (f.ghostBane) return "done";
+        if (f.dew >= 3) return "ret";
         return f.shamanDone ? "done" : got === 3 ? "ret" : "q" + got;
       }
       case "refugee": return f.refugeeDone ? "done" : f.diary ? "ret" : "q";
@@ -1113,7 +1126,7 @@ export class Engine {
     const bodies: { e: { x: number; y: number; vx: number; vy: number; r: number }; b: PhysCircle | null; safe: Vec }[] = [];
     bodies.push({ e: this.player, b: this.playerBody, safe: { x: this.player.x, y: this.player.y } });
     for (const en of this.enemies) {
-      if (en.dead || en.kind === "raven" || en.kind === "snake" || en.kind === "spider") {
+      if (en.dead || en.kind === "raven" || en.kind === "snake" || en.kind === "spider" || en.kind === "ghost") {
         if (en.body && en.body.position.x > -5000) this.farBody(en.body);
         continue;
       }
@@ -1124,6 +1137,13 @@ export class Engine {
       this.moveWithCollisions(e, e.vx * dt, e.vy * dt);
       b.position.x = e.x; b.position.y = e.y;
       b.velocity.x = 0; b.velocity.y = 0;
+    }
+    // Призраки — флайеры: двигаются без физики, проходят сквозь стены
+    for (const en of this.enemies) {
+      if (en.dead || en.kind !== "ghost") continue;
+      en.x += en.vx * dt;
+      en.y += en.vy * dt;
+      en.vx = 0; en.vy = 0;
     }
     try { (this.phys as any).update(); } catch { /* физика не критична */ }
     for (const { b } of bodies) { if (b) { b.velocity.x = 0; b.velocity.y = 0; } }
@@ -1205,6 +1225,14 @@ export class Engine {
   }
 
   private hitEnemy(e: Enemy, dmg: number, sx: number, sy: number, ignoreShield: boolean) {
+    if (e.kind === "ghost" && !this.flags.ghostBane) {
+      if (this.ghostClangT <= 0) {
+        this.ghostClangT = 0.8;
+        audio.clang();
+        this.float(e.x, e.y - 10, "Не пробивает", 0x8fd8e8);
+      }
+      return;
+    }
     if (e.kind === "draugr" && !ignoreShield && e.freezeT <= 0) {
       const d = Math.hypot(e.x - sx, e.y - sy) || 1;
       const fromX = (sx - e.x) / d, fromY = (sy - e.y) / d;
@@ -1228,6 +1256,13 @@ export class Engine {
 
   private killEnemy(e: Enemy) {
     if (e.kind === "reaper" || e.kind === "spider" || e.kind === "giant") return;
+    if (e.kind === "ghost") {
+      this.spawnDrop("dew", e.x, e.y);
+      if (Math.random() < 0.35) this.spawnDrop(Math.random() < 0.5 ? "shard" : "heart", e.x, e.y);
+      e.dead = true;
+      this.farBody(e.body);
+      return;
+    }
     e.dead = true;
     this.farBody(e.body);
     e.path = null; e.pathI = 0;
@@ -1382,8 +1417,8 @@ export class Engine {
       if (e.kind === "snake") { this.updateSnake(e, dt); continue; }
 
       const d2p = dist2(e.x, e.y, p.x, p.y);
-      const aggroR = e.kind === "raven" ? 150 : e.kind === "crawler" ? 42 : 100;
-      const isFlyer = e.kind === "raven";
+      const aggroR = e.kind === "raven" ? 150 : e.kind === "crawler" ? 42 : e.kind === "ghost" ? 160 : 100;
+      const isFlyer = e.kind === "raven" || e.kind === "ghost";
       const canSee = isFlyer || d2p > 300 * 300 ? isFlyer : this.hasLOS(e.x, e.y, p.x, p.y);
       if (inVillage && e.aggro) { e.aggro = false; e.path = null; }
       if (!e.aggro && !inVillage && d2p < aggroR * aggroR && canSee) e.aggro = true;
@@ -1486,6 +1521,10 @@ export class Engine {
           }
           break;
         }
+        case "ghost": {
+          this.updateGhost(e, dt, d, inVillage);
+          break;
+        }
       }
 
       if (e.aggro && !e.hidden && e.contactCd <= 0) {
@@ -1493,10 +1532,67 @@ export class Engine {
         if (d2p < rr * rr) {
           this.damagePlayer(e.dmg, e.x, e.y);
           if (e.kind === "frost") p.slowT = 1.6;
+          if (e.kind === "ghost") p.slowT = 0.8;
           e.contactCd = 1.1;
         }
       }
     }
+  }
+
+  private updateGhost(e: Enemy, dt: number, d: number, inVillage: boolean) {
+    const p = this.player;
+    if (e.state === "dissipate") {
+      e.fade = Math.max(0, e.fade - dt / 2);
+      e.vx = Math.sin(e.t * 1.3 + e.seed) * 12; e.vy = -14;
+      if (e.fade <= 0) {
+        if (e.dropDew) this.spawnDrop("dew", e.x, e.y);
+        e.dead = true; this.farBody(e.body);
+      }
+      return;
+    }
+    if (e.fade < 0.85) e.fade = Math.min(0.85, e.fade + dt / 1.5);
+    if (inVillage) e.aggro = false;
+    // святилища отталкивают
+    let repX = 0, repY = 0;
+    for (const s of this.shrines) {
+      const sd2 = dist2(e.x, e.y, s.x, s.y);
+      if (sd2 < 64 * 64) {
+        e.aggro = false;
+        const sd = Math.sqrt(sd2) || 1;
+        repX = ((e.x - s.x) / sd) * 70; repY = ((e.y - s.y) / sd) * 70;
+      }
+    }
+    if (repX || repY) { e.vx = repX; e.vy = repY; return; }
+    // привязь у алтаря
+    if (e.leash && dist2(e.x, e.y, e.leash.x, e.leash.y) > 260 * 260) {
+      e.aggro = false;
+      const ld = Math.hypot(e.leash.x - e.x, e.leash.y - e.y) || 1;
+      e.vx = ((e.leash.x - e.x) / ld) * e.speed; e.vy = ((e.leash.y - e.y) / ld) * e.speed;
+      return;
+    }
+    if (e.aggro) {
+      if (e.state !== "dive") {
+        e.stateT -= dt;
+        const orbit = 26 + Math.sin(e.t * 2 + e.seed) * 6;
+        const tang = Math.atan2(p.y - e.y, p.x - e.x) + Math.PI / 2;
+        const radial = d > orbit ? 1 : -0.6;
+        e.vx = Math.cos(tang) * e.speed * 0.9 + ((p.x - e.x) / (d || 1)) * e.speed * 0.6 * radial;
+        e.vy = Math.sin(tang) * e.speed * 0.9 + ((p.y - e.y) / (d || 1)) * e.speed * 0.6 * radial;
+        if (d < 60 && e.stateT <= 0) {
+          e.state = "dive"; e.stateT = 0.6;
+          e.facing = { x: (p.x - e.x) / (d || 1), y: (p.y - e.y) / (d || 1) };
+          audio.swing();
+        }
+      } else {
+        e.stateT -= dt;
+        e.vx = e.facing.x * e.speed * 2.4; e.vy = e.facing.y * e.speed * 2.4;
+        if (e.stateT <= 0) { e.state = "hover"; e.stateT = 0.9; }
+      }
+    } else {
+      e.vx = Math.sin(e.t * 1.1 + e.seed) * 26;
+      e.vy = Math.cos(e.t * 0.8 + e.seed) * 20 - 6;
+    }
+    if (e.vx !== 0) e.facing = { x: e.vx >= 0 ? 1 : -1, y: 0 };
   }
 
   private followPath(e: Enemy, tx: number, ty: number, speed: number, dt: number) {
@@ -1764,6 +1860,13 @@ export class Engine {
         let consumed = false;
         for (const e of this.enemies) {
           if (e.dead || e.hidden) continue;
+          if (e.kind === "ghost" && !this.flags.ghostBane) {
+            if (this.ghostClangT <= 0) {
+              this.ghostClangT = 0.8; audio.clang();
+              this.float(e.x, e.y - 10, "Не пробивает", 0x8fd8e8);
+            }
+            consumed = true; break;
+          }
           if (e.kind === "snake") {
             if (e.state === "open") {
               const ex = e.x + Math.sin(this.realT * 1.6) * 4, ey = e.y - 8;
@@ -1901,6 +2004,12 @@ export class Engine {
       case "flower":
         f.flower = true; audio.pickup();
         this.toast("Могильный цветок. Шаману пригодится");
+        break;
+      case "dew":
+        f.dew++;
+        audio.pickup();
+        this.float(p.x, p.y - 10, `Туманная Роса ${f.dew}/3`, 0x8fd8e8);
+        if (f.dew >= 3) this.revealQuest("s_ghost");
         break;
       case "diary":
         f.diary = true; audio.pickup();
@@ -2104,54 +2213,103 @@ export class Engine {
   }
 
   /* ================= туман ================= */
+  private fogHoles(): Vec[] {
+    if (!this.map || this.map.isDungeon) return [];
+    return this.map.shrines.map((s) => ({ x: s.x * T + 8, y: s.y * T + 8 }));
+  }
+
+  private ensureFogGhosts(n: number, leashed: boolean) {
+    const f = this.flags, p = this.player, m = this.map;
+    const alive = this.enemies.filter((e) => !e.dead && e.kind === "ghost").length;
+    const cx = leashed ? m.treeAltar.x * T + 8 : p.x;
+    const cy = leashed ? m.treeAltar.y * T + 8 : p.y;
+    for (let i = alive; i < Math.min(4, n); i++) {
+      const a = Math.random() * Math.PI * 2;
+      const d = 110 + Math.random() * 60;
+      const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+      if (x < T || y < T || x > (m.W - 1) * T || y > (m.H - 1) * T) continue;
+      const e = this.spawnEnemy("ghost", x, y);
+      e.aggro = true; e.state = "hover"; e.stateT = 0.5 + Math.random();
+      if (leashed) e.leash = { x: cx, y: cy };
+      this.fx.burst(x, y, 0x8fd8e8, 10, 60, 0.7, 2, 0);
+    }
+  }
+
+  private endFogWave(dropDew: boolean) {
+    for (const e of this.enemies) {
+      if (e.kind === "ghost" && !e.dead && e.state !== "dissipate") {
+        e.state = "dissipate"; e.aggro = false;
+        e.dropDew = dropDew && Math.random() < 0.5;
+      }
+    }
+    this.fogActive = false; this.fogWarned = false; this.fogAmbient = false;
+    this.fogSpawned = false;
+    this.fogLeft = 0;
+    this.fogTimer = Math.max(60, 80 - this.flags.runes * 4 + Math.random() * 30);
+    this.flags.fogWaves++;
+    if (this.flags.fogWaves === 1) this.revealQuest("s_ghost");
+    audio.setFog(false);
+    this.toast("Туман рассеялся");
+  }
+
   private updateFog(dt: number, rdt: number) {
-    if (this.map.isDungeon || this.flags.snakeDead) {
+    const f = this.flags, p = this.player;
+    this.ghostClangT = Math.max(0, this.ghostClangT - dt);
+    if (this.map.isDungeon || f.snakeDead) {
       this.fogRadius += (2600 - this.fogRadius) * Math.min(1, rdt * 0.8);
+      if (this.fogActive) this.endFogWave(false);
       return;
     }
+    const zn = zoneFor(this.map, Math.floor(p.x / T), Math.floor(p.y / T));
+    const inVillage = zn === "Поселение выживших" || zn === "Поселение" || zn === "Воронья Гавань";
+    const ax = this.map.treeAltar.x * T + 8, ay = this.map.treeAltar.y * T + 8;
+    const nearAltar = !f.snakeStarted && dist2(p.x, p.y, ax, ay) < 240 * 240;
+
+    // Деревня = сейвзона: туман гаснет, призраки рассеиваются
+    if (inVillage) {
+      if (this.fogActive) this.endFogWave(true);
+      this.fogRadius += (2600 - this.fogRadius) * Math.min(1, rdt * 0.8);
+      // Останавливаем таймер пока игрок в безопасности
+      if (!this.fogActive) return;
+      return;
+    }
+    // Ambient-туман у статуи Змея — всегда, пока не вызван
+    if (nearAltar) {
+      if (!this.fogActive) {
+        this.fogActive = true; this.fogAmbient = true;
+        audio.setFog(true); this.toast("Саван Древа... оно не отпустит просто так");
+      }
+      this.fogAmbient = true;
+      this.fogRadius += (350 - this.fogRadius) * Math.min(1, rdt * 0.6);
+      this.ensureFogGhosts(2, true);
+      return;
+    }
+    if (this.fogAmbient) this.endFogWave(true); // ушёл от статуи
+
     if (!this.fogActive) {
       this.fogTimer -= dt;
       this.fogRadius += (2600 - this.fogRadius) * Math.min(1, rdt * 0.8);
-      if (!this.fogWarned && this.fogTimer < 4 && this.fogTimer > 0 && this.flags.hasSword) {
+      if (!this.fogWarned && this.fogTimer < 4 && this.fogTimer > 0 && f.hasSword) {
         this.fogWarned = true;
-        audio.setFog(true);
-        audio.horn();
+        audio.setFog(true); audio.horn();
         this.toast("Ветер стихает... Туман близко");
       }
-      if (this.fogTimer <= 0 && this.flags.hasSword) {
+      if (this.fogTimer <= 0 && f.hasSword) {
         this.fogActive = true;
-        this.fogLeft = 13;
+        this.fogLeft = 40;
         this.fogSpawned = false;
-        this.fogRadius = 900;          // стартуем уже в видимой зоне канваса
+        this.fogRadius = 900;
         audio.setFog(true);
         this.toast("ВОЛНА ТУМАНА. Ниды шепчут...");
       }
     } else {
       this.fogLeft -= dt;
-      // медленное сжатие: волна тумана видна 5-8 секунд
-      this.fogRadius += (78 - this.fogRadius) * Math.min(1, rdt * 0.35);
-      if (!this.fogSpawned && this.fogLeft < 11.5) {
+      this.fogRadius += (140 - this.fogRadius) * Math.min(1, rdt * 0.35);
+      if (!this.fogSpawned && this.fogLeft < 38) {
         this.fogSpawned = true;
-        const p = this.player;
-        for (let i = 0; i < 1 + Math.floor(Math.random() * 2); i++) {
-          const a = Math.random() * Math.PI * 2;
-          const d = 120 + Math.random() * 70;
-          const x = p.x + Math.cos(a) * d, y = p.y + Math.sin(a) * d;
-          const tx = Math.floor(x / T), ty = Math.floor(y / T);
-          if (!solidTileAt(this.map, tx, ty) && x > T && y > T && x < (this.map.W - 1) * T && y < (this.map.H - 1) * T) {
-            const e = this.spawnEnemy(Math.random() < 0.6 ? "frost" : "draugr", x, y);
-            e.aggro = true;
-            this.fx.burst(x, y, 0x9fe0ee, 10, 60, 0.7, 2, 0);
-          }
-        }
+        this.ensureFogGhosts(2 + Math.floor(f.runes / 2), false); // 2..4
       }
-      if (this.fogLeft <= 0) {
-        this.fogActive = false;
-        this.fogWarned = false;
-        this.fogTimer = (36 - this.flags.runes * 4) + Math.random() * 14;
-        audio.setFog(false);
-        this.toast("Туман рассеялся");
-      }
+      if (this.fogLeft <= 0) this.endFogWave(true);
     }
   }
 
@@ -2185,6 +2343,7 @@ export class Engine {
       { id: "s_atone", title: "Эхо мёртвых", main: false },
       { id: "s_shrines", title: "Паломничество", main: false },
       { id: "s_hunt", title: "Зачистка Нидов", main: false },
+      { id: "s_ghost", title: "Голоса тумана", main: false },
     ];
   }
 
@@ -2250,6 +2409,11 @@ export class Engine {
         desc: `Истреби порождений петли (${Math.min(12, f.kills)}/12)`,
         done: f.huntDone,
       };
+      case "s_ghost": {
+        if (f.ghostBane) return { desc: "Клинок освящён — сталь бьёт призраков", done: true };
+        if (f.dew >= 3) return { desc: "Отнеси Шаману 3 Туманной Росы", done: false };
+        return { desc: `Переживи волну и собери Росу (${f.dew}/3)`, done: false };
+      }
       default: return { desc: "", done: false };
     }
   }
@@ -2394,6 +2558,11 @@ export class Engine {
         if (!alive.length) return null;
         return nearestOf(alive.map((e) => ({ x: e.x, y: e.y })));
       }
+      case "s_ghost": {
+        if (m.isDungeon || f.ghostBane) return null;
+        if (f.dew >= 3) return npcSpot("shaman");
+        return null;
+      }
       default: return null;
     }
   }
@@ -2509,6 +2678,8 @@ export class Engine {
         return { id, name: "Бранд", lines: ["Волки совсем обнаглели, и драугры с ними.", "Проредишь четверых волков и четверых мертвецов — отплачу."] };
       }
       case "shaman": {
+        if (f.ghostBane) return { id, name: "Шаман Ульв", lines: ["Клинок освящён.", "Иди — туман больше не преграда."] };
+        if (f.dew >= 3 && !f.ghostBane) return { id, name: "Шаман Ульв", lines: ["Туманная Роса... да, это то.", "Держи клинок — я освятил его в огне Древа.", "Теперь сталь бьёт призраков."] };
         if (f.shamanDone) return { id, name: "Шаман Ульв", lines: ["Отвар подействовал. Чувствуешь?", "Ярость — тоже оружие, Варлок."] };
         const got = [f.moss, f.amber, f.flower].filter(Boolean).length;
         if (got === 3) return { id, name: "Шаман Ульв", lines: ["Всё принес. Славные дары.", "Отдай мне их — и я сварю Отвар Норн."] };
