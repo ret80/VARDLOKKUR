@@ -169,6 +169,7 @@ export interface Drop {
   magnet: boolean;
   g: Graphics;
   ambientIdx?: number;
+  life?: number;  // секунды до исчезновения; undefined = вечный дроп
 }
 
 // ============================================================

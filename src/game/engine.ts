@@ -1257,7 +1257,7 @@ export class Engine {
   private killEnemy(e: Enemy) {
     if (e.kind === "reaper" || e.kind === "spider" || e.kind === "giant") return;
     if (e.kind === "ghost") {
-      this.spawnDrop("dew", e.x, e.y);
+      this.spawnDrop("dew", e.x, e.y, 40);
       if (Math.random() < 0.35) this.spawnDrop(Math.random() < 0.5 ? "shard" : "heart", e.x, e.y);
       e.dead = true;
       this.farBody(e.body);
@@ -1374,6 +1374,8 @@ export class Engine {
     this.shakeIt(8);
     this.deathT = 2.4;
     this.cbs.onStats({ time: this.fmtTime(this.playTime), kills: this.flags.kills, deaths: this.flags.deaths, runes: this.flags.runes });
+    // Завершаем волну тумана без дропа — призраки не должны оставлять росу после смерти игрока
+    if (this.fogActive) this.endFogWave(false);
     this.setScreen("death");
   }
 
@@ -1545,7 +1547,7 @@ export class Engine {
       e.fade = Math.max(0, e.fade - dt / 2);
       e.vx = Math.sin(e.t * 1.3 + e.seed) * 12; e.vy = -14;
       if (e.fade <= 0) {
-        if (e.dropDew) this.spawnDrop("dew", e.x, e.y);
+        if (e.dropDew) this.spawnDrop("dew", e.x, e.y, 40);
         e.dead = true; this.farBody(e.body);
       }
       return;
@@ -1571,22 +1573,32 @@ export class Engine {
       return;
     }
     if (e.aggro) {
-      if (e.state !== "dive") {
+      if (e.state === "dive") {
+        // Дайв — летим в точку, где был игрок
         e.stateT -= dt;
-        const orbit = 26 + Math.sin(e.t * 2 + e.seed) * 6;
+        e.vx = e.facing.x * e.speed * 2.4;
+        e.vy = e.facing.y * e.speed * 2.4;
+        if (e.stateT <= 0) {
+          // После дайва — снова кружим 1.5–2.5с
+          e.state = "hover";
+          e.stateT = 1.5 + Math.random() * 1.0;
+        }
+      } else {
+        // Кружим на орбите
+        e.stateT -= dt;
+        const orbit = 30 + Math.sin(e.t * 2 + e.seed) * 8;
         const tang = Math.atan2(p.y - e.y, p.x - e.x) + Math.PI / 2;
         const radial = d > orbit ? 1 : -0.6;
         e.vx = Math.cos(tang) * e.speed * 0.9 + ((p.x - e.x) / (d || 1)) * e.speed * 0.6 * radial;
         e.vy = Math.sin(tang) * e.speed * 0.9 + ((p.y - e.y) / (d || 1)) * e.speed * 0.6 * radial;
-        if (d < 60 && e.stateT <= 0) {
-          e.state = "dive"; e.stateT = 0.6;
-          e.facing = { x: (p.x - e.x) / (d || 1), y: (p.y - e.y) / (d || 1) };
+        // Кулдаун кружения закончился — дайвим, независимо от расстояния
+        if (e.stateT <= 0) {
+          e.state = "dive";
+          e.stateT = 0.55;
+          const dd = Math.hypot(p.x - e.x, p.y - e.y) || 1;
+          e.facing = { x: (p.x - e.x) / dd, y: (p.y - e.y) / dd };
           audio.swing();
         }
-      } else {
-        e.stateT -= dt;
-        e.vx = e.facing.x * e.speed * 2.4; e.vy = e.facing.y * e.speed * 2.4;
-        if (e.stateT <= 0) { e.state = "hover"; e.stateT = 0.9; }
       }
     } else {
       e.vx = Math.sin(e.t * 1.1 + e.seed) * 26;
@@ -1908,8 +1920,8 @@ export class Engine {
   }
 
   /* ================= предметы ================= */
-  private spawnDrop(kind: DropKind, x: number, y: number) {
-    const d: Drop = { kind, x, y, t: Math.random() * 5, taken: false, magnet: kind === "heart" || kind === "arrows", g: new Graphics() };
+  private spawnDrop(kind: DropKind, x: number, y: number, life?: number) {
+    const d: Drop = { kind, x, y, t: Math.random() * 5, taken: false, magnet: kind === "heart" || kind === "arrows" || kind === "dew", g: new Graphics(), life };
     d.g.position.set(x, y);
     this.drops.push(d); this.dynamic.addChild(d.g);
   }
@@ -1920,6 +1932,17 @@ export class Engine {
       const d = this.drops[i];
       if (d.taken) continue;
       d.t += dt;
+      // Таймер жизни
+      if (d.life !== undefined) {
+        d.life -= dt;
+        if (d.life <= 0) {
+          d.g.destroy();
+          this.drops.splice(i, 1);
+          continue;
+        }
+        // Мигание перед исчезновением (последние 5с)
+        if (d.life < 5) d.g.alpha = 0.3 + 0.7 * Math.abs(Math.sin(d.life * 6));
+      }
       const d2 = dist2(d.x, d.y, p.x, p.y);
       if (d.magnet && d2 < 34 * 34 && d2 > 1) {
         const dd = Math.sqrt(d2);
@@ -2239,7 +2262,8 @@ export class Engine {
     for (const e of this.enemies) {
       if (e.kind === "ghost" && !e.dead && e.state !== "dissipate") {
         e.state = "dissipate"; e.aggro = false;
-        e.dropDew = dropDew && Math.random() < 0.5;
+        // Привязанные к алтарю — не дропают росу при авто-рассеивании
+        e.dropDew = !e.leash && dropDew && Math.random() < 0.5;
       }
     }
     this.fogActive = false; this.fogWarned = false; this.fogAmbient = false;
