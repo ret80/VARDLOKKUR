@@ -142,6 +142,14 @@ function HelpOverlay({ onClose }: { onClose: () => void }) {
 function QuestScreen({ quests, trackedId, onTrack, onClose }: {
   quests: QuestView[]; trackedId: string; onTrack: (id: string) => void; onClose: () => void;
 }) {
+  const [prevTrackedId, setPrevTrackedId] = useState(trackedId);
+  const [refreshKey, setRefreshKey] = useState(0);
+  useEffect(() => {
+    if (trackedId !== prevTrackedId) {
+      setPrevTrackedId(trackedId);
+      setRefreshKey((k) => k + 1);
+    }
+  }, [trackedId, prevTrackedId]);
   const main = quests.filter((q) => q.main);
   const side = quests.filter((q) => !q.main);
   const Row = ({ q }: { q: QuestView }) => {
@@ -350,12 +358,23 @@ export default function App() {
     const t = window.setTimeout(() => setChars((c) => c + 1), 22);
     return () => window.clearTimeout(t);
   }, [dialogue, chars, line]);
-  const advanceDialogue = () => {
+  const advanceDialogue = useCallback(() => {
     if (!dialogue) return;
     if (chars < line.length) { setChars(line.length); return; }
     if (lineIdx < dialogue.lines.length - 1) { setLineIdx((i) => i + 1); setChars(0); return; }
     eng()?.advanceDialogue();
-  };
+  }, [dialogue, chars, line, lineIdx]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "KeyE" && dialogue) {
+        e.preventDefault();
+        advanceDialogue();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dialogue, advanceDialogue]);
 
   /* тач-управление: классический джойстик — большой круг + ручка */
   const knobRef = useRef<HTMLDivElement>(null);
