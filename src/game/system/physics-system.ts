@@ -3,12 +3,6 @@ import { WorldData, Vec, T, solidTileAt } from "../world";
 import { dist2, clamp } from "../utils";
 
 export class PhysicsSystem {
-  private state: any; // GameState, но без прямых импортов
-
-  constructor(state: any) {
-    this.state = state;
-  }
-
   circleHitsSolid(x: number, y: number, r: number, map: WorldData): boolean {
     const x0 = Math.floor((x - r) / T), x1 = Math.floor((x + r) / T);
     const y0 = Math.floor((y - r) / T), y1 = Math.floor((y + r) / T);

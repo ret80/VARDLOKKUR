@@ -403,7 +403,7 @@ export class Engine {
     this.dialogue    = new DialogueSystem(this.bus, state, this.fx);
     this.drops       = new DropsSystem(this.bus, state);
     this.fog         = new FogSystem(this.bus, state);
-    this.physics     = new PhysicsSystem(state);
+    this.physics     = new PhysicsSystem();
     this.combat      = new CombatSystem(this.bus, state, this.physics);
     this.ai          = new AISystem(this.bus, state, this.physics);
     this.interaction = new InteractionSystem(this.bus, state);
