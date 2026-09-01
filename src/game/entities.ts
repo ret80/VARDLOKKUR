@@ -144,6 +144,10 @@ export interface Enemy {
   repathT: number;
   contactCd: number;
   guardOf: number;
+  // fog ghost specifics
+  fade?: number;
+  leash?: { x: number; y: number };
+  dropDew?: boolean;
   g: Graphics;
 }
 
@@ -886,7 +890,6 @@ export function makeEnemy(kind: EnemyKind, x: number, y: number, idx: number): E
     guardOf: -1,
     g: new Graphics(),
     fade: kind === "ghost" ? 0 : 1,
-    leash: null,
     dropDew: false,
   };
   return e;
