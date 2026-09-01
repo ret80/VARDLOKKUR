@@ -30,6 +30,8 @@ import {
 import { EventBus } from "./event-bus";
 import { GameState } from "./game-states";
 import { clamp, dist2 } from "./utils";
+import { QuestView } from "./types";
+export type { QuestView } from "./types";
 import { QuestSystem } from "./system/quest-system";
 import { DialogueSystem } from "./system/dialogue-system";
 import { DropsSystem } from "./system/drops-system";
@@ -51,9 +53,6 @@ import {
 
 export type Screen = "title" | "play" | "pause" | "death" | "victory" | "quests" | "inventory" | "map";
 
-export interface QuestView {
-  id: string; title: string; desc: string; main: boolean; done: boolean; tracked: boolean;
-}
 export interface HudData {
   hp: number; maxHp: number; arrows: number; runes: number;
   hasSword: boolean; hasAxe: boolean; hasBow: boolean; hasHammer: boolean; hasKey: boolean; bear: boolean;

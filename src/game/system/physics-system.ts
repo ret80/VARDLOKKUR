@@ -2,7 +2,30 @@
 import { WorldData, Vec, T, solidTileAt } from "../world";
 import { dist2, clamp } from "../utils";
 
-export class PhysicsSystem {
+/* ---------- Интерфейс физики (DIP: системы зависят от абстракции) ---------- */
+
+export interface PhysicsEntity {
+  x: number; y: number; r: number;
+}
+
+export interface PhysicsDoor {
+  open: number;
+  x: number; y: number;
+}
+
+export interface PhysicsBarrier {
+  active: boolean;
+  x: number; y: number;
+}
+
+export interface IPhysics {
+  moveWithCollisions(e: PhysicsEntity, dx: number, dy: number, map: WorldData, doors: PhysicsDoor[], barrier: PhysicsBarrier | null): void;
+  pointSolid(x: number, y: number, map: WorldData, doors: PhysicsDoor[], barrier: PhysicsBarrier | null): boolean;
+  hasLOS(x0: number, y0: number, x1: number, y1: number, map: WorldData): boolean;
+  followPath(e: { repathT?: number; path?: { x: number; y: number }[] | null; pathI?: number; vx?: number; vy?: number }, tx: number, ty: number, speed: number, dt: number, map: WorldData): void;
+}
+
+export class PhysicsSystem implements IPhysics {
   circleHitsSolid(x: number, y: number, r: number, map: WorldData): boolean {
     const x0 = Math.floor((x - r) / T), x1 = Math.floor((x + r) / T);
     const y0 = Math.floor((y - r) / T), y1 = Math.floor((y + r) / T);

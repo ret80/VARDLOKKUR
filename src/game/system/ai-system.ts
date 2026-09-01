@@ -4,15 +4,15 @@ import { GameState, GameEvents } from "../game-states";
 import { Enemy } from "../entities";
 import { WorldData, Vec, T, solidTileAt, zoneFor } from "../world";
 import { audio } from "../audio";
-import { PhysicsSystem } from "./physics-system";
+import { IPhysics } from "./physics-system";
 import { dist2 } from "../utils";
 
 export class AISystem {
   private state: GameState;
   private bus: EventBus;
-  private physics: PhysicsSystem;
+  private physics: IPhysics;
 
-  constructor(bus: EventBus, state: GameState, physics: PhysicsSystem) {
+  constructor(bus: EventBus, state: GameState, physics: IPhysics) {
     this.bus = bus;
     this.state = state;
     this.physics = physics;

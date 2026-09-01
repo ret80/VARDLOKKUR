@@ -1,14 +1,15 @@
 /* ============ HUDSystem ============ */
 import { EventBus } from "../event-bus";
 import { GameState, GameEvents } from "../game-states";
-import { QuestView, HudData, Stats } from "../engine";
-import { QuestSystem } from "./quest-system";
+import { HudData, Stats } from "../engine";
+import { QuestView } from "../types";
+import { IQuestProvider } from "./quest-provider";
 import { audio } from "../audio";
 
 export class HudSystem {
   private state: GameState;
   private bus: EventBus;
-  private quests: QuestSystem;
+  private quests: IQuestProvider;
   private _lastMmKey = "";
   private _mmTimer = 0;
   private _lastQuestsHash = "";
@@ -17,7 +18,7 @@ export class HudSystem {
   get mmTimer() { return this._mmTimer; } set mmTimer(v: number) { this._mmTimer = v; }
   get lastMmKey() { return this._lastMmKey; } set lastMmKey(v: string) { this._lastMmKey = v; }
 
-  constructor(bus: EventBus, state: GameState, quests: QuestSystem) {
+  constructor(bus: EventBus, state: GameState, quests: IQuestProvider) {
     this.bus = bus;
     this.state = state;
     this.quests = quests;

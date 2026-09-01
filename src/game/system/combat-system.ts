@@ -4,18 +4,18 @@ import { GameState, GameEvents } from "../game-states";
 import { Enemy, Projectile, Player } from "../entities";
 import { Graphics } from "pixi.js";
 import { audio } from "../audio";
-import { PhysicsSystem } from "./physics-system";
+import { IPhysics } from "./physics-system";
 import { dist2 } from "../utils";
 
 export class CombatSystem {
   private state: GameState;
   private bus: EventBus;
-  private physics: PhysicsSystem;
+  private physics: IPhysics;
   private axeProj: Projectile | null = null;
   private axeState: "ready" | "out" = "ready";
   private ghostClangT = 0;
 
-  constructor(bus: EventBus, state: GameState, physics: PhysicsSystem) {
+  constructor(bus: EventBus, state: GameState, physics: IPhysics) {
     this.bus = bus;
     this.state = state;
     this.physics = physics;

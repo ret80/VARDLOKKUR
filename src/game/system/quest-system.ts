@@ -3,8 +3,9 @@ import { EventBus } from "../event-bus";
 import { GameState, GameEvents } from "../game-states";
 import { WorldData, Vec, T } from "../world";
 import { audio } from "../audio";
+import { IQuestProvider, QuestView } from "./quest-provider";
 
-export class QuestSystem {
+export class QuestSystem implements IQuestProvider {
   private state: GameState;
   private bus: EventBus;
 
@@ -313,9 +314,6 @@ export class QuestSystem {
   }
 }
 
-interface QuestView {
-  id: string; title: string; desc: string; main: boolean; done: boolean; tracked: boolean;
-}
 
 function px2(ax: number, ay: number, bx: number, by: number) {
   const dx = ax - bx, dy = ay - by;

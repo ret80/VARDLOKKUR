@@ -3,16 +3,16 @@ import { EventBus } from "../event-bus";
 import { GameState, GameEvents } from "../game-states";
 import { DialogueData } from "../engine";
 import { audio } from "../audio";
-import { FxManager } from "../fx";
+import { IFxManager } from "./fx-manager";
 
 export class DialogueSystem {
   private state: GameState;
   private bus: EventBus;
   private active = false;
   private _lastId = "";
-  private fx: FxManager;
+  private fx: IFxManager;
 
-  constructor(bus: EventBus, state: GameState, fx: FxManager) {
+  constructor(bus: EventBus, state: GameState, fx: IFxManager) {
     this.bus = bus;
     this.state = state;
     this.fx = fx;
