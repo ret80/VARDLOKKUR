@@ -632,7 +632,7 @@ export class Engine {
     this.enemies.push(e);
     this.dynamic.addChild(e.g);
     e.body = this.makeBody(e.r);
-    if (kind === "raven" || kind === "snake" || kind === "spider") this.farBody(e.body);
+    if (kind === "raven" || kind === "snake" || kind === "spider" || kind === "ghost") this.farBody(e.body);
     else { e.body.position.x = x; e.body.position.y = y; }
     return e;
   }
@@ -1126,7 +1126,7 @@ export class Engine {
     const bodies: { e: { x: number; y: number; vx: number; vy: number; r: number }; b: PhysCircle | null; safe: Vec }[] = [];
     bodies.push({ e: this.player, b: this.playerBody, safe: { x: this.player.x, y: this.player.y } });
     for (const en of this.enemies) {
-      if (en.dead || en.kind === "raven" || en.kind === "snake" || en.kind === "spider") {
+      if (en.dead || en.kind === "raven" || en.kind === "snake" || en.kind === "spider" || en.kind === "ghost") {
         if (en.body && en.body.position.x > -5000) this.farBody(en.body);
         continue;
       }
@@ -1137,6 +1137,13 @@ export class Engine {
       this.moveWithCollisions(e, e.vx * dt, e.vy * dt);
       b.position.x = e.x; b.position.y = e.y;
       b.velocity.x = 0; b.velocity.y = 0;
+    }
+    // Призраки — флайеры: двигаются без физики, проходят сквозь стены
+    for (const en of this.enemies) {
+      if (en.dead || en.kind !== "ghost") continue;
+      en.x += en.vx * dt;
+      en.y += en.vy * dt;
+      en.vx = 0; en.vy = 0;
     }
     try { (this.phys as any).update(); } catch { /* физика не критична */ }
     for (const { b } of bodies) { if (b) { b.velocity.x = 0; b.velocity.y = 0; } }
@@ -1849,11 +1856,11 @@ export class Engine {
         this.removeProjectile(i);
         continue;
       }
-      if (pr.kind === \"arrow\" || pr.kind === \"axe\") {
+      if (pr.kind === "arrow" || pr.kind === "axe") {
         let consumed = false;
         for (const e of this.enemies) {
           if (e.dead || e.hidden) continue;
-          if (e.kind === \"ghost" && !this.flags.ghostBane) {
+          if (e.kind === "ghost" && !this.flags.ghostBane) {
             if (this.ghostClangT <= 0) {
               this.ghostClangT = 0.8; audio.clang();
               this.float(e.x, e.y - 10, "Не пробивает", 0x8fd8e8);
@@ -2236,6 +2243,8 @@ export class Engine {
       }
     }
     this.fogActive = false; this.fogWarned = false; this.fogAmbient = false;
+    this.fogSpawned = false;
+    this.fogLeft = 0;
     this.fogTimer = Math.max(60, 80 - this.flags.runes * 4 + Math.random() * 30);
     this.flags.fogWaves++;
     if (this.flags.fogWaves === 1) this.revealQuest("s_ghost");
@@ -2252,7 +2261,7 @@ export class Engine {
       return;
     }
     const zn = zoneFor(this.map, Math.floor(p.x / T), Math.floor(p.y / T));
-    const inVillage = zn === "Поселение выживших" || zn === "Воронья Гавань";
+    const inVillage = zn === "Поселение выживших" || zn === "Поселение" || zn === "Воронья Гавань";
     const ax = this.map.treeAltar.x * T + 8, ay = this.map.treeAltar.y * T + 8;
     const nearAltar = !f.snakeStarted && dist2(p.x, p.y, ax, ay) < 240 * 240;
 
@@ -2260,6 +2269,8 @@ export class Engine {
     if (inVillage) {
       if (this.fogActive) this.endFogWave(true);
       this.fogRadius += (2600 - this.fogRadius) * Math.min(1, rdt * 0.8);
+      // Останавливаем таймер пока игрок в безопасности
+      if (!this.fogActive) return;
       return;
     }
     // Ambient-туман у статуи Змея — всегда, пока не вызван
@@ -2278,12 +2289,12 @@ export class Engine {
     if (!this.fogActive) {
       this.fogTimer -= dt;
       this.fogRadius += (2600 - this.fogRadius) * Math.min(1, rdt * 0.8);
-      if (!this.fogWarned && this.fogTimer < 4 && this.fogTimer > 0) {
+      if (!this.fogWarned && this.fogTimer < 4 && this.fogTimer > 0 && f.hasSword) {
         this.fogWarned = true;
         audio.setFog(true); audio.horn();
         this.toast("Ветер стихает... Туман близко");
       }
-      if (this.fogTimer <= 0) {
+      if (this.fogTimer <= 0 && f.hasSword) {
         this.fogActive = true;
         this.fogLeft = 40;
         this.fogSpawned = false;
