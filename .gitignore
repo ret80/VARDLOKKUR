@@ -12,6 +12,7 @@ build/
 # Logs and temp files
 *.log
 *.tmp
+*.pid
 
 # Environment
 .env
