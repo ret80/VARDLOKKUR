@@ -118,6 +118,10 @@ export interface Player {
   slowT: number;
 }
 
+// ============================================================
+// 1.5 ПОЛНЫЕ ИНТЕРФЕЙСЫ СУЩНОСТЕЙ (только данные, без PixiJS)
+// ============================================================
+
 export interface Enemy {
   kind: EnemyKind;
   x: number; y: number;
@@ -134,7 +138,7 @@ export interface Enemy {
   freezeT: number;
   flashT: number;
   seed: number;
-  // engine-specific
+  // engine-specific (физика)
   body: PhysCircle | null;
   speed: number;
   dmg: number;
@@ -148,7 +152,6 @@ export interface Enemy {
   fade?: number;
   leash?: { x: number; y: number };
   dropDew?: boolean;
-  g: Graphics;
 }
 
 export interface Projectile {
@@ -162,7 +165,6 @@ export interface Projectile {
   returning: boolean;
   dead: boolean;
   spin: number;
-  g: Graphics;
 }
 
 export interface Drop {
@@ -171,7 +173,7 @@ export interface Drop {
   t: number;
   taken: boolean;
   magnet: boolean;
-  g: Graphics;
+  // engine-specific
   ambientIdx?: number;
   life?: number;  // секунды до исчезновения; undefined = вечный дроп
 }
@@ -888,7 +890,6 @@ export function makeEnemy(kind: EnemyKind, x: number, y: number, idx: number): E
     repathT: 0.5,
     contactCd: 0,
     guardOf: -1,
-    g: new Graphics(),
     fade: kind === "ghost" ? 0 : 1,
     dropDew: false,
   };

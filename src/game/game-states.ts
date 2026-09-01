@@ -4,6 +4,15 @@ import { Screen } from "./engine";
 import { Enemy, Projectile, Drop, Player } from "./entities";
 import { Graphics } from "pixi.js";
 
+// Runtime типы для сущностей, хранящихся в GameState (данные + Graphics)
+export interface ProjectileRt extends Projectile {
+  g: Graphics;
+}
+
+export interface DropRt extends Drop {
+  g: Graphics;
+}
+
 // ============================================================
 //  События
 // ============================================================
@@ -107,8 +116,8 @@ export interface GameState {
   // ── сущности ──
   player: Player;
   enemies: Enemy[];
-  projectiles: Projectile[];
-  drops: Drop[];
+  projectiles: ProjectileRt[];
+  drops: DropRt[];
   chests: ChestRt[];
   pedestals: PedestalRt[];
   shrines: ShrineRt[];

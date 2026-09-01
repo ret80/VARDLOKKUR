@@ -7,11 +7,16 @@ import { audio } from "../audio";
 import { IPhysics } from "./physics-system";
 import { dist2 } from "../utils";
 
+// Runtime тип: данные снаряда + Graphics для рендеринга
+export interface ProjectileRt extends Projectile {
+  g: Graphics;
+}
+
 export class CombatSystem {
   private state: GameState;
   private bus: EventBus;
   private physics: IPhysics;
-  private axeProj: Projectile | null = null;
+  private axeProj: ProjectileRt | null = null;
   private axeState: "ready" | "out" = "ready";
   private ghostClangT = 0;
 
@@ -73,8 +78,8 @@ export class CombatSystem {
     audio.throwAxe();
   }
 
-  fireProjectile(kind: any, x: number, y: number, vx: number, vy: number, dmg: number): Projectile {
-    const pr: Projectile = { kind, x, y, vx, vy, r: kind === "fire" ? 5 : 4, dmg, life: kind === "axe" ? 6 : 2.2, dist: 0, returning: false, dead: false, spin: 0, g: new Graphics() };
+  fireProjectile(kind: any, x: number, y: number, vx: number, vy: number, dmg: number): ProjectileRt {
+    const pr: ProjectileRt = { kind, x, y, vx, vy, r: kind === "fire" ? 5 : 4, dmg, life: kind === "axe" ? 6 : 2.2, dist: 0, returning: false, dead: false, spin: 0, g: new Graphics() };
     pr.g.position.set(x, y);
     this.state.projectiles.push(pr);
     this.state.onProjectileAdd(pr.g);
@@ -82,7 +87,7 @@ export class CombatSystem {
   }
 
   removeProjectile(i: number) {
-    const pr = this.state.projectiles[i];
+    const pr = this.state.projectiles[i] as ProjectileRt;
     pr.g.destroy();
     if (this.axeProj === pr) { this.axeProj = null; this.axeState = "ready"; }
     this.state.projectiles.splice(i, 1);
@@ -161,7 +166,7 @@ export class CombatSystem {
     const p = this.state.player;
     const m = this.state.map;
     for (let i = this.state.projectiles.length - 1; i >= 0; i--) {
-      const pr = this.state.projectiles[i];
+      const pr = this.state.projectiles[i] as ProjectileRt;
       pr.life -= dt;
       if (pr.life <= 0) { this.removeProjectile(i); continue; }
       pr.spin += dt * 18;

@@ -10,6 +10,7 @@ import {
   Player, Enemy, Projectile, Drop,
   makeEnemy,
 } from "./entities";
+import { ProjectileRt, DropRt } from "./game-states";
 import { audio } from "./audio";
 import { FxManager } from "./fx";
 import {
@@ -190,8 +191,8 @@ export class Engine {
   private player: Player = { x: 0, y: 0, vx: 0, vy: 0, r: 5, hp: 12, maxHp: 12, dir: { x: 0, y: 1 }, moving: false, animT: 0, swingT: 0, hurtT: 0, slowT: 0 };
   private playerG = new Graphics();
   private enemies: Enemy[] = [];
-  private projectiles: Projectile[] = [];
-  private dropsArr: Drop[] = [];
+  private projectiles: ProjectileRt[] = [];
+  private dropsArr: DropRt[] = [];
   private chests: ChestRt[] = [];
   private pedestals: PedestalRt[] = [];
   private shrines: ShrineRt[] = [];
@@ -615,7 +616,11 @@ export class Engine {
   }
 
   private clearEntities() {
-    for (const e of this.enemies) { e.g.destroy(); if (e.body) this.farBody(e.body); }
+    for (const e of this.enemies) {
+      const enemy = e as Enemy & { g: Graphics };
+      enemy.g.destroy();
+      if (enemy.body) this.farBody(enemy.body);
+    }
     for (const p of this.projectiles) p.g.destroy();
     for (const d of this.dropsArr) d.g.destroy();
     for (const c of this.chests) c.g.destroy();
@@ -650,9 +655,12 @@ export class Engine {
 
   private spawnEnemy(kind: Enemy["kind"], x: number, y: number): Enemy {
     const e = makeEnemy(kind, x, y, this.enemies.length);
-    e.g.position.set(x, y);
-    this.enemies.push(e);
-    this.dynamic.addChild(e.g);
+    // Создаём Graphics отдельно от данных сущности
+    const g = new Graphics();
+    g.position.set(x, y);
+    (e as Enemy & { g: Graphics }).g = g;
+    this.enemies.push(e as Enemy & { g: Graphics });
+    this.dynamic.addChild(g);
     e.body = this.makeBody(e.r);
     if (kind === "raven" || kind === "snake" || kind === "spider" || kind === "ghost") this.farBody(e.body);
     else { e.body.position.x = x; e.body.position.y = y; }
@@ -662,8 +670,9 @@ export class Engine {
   private ensureSpawnSafety(map: WorldData, spawn: Vec) {
     const safeR = map.isDungeon ? 170 : 300;
     for (const e of this.enemies) {
-      const r = map.isDungeon ? 170 : e.kind === "crawler" ? 250 : safeR;
-      if (dist2(e.x, e.y, spawn.x, spawn.y) < r * r && !e.hidden) {
+      const enemy = e as Enemy & { g: Graphics };
+      const r = map.isDungeon ? 170 : enemy.kind === "crawler" ? 250 : safeR;
+      if (dist2(enemy.x, enemy.y, spawn.x, spawn.y) < r * r && !enemy.hidden) {
         let moved = false;
         for (let tries = 0; tries < 26; tries++) {
           const a = Math.random() * Math.PI * 2;
@@ -671,12 +680,12 @@ export class Engine {
           const nx = spawn.x + Math.cos(a) * d, ny = spawn.y + Math.sin(a) * d;
           const tx = Math.floor(nx / T), ty = Math.floor(ny / T);
           if (tx > 1 && ty > 1 && tx < map.W - 2 && ty < map.H - 2 && !solidTileAt(map, tx, ty)) {
-            e.x = nx; e.y = ny; e.g.position.set(nx, ny);
-            if (e.body) { e.body.position.x = nx; e.body.position.y = ny; }
+            enemy.x = nx; enemy.y = ny; enemy.g.position.set(nx, ny);
+            if (enemy.body) { enemy.body.position.x = nx; enemy.body.position.y = ny; }
             moved = true; break;
           }
         }
-        if (!moved) e.dead = true;
+        if (!moved) enemy.dead = true;
       }
     }
   }
@@ -808,10 +817,11 @@ export class Engine {
     this.playerG.zIndex = this.player.y;
 
     for (const e of this.enemies) {
-      e.g.position.set(Math.round(e.x), Math.round(e.y));
-      e.g.zIndex = e.kind === "raven" ? 100000 + e.y : e.y;
-      e.g.visible = !e.dead && !(e.hidden && dist2(e.x, e.y, this.player.x, this.player.y) > 46 * 46);
-      if (!e.dead) this.renderers.enemy.render(e.g, e as IEnemyData, this.realT);
+      const enemy = e as Enemy & { g: Graphics };
+      enemy.g.position.set(Math.round(enemy.x), Math.round(enemy.y));
+      enemy.g.zIndex = enemy.kind === "raven" ? 100000 + enemy.y : enemy.y;
+      enemy.g.visible = !enemy.dead && !(enemy.hidden && dist2(enemy.x, enemy.y, this.player.x, this.player.y) > 46 * 46);
+      if (!enemy.dead) this.renderers.enemy.render(enemy.g, enemy as IEnemyData, this.realT);
     }
     for (const n of this.npcs) {
       n.g.zIndex = n.y;
@@ -819,13 +829,15 @@ export class Engine {
       this.renderers.npc.render(n.g, { id: n.id, name: n.name } as INpcData, this.realT, { mark });
     }
     for (const p of this.projectiles) {
-      p.g.zIndex = p.y;
-      this.renderers.projectile.render(p.g, p as IProjectileData, this.realT);
+      const pr = p as ProjectileRt;
+      pr.g.zIndex = pr.y;
+      this.renderers.projectile.render(pr.g, pr as IProjectileData, this.realT);
     }
     for (const d of this.dropsArr) {
       if (!d.taken) {
-        d.g.zIndex = d.y;
-        this.renderers.drop.render(d.g, d as IDropData, this.realT);
+        const drop = d as DropRt;
+        drop.g.zIndex = drop.y;
+        this.renderers.drop.render(drop.g, drop as IDropData, this.realT);
       }
     }
     for (const c of this.chests) {

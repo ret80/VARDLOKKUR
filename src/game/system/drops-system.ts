@@ -7,6 +7,11 @@ import { Drop } from "../entities";
 import { Graphics } from "pixi.js";
 import { audio } from "../audio";
 
+// Runtime тип: данные дропа + Graphics для рендеринга
+export interface DropRt extends Drop {
+  g: Graphics;
+}
+
 export class DropsSystem {
   private state: GameState;
   private bus: EventBus;
@@ -19,7 +24,7 @@ export class DropsSystem {
   }
 
   spawnDrop(kind: DropKind, x: number, y: number, life?: number) {
-    const d: Drop = { kind, x, y, t: Math.random() * 5, taken: false, magnet: kind === "heart" || kind === "arrows" || kind === "dew", g: new Graphics(), life };
+    const d: DropRt = { kind, x, y, t: Math.random() * 5, taken: false, magnet: kind === "heart" || kind === "arrows" || kind === "dew", g: new Graphics(), life };
     d.g.position.set(x, y);
     this.state.onDropAdd(d.g);
     this.state.drops.push(d);
@@ -28,7 +33,7 @@ export class DropsSystem {
   updateDrops(dt: number) {
     const p = this.state.player;
     for (let i = this.state.drops.length - 1; i >= 0; i--) {
-      const d = this.state.drops[i];
+      const d = this.state.drops[i] as DropRt;
       if (d.taken) continue;
       d.t += dt;
       if (d.life !== undefined) {
@@ -52,7 +57,7 @@ export class DropsSystem {
   }
 
   private collectDrop(i: number) {
-    const d = this.state.drops[i];
+    const d = this.state.drops[i] as DropRt;
     d.taken = true;
     if (d.ambientIdx !== undefined) this.state.takenAmbient.add(d.ambientIdx);
     d.g.destroy();
