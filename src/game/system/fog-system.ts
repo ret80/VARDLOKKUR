@@ -3,6 +3,7 @@ import { EventBus } from "../event-bus";
 import { GameState, GameEvents } from "../game-states";
 import { WorldData, Vec, T, zoneFor } from "../world";
 import { audio } from "../audio";
+import { dist2 } from "../utils";
 
 export class FogSystem {
   private state: GameState;
@@ -127,7 +128,4 @@ export class FogSystem {
   }
 }
 
-function dist2(ax: number, ay: number, bx: number, by: number) {
-  const dx = ax - bx, dy = ay - by;
-  return dx * dx + dy * dy;
-}
+

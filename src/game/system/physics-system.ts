@@ -1,7 +1,6 @@
 /* ============ PhysicsSystem ============ */
 import { WorldData, Vec, T, solidTileAt } from "../world";
-
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+import { dist2, clamp } from "../utils";
 
 export class PhysicsSystem {
   private state: any; // GameState, но без прямых импортов
@@ -107,7 +106,4 @@ export class PhysicsSystem {
   }
 }
 
-function dist2(ax: number, ay: number, bx: number, by: number) {
-  const dx = ax - bx, dy = ay - by;
-  return dx * dx + dy * dy;
-}
+

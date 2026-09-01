@@ -5,6 +5,7 @@ import { Enemy } from "../entities";
 import { WorldData, Vec, T, solidTileAt, zoneFor } from "../world";
 import { audio } from "../audio";
 import { PhysicsSystem } from "./physics-system";
+import { dist2 } from "../utils";
 
 export class AISystem {
   private state: GameState;
@@ -351,7 +352,4 @@ export class AISystem {
   }
 }
 
-function dist2(ax: number, ay: number, bx: number, by: number) {
-  const dx = ax - bx, dy = ay - by;
-  return dx * dx + dy * dy;
-}
+

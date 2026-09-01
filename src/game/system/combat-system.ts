@@ -5,6 +5,7 @@ import { Enemy, Projectile, Player } from "../entities";
 import { Graphics } from "pixi.js";
 import { audio } from "../audio";
 import { PhysicsSystem } from "./physics-system";
+import { dist2 } from "../utils";
 
 export class CombatSystem {
   private state: GameState;
@@ -298,7 +299,4 @@ export class CombatSystem {
   }
 }
 
-function dist2(ax: number, ay: number, bx: number, by: number) {
-  const dx = ax - bx, dy = ay - by;
-  return dx * dx + dy * dy;
-}
+

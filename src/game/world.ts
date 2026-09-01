@@ -2,6 +2,7 @@
    сеть дорог (A*), три тематических подземелья и навигационная сетка. */
 import { NavMesh } from "navmesh";
 import { mulberry, NoiseGenerator } from "./noise";
+import { clamp, px } from "./utils";
 export { mulberry, NoiseGenerator }; // сохраняем прежние публичные экспорты
 
 export const T = 16;
@@ -74,8 +75,7 @@ export function solidTileAt(w: WorldData, x: number, y: number): boolean {
 function setTile(w: WorldData, x: number, y: number, t: number) {
   if (inB(w, x, y)) w.tiles[idx(w, x, y)] = t;
 }
-const px = (tx: number, ty: number): Vec => ({ x: tx * T + T / 2, y: ty * T + T / 2 });
-const clampi = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
 
 /* ============================== НАВИГАЦИЯ ============================== */
 class NavBuilder {
@@ -598,8 +598,8 @@ class GlobalRoadGenerator {
       }
     };
 
-    const sx = clampi(from.x, 1, W - 2), sy = clampi(from.y, 1, H - 2);
-    const gx = clampi(to.x, 1, W - 2), gy = clampi(to.y, 1, H - 2);
+    const sx = clamp(from.x, 1, W - 2), sy = clamp(from.y, 1, H - 2);
+    const gx = clamp(to.x, 1, W - 2), gy = clamp(to.y, 1, H - 2);
     const N = W * H;
     const g = new Float64Array(N).fill(Infinity);
     const came = new Int32Array(N).fill(-1);
@@ -1123,7 +1123,7 @@ function findWalkableNear(w: WorldData, fx: number, fy: number, r: number, rng: 
       }
     }
   }
-  return { x: clampi(Math.round(fx), 2, w.W - 3), y: clampi(Math.round(fy), 2, w.H - 3) };
+  return { x: clamp(Math.round(fx), 2, w.W - 3), y: clamp(Math.round(fy), 2, w.H - 3) };
 }
 
 function clearAround(w: WorldData, cx: number, cy: number, r: number, floor?: number): void {
@@ -1159,7 +1159,7 @@ function findFree(w: WorldData, fx: number, fy: number, r: number, pref: number 
       }
     }
   }
-  return { x: clampi(Math.round(fx), 2, w.W - 3), y: clampi(Math.round(fy), 2, w.H - 3) };
+  return { x: clamp(Math.round(fx), 2, w.W - 3), y: clamp(Math.round(fy), 2, w.H - 3) };
 }
 
 function floodReach(w: WorldData, sx: number, sy: number): Uint8Array {
@@ -1434,13 +1434,13 @@ function genRoot(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
       const d = Math.hypot(r.cx - ex, r.cy - ey);
       if (d > bd) { bd = d; keyRegion = r; }
     }
-    const kx = clampi(Math.round(keyRegion.cx), 2, W - 3), ky = clampi(Math.round(keyRegion.cy), 2, H - 3);
+    const kx = clamp(Math.round(keyRegion.cx), 2, W - 3), ky = clamp(Math.round(keyRegion.cy), 2, H - 3);
     w.chests.push({ x: kx, y: ky, item: "key" });
     w.spawns.push({ kind: "shroom", x: kx * T + 8, y: (ky - 2) * T + 8 });
     w.spawns.push({ kind: "shroom", x: (kx + 2) * T + 8, y: ky * T + 8 });
     for (let r = 1; r < Math.min(4, regions.length); r++) {
       const reg = regions[r];
-      w.chests.push({ x: clampi(Math.round(reg.cx) + 1, 2, W - 3), y: clampi(Math.round(reg.cy), 2, H - 3), item: rng() < 0.5 ? "arrows" : "heartPiece" });
+      w.chests.push({ x: clamp(Math.round(reg.cx) + 1, 2, W - 3), y: clamp(Math.round(reg.cy), 2, H - 3), item: rng() < 0.5 ? "arrows" : "heartPiece" });
     }
 
     let sp = 0;

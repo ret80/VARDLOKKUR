@@ -4,6 +4,7 @@
 
 import { Application, Container, Graphics, RenderTexture, Sprite, Texture } from "pixi.js";
 import { NoiseGenerator } from "./noise";
+import { clamp } from "./utils";
 
 /* ======================== Интерфейсы ======================== */
 
@@ -367,6 +368,4 @@ export class FxManager {
 
 /* ======================== Утилиты ======================== */
 
-function clamp(v: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, v));
-}
+

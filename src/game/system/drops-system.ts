@@ -2,6 +2,7 @@
 import { EventBus } from "../event-bus";
 import { GameState, GameEvents } from "../game-states";
 import { DropKind, Vec, T } from "../world";
+import { dist2 } from "../utils";
 import { Drop } from "../entities";
 import { Graphics } from "pixi.js";
 import { audio } from "../audio";
@@ -207,7 +208,4 @@ export class DropsSystem {
   }
 }
 
-function dist2(ax: number, ay: number, bx: number, by: number) {
-  const dx = ax - bx, dy = ay - by;
-  return dx * dx + dy * dy;
-}
+

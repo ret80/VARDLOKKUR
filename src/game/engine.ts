@@ -29,6 +29,7 @@ import {
 // Системы
 import { EventBus } from "./event-bus";
 import { GameState } from "./game-states";
+import { clamp, dist2 } from "./utils";
 import { QuestSystem } from "./system/quest-system";
 import { DialogueSystem } from "./system/dialogue-system";
 import { DropsSystem } from "./system/drops-system";
@@ -80,8 +81,6 @@ interface ShrineRt { x: number; y: number; g: Graphics }
 interface NpcRt { id: string; name: string; x: number; y: number; g: Graphics }
 interface DoorRt { x: number; y: number; open: number; locked: boolean; g: Graphics }
 
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const dist2 = (ax: number, ay: number, bx: number, by: number) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
 const ZOOM = 1.18;
 
 export class Engine {
