@@ -18,9 +18,9 @@ const SOLID = new Set<number>([
 export const isSolidTileId = (id: number) => SOLID.has(id);
 
 export type ChestItem = "bow" | "arrows" | "heartPiece" | "key";
-export type EnemyKind = "draugr" | "varg" | "raven" | "shroom" | "crawler" | "frost" | "reaper" | "spider" | "giant" | "snake";
+export type EnemyKind = "draugr" | "varg" | "raven" | "shroom" | "crawler" | "frost" | "reaper" | "spider" | "giant" | "snake" | "ghost";
 export type BossReward = "axe" | "bow" | "hammer";
-export type DropKind = "heart" | "arrows" | "axe" | "sword" | "bear" | "hammer" | "bow" | "horn" | "mead" | "ore" | "moss" | "amber" | "flower" | "diary" | "bundle" | "relic" | "shard" | "bones" | "rune";
+export type DropKind = "heart" | "arrows" | "axe" | "sword" | "bear" | "hammer" | "bow" | "horn" | "mead" | "ore" | "moss" | "amber" | "flower" | "diary" | "bundle" | "relic" | "shard" | "bones" | "rune" | "dew";
 export type ProjectileKind = "arrow" | "axe" | "spore" | "fire";
 
 export interface Vec { x: number; y: number }

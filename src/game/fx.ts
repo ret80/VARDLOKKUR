@@ -216,7 +216,7 @@ export class FxManager {
     );
   }
 
-  public redrawFog(rdt: number, fogRadius: number, playerX: number, playerY: number, camX: number, camY: number, viewW: number, viewH: number) {
+  public redrawFog(rdt: number, fogRadius: number, playerX: number, playerY: number, camX: number, camY: number, viewW: number, viewH: number, shrineSpots?: {x: number, y: number}[]) {
     if (!this.fogCanvas || !this.fogCtx || !this.fogVignette) return;
     const active = fogRadius < 2300;
     this.fogVignette.visible = active;
@@ -225,77 +225,80 @@ export class FxManager {
     this.fogNoiseT += rdt;
     const cw = this.fogCanvas.width, ch = this.fogCanvas.height;
     const ctx = this.fogCtx;
-    const canvasW = cw, canvasH = ch;
-    const px = (playerX - camX + viewW * 0.05) * (cw / (viewW * 1.1));
-    const py = (playerY - camY + viewH * 0.05) * (ch / (viewH * 1.1));
-
-    const fogK = clamp(1 - fogRadius / 2300, 0, 1);
     const maxCanvas = Math.max(cw, ch);
-    const holeR = maxCanvas * (0.12 + 0.35 * (1 - fogK));
+    const fogK = clamp(1 - fogRadius / 2300, 0, 1);
 
     ctx.clearRect(0, 0, cw, ch);
 
-    // 1. Дымчатый градиент
-    const outerR = maxCanvas * 0.75;
-    const g = ctx.createRadialGradient(px, py, holeR * 0.7, px, py, Math.max(holeR * 1.6, outerR));
-    g.addColorStop(0, "rgba(126,140,155,0)");
-    g.addColorStop(0.4, `rgba(110,122,138,${(0.28 + 0.2 * fogK).toFixed(3)})`);
-    g.addColorStop(1, "rgba(78,88,104,0.95)");
+    // 1. Туман НА ВЕСЬ экран — окна над игроком больше нет
+    const g = ctx.createRadialGradient(cw / 2, ch / 2, Math.min(cw, ch) * 0.2, cw / 2, ch / 2, Math.max(cw, ch) * 0.75);
+    g.addColorStop(0, `rgba(110,122,138,${(0.30 + 0.25 * fogK).toFixed(3)})`);
+    g.addColorStop(1, `rgba(78,88,104,${(0.55 + 0.40 * fogK).toFixed(3)})`);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, cw, ch);
 
-    // 2. Рваный край
-    const steps = 34;
-    for (let i = 0; i < steps; i++) {
-      const a = (i / steps) * Math.PI * 2;
-      const n = this.fogWaveNoise(a, this.fogNoiseT);
-      const rr = holeR * (1 + 0.18 * n);
-      const bx = px + Math.cos(a) * rr;
-      const by = py + Math.sin(a) * rr;
-      const blobR = holeR * (0.10 + 0.10 * Math.abs(this.fogWaveNoise(a * 1.7 + 3.1, this.fogNoiseT * 0.7)));
+    // 2. Дрейфующие клочья
+    for (let i = 0; i < 22; i++) {
+      const a = (i / 22) * Math.PI * 2 + this.fogNoiseT * 0.05;
+      const rr = maxCanvas * (0.25 + 0.3 * Math.abs(this.fogWaveNoise(a * 1.7 + 3.1, this.fogNoiseT * 0.7)));
+      const bx = cw / 2 + Math.cos(a) * rr, by = ch / 2 + Math.sin(a) * rr;
+      const blobR = maxCanvas * (0.08 + 0.08 * Math.abs(this.fogWaveNoise(a * 2.3, this.fogNoiseT * 0.6)));
       const bg = ctx.createRadialGradient(bx, by, 0, bx, by, Math.max(1, blobR));
-      bg.addColorStop(0, `rgba(96,108,124,${(0.28 * fogK + 0.08).toFixed(3)})`);
+      bg.addColorStop(0, `rgba(96,108,124,${(0.22 * fogK + 0.08).toFixed(3)})`);
       bg.addColorStop(1, "rgba(96,108,124,0)");
       ctx.fillStyle = bg;
-      ctx.beginPath();
-      ctx.arc(bx, by, Math.max(1, blobR), 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(bx, by, Math.max(1, blobR), 0, Math.PI * 2); ctx.fill();
     }
 
-    // 3. Шум Перлина по краям
+    // 3. Шум Перлина по всему экрану
     if (this.noiseCanvas) {
-      if (!this.fogMaskCanvas) {
-        this.fogMaskCanvas = document.createElement("canvas");
-        this.fogMaskCtx = this.fogMaskCanvas.getContext("2d")!;
-      }
+      if (!this.fogMaskCanvas) { this.fogMaskCanvas = document.createElement("canvas"); this.fogMaskCtx = this.fogMaskCanvas.getContext("2d")!; }
       if (this.fogMaskCanvas.width !== cw) this.fogMaskCanvas.width = cw;
       if (this.fogMaskCanvas.height !== ch) this.fogMaskCanvas.height = ch;
       const mc = this.fogMaskCtx!;
       mc.globalCompositeOperation = "source-over";
       mc.clearRect(0, 0, cw, ch);
       mc.drawImage(this.noiseCanvas, 0, 0, cw, ch);
-      mc.globalCompositeOperation = "destination-in";
-      const mg = mc.createRadialGradient(px, py, holeR * 1.15, px, py, holeR * 2.2);
-      mg.addColorStop(0, "rgba(0,0,0,0)");
-      mg.addColorStop(1, "rgba(0,0,0,1)");
-      mc.fillStyle = mg;
-      mc.fillRect(0, 0, cw, ch);
-      mc.globalCompositeOperation = "source-over";
-      ctx.globalAlpha = 0.25 + 0.35 * fogK;
+      ctx.globalAlpha = 0.2 + 0.3 * fogK;
       ctx.drawImage(this.fogMaskCanvas, 0, 0);
       ctx.globalAlpha = 1;
     }
+
+    // 4. ДЫРЫ ТОЛЬКО У СВЯТИЛИЩ (мировые координаты → экранные)
+    ctx.globalCompositeOperation = "destination-out";
+    if (shrineSpots && shrineSpots.length > 0) {
+      for (const h of shrineSpots) {
+        const hx = (h.x - camX + viewW * 0.05) * (cw / (viewW * 1.1));
+        const hy = (h.y - camY + viewH * 0.05) * (ch / (viewH * 1.1));
+        if (hx < -80 || hy < -80 || hx > cw + 80 || hy > ch + 80) continue;
+        const hr = maxCanvas * 0.16;
+        const hg = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
+        hg.addColorStop(0, "rgba(0,0,0,1)");
+        hg.addColorStop(0.7, "rgba(0,0,0,0.8)");
+        hg.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = hg;
+        ctx.beginPath(); ctx.arc(hx, hy, hr, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+    ctx.globalCompositeOperation = "source-over";
 
     // принудительно обновляем CanvasSource и копируем в RenderTexture
     if (this.fogTex && this.fogRT && this.app) {
       this.fogTex.source.update();
       if (!this.fogCopySpr) this.fogCopySpr = new Sprite(this.fogTex);
       else this.fogCopySpr.texture = this.fogTex;
-      this.app.renderer.render({
-        container: this.fogCopySpr,
-        target: this.fogRT,
-        clear: true,
-      });
+      this.app.renderer.render({ container: this.fogCopySpr, target: this.fogRT, clear: true });
+    }
+  }
+
+  public drawFogEyes(fx: Graphics, warn: boolean, realT: number, viewW: number, viewH: number) {
+    if (!warn) return;
+    for (let i = 0; i < 3; i++) {
+      if (Math.floor(realT * 2 + i) % 3 === 0) continue; // моргание
+      const sx = ((i + 0.5) / 3) * viewW + Math.sin(realT * 0.7 + i * 2.4) * 30;
+      const sy = viewH * (0.18 + 0.25 * ((i * 37) % 3) / 3) + Math.cos(realT * 0.9 + i) * 12;
+      fx.rect(sx, sy, 2, 1).fill({ color: 0xbdeef8, alpha: 0.5 });
+      fx.rect(sx + 4, sy, 2, 1).fill({ color: 0xbdeef8, alpha: 0.5 });
     }
   }
 
@@ -339,8 +342,8 @@ export class FxManager {
   /** Метод для пересчёта тумана. Вызывается из engine.tick(). */
   public updateFog(rdt: number, fogRadius: number, fogActive: boolean, isDungeon: boolean,
                    playerX: number, playerY: number, camX: number, camY: number,
-                   viewW: number, viewH: number) {
-    this.redrawFog(rdt, fogRadius, playerX, playerY, camX, camY, viewW, viewH);
+                   viewW: number, viewH: number, holes?: { x: number; y: number }[]) {
+    this.redrawFog(rdt, fogRadius, playerX, playerY, camX, camY, viewW, viewH, holes);
   }
 
   /* ---------- Геттеры для слоёв ---------- */

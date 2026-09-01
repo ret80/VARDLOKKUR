@@ -33,6 +33,9 @@ export interface IEnemyData {
   freezeT: number;
   flashT: number;
   seed: number;
+  fade: number;
+  leash: Vec | null;
+  dropDew: boolean;
 }
 
 export interface INpcData {
@@ -285,7 +288,7 @@ function renderEnemy(g: Graphics, data: IEnemyData, time: number) {
   const flash = e.flashT > 0;
   const frozen = e.freezeT > 0;
   const tint = (c: number) => flash ? 0xffffff : frozen ? 0x9fd8e8 : c;
-  const a = e.hidden ? 0.25 : 1;
+  const a = (e.hidden ? 0.25 : 1) * e.fade;
   const fx = e.facing.x >= 0 ? 1 : -1;
 
   switch (e.kind) {
@@ -461,6 +464,35 @@ function renderEnemy(g: Graphics, data: IEnemyData, time: number) {
       }
       break;
     }
+    case "ghost": {
+      const float = Math.sin(time * 2.2 + e.seed) * 2;
+      const aggr = e.aggro && e.state !== "dissipate";
+      const BODY = 0xcfdce8, HI = 0xeef6fc, DK = 0x9fb4c8;
+      g.ellipse(0, 8, 6, 2).fill({ color: 0x05080d, alpha: 0.3 * a });
+      // капюшон + голова
+      P(g, -2, -12 + float, 4, 1, HI, a);
+      P(g, -3, -11 + float, 6, 1, BODY, a);
+      P(g, -4, -10 + float, 8, 2, BODY, a);
+      // тело с гранями
+      P(g, -4, -8 + float, 8, 7, BODY, a);
+      P(g, -4, -8 + float, 1, 7, HI, a);
+      P(g, 3, -8 + float, 1, 7, DK, a);
+      // лицо
+      P(g, -2, -9 + float, 4, 3, 0x0d1a24, a);
+      const eye = aggr ? 0xe05050 : 0x6a8aa4;
+      P(g, -2, -8 + float, 1, 1, eye, a);
+      P(g, 1, -8 + float, 1, 1, eye, a);
+      if (aggr) P(g, -1, -7 + float, 2, 1, 0x0d1a24, a); // пасть
+      // руки
+      P(g, -5, -6 + float, 1, 3, BODY, a);
+      P(g, 4, -6 + float, 1, 3, BODY, a);
+      // рваный низ
+      P(g, -4, -1 + float, 2, 2, DK, a);
+      P(g, -1, -1 + float, 2, 3, DK, a);
+      P(g, 2, -1 + float, 2, 2, DK, a);
+      P(g, -1, 2 + float, 2, 1, DK, a * 0.7);
+      break;
+    }
   }
 
   if (e.hp < e.maxHp && e.kind !== "snake") {
@@ -634,6 +666,14 @@ function renderDrop(g: Graphics, data: IDropData, time: number) {
       P(g, -4, -1 + bob, 2, 2, 0xcdd6dc); P(g, 3, -1 + bob, 2, 2, 0xcdd6dc);
       P(g, -1, -3 + bob, 4, 3, 0xb9c2c9);
       break;
+    case "dew": {
+      const pulse = 0.7 + Math.sin(time * 4 + data.t) * 0.3;
+      g.circle(0, -2 + bob, 5).stroke({ color: 0x8fd8e8, width: 1, alpha: pulse * 0.4 });
+      P(g, -1, -4 + bob, 2, 3, 0x8fd8e8, pulse);
+      P(g, -1, -1 + bob, 2, 1, 0xbdeef8, pulse);
+      P(g, 0, -5 + bob, 1, 1, 0xbdeef8, pulse);
+      break;
+    }
   }
 }
 
@@ -816,6 +856,7 @@ const ENEMY_STATS: Record<EnemyKind, { r: number; hp: number; speed: number; dmg
   spider:  { r: 11, hp: 12, speed: 44, dmg: 1 },
   giant:   { r: 13, hp: 20, speed: 44, dmg: 2 },
   snake:   { r: 16, hp: 14, speed: 0,  dmg: 1 },
+  ghost:   { r: 6, hp: 5, speed: 100, dmg: 1 },
 };
 
 export function makeEnemy(kind: EnemyKind, x: number, y: number, idx: number): Enemy {
@@ -843,6 +884,9 @@ export function makeEnemy(kind: EnemyKind, x: number, y: number, idx: number): E
     contactCd: 0,
     guardOf: -1,
     g: new Graphics(),
+    fade: kind === "ghost" ? 0 : 1,
+    leash: null,
+    dropDew: false,
   };
   return e;
 }
