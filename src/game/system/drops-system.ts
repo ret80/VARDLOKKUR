@@ -6,15 +6,17 @@ import { dist2 } from "../utils";
 import { Drop } from "../entities";
 import { type DropRt } from "../store";
 import { Graphics } from "pixi.js";
-import { audio } from "../audio";
+import { DropHandlerRegistry } from "../drop-handlers";
 
 export class DropsSystem {
   private store: GameStore;
   private bus: EventBus;
+  private handlers: DropHandlerRegistry;
 
   constructor(bus: EventBus, store: GameStore) {
     this.bus = bus;
     this.store = store;
+    this.handlers = new DropHandlerRegistry();
     bus.on("drop:spawn", (e) => this.spawnDrop(e.kind, e.x, e.y, e.life));
     bus.on("enemy:killed", (e) => this.rollDrops(e));
   }
@@ -63,104 +65,16 @@ export class DropsSystem {
     if (d.ambientIdx !== undefined) this.takenAmbient.add(d.ambientIdx);
     d.g.destroy();
     this.drops.remove(i);
-    const p = this.player;
-    const f = this.flags;
-    switch (d.kind) {
-      case "heart":
-        if (p.hp < p.maxHp) {
-          p.hp = Math.min(p.maxHp, p.hp + 3);
-          audio.pickup();
-          this.bus.emit("toast", { msg: "+3" });
-        } else if (f.hearts < 9) {
-          f.hearts++;
-          audio.pickup();
-          this.bus.emit("toast", { msg: "В суму [F]" });
-        } else {
-          this.bus.emit("toast", { msg: "Сума полна" });
-          return;
-        }
-        break;
-      case "arrows":
-        f.arrows += 5;
-        audio.pickup();
-        this.bus.emit("toast", { msg: "+5 стрел" });
-        break;
-      case "axe":
-        f.hasAxe = true;
-        audio.rune();
-        this.bus.emit("toast", { msg: "Ледяная Секира [J] — замораживает врагов и возвращается" });
-        break;
-      case "bow":
-        f.hasBow = true;
-        audio.rune();
-        this.bus.emit("toast", { msg: "Лук Сумерек [удерживай L] — время замирает, стрела летит" });
-        break;
-      case "hammer":
-        f.hasHammer = true;
-        audio.rune();
-        this.bus.emit("toast", { msg: "Рунический Молот — удары меча оглушают врагов" });
-        break;
-      case "bear":
-        f.bear = true; audio.pickup();
-        this.bus.emit("toast", { msg: "Медвежонок из болота. Дочь ждёт его в Чёрном Лесу" });
-        break;
-      case "horn":
-        f.horn = true; audio.pickup();
-        this.bus.emit("toast", { msg: "Рог Сигрид. Отнеси его в Воронью Гавань" });
-        break;
-      case "mead":
-        f.mead = true; audio.pickup();
-        this.bus.emit("toast", { msg: "Дикий мёд. Астрид будет рада" });
-        break;
-      case "ore":
-        f.ore = true; audio.pickup();
-        this.bus.emit("toast", { msg: "Сердце горы. Харальд заждался" });
-        break;
-      case "moss":
-        f.moss = true; audio.pickup();
-        this.bus.emit("toast", { msg: "Болотный мох. Шаману пригодится" });
-        break;
-      case "amber":
-        f.amber = true; audio.pickup();
-        this.bus.emit("toast", { msg: "Горный янтарь. Шаману пригодится" });
-        break;
-      case "flower":
-        f.flower = true; audio.pickup();
-        this.bus.emit("toast", { msg: "Могильный цветок. Шаману пригодится" });
-        break;
-      case "dew":
-        f.dew = (f.dew ?? 0) + 1;
-        audio.pickup();
-        this.bus.emit("toast", { msg: `Туманная Роса ${f.dew}/3` });
-        break;
-      case "diary":
-        f.diary = true; audio.pickup();
-        this.bus.emit("toast", { msg: "Дневник старосты сожжённой деревни" });
-        break;
-      case "bundle":
-        f.bundle = true; audio.pickup();
-        this.bus.emit("toast", { msg: "Потерянный тюк Фьолнира" });
-        break;
-      case "relic":
-        f.relic = true; audio.pickup();
-        this.bus.emit("toast", { msg: "Реликвия мёртвых. Древний алтарь зовёт" });
-        break;
-      case "shard":
-        f.arrows += 3;
-        audio.pickup();
-        this.bus.emit("toast", { msg: "+3 стрел" });
-        break;
-      case "bones":
-        f.arrows += 2; p.hp = Math.min(p.maxHp, p.hp + 1);
-        audio.pickup();
-        this.bus.emit("toast", { msg: "Припасы" });
-        break;
-      case "rune":
-        f.runes++;
-        audio.rune();
-        this.bus.emit("toast", { msg: `Забытая Руна ${f.runes}/5 впитана` });
-        break;
-    }
+
+    const ctx = {
+      player: this.player,
+      flags: this.store.flags,
+      bus: this.bus,
+    };
+
+    const handled = this.handlers.collect(d.kind, ctx);
+    if (!handled) return;
+
     this.bus.emit("drop:collected", { kind: d.kind, x: d.x, y: d.y });
     this.bus.emit("hud:dirty", {});
   }
