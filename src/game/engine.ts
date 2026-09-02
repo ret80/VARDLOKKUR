@@ -380,6 +380,8 @@ export class Engine {
     this.bus.on("engine:exit-dungeon", (e) => this.exitDungeon(e));
     this.bus.on("hud:float", (e) => this.float(e.x, e.y, e.text, e.color));
     this.bus.on("player:died", () => this.state.onPlayerDied());
+    // Связываем смену экрана в state с уведомлением App.tsx
+    this.state.setHandlers((s) => this.setScreen(s), (msg) => this.toast(msg));
   }
 
   private enterDungeon(e: { dungeonId: number }) {
