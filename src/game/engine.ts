@@ -1,4 +1,4 @@
-/* engine.ts – Оркестратор: создаёт EventBus, GameState и системы */
+/* engine.ts – Оркестратор: создаёт EventBus, GameStore и системы */
 
 import { Application, Container, Graphics, RenderTexture, Sprite, Texture, Text } from "pixi.js";
 import { System as PhysSystem, Circle as PhysCircle, Vector as PhysVector } from "kinetics.ts";
@@ -29,7 +29,8 @@ import {
 
 // Системы
 import { EventBus } from "./event-bus";
-import { GameState } from "./game-states";
+import { GameStore, type GameStoreConfig } from "./store";
+import { PlayerDomain } from "./store/player-domain";
 import { clamp, dist2 } from "./utils";
 import { QuestView } from "./types";
 export type { QuestView } from "./types";
@@ -76,7 +77,7 @@ export interface EngineCallbacks {
 interface FloatText { txt: Text; life: number }
 interface SlamZone { x: number; y: number; r: number; t: number; boom: boolean }
 interface ChestRt { x: number; y: number; item: string; opened: boolean; g: Graphics }
-interface PedestalRt { x: number; y: number; taken: boolean; guardsLeft: number; guardsSpawned: boolean; g: Graphics }
+interface PedestalRt { id: string; x: number; y: number; taken: boolean; guardsLeft: number; guardsSpawned: boolean; g: Graphics }
 interface ShrineRt { x: number; y: number; g: Graphics }
 interface NpcRt { id: string; name: string; x: number; y: number; g: Graphics }
 interface DoorRt { x: number; y: number; open: number; locked: boolean; g: Graphics }
@@ -89,9 +90,10 @@ export class Engine {
   private app!: Application;
   private ready: Promise<void>;
 
-  // EventBus и GameState
+  // EventBus и GameStore
   private bus = new EventBus();
-  private state!: GameState;
+  private store!: GameStore;
+  private playerDomain!: PlayerDomain;
 
   // Системы
   private quests!: QuestSystem;
@@ -155,11 +157,11 @@ export class Engine {
       if (s) spawn = { x: s.x * T + 8, y: s.y * T + 8 };
     }
     this.player.x = spawn.x; this.player.y = spawn.y;
-    this.player.vx = 0; this.player.vy = 0;
-    this.player.hp = this.player.maxHp;
-    this.player.hurtT = 0;
-    this.player.slowT = 0;
-    this.player.swingT = 0;
+    this.playerDomain.setPosition(spawn.x, spawn.y);
+    this.playerDomain.setVelocity(0, 0);
+    this.player.hp = this.playerDomain.fullHeal();
+    this.playerDomain.resetTimers();
+    // Предметы в инвентаре и дропы на земле НЕ теряются при смерти — они переживают игрока
     this.playerDead = false;
     this.setScreen("play");
     this.fadeA = 1;
@@ -200,9 +202,7 @@ export class Engine {
   private doors: DoorRt[] = [];
   private barrier: { x: number; y: number; active: boolean; g: Graphics } | null = null;
   private altar: { x: number; y: number; g: Graphics } | null = null;
-  private bossRef: Enemy | null = null;
   private slamZones: SlamZone[] = [];
-  private takenAmbient = new Set<number>();
   private roofSnow = true;
   private houseSprites: HouseSpriteEntry[] = [];
   private wallCache = new WallTextureCache();
@@ -233,14 +233,7 @@ export class Engine {
     dew: 0, fogWaves: 0, ghostBane: false,
   };
   private talkedSig = new Map<string, string>();
-  private openedChests = new Set<string>();
   private dialogueActive = false;
-  private talkCount = 0;
-  private revealed = new Set<string>();
-  private trackedQuest = "m1";
-  private lastMain = "m1";
-  private visitedShrines = new Set<number>();
-  private takenPedestals = new Set<number>();
   private arrowA = -Math.PI / 2;
   private starting = false;
 
@@ -348,66 +341,80 @@ export class Engine {
     app.ticker.maxFPS = 60;
     app.ticker.add((tk) => this.tick(Math.min(tk.deltaMS / 1000, 0.05)));
 
-    // Создаём GameState и системы
-    this.state = this.buildGameState();
-    this.instantiateSystems(this.state);
+    // Создаём GameStore и системы
+    this.store = this.buildGameStore();
+    this.instantiateSystems(this.store);
   }
 
-  private buildGameState(): GameState {
+  private buildGameStore(): GameStore {
     const eng = this;
-    const state: GameState = {
-      get player() { return eng.player; },
-      get enemies() { return eng.enemies; },
-      get projectiles() { return eng.projectiles; },
-      get drops() { return eng.dropsArr; },
-      get chests() { return eng.chests; },
-      get pedestals() { return eng.pedestals; },
-      get shrines() { return eng.shrines; },
-      get npcs() { return eng.npcs; },
-      get doors() { return eng.doors; },
-      get bossRef() { return eng.bossRef; }, set bossRef(v) { eng.bossRef = v; },
-
-      get map() { return eng.map; },
-      get ow() { return eng.ow; },
-      get barrier() { return eng.barrier; },
-      get altar() { return eng.altar; },
-
-      get flags() { return eng.flags; },
-      get screen() { return eng.screen; }, set screen(v) { eng.screen = v; },
-      get realT() { return eng.realT; }, set realT(v) { eng.realT = v; },
-      get playTime() { return eng.playTime; }, set playTime(v) { eng.playTime = v; },
-      get zone() { return eng.zone; }, set zone(v) { eng.zone = v; },
-      get talkCount() { return eng.talkCount; }, set talkCount(v) { eng.talkCount = v; },
-      get revealed() { return eng.revealed; },
-      get trackedQuest() { return eng.trackedQuest; }, set trackedQuest(v) { eng.trackedQuest = v; },
-      get lastMain() { return eng.lastMain; }, set lastMain(v) { eng.lastMain = v; },
-      get visitedShrines() { return eng.visitedShrines; },
-      get takenPedestals() { return eng.takenPedestals; },
-      get openedChests() { return eng.openedChests; },
-      get takenAmbient() { return eng.takenAmbient; },
-
-      get cbs() { return eng.cbs; },
-      get spawnEnemy() { return eng.spawnEnemy.bind(eng); },
-      get loadMap() { return eng.loadMap.bind(eng); },
-      get setScreen() { return eng.setScreen.bind(eng); },
-      get fadeTo() { return eng.fadeTo.bind(eng); },
-      get toast() { return (msg: string) => eng.toast(msg); },
-      get onProjectileAdd() { return (g: Graphics) => eng.dynamic.addChild(g); },
-      get onDropAdd() { return (g: Graphics) => eng.dynamic.addChild(g); },
+    // Создаём PlayerDomain с колбэками на события
+    eng.playerDomain = new PlayerDomain(
+      eng.player.hp,
+      eng.player.maxHp,
+      eng.player.x,
+      eng.player.y,
+      eng.player.vx,
+      eng.player.vy,
+      eng.player.dir,
+      eng.player.r,
+      {
+        onDamaged: (dmg, sx, sy) => eng.bus.emit("player:damaged", { dmg, sx, sy }),
+        onDied: () => eng.bus.emit("player:died", {}),
+        onHealed: (amount) => eng.bus.emit("player:healed", { amount }),
+        onHeartUsed: (amount) => eng.bus.emit("player:heartUsed", { amount }),
+      }
+    );
+    const config: GameStoreConfig = {
+      flags: eng.flags,
+      player: eng.player,
+      playerDomain: eng.playerDomain,
+      services: {
+        spawnEnemy: (kind: string, x: number, y: number) => eng.spawnEnemy(kind as any, x, y) as any,
+        loadMap: (map: WorldData, spawn: Vec) => eng.loadMap(map, spawn),
+        setScreen: (s: Screen) => eng.setScreen(s),
+        fadeTo: (a: number) => eng.fadeTo(a),
+        toast: (msg: string) => eng.toast(msg),
+        onProjectileAdd: (g: Graphics) => eng.dynamic.addChild(g),
+        onDropAdd: (g: Graphics) => eng.dynamic.addChild(g),
+      },
+      callbacks: {
+        onHud: (data: any) => eng.pushHudData(data),
+        onScreen: (s: Screen) => { eng.screen = s; eng.bus.emit("screen:change", { screen: s }); },
+        onDialogue: (d: DialogueData | null) => {
+          if (d) {
+            eng.bus.emit("dialogue:start", { id: d.id });
+          }
+          // dialogue:end emit'ится из DialogueSystem.endDialogue() с правильным _lastId
+        },
+        onToast: (msg: string) => eng.toast(msg),
+        onStats: (data: any) => eng.bus.emit("hud:dirty", {}),
+      },
+      entitiesArrays: {
+        enemies: this.enemies,
+        projectiles: this.projectiles,
+        drops: this.dropsArr,
+        chests: this.chests,
+        pedestals: this.pedestals,
+        shrines: this.shrines,
+        npcs: this.npcs,
+        doors: this.doors,
+      },
     };
-    return state;
+    const store = new GameStore(config);
+    return store;
   }
 
-  private instantiateSystems(state: GameState) {
-    this.quests      = new QuestSystem(this.bus, state);
-    this.dialogue    = new DialogueSystem(this.bus, state, this.fx);
-    this.drops       = new DropsSystem(this.bus, state);
-    this.fog         = new FogSystem(this.bus, state);
+  private instantiateSystems(store: GameStore) {
+    this.quests      = new QuestSystem(this.bus, store);
+    this.dialogue    = new DialogueSystem(this.bus, store, this.fx);
+    this.drops       = new DropsSystem(this.bus, store);
+    this.fog         = new FogSystem(this.bus, store);
     this.physics     = new PhysicsSystem();
-    this.combat      = new CombatSystem(this.bus, state, this.physics);
-    this.ai          = new AISystem(this.bus, state, this.physics);
-    this.interaction = new InteractionSystem(this.bus, state);
-    this.hud         = new HudSystem(this.bus, state, this.quests);
+    this.combat      = new CombatSystem(this.bus, store, this.physics);
+    this.ai          = new AISystem(this.bus, store, this.physics);
+    this.interaction = new InteractionSystem(this.bus, store);
+    this.hud         = new HudSystem(this.bus, store, this.quests);
     // Подписки на события движка
     this.bus.on("engine:enter-dungeon", (e) => this.enterDungeon(e));
     this.bus.on("engine:exit-dungeon", (e) => this.exitDungeon(e));
@@ -423,7 +430,7 @@ export class Engine {
     this.fadeTo(1);
     this.loadMap(dun, dun.spawn);
     this.fadeTo(0);
-    this.toast(`${dun.name}: страж пробудился`);
+    this.toast(`${dun.dungeonName}: страж пробудился`);
   }
 
   private exitDungeon(e: { spawn: Vec }) {
@@ -453,6 +460,7 @@ export class Engine {
         const entry = this.ow.dungeonEntries.find((e) => e.id === cfg.id)!;
         return generateDungeon(seed, cfg, { x: entry.x * T + 8, y: (entry.y + 2) * T + 8 });
       });
+      this.store.setOw(this.ow);
     } catch (e) {
       this.starting = false;
       console.error("Сбой генерации мира:", e);
@@ -472,15 +480,9 @@ export class Engine {
     f.snakeStarted = false; f.snakeDead = false;
     f.ghostBane = false; f.dew = 0; f.fogWaves = 0;
     f.kills = 0; f.deaths = 0; f.shrineIdx = -1; f.shrineQuestDone = false; f.huntDone = false;
-    this.visitedShrines.clear();
-    this.takenPedestals.clear();
-    this.takenAmbient.clear();
-    this.trackedQuest = "m1"; this.lastMain = "m1";
-    this.openedChests.clear();
-    this.revealed.clear();
-    this.revealed.add("m1");
+    this.talkedSig.clear();
     this.player.hp = this.player.maxHp = 12;
-    this.playTime = 0; this.zone = ""; this.talkCount = 0;
+    this.playTime = 0; this.zone = "";
     audio.setFog(false);
     try {
       this.loadMap(this.ow, this.ow.spawn);
@@ -517,7 +519,7 @@ export class Engine {
     if (this.screen === "quests" || this.screen === "inventory" || this.screen === "map") this.setScreen("play");
   }
   trackQuest(id: string) {
-    this.trackedQuest = id;
+    this.store.trackedQuest = id;
     const def = this.quests.questDefs().find((q) => q.id === id);
     this.toast(def ? `Стрелка ведёт: ${def.title}` : "Цель обновлена");
     audio.uiClick();
@@ -527,8 +529,8 @@ export class Engine {
   advanceDialogue() {
     this.dialogueActive = false;
     this.pressed.clear();
-    this.cbs.onDialogue(null);
     this.bus.emit("dialogue:end", { id: this.dialogue.lastId });
+    this.cbs.onDialogue(null);
   }
 
   private setScreen(s: Screen) { this.screen = s; this.cbs.onScreen(s); }
@@ -539,12 +541,20 @@ export class Engine {
   /* ================= загрузка карты ================= */
   private loadMap(map: WorldData, spawn: Vec) {
     this.map = map;
+    this.store.setMap(map);
+    // Сохраняем дропы — они переживают смену карты и смерть игрока
+    const savedDrops = this.dropsArr.filter((d) => !d.taken).map((d) => ({
+      kind: d.kind, x: d.x, y: d.y, life: d.life, ambientIdx: d.ambientIdx,
+    }));
     this.clearEntities();
     this.buildMapTextures(map);
     this.mmBase = buildMinimapBase(map);
 
     const p = this.player;
-    p.x = spawn.x; p.y = spawn.y; p.vx = 0; p.vy = 0; p.swingT = 0; p.hurtT = 0; p.slowT = 0;
+    p.x = spawn.x; p.y = spawn.y;
+    this.playerDomain.setPosition(spawn.x, spawn.y);
+    this.playerDomain.setVelocity(0, 0);
+    this.playerDomain.resetTimers();
     p.hp = Math.min(p.hp, p.maxHp);
     this.playerG.position.set(spawn.x, spawn.y);
     this.dynamic.addChild(this.playerG);
@@ -560,23 +570,26 @@ export class Engine {
 
     for (const c of map.chests) {
       const key = c.x + "_" + c.y;
-      const rt: ChestRt = { x: c.x * T + 8, y: c.y * T + 8, item: c.item, opened: this.openedChests.has(key), g: new Graphics() };
+      const rt: ChestRt = { x: c.x * T + 8, y: c.y * T + 8, item: c.item, opened: this.store.openedChests.has(key), g: new Graphics() };
       rt.g.position.set(rt.x, rt.y);
       this.renderers.chest.render(rt.g, { opened: rt.opened } as IChestData);
       this.chests.push(rt); this.dynamic.addChild(rt.g);
     }
     if (!map.isDungeon && this.flags.secretKnown) {
       const sk = map.stashSpot.x + "_" + map.stashSpot.y;
-      const rt: ChestRt = { x: map.stashSpot.x * T + 8, y: map.stashSpot.y * T + 8, item: "heartPiece", opened: this.openedChests.has(sk), g: new Graphics() };
+      const rt: ChestRt = { x: map.stashSpot.x * T + 8, y: map.stashSpot.y * T + 8, item: "heartPiece", opened: this.store.openedChests.has(sk), g: new Graphics() };
       rt.g.position.set(rt.x, rt.y);
       this.renderers.chest.render(rt.g, { opened: rt.opened } as IChestData);
       this.chests.push(rt); this.dynamic.addChild(rt.g);
     }
     map.pedestals.forEach((pd) => {
-      const pi = map.pedestals.indexOf(pd);
+      const id = "ped_" + pd.x + "_" + pd.y;
       const rt: PedestalRt = {
-        x: pd.x * T + 8, y: pd.y * T + 8, taken: this.takenPedestals.has(pi),
-        guardsLeft: this.takenPedestals.has(pi) ? 0 : pd.guards.length, guardsSpawned: false, g: new Graphics(),
+        id,
+        x: pd.x * T + 8, y: pd.y * T + 8,
+        taken: this.store.takenPedestals.has(id),
+        guardsLeft: this.store.takenPedestals.has(id) ? 0 : pd.guards.length,
+        guardsSpawned: false, g: new Graphics(),
       };
       rt.g.position.set(rt.x, rt.y);
       this.pedestals.push(rt); this.dynamic.addChild(rt.g);
@@ -613,6 +626,17 @@ export class Engine {
       this.altar = a; this.dynamic.addChild(a.g);
       this.drops.spawnWorldDrops(map);
     }
+    // Восстанавливаем дропы, пережившие смену карты
+    for (const sd of savedDrops) {
+      const d: DropRt = {
+        kind: sd.kind, x: sd.x, y: sd.y, t: Math.random() * 5,
+        taken: false, magnet: sd.kind === "heart" || sd.kind === "arrows" || sd.kind === "dew",
+        g: new Graphics(), life: sd.life, ambientIdx: sd.ambientIdx,
+      };
+      d.g.position.set(d.x, d.y);
+      this.dropsArr.push(d);
+      this.dynamic.addChild(d.g);
+    }
   }
 
   private clearEntities() {
@@ -630,9 +654,10 @@ export class Engine {
     for (const d of this.doors) d.g.destroy();
     for (const f of this.floats) f.txt.destroy();
     this.barrier?.g.destroy(); this.altar?.g.destroy();
-    this.enemies = []; this.projectiles = []; this.dropsArr = [];
-    this.chests = []; this.pedestals = []; this.shrines = []; this.npcs = []; this.doors = [];
-    this.floats = []; this.slamZones = []; this.bossRef = null;
+    this.enemies.length = 0; this.projectiles.length = 0; this.dropsArr.length = 0;
+    this.chests.length = 0; this.pedestals.length = 0; this.shrines.length = 0; this.npcs.length = 0; this.doors.length = 0;
+    this.floats.length = 0; this.slamZones.length = 0;
+    this.store.bossRef = null;
     this.barrier = null; this.altar = null;
     this.dynamic.removeChildren();
   }
@@ -728,7 +753,7 @@ export class Engine {
     if (p.hp >= p.maxHp) { this.float(p.x, p.y, "Здоровье полное", 0x6e7f8d); return; }
     if (this.flags.hearts <= 0) { this.float(p.x, p.y, "Сума пуста", 0x6e7f8d); return; }
     this.flags.hearts--;
-    p.hp = Math.min(p.maxHp, p.hp + 4);
+    this.playerDomain.heal(4);
     audio.heal();
     this.fx.burst(p.x, p.y, 0x7ee2a8, 10, 50, 0.8, 2, -20);
     this.float(p.x, p.y - 10, "+4", 0x7ee2a8);
@@ -746,7 +771,7 @@ export class Engine {
     if (this.screen === "play" && !this.dialogueActive) {
       if (this.hitstop > 0) this.hitstop -= rdt;
       else this.update(rdt * this.timeScale, rdt);
-      const inDanger = this.fog.active || this.bossRef !== null ||
+      const inDanger = this.fog.active || this.store.bossRef !== null ||
         this.enemies.some((e) => !e.dead && e.aggro && dist2(e.x, e.y, this.player.x, this.player.y) < 130 * 130);
       audio.setIntensity(inDanger ? 1 : 0);
     } else {
@@ -957,7 +982,7 @@ export class Engine {
     this.hud.mmTimer = 0.15;
     const txi = Math.floor(this.player.x / T), tyi = Math.floor(this.player.y / T);
     const blink = Math.floor(this.realT * 3) % 2;
-    const key = txi + "_" + tyi + "_" + blink + "_" + (m.dungeonId ?? -1) + "_" + this.trackedQuest;
+    const key = txi + "_" + tyi + "_" + blink + "_" + (m.dungeonId ?? -1) + "_" + this.store.trackedQuest;
     if (key !== this.hud.lastMmKey) {
       this.hud.lastMmKey = key;
       if (this.minimapCanvas && this.mmBase && m) {
@@ -982,6 +1007,14 @@ export class Engine {
     const p = this.player;
     this.playTime += dt;
 
+    // Синхронизация PlayerDomain с реальным Player (позиция, скорость, hp, таймеры)
+    this.playerDomain.syncFrom({
+      x: p.x, y: p.y,
+      vx: p.vx, vy: p.vy,
+      hp: p.hp, maxHp: p.maxHp,
+      swingT: p.swingT, hurtT: p.hurtT, slowT: p.slowT,
+    });
+
     let ix = 0, iy = 0;
     if (this.keys.has("KeyW") || this.keys.has("ArrowUp")) iy -= 1;
     if (this.keys.has("KeyS") || this.keys.has("ArrowDown")) iy += 1;
@@ -994,7 +1027,6 @@ export class Engine {
 
     const tile = tileAt(this.map, Math.floor(p.x / T), Math.floor(p.y / T));
     let speed = 92;
-    p.slowT = Math.max(0, p.slowT - dt);
     if (p.slowT > 0) speed *= 0.6;
     if (tile === Tl.SWAMP) speed = 62;
     if (tile === Tl.POOL) {
@@ -1042,8 +1074,7 @@ export class Engine {
     this.pressed.clear();
     this.prevVirt = { atk: this.virt.atk, axe: this.virt.axe, act: this.virt.act, bow: this.virt.bow };
 
-    p.swingT = Math.max(0, p.swingT - dt);
-    p.hurtT = Math.max(0, p.hurtT - dt);
+    this.playerDomain.updateTimers(dt);
 
     // Обновление AI врагов (задаёт vx/vy)
     this.ai.updateEnemies(dt);
@@ -1089,10 +1120,13 @@ export class Engine {
       this.pushHud(true);
     }
 
-    if (this.map.isDungeon && !this.dungeonBossDead(this.map.dungeonId) && !this.bossRef) {
+    if (this.map.isDungeon && !this.dungeonBossDead(this.map.dungeonId) && !this.store.bossRef) {
       const br = this.map.bossRoom;
       if (p.x > br.x && p.x < br.x + br.w && p.y > br.y && p.y < br.y + br.h) this.bus.emit("boss:start-dungeon", {});
     }
+
+    // Синхронизация Player ← PlayerDomain (hp, maxHp, таймеры после мутаций систем)
+    this.playerDomain.syncToPlayer(p);
   }
 
   private dungeonBossDead(id: number): boolean {
@@ -1110,7 +1144,7 @@ export class Engine {
     const d = this.dialogue.startDialogue(id, (dd) => this.cbs.onDialogue(dd));
     if (!d) return;
     this.dialogueActive = true;
-    this.talkCount++;
+    this.store.talkCount++;
     const sig = this.npcSig(id);
     if (sig) this.talkedSig.set(id, sig);
   }
@@ -1118,6 +1152,10 @@ export class Engine {
   /* ================= HUD ================= */
   private pushHud(force = false) {
     this.hud.pushHud(force);
+  }
+
+  private pushHudData(data: HudData) {
+    this.cbs.onHud(data);
   }
 
   private float(x: number, y: number, text: string, color: number) {

@@ -24,6 +24,8 @@ export interface GameEvents {
   "player:damaged":   { dmg: number; sx: number; sy: number };
   "player:died":      {};
   "player:respawned": {};
+  "player:healed":    { amount: number };
+  "player:heartUsed": { amount: number };
 
   // Квесты
   "quest:reveal":     { id: string; silent?: boolean };
@@ -85,6 +87,7 @@ export interface ChestRt {
 }
 
 export interface PedestalRt {
+  id: string;
   x: number; y: number;
   taken: boolean;
   guardsLeft: number;
@@ -155,7 +158,7 @@ export interface GameState {
   trackedQuest: string;
   lastMain: string;
   visitedShrines: Set<number>;
-  takenPedestals: Set<number>;
+  takenPedestals: Set<string>;
   openedChests: Set<string>;
   takenAmbient: Set<number>;
 

@@ -1,0 +1,56 @@
+/* ============ Store barrel export ============ */
+
+export {
+  GameStore,
+  type GameStoreConfig,
+  type EngineCallbacks,
+  type EngineServices,
+  type GameActions,
+  type GameStoreState,
+  type ChestRt,
+  type PedestalRt,
+  type ShrineRt,
+  type NpcRt,
+  type DoorRt,
+  type BarrierRt,
+  type AltarRt,
+  type FloatText,
+} from "./game-store";
+export { FlagDomain, type GameFlags } from "./flag-domain";
+export { PlayerDomain, type PlayerEvents, type IPlayerDomain, type IPlayerMutations } from "./player-domain";
+export {
+  WorldEntities,
+  type IWorldEntities,
+  type EnemyRt,
+  type ProjectileRt,
+  type DropRt,
+  type ChestRt as ChestRtBase,
+  type PedestalRt as PedestalRtBase,
+  type ShrineRt as ShrineRtBase,
+  type NpcRt as NpcRtBase,
+  type DoorRt as DoorRtBase,
+  type BarrierRt as BarrierRtBase,
+  type AltarRt as AltarRtBase,
+  type IEnemyCollection,
+  type IProjectileCollection,
+  type IDropCollection,
+  type INpcCollection,
+  type IChestCollection,
+  type IPedestalCollection,
+  type IShrineCollection,
+  type IDoorCollection,
+  EnemyCollection,
+  ProjectileCollection,
+  DropCollection,
+  NpcCollection,
+  ChestCollection,
+  PedestalCollection,
+  ShrineCollection,
+  DoorCollection,
+} from "./world-entities";
+export {
+  type PlayerModel,
+  type EnemyModel,
+  type DropModel,
+  type ProjectileModel,
+} from "./models";

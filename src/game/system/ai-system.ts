@@ -1,6 +1,6 @@
 /* ============ AISystem ============ */
 import { EventBus } from "../event-bus";
-import { GameState, GameEvents } from "../game-states";
+import { GameStore } from "../store";
 import { Enemy } from "../entities";
 import { WorldData, Vec, T, solidTileAt, zoneFor } from "../world";
 import { audio } from "../audio";
@@ -8,23 +8,33 @@ import { IPhysics } from "./physics-system";
 import { dist2 } from "../utils";
 
 export class AISystem {
-  private state: GameState;
+  private store: GameStore;
   private bus: EventBus;
   private physics: IPhysics;
 
-  constructor(bus: EventBus, state: GameState, physics: IPhysics) {
+  constructor(bus: EventBus, store: GameStore, physics: IPhysics) {
     this.bus = bus;
-    this.state = state;
+    this.store = store;
     this.physics = physics;
   }
 
+  private get player() { return this.store.player; }
+  private get map() { return this.store.map!; }
+  private get enemies() { return this.store.entities.enemies; }
+  private get shrines() { return this.store.entities.shrines; }
+  private get services() { return this.store.services; }
+  private get realT() { return this.store.realT; }
+  private get bossRef() { return this.store.bossRef; }
+  private set bossRef(v: Enemy | null) { this.store.bossRef = v; }
+
   updateEnemies(dt: number) {
-    const p = this.state.player;
-    const m = this.state.map;
+    const p = this.player;
+    const m = this.map;
+    if (!m) return;
     const inVillage = zoneFor(m, Math.floor(p.x / T), Math.floor(p.y / T)) === "Поселение выживших" ||
       zoneFor(m, Math.floor(p.x / T), Math.floor(p.y / T)) === "Воронья Гавань";
 
-    for (const e of this.state.enemies) {
+    for (const e of this.enemies.all) {
       if (e.dead) continue;
       e.t += dt;
       e.flashT = Math.max(0, e.flashT - dt);
@@ -163,7 +173,7 @@ export class AISystem {
   }
 
   private updateGhost(e: Enemy, dt: number, d: number, inVillage: boolean) {
-    const p = this.state.player;
+    const p = this.player;
     if (e.state === "dissipate") {
       e.fade = Math.max(0, (e.fade ?? 0.85) - dt / 2);
       e.vx = Math.sin(e.t * 1.3 + e.seed) * 12; e.vy = -14;
@@ -176,7 +186,7 @@ export class AISystem {
     if ((e.fade ?? 0) < 0.85) e.fade = Math.min(0.85, (e.fade ?? 0) + dt / 1.5);
     if (inVillage) e.aggro = false;
     let repX = 0, repY = 0;
-    for (const s of this.state.shrines) {
+    for (const s of this.shrines.all) {
       const sd2 = dist2(e.x, e.y, s.x, s.y);
       if (sd2 < 64 * 64) {
         e.aggro = false;
@@ -223,7 +233,7 @@ export class AISystem {
   }
 
   private updateReaper(e: Enemy, dt: number) {
-    const p = this.state.player;
+    const p = this.player;
     e.stateT -= dt;
     const d = Math.hypot(p.x - e.x, p.y - e.y);
     const phase2 = e.hp <= e.maxHp / 2;
@@ -255,11 +265,11 @@ export class AISystem {
         break;
     }
     if (e.contactCd <= 0 && d < e.r + p.r + 4) { this.bus.emit("player:damaged", { dmg: 1, sx: e.x, sy: e.y }); e.contactCd = 1.1; }
-    if (e.hp <= 0 && !e.dead) { e.dead = true; this.state.bossRef = e; this.bus.emit("boss:killed", { kind: "reaper" as any, id: this.state.map.dungeonId }); }
+    if (e.hp <= 0 && !e.dead) { e.dead = true; this.bossRef = e; this.bus.emit("boss:killed", { kind: "reaper" as any, id: this.map.dungeonId }); }
   }
 
   private updateSpider(e: Enemy, dt: number) {
-    const p = this.state.player;
+    const p = this.player;
     e.stateT -= dt;
     e.vx = 0; e.vy = 0;
     const d = Math.hypot(p.x - e.x, p.y - e.y);
@@ -281,15 +291,15 @@ export class AISystem {
       audio.splash();
       e.state = "aim"; e.stateT = 1.4;
     }
-    if (Math.random() < dt * 0.12 && this.state.enemies.filter((x) => !x.dead && x.kind === "crawler").length < 2) {
+    if (Math.random() < dt * 0.12 && this.enemies.all.filter((x) => !x.dead && x.kind === "crawler").length < 2) {
       const a = Math.random() * Math.PI * 2;
-      this.state.spawnEnemy("crawler", e.x + Math.cos(a) * 26, e.y + Math.sin(a) * 26);
+      this.services.spawnEnemy("crawler", e.x + Math.cos(a) * 26, e.y + Math.sin(a) * 26);
     }
-    if (e.hp <= 0 && !e.dead) { e.dead = true; this.bus.emit("boss:killed", { kind: "spider" as any, id: this.state.map.dungeonId }); }
+    if (e.hp <= 0 && !e.dead) { e.dead = true; this.bus.emit("boss:killed", { kind: "spider" as any, id: this.map.dungeonId }); }
   }
 
   private updateGiant(e: Enemy, dt: number) {
-    const p = this.state.player;
+    const p = this.player;
     e.stateT -= dt;
     const d = Math.hypot(p.x - e.x, p.y - e.y);
     const phase2 = e.hp <= e.maxHp / 2;
@@ -322,14 +332,14 @@ export class AISystem {
         break;
     }
     if (e.contactCd <= 0 && d < e.r + p.r + 4) { this.bus.emit("player:damaged", { dmg: 2, sx: e.x, sy: e.y }); e.contactCd = 1.1; }
-    if (e.hp <= 0 && !e.dead) { e.dead = true; this.state.bossRef = e; this.bus.emit("boss:killed", { kind: "giant" as any, id: this.state.map.dungeonId }); }
+    if (e.hp <= 0 && !e.dead) { e.dead = true; this.bossRef = e; this.bus.emit("boss:killed", { kind: "giant" as any, id: this.map.dungeonId }); }
   }
 
   private updateSnake(e: Enemy, dt: number) {
-    const p = this.state.player;
+    const p = this.player;
     e.stateT -= dt;
     e.vx = 0; e.vy = 0;
-    const mouthX = e.x + Math.sin(this.state.realT * 1.6) * 4;
+    const mouthX = e.x + Math.sin(this.realT * 1.6) * 4;
     const mouthY = e.y - 2;
     if (e.state === "closed") {
       if (e.stateT <= 1.5 && e.seed > 0.5) {

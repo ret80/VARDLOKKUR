@@ -1,20 +1,20 @@
 /* ============ DialogueSystem ============ */
 import { EventBus } from "../event-bus";
-import { GameState, GameEvents } from "../game-states";
+import { GameStore } from "../store";
 import { DialogueData } from "../engine";
 import { audio } from "../audio";
 import { IFxManager } from "./fx-manager";
 
 export class DialogueSystem {
-  private state: GameState;
+  private store: GameStore;
   private bus: EventBus;
   private active = false;
   private _lastId = "";
   private fx: IFxManager;
 
-  constructor(bus: EventBus, state: GameState, fx: IFxManager) {
+  constructor(bus: EventBus, store: GameStore, fx: IFxManager) {
     this.bus = bus;
-    this.state = state;
+    this.store = store;
     this.fx = fx;
     bus.on("dialogue:end", (e) => this.applyDialogueEffects(e.id));
   }
@@ -27,13 +27,13 @@ export class DialogueSystem {
     if (!d) return null;
     this.active = true;
     this._lastId = id;
-    this.state.talkCount++;
+    this.store.talkCount++;
     const gives: Record<string, string> = {
       daughter: "s_bear", sigrid: "s_horn", astrid: "s_mead",
       shaman: "s_moss", refugee: "s_diary", brand: "s_cull", merchant: "s_bundle",
     };
     if (gives[id]) this.bus.emit("quest:reveal", { id: gives[id], silent: true });
-    if (id === "harald" && this.state.flags.giantDead) this.bus.emit("quest:reveal", { id: "s_ore", silent: true });
+    if (id === "harald" && this.store.flags.giantDead) this.bus.emit("quest:reveal", { id: "s_ore", silent: true });
     audio.uiClick();
     onDialogue(d);
     return d;
@@ -42,11 +42,14 @@ export class DialogueSystem {
   endDialogue(onDialogue: (d: DialogueData | null) => void) {
     this.active = false;
     onDialogue(null);
+    this.bus.emit("dialogue:end", { id: this._lastId });
   }
 
+  private get playerDomain() { return this.store.playerDomain; }
+
   private applyDialogueEffects(id: string) {
-    const f = this.state.flags;
-    const p = this.state.player;
+    const f = this.store.flags;
+    const p = this.store.player;
     if (id === "eirik" && !f.hasSword) {
       f.hasSword = true;
       audio.rune();
@@ -57,10 +60,10 @@ export class DialogueSystem {
     if (id === "astrid") {
       if (f.mead && !f.meadDone) {
         f.mead = false; f.meadDone = true;
-        p.maxHp += 2; p.hp = Math.min(p.maxHp, p.hp + 2);
+        const r = this.playerDomain!.increaseMaxHp(2); p.maxHp = r.maxHp; p.hp = r.hp;
         audio.rune(); this.bus.emit("toast", { msg: "Зелье из дикого мёда: максимальное здоровье +2" });
       } else {
-        p.hp = p.maxHp; audio.heal();
+        p.hp = this.playerDomain!.fullHeal(); audio.heal();
       }
       this.fx.burst(p.x, p.y, 0x7ee2a8, 12, 60, 0.8, 2, -20);
       this.bus.emit("hud:dirty", {});
@@ -97,14 +100,14 @@ export class DialogueSystem {
     }
     if (id === "brand") {
       if (!f.cullDone && (f.killsByKind["varg"] ?? 0) >= 4 && (f.killsByKind["draugr"] ?? 0) >= 4) {
-        f.cullDone = true; p.maxHp += 2; p.hp = Math.min(p.maxHp, p.hp + 2);
+        f.cullDone = true; const r = this.playerDomain!.increaseMaxHp(2); p.maxHp = r.maxHp; p.hp = r.hp;
         audio.rune(); this.bus.emit("toast", { msg: "Бранд кивает: максимальное здоровье +2" });
         this.bus.emit("hud:dirty", {});
       }
     }
     if (id === "daughter" && f.bear && !f.bearGone) {
       f.bear = false; f.bearGone = true;
-      p.maxHp += 2; p.hp = p.maxHp;
+      const r = this.playerDomain!.increaseMaxHp(2); p.maxHp = r.maxHp; p.hp = r.hp;
       audio.rune();
       this.bus.emit("toast", { msg: "Кровавая Слеза: максимальное здоровье +2" });
       this.fx.burst(p.x, p.y, 0xc03050, 16, 80, 1.0, 2, -10);
@@ -114,7 +117,7 @@ export class DialogueSystem {
 
   /* ================= диалоги ================= */
   private dialogueFor(id: string): DialogueData | null {
-    const f = this.state.flags;
+    const f = this.store.flags;
     switch (id) {
       case "eirik": {
         let lines: string[];
@@ -170,7 +173,7 @@ export class DialogueSystem {
           ["Волны Тумана — это дыхание Змея. В тумане ходят его лучшие кошмары."],
           ["Гунгнира не будет. Копьё сломали ещё до петли.", "Но и клыка хватит, чтобы проткнуть глаз Миража."],
         ];
-        return { id, name: "Харальд", lines: lore[this.state.talkCount % lore.length] };
+        return { id, name: "Харальд", lines: lore[this.store.talkCount % lore.length] };
       }
       case "raven": {
         const tips: Record<string, string> = {

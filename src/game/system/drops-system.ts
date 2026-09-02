@@ -1,46 +1,47 @@
 /* ============ DropsSystem ============ */
 import { EventBus } from "../event-bus";
-import { GameState, GameEvents } from "../game-states";
+import { GameStore } from "../store";
 import { DropKind, Vec, T } from "../world";
 import { dist2 } from "../utils";
 import { Drop } from "../entities";
+import { DropRt } from "../game-states";
 import { Graphics } from "pixi.js";
 import { audio } from "../audio";
 
-// Runtime тип: данные дропа + Graphics для рендеринга
-export interface DropRt extends Drop {
-  g: Graphics;
-}
-
 export class DropsSystem {
-  private state: GameState;
+  private store: GameStore;
   private bus: EventBus;
 
-  constructor(bus: EventBus, state: GameState) {
+  constructor(bus: EventBus, store: GameStore) {
     this.bus = bus;
-    this.state = state;
+    this.store = store;
     bus.on("drop:spawn", (e) => this.spawnDrop(e.kind, e.x, e.y, e.life));
     bus.on("enemy:killed", (e) => this.rollDrops(e));
   }
 
+  private get drops() { return this.store.entities.drops; }
+  private get player() { return this.store.player; }
+  private get flags() { return this.store.flags; }
+  private get takenAmbient() { return this.store.takenAmbient; }
+
   spawnDrop(kind: DropKind, x: number, y: number, life?: number) {
     const d: DropRt = { kind, x, y, t: Math.random() * 5, taken: false, magnet: kind === "heart" || kind === "arrows" || kind === "dew", g: new Graphics(), life };
     d.g.position.set(x, y);
-    this.state.onDropAdd(d.g);
-    this.state.drops.push(d);
+    this.store.services.onDropAdd(d.g);
+    this.drops.add(d);
   }
 
   updateDrops(dt: number) {
-    const p = this.state.player;
-    for (let i = this.state.drops.length - 1; i >= 0; i--) {
-      const d = this.state.drops[i] as DropRt;
+    const p = this.player;
+    for (let i = this.drops.all.length - 1; i >= 0; i--) {
+      const d = this.drops.all[i] as DropRt;
       if (d.taken) continue;
       d.t += dt;
       if (d.life !== undefined) {
         d.life -= dt;
         if (d.life <= 0) {
           d.g.destroy();
-          this.state.drops.splice(i, 1);
+          this.drops.remove(i);
           continue;
         }
         if (d.life < 5) d.g.alpha = 0.3 + 0.7 * Math.abs(Math.sin(d.life * 6));
@@ -57,13 +58,13 @@ export class DropsSystem {
   }
 
   private collectDrop(i: number) {
-    const d = this.state.drops[i] as DropRt;
+    const d = this.drops.all[i] as DropRt;
     d.taken = true;
-    if (d.ambientIdx !== undefined) this.state.takenAmbient.add(d.ambientIdx);
+    if (d.ambientIdx !== undefined) this.takenAmbient.add(d.ambientIdx);
     d.g.destroy();
-    this.state.drops.splice(i, 1);
-    const p = this.state.player;
-    const f = this.state.flags;
+    this.drops.remove(i);
+    const p = this.player;
+    const f = this.flags;
     switch (d.kind) {
       case "heart":
         if (p.hp < p.maxHp) {
@@ -191,7 +192,7 @@ export class DropsSystem {
     const add = (kind: DropKind, v: Vec) => {
       this.bus.emit("drop:spawn", { kind, x: v.x, y: v.y });
     };
-    const f = this.state.flags;
+    const f = this.flags;
     if (!f.bearGone) add("bear", { x: map.bearSpot.x * T + 8, y: map.bearSpot.y * T + 8 });
     if (!f.hornDone && !f.horn) add("horn", { x: map.hornSpot.x * T + 8, y: map.hornSpot.y * T + 8 });
     if (!f.meadDone && !f.mead) add("mead", { x: map.meadSpot.x * T + 8, y: map.meadSpot.y * T + 8 });
@@ -206,7 +207,7 @@ export class DropsSystem {
     if (!f.atoneDone && !f.relic) add("relic", { x: map.relicSpot.x * T + 8, y: map.relicSpot.y * T + 8 });
     if (!map.isDungeon) {
       map.ambient.forEach((a: any, i: number) => {
-        if (this.state.takenAmbient.has(i)) return;
+        if (this.takenAmbient.has(i)) return;
         add(a.kind, { x: a.x * T + 8, y: a.y * T + 8 });
       });
     }
