@@ -144,7 +144,6 @@ export class Engine {
   private playerBody: any = null;
   private floats: FloatText[] = [];
   private realT = 0;
-  private zone = "";
   private stepT = 0;
   private hudTimer = 0;
   private minimapCanvas: HTMLCanvasElement | null = null;
@@ -444,7 +443,7 @@ export class Engine {
     this.talkedSig.clear();
     this.player.hp = this.player.maxHp = 12;
     this.realT = 0;
-    this.zone = "";
+    this.store.setZone("");
     audio.setFog(false);
     try {
       this.loadMap(this.ow, this.ow.spawn);
@@ -826,9 +825,9 @@ export class Engine {
     }
 
     const zn = zoneFor(this.map, Math.floor(p.x / T), Math.floor(p.y / T));
-    if (zn !== this.zone) {
-      if (this.zone !== "") this.toast(zn);
-      this.zone = zn;
+    if (zn !== this.store.zone) {
+      if (this.store.zone !== "") this.toast(zn);
+      this.store.setZone(zn);
       this.pushHud(true);
     }
 
