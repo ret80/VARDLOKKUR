@@ -15,13 +15,7 @@ export class QuestSystem implements IQuestProvider {
   constructor(bus: EventBus, store: GameStore) {
     this.bus = bus;
     this.store = store;
-    this.tracker = new QuestTracker(
-      store,
-      store.flags,
-      store.map,
-      store.visitedShrines,
-      store.ow,
-    );
+    this.tracker = new QuestTracker(store, store.flags);
 
     bus.on("enemy:killed", (e) => this.onEnemyKilled(e));
     bus.on("drop:collected", (e) => this.onDropCollected(e));

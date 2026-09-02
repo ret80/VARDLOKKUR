@@ -1,6 +1,6 @@
 /* ============ QuestTracker ============ */
 
-import { Vec, WorldData } from "../world";
+import { Vec } from "../world";
 import { GameStore } from "../store";
 import { FlagDomain } from "../store/flag-domain";
 import { findQuestDef } from "./quest-definitions";
@@ -24,22 +24,10 @@ export interface IQuestTracker {
 export class QuestTracker implements IQuestTracker {
   private store: GameStore;
   private flags: FlagDomain;
-  private map: WorldData | null;
-  private visitedShrines: Set<number>;
-  private ow: WorldData | null;
 
-  constructor(
-    store: GameStore,
-    flags: FlagDomain,
-    map: WorldData | null,
-    visitedShrines: Set<number>,
-    ow: WorldData | null,
-  ) {
+  constructor(store: GameStore, flags: FlagDomain) {
     this.store = store;
     this.flags = flags;
-    this.map = map;
-    this.visitedShrines = visitedShrines;
-    this.ow = ow;
   }
 
   /* ---- public ---- */
@@ -50,10 +38,10 @@ export class QuestTracker implements IQuestTracker {
 
     return resolveQuestTarget(questId, {
       flags: this.flags,
-      map: this.map,
+      map: this.store.map,
       store: this.store,
-      visitedShrines: this.visitedShrines,
-      ow: this.ow,
+      visitedShrines: this.store.visitedShrines,
+      ow: this.store.ow,
     });
   }
 
