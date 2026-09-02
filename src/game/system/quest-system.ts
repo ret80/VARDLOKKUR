@@ -1,17 +1,28 @@
 /* ============ QuestSystem ============ */
+
 import { EventBus } from "../event-bus";
 import { GameStore } from "../store";
-import { Vec, T } from "../world";
 import { audio } from "../audio";
 import { IQuestProvider, QuestView } from "./quest-provider";
+import { ALL_QUESTS, findQuestDef } from "./quest-definitions";
+import { QuestTracker, IQuestTracker } from "./quest-tracker";
 
 export class QuestSystem implements IQuestProvider {
   private store: GameStore;
   private bus: EventBus;
+  private tracker: IQuestTracker;
 
   constructor(bus: EventBus, store: GameStore) {
     this.bus = bus;
     this.store = store;
+    this.tracker = new QuestTracker(
+      store,
+      store.flags,
+      store.map,
+      store.visitedShrines,
+      store.ow,
+    );
+
     bus.on("enemy:killed", (e) => this.onEnemyKilled(e));
     bus.on("drop:collected", (e) => this.onDropCollected(e));
     bus.on("dialogue:end", (e) => this.onDialogueEnd(e));
@@ -20,6 +31,25 @@ export class QuestSystem implements IQuestProvider {
     bus.on("fog:waveEnd", (e) => this.onFogWaveEnd(e));
     bus.on("quest:reveal", (e) => this.revealQuest(e.id, e.silent));
   }
+
+  /* ---- static definitions (backward compat) ---- */
+
+  /** @deprecated Use `findQuestDef()` from quest-definitions instead. */
+  questDefs(): { id: string; title: string; main: boolean }[] {
+    return ALL_QUESTS;
+  }
+
+  /* ---- delegate to tracker ---- */
+
+  trackedTarget(): ReturnType<IQuestTracker["trackedTarget"]> {
+    return this.tracker.trackedTarget();
+  }
+
+  trackedTitle(): string {
+    return this.tracker.trackedTitle();
+  }
+
+  /* ---- event handlers ---- */
 
   private get flags() { return this.store.flags; }
   private get enemies() { return this.store.entities.enemies; }
@@ -54,7 +84,8 @@ export class QuestSystem implements IQuestProvider {
     if (this.flags.fogWaves === 1) this.bus.emit("quest:reveal", { id: "s_ghost" });
   }
 
-  /* ================= квесты ================= */
+  /* ================= main quest progression ================= */
+
   mainQuestId(): string {
     if (!this.flags.hasItem("sword")) return "m1";
     if (!this.flags.isBossDead("reaper")) return "m2";
@@ -64,28 +95,7 @@ export class QuestSystem implements IQuestProvider {
     return "m6";
   }
 
-  questDefs(): { id: string; title: string; main: boolean }[] {
-    return [
-      { id: "m1", title: "Пробуждение", main: true },
-      { id: "m2", title: "Первый Зов", main: true },
-      { id: "m3", title: "Голос Леса", main: true },
-      { id: "m4", title: "Забытые Руны", main: true },
-      { id: "m5", title: "Горная Разруха", main: true },
-      { id: "m6", title: "Рагнарёк", main: true },
-      { id: "s_bear", title: "Игрушка для Дочери", main: false },
-      { id: "s_horn", title: "Пропавший рог", main: false },
-      { id: "s_mead", title: "Лучший мёд", main: false },
-      { id: "s_ore", title: "Сердце горы", main: false },
-      { id: "s_moss", title: "Отвар Норн", main: false },
-      { id: "s_diary", title: "Тайна Сожжённой Деревни", main: false },
-      { id: "s_cull", title: "Волк и Кость", main: false },
-      { id: "s_bundle", title: "Потерянный груз", main: false },
-      { id: "s_atone", title: "Эхо мёртвых", main: false },
-      { id: "s_shrines", title: "Паломничество", main: false },
-      { id: "s_hunt", title: "Зачистка Нидов", main: false },
-      { id: "s_ghost", title: "Голоса тумана", main: false },
-    ];
-  }
+  /* ================= quest descriptions (dynamic) ================= */
 
   questDesc(id: string): { desc: string; done: boolean } {
     const f = this.flags;
@@ -159,9 +169,10 @@ export class QuestSystem implements IQuestProvider {
     }
   }
 
+  /* ================= public API ================= */
+
   buildQuests(): QuestView[] {
-    const defs = this.questDefs();
-    return defs
+    return ALL_QUESTS
       .filter((q) => this.revealed.has(q.id))
       .map((q) => {
         const { desc, done } = this.questDesc(q.id);
@@ -172,7 +183,7 @@ export class QuestSystem implements IQuestProvider {
   revealQuest(id: string, silent = false) {
     if (this.revealed.has(id)) return;
     this.revealed.add(id);
-    const def = this.questDefs().find((q) => q.id === id);
+    const def = findQuestDef(id);
     if (def && !silent) { audio.quest(); this.bus.emit("toast", { msg: `Новый квест: ${def.title}` }); }
     this.bus.emit("hud:dirty", {});
   }
@@ -182,7 +193,7 @@ export class QuestSystem implements IQuestProvider {
     if (cur !== this.lastMain) {
       this.lastMain = cur;
       this.revealQuest(cur, true);
-      const def = this.questDefs().find((q) => q.id === cur);
+      const def = findQuestDef(cur);
       if (def) { this.bus.emit("toast", { msg: `Новая цель саги: ${def.title}` }); audio.quest(); }
       const { done } = this.questDesc(this.trackedQuest);
       if (done) this.trackedQuest = cur;
@@ -201,122 +212,5 @@ export class QuestSystem implements IQuestProvider {
       this.bus.emit("toast", { msg: "Паломничество завершено: максимальное здоровье +2" });
       this.bus.emit("hud:dirty", {});
     }
-  }
-
-  trackedTarget(): Vec | null {
-    const m = this.map;
-    if (!m) return null;
-    const px = (v: Vec) => ({ x: v.x * T + 8, y: v.y * T + 8 });
-    const nearestOf = (pts: Vec[]): Vec | null => {
-      let best: Vec | null = null; let bd = Infinity;
-      for (const pt of pts) {
-        const d2 = (pt.x - this.store.player.x) ** 2 + (pt.y - this.store.player.y) ** 2;
-        if (d2 < bd) { bd = d2; best = pt; }
-      }
-      return best;
-    };
-    const dungeonTarget = (id: number): Vec | null => {
-      if (m.isDungeon) {
-        return m.dungeonId === id
-          ? { x: m.bossRoom.x + m.bossRoom.w / 2, y: m.bossRoom.y + m.bossRoom.h / 2 }
-          : null;
-      }
-      const en = m.dungeonEntries.find((e) => e.id === id);
-      return en ? px(en) : null;
-    };
-    const npcSpot = (id: string): Vec | null => {
-      const n = this.ow?.npcs.find((x) => x.id === id);
-      return n ? px(n) : null;
-    };
-
-    switch (this.trackedQuest) {
-      case "m1": return m.isDungeon ? null : npcSpot("eirik") ?? px(m.villageA);
-      case "m2": return dungeonTarget(0);
-      case "m3": return dungeonTarget(1);
-      case "m4": {
-        if (m.isDungeon) return null;
-        return nearestOf(this.pedestals.all.filter((p) => !p.taken).map((p) => ({ x: p.x, y: p.y })));
-      }
-      case "m5": return dungeonTarget(2);
-      case "m6": return this.store.bossRef ? { x: this.store.bossRef.x, y: this.store.bossRef.y } : (m.isDungeon ? null : px(m.treeAltar));
-      case "s_bear": {
-        const f = this.flags;
-        if (m.isDungeon || f.bearGone) return null;
-        if (f.hasQuestItem("bear")) return npcSpot("daughter");
-        return px(m.bearSpot);
-      }
-      case "s_horn": {
-        const f = this.flags;
-        if (m.isDungeon || f.isQuestDone("hornDone")) return null;
-        if (f.hasQuestItem("horn")) return npcSpot("sigrid");
-        return px(m.hornSpot);
-      }
-      case "s_mead": {
-        const f = this.flags;
-        if (m.isDungeon || f.isQuestDone("meadDone")) return null;
-        if (f.hasQuestItem("mead")) return npcSpot("astrid");
-        return px(m.meadSpot);
-      }
-      case "s_ore": {
-        const f = this.flags;
-        if (m.isDungeon || f.isQuestDone("oreDone")) return null;
-        if (f.hasQuestItem("ore")) return npcSpot("harald");
-        return px(m.oreSpot);
-      }
-      case "s_moss": {
-        const f = this.flags;
-        if (m.isDungeon || f.isQuestDone("shamanDone")) return null;
-        if (f.hasQuestItem("moss") && f.hasQuestItem("amber") && f.hasQuestItem("flower")) return npcSpot("shaman");
-        const spots: Vec[] = [];
-        if (!f.hasQuestItem("moss")) spots.push(px(m.mossSpot));
-        if (!f.hasQuestItem("amber")) spots.push(px(m.amberSpot));
-        if (!f.hasQuestItem("flower")) spots.push(px(m.flowerSpot));
-        return nearestOf(spots);
-      }
-      case "s_diary": {
-        const f = this.flags;
-        if (m.isDungeon || f.isQuestDone("refugeeDone")) return null;
-        if (f.hasQuestItem("diary")) return npcSpot("refugee");
-        return px(m.diarySpot);
-      }
-      case "s_cull": {
-        const alive = this.enemies.all.filter((e) => !e.dead && (e.kind === "varg" || e.kind === "draugr"));
-        return alive.length ? nearestOf(alive.map((e) => ({ x: e.x, y: e.y }))) : null;
-      }
-      case "s_bundle": {
-        const f = this.flags;
-        if (m.isDungeon || f.isQuestDone("merchantDone")) return null;
-        if (f.hasQuestItem("bundle")) return npcSpot("merchant");
-        return px(m.bundleSpot);
-      }
-      case "s_atone": {
-        const f = this.flags;
-        if (m.isDungeon || f.isQuestDone("atoneDone")) return null;
-        if (f.hasQuestItem("relic")) return px(m.oldAltar);
-        return px(m.relicSpot);
-      }
-      case "s_shrines": {
-        if (m.isDungeon) return null;
-        const unv = m.shrines.filter((_: any, i: number) => !this.visitedShrines.has(i)).map((s: any) => px(s));
-        return unv.length ? nearestOf(unv) : null;
-      }
-      case "s_hunt": {
-        const alive = this.enemies.all.filter((e) => !e.dead && e.kind !== "snake");
-        if (!alive.length) return null;
-        return nearestOf(alive.map((e) => ({ x: e.x, y: e.y })));
-      }
-      case "s_ghost": {
-        const f = this.flags;
-        if (m.isDungeon || f.ghostBane) return null;
-        if (f.getDew() >= 3) return npcSpot("shaman");
-        return null;
-      }
-      default: return null;
-    }
-  }
-
-  trackedTitle(): string {
-    const def = this.questDefs().find((q) => q.id === this.trackedQuest);
-    return def ? def.title : "Сага";
   }
 }
