@@ -6,7 +6,7 @@ import { Graphics } from "pixi.js";
 import { audio } from "../audio";
 import { IPhysics } from "./physics-system";
 import { dist2 } from "../utils";
-import { ProjectileRt } from "../game-states";
+import { type ProjectileRt } from "../store";
 
 export class CombatSystem {
   private store: GameStore;

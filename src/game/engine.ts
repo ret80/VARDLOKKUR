@@ -10,7 +10,11 @@ import {
   Player, Enemy, Projectile, Drop,
   makeEnemy,
 } from "./entities";
-import { ProjectileRt, DropRt } from "./game-states";
+import {
+  type ProjectileRt, type DropRt,
+  type ChestRt, type PedestalRt, type ShrineRt,
+  type NpcRt, type DoorRt, type FloatText,
+} from "./store";
 import { audio } from "./audio";
 import { FxManager } from "./fx";
 import {
@@ -74,13 +78,7 @@ export interface EngineCallbacks {
   onStats: (s: Stats) => void;
 }
 
-interface FloatText { txt: Text; life: number }
 interface SlamZone { x: number; y: number; r: number; t: number; boom: boolean }
-interface ChestRt { x: number; y: number; item: string; opened: boolean; g: Graphics }
-interface PedestalRt { id: string; x: number; y: number; taken: boolean; guardsLeft: number; guardsSpawned: boolean; g: Graphics }
-interface ShrineRt { x: number; y: number; g: Graphics }
-interface NpcRt { id: string; name: string; x: number; y: number; g: Graphics }
-interface DoorRt { x: number; y: number; open: number; locked: boolean; g: Graphics }
 
 const ZOOM = 1.18;
 

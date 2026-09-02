@@ -4,7 +4,7 @@ import { GameStore } from "../store";
 import { DropKind, Vec, T } from "../world";
 import { dist2 } from "../utils";
 import { Drop } from "../entities";
-import { DropRt } from "../game-states";
+import { type DropRt } from "../store";
 import { Graphics } from "pixi.js";
 import { audio } from "../audio";
 
