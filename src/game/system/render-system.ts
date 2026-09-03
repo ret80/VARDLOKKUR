@@ -13,7 +13,8 @@ import {
   IChestData, IPedestalData, IShrineData, IDoorData, IBarrierData, IAltarData,
   IPlayerExtra,
   PlayerRenderer, EnemyRenderer, NpcRenderer, DropRenderer, ProjectileRenderer,
-  ChestRenderer, PedestalRenderer, ShrineRenderer, DoorRenderer, BarrierRenderer, AltarRenderer
+  ChestRenderer, PedestalRenderer, ShrineRenderer, DoorRenderer, BarrierRenderer, AltarRenderer,
+  makeEnemy,
 } from "../entities";
 import { type FxManager } from "../fx";
 import { type FogSystem } from "./fog-system";
@@ -21,7 +22,7 @@ import { type QuestSystem } from "./quest-system";
 import { type HudSystem } from "./hud-system";
 import { type InteractionSystem } from "./interaction-system";
 import { type EntityManager } from "./entity-manager";
-import { drawMinimap } from "../tiles";
+import { buildBigMapBase, drawBigMap, drawMinimap } from "../tiles";
 
 // ============================================================
 // 1. ИНТЕРФЕЙС ФАБРИКИ ГРАФИКИ (для тестирования и замены рендера)
@@ -79,6 +80,8 @@ export interface RenderSystemConfig {
     map: () => WorldData | undefined;
     trackedQuest?: string;
   };
+  floatLayer: Container;
+  dynamic: Container;
 }
 
 export class RenderSystem {
@@ -104,6 +107,77 @@ export class RenderSystem {
   constructor(cfg: RenderSystemConfig) {
     this.cfg = cfg;
     this.factory = cfg.factory;
+  }
+
+  // ============================================================
+  // УПРАВЛЕНИЕ ИГРОКОМ
+  // ============================================================
+
+  setupPlayerG(playerG: Graphics) {
+    this.cfg.dynamic.addChild(playerG);
+    playerG.zIndex = 100;
+  }
+
+  // ============================================================
+  // СПАВН ВРАГОВ (графика)
+  // ============================================================
+
+  spawnEnemyGraphics(kind: Enemy["kind"], x: number, y: number, idx: number): { enemy: Enemy; g: Graphics } {
+    const enemy = makeEnemy(kind, x, y, idx);
+    const g = this.factory.createGraphics();
+    g.position.set(x, y);
+    (enemy as Enemy & { g: Graphics }).g = g;
+    this.cfg.dynamic.addChild(g);
+    return { enemy: enemy as Enemy, g };
+  }
+
+  // ============================================================
+  // БОЛЬШАЯ КАРТА
+  // ============================================================
+
+  drawBigMap(
+    canvas: HTMLCanvasElement,
+    map: WorldData,
+    player: Player,
+    dungeonBossDead: (id: number) => boolean,
+    trackedTarget: { x: number; y: number } | null
+  ) {
+    const scale = Math.min(560 / (map.W * 2), 420 / (map.H * 2)) * 2;
+    const base = buildBigMapBase(map);
+    drawBigMap(canvas.getContext("2d")!, base, scale, {
+      shrines: this.cfg.entityMgr.entities.shrines,
+      map,
+      dungeonBossDead,
+      bossRoom: map.bossRoom,
+      bossSpot: map.bossSpot,
+      dungeonId: map.dungeonId,
+      player,
+      target: trackedTarget,
+      secretKnown: this.cfg.flags.secretKnown,
+      stashSpot: map.stashSpot,
+      pedestals: this.cfg.entityMgr.entities.pedestals,
+      dungeonEntries: map.dungeonEntries,
+      treeAltar: map.treeAltar,
+    });
+  }
+
+  clearFloats() {
+    for (const f of this.floats) {
+      f.txt.destroy();
+    }
+    this.floats.length = 0;
+  }
+
+  getFloatTexts(): FloatText[] {
+    return this.floats;
+  }
+
+  // ============================================================
+  // УНИЧТОЖЕНИЕ
+  // ============================================================
+
+  destroy() {
+    this.clearFloats();
   }
 
   tick(
@@ -297,6 +371,7 @@ export class RenderSystem {
     });
     t.anchor.set(0.5);
     t.position.set(x, y - 12);
+    this.cfg.floatLayer.addChild(t);
     this.floats.push({ txt: t, life: 0.8 });
     if (this.floats.length > 24) { const old = this.floats.shift()!; old.txt.destroy(); }
   }
@@ -309,10 +384,6 @@ export class RenderSystem {
       f.txt.alpha = Math.max(0, f.life / 0.8);
       if (f.life <= 0) { f.txt.destroy(); this.floats.splice(i, 1); }
     }
-  }
-
-  getFloatTexts(): FloatText[] {
-    return this.floats;
   }
 
   // ============================================================
@@ -385,31 +456,5 @@ export class RenderSystem {
     const sig = this.cfg.npcSigProvider.npcSig(id);
     if (!sig) return false;
     return this.cfg.talkedSig.get(id) !== sig;
-  }
-
-  private updateMinimap(map: WorldData | undefined, player: Player, realT: number, minimapCanvas: HTMLCanvasElement | null, mmBase: ImageData | null) {
-    if (!map) return;
-    const txi = Math.floor(player.x / T), tyi = Math.floor(player.y / T);
-    const blink = Math.floor(realT * 3) % 2;
-    const key = txi + "_" + tyi + "_" + blink + "_" + (map.dungeonId ?? -1) + "_" + (this.cfg.store.trackedQuest ?? "");
-    if (key !== this.cfg.hud.lastMmKey) {
-      this.cfg.hud.lastMmKey = key;
-      if (minimapCanvas && mmBase) {
-        const cx = minimapCanvas.getContext("2d");
-        if (cx) {
-          drawMinimap(cx, mmBase, {
-            shrines: this.cfg.entityMgr.entities.shrines,
-            player,
-            target: this.cfg.quests.trackedTarget(),
-            secretKnown: this.cfg.flags.secretKnown,
-            stashSpot: map.stashSpot,
-            nornsFavor: this.cfg.flags.nornsFavor,
-            pedestals: this.cfg.entityMgr.entities.pedestals,
-            map,
-            realT,
-          });
-        }
-      }
-    }
   }
 }

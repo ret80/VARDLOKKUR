@@ -57,6 +57,10 @@ export interface GameEvents {
 
   // Снаряды
   "projectile:fire":  { kind: ProjectileKind; x: number; y: number; vx: number; vy: number; dmg: number };
+  "projectile:spawned": { g: Graphics; x: number; y: number };
+
+  // Дропы
+  "drop:spawned": { g: Graphics; x: number; y: number };
 
   // Бой (запросы от игрока)
   "combat:trySword":    {};

@@ -93,8 +93,6 @@ export interface EngineServices {
   setScreen: (s: Screen) => void;
   fadeTo: (a: number) => void;
   toast: (msg: string) => void;
-  onProjectileAdd: (g: Graphics) => void;
-  onDropAdd: (g: Graphics) => void;
 }
 
 /** Акции для изменения состояния */

@@ -7,12 +7,11 @@ import {
 } from "./world";
 import {
   Player, Enemy, Projectile,
-  makeEnemy,
 } from "./entities";
 import {
   type ProjectileRt, type DropRt,
   type ChestRt, type PedestalRt, type ShrineRt,
-  type NpcRt, type DoorRt, type FloatText,
+  type NpcRt, type DoorRt,
 } from "./store";
 import { audio } from "./audio";
 import { FxManager } from "./fx";
@@ -137,7 +136,6 @@ export class Engine {
   private player: Player = { x: 0, y: 0, vx: 0, vy: 0, r: 5, hp: 12, maxHp: 12, dir: { x: 0, y: 1 }, moving: false, animT: 0, swingT: 0, hurtT: 0, slowT: 0 };
   private playerG = new Graphics();
   private playerBody: any = null;
-  private floats: FloatText[] = [];
   private realT = 0;
   private stepT = 0;
   private hudTimer = 0;
@@ -187,23 +185,6 @@ export class Engine {
   }
 
   /* ================= инициализация ================= */
-
-  private spawnEnemy(kind: Enemy["kind"], x: number, y: number): Enemy & { g: Graphics } {
-    const e = makeEnemy(kind, x, y, this.enemies.length);
-    const g = new Graphics();
-    g.position.set(x, y);
-    (e as Enemy & { g: Graphics }).g = g;
-    this.enemies.push(e as Enemy & { g: Graphics });
-    this.dynamic.addChild(g);
-    const body = this.entityMgr.makeBody(e.r, { x, y });
-    if (kind === "raven" || kind === "snake" || kind === "spider" || kind === "ghost") {
-      this.entityMgr.farBody(body);
-      (e as any).body = body;
-    } else {
-      (e as any).body = body;
-    }
-    return e as Enemy & { g: Graphics };
-  }
 
   private async init(container: HTMLElement) {
     const app = new Application();
@@ -266,7 +247,18 @@ export class Engine {
 
     // Инициализируем подсистемы ДО buildGameStore
     this.entityMgr = new EntityManager(this.bus, {
-      spawnEnemy: (kind: string, x: number, y: number) => this.spawnEnemy(kind as any, x, y),
+      spawnEnemy: (kind: string, x: number, y: number) => {
+        const { enemy, g } = this.renderer.spawnEnemyGraphics(kind as any, x, y, this.enemies.length);
+        this.enemies.push(enemy as Enemy & { g: Graphics });
+        const body = this.entityMgr.makeBody(enemy.r, { x, y });
+        if (kind === "raven" || kind === "snake" || kind === "spider" || kind === "ghost") {
+          this.entityMgr.farBody(body);
+          (enemy as any).body = body;
+        } else {
+          (enemy as any).body = body;
+        }
+        return enemy as Enemy & { g: Graphics };
+      },
       loadMap: (map: WorldData, spawn: Vec) => this.loadMap(map, spawn),
       toast: (msg: string) => this.toast(msg),
     }, {
@@ -289,7 +281,18 @@ export class Engine {
       npcs: this.npcs,
       doors: this.doors,
     }, {
-      spawnEnemy: (kind: string, x: number, y: number) => this.spawnEnemy(kind as any, x, y),
+      spawnEnemy: (kind: string, x: number, y: number) => {
+        const { enemy, g } = this.renderer.spawnEnemyGraphics(kind as any, x, y, this.enemies.length);
+        this.enemies.push(enemy as Enemy & { g: Graphics });
+        const body = this.entityMgr.makeBody(enemy.r, { x, y });
+        if (kind === "raven" || kind === "snake" || kind === "spider" || kind === "ghost") {
+          this.entityMgr.farBody(body);
+          (enemy as any).body = body;
+        } else {
+          (enemy as any).body = body;
+        }
+        return enemy as Enemy & { g: Graphics };
+      },
       loadMap: (map: WorldData, spawn: Vec) => this.loadMap(map, spawn),
       toast: (msg: string) => this.toast(msg),
     }, this.dynamic, DefaultGraphicsFactory);
@@ -328,8 +331,6 @@ export class Engine {
         setScreen: (s: Screen) => eng.setScreen(s),
         fadeTo: (a: number) => eng.fadeTo(a),
         toast: (msg: string) => eng.toast(msg),
-        onProjectileAdd: (g: Graphics) => eng.dynamic.addChild(g),
-        onDropAdd: (g: Graphics) => eng.dynamic.addChild(g),
       },
       callbacks: {
         onHud: (data: any) => eng.pushHudData(data),
@@ -379,12 +380,16 @@ export class Engine {
       talkedSig: this.talkedSig,
       flags: this.store.flags,
       store: { bossRef: () => this.store.bossRef, map: () => this.store.map ?? undefined },
+      floatLayer: this.floatLayer,
+      dynamic: this.dynamic,
     });
     // Подписки на события движка
     this.bus.on("engine:enter-dungeon", (e) => this.enterDungeon(e));
     this.bus.on("engine:exit-dungeon", (e) => this.exitDungeon(e));
     this.bus.on("hud:float", (e) => this.float(e.x, e.y, e.text, e.color));
     this.bus.on("player:died", () => this.state.onPlayerDied());
+    this.bus.on("projectile:spawned", (e) => this.dynamic.addChild(e.g));
+    this.bus.on("drop:spawned", (e) => this.dynamic.addChild(e.g));
     // Связываем смену экрана в state с уведомлением App.tsx
     this.state.setHandlers((s) => this.setScreen(s), (msg) => this.toast(msg));
   }
@@ -514,14 +519,16 @@ export class Engine {
     this.playerDomain.resetTimers();
     p.hp = Math.min(p.hp, p.maxHp);
     this.playerG.position.set(spawn.x, spawn.y);
-    this.dynamic.addChild(this.playerG);
-    this.playerG.zIndex = 100;
+    this.renderer.setupPlayerG(this.playerG);
 
     // Физическое тело игрока
     this.playerBody = this.entityMgr.makeBody(p.r, spawn);
 
     this.cam.x = clamp(spawn.x - this.viewW / 2, 0, Math.max(0, map.W * T - this.viewW));
     this.cam.y = clamp(spawn.y - this.viewH / 2, 0, Math.max(0, map.H * T - this.viewH));
+
+    // Очищаем float text перед загрузкой новой карты
+    this.renderer.clearFloats();
 
     // Загружаем карту через MapLoader
     this.mapLoader.loadMap(
@@ -530,7 +537,7 @@ export class Engine {
       this.cam, this.viewW, this.viewH,
       this.flags, this.store,
       this.drops, this.entityMgr.entities.drops,
-      this.floats,
+      this.renderer.getFloatTexts(),
       (msg) => this.toast(msg),
       (force?) => this.pushHud(force)
     );
@@ -596,17 +603,6 @@ export class Engine {
     );
     // Minimap update
     this.renderer.drawMinimap(this.minimapCanvas, this.mmBase, this.map, this.player, this.realT);
-    // Добавляем float text в stage (RenderSystem управляет ими, но stage принадлежит engine)
-    const floats = this.renderer.getFloatTexts();
-    for (const f of floats) {
-      let found = false;
-      for (const existing of this.floatLayer.children) {
-        if (existing === f.txt) { found = true; break; }
-      }
-      if (!found) {
-        this.floatLayer.addChild(f.txt);
-      }
-    }
   }
 
   /* ================= NPC ================= */
@@ -767,6 +763,9 @@ export class Engine {
     this.fadeTo(1);
     if (this.map.isDungeon) {
       this.loadMap(this.ow, spawn);
+    } else {
+      this.playerG.position.set(spawn.x, spawn.y);
+      this.renderer.setupPlayerG(this.playerG);
     }
     this.hud.pushHud(true);
     this.bus.emit("player:respawned", {});
@@ -800,23 +799,7 @@ export class Engine {
 
   drawBigMap(c: HTMLCanvasElement) {
     if (!this.map) return;
-    const scale = Math.min(560 / (this.map.W * 2), 420 / (this.map.H * 2)) * 2;
-    const base = buildBigMapBase(this.map);
-    drawBigMap(c.getContext("2d")!, base, scale, {
-      shrines: this.entityMgr.entities.shrines,
-      map: this.map,
-      dungeonBossDead: this.dungeonBossDead.bind(this),
-      bossRoom: this.map.bossRoom,
-      bossSpot: this.map.bossSpot,
-      dungeonId: this.map.dungeonId,
-      player: this.player,
-      target: this.quests.trackedTarget(),
-      secretKnown: this.flags.secretKnown,
-      stashSpot: this.map.stashSpot,
-      pedestals: this.entityMgr.entities.pedestals,
-      dungeonEntries: this.map.dungeonEntries,
-      treeAltar: this.map.treeAltar,
-    });
+    this.renderer.drawBigMap(c, this.map, this.player, this.dungeonBossDead.bind(this), this.quests.trackedTarget());
   }
 
   /* ===== Вспомогательные поля для доступа из других методов ===== */
@@ -864,11 +847,7 @@ export class Engine {
     if (this.app) this.app.destroy(true);
     this.fx.destroy();
     this.bus.clear();
-    // Очищаем float text
-    for (const f of this.renderer.getFloatTexts()) {
-      f.txt.destroy();
-    }
-    this.renderer.getFloatTexts().length = 0;
+    this.renderer.destroy();
   }
 
   /* ===== Вспомогательные поля ===== */

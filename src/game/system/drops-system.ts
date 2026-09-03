@@ -31,7 +31,7 @@ export class DropsSystem {
   spawnDrop(kind: DropKind, x: number, y: number, life?: number) {
     const d: DropRt = { kind, x, y, t: Math.random() * 5, taken: false, magnet: kind === "heart" || kind === "arrows" || kind === "dew", g: this.gfxFactory.createGraphics(), life };
     d.g.position.set(x, y);
-    this.store.services.onDropAdd(d.g);
+    this.bus.emit("drop:spawned", { g: d.g, x, y });
     this.drops.add(d);
   }
 

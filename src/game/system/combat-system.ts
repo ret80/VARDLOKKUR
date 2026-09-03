@@ -88,7 +88,7 @@ export class CombatSystem {
     const pr: ProjectileRt = { kind, x, y, vx, vy, r: kind === "fire" ? 5 : 4, dmg, life: kind === "axe" ? 6 : 2.2, dist: 0, returning: false, dead: false, spin: 0, g: new Graphics() };
     pr.g.position.set(x, y);
     this.projectiles.add(pr);
-    this.services.onProjectileAdd(pr.g);
+    this.bus.emit("projectile:spawned", { g: pr.g, x, y });
     return pr;
   }
 
