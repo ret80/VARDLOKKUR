@@ -62,6 +62,15 @@ export interface GameEvents {
   "combat:trySword":    {};
   "combat:tryAxe":      {};
 
+  // Ввод (абстрактные действия)
+  "input:pause":         {};
+  "input:inventory":     {};
+  "input:quests":        {};
+  "input:mute":          {};
+  "input:use-heart":     {};
+  "input:toggle-snow":   {};
+  "input:close-overlay": {};
+
   // UI
   "hud:dirty":        {};
   "hud:float":        { x: number; y: number; text: string; color: number };

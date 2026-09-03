@@ -254,6 +254,15 @@ export class Engine {
     // Регистрируем ввод
     this.input.register();
 
+    // Подписки на абстрактные действия ввода
+    this.bus.on("input:pause", () => this.handlePause());
+    this.bus.on("input:inventory", () => this.handleInventory());
+    this.bus.on("input:quests", () => this.handleQuests());
+    this.bus.on("input:mute", () => this.toggleMute());
+    this.bus.on("input:use-heart", () => { if (this.state.screen === "play") this.useStoredHeart(); });
+    this.bus.on("input:toggle-snow", () => this.handleSnow());
+    this.bus.on("input:close-overlay", () => this.closeOverlay());
+
     this.applyViewSize();
 
     // Игровой цикл
@@ -489,7 +498,7 @@ export class Engine {
 
   advanceDialogue() {
     this.dialogueActive = false;
-    this.pressedClear();
+    this.input.clearPressed();
     this.bus.emit("dialogue:end", { id: this.dialogue.lastId });
     this.cbs.onDialogue(null);
   }
@@ -497,10 +506,6 @@ export class Engine {
   private setScreen(s: Screen) { this.state.screen = s; this.cbs.onScreen(s); }
   private toast(msg: string) { this.cbs.onToast(msg); }
   private fadeTo(a: number) { this.state.setFadeTarget(a); }
-
-  private pressedClear() {
-    // Очистка pressed через InputSystem происходит автоматически в getState()
-  }
 
   /* ================= загрузка карты ================= */
   private loadMap(map: WorldData, spawn: Vec) {
@@ -536,38 +541,29 @@ export class Engine {
     );
   }
 
-  /* ================= ввод ================= */
-  private onKeydown(e: KeyboardEvent) {
-    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab"].includes(e.code)) e.preventDefault();
-    if (e.repeat) return;
-    this.input.keyDown(e);
+  /* ================= клавиши-обработчики ================= */
 
-    // Специальные клавиши, требующие немедленной реакции
-    if (e.code === "Escape") {
-      if (this.state.screen === "play") this.setScreen("pause");
-      else if (this.state.screen === "pause") this.setScreen("play");
-      else this.closeOverlay();
-    }
-    if (e.code === "KeyP") {
-      if (this.state.screen === "play") this.setScreen("pause");
-      else if (this.state.screen === "pause") this.setScreen("play");
-    }
-    if (e.code === "Tab" || e.code === "KeyI") {
-      if (this.state.screen === "play") this.setScreen("inventory");
-      else if (this.state.screen === "inventory") this.setScreen("play");
-      audio.uiClick();
-    }
-    if (e.code === "KeyQ") {
-      if (this.state.screen === "play") this.setScreen("quests");
-      else if (this.state.screen === "quests") this.setScreen("play");
-      audio.uiClick();
-    }
-    if (e.code === "KeyM") this.toggleMute();
-    if (e.code === "KeyF" && this.state.screen === "play") this.useStoredHeart();
-    if (e.code === "KeyN") {
-      this.entityMgr.setRoofSnow(!this.entityMgr.roofSnow);
-      this.toast(this.entityMgr.roofSnow ? "Снег на крышах: вкл" : "Снег на крышах: выкл");
-    }
+  private handlePause() {
+    if (this.state.screen === "play") this.setScreen("pause");
+    else if (this.state.screen === "pause") this.setScreen("play");
+    else this.closeOverlay();
+  }
+
+  private handleInventory() {
+    if (this.state.screen === "play") this.setScreen("inventory");
+    else if (this.state.screen === "inventory") this.setScreen("play");
+    audio.uiClick();
+  }
+
+  private handleQuests() {
+    if (this.state.screen === "play") this.setScreen("quests");
+    else if (this.state.screen === "quests") this.setScreen("play");
+    audio.uiClick();
+  }
+
+  private handleSnow() {
+    this.entityMgr.setRoofSnow(!this.entityMgr.roofSnow);
+    this.toast(this.entityMgr.roofSnow ? "Снег на крышах: вкл" : "Снег на крышах: выкл");
   }
 
   private useStoredHeart() {

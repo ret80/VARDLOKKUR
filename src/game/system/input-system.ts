@@ -2,6 +2,17 @@
 import { EventBus } from "../event-bus";
 import { dist2 } from "../utils";
 
+/** Абстрактные действия ввода — без привязки к конкретным клавишам. */
+export enum InputAction {
+  Pause = "input:pause",
+  Inventory = "input:inventory",
+  Quests = "input:quests",
+  Mute = "input:mute",
+  UseHeart = "input:use-heart",
+  ToggleSnow = "input:toggle-snow",
+  CloseOverlay = "input:close-overlay",
+}
+
 /** Состояние ввода, передаваемое в Engine для обработки в update(). */
 export interface InputState {
   ix: number;
@@ -23,6 +34,20 @@ export class InputSystem {
   private onKeyUp = (e: KeyboardEvent) => this.keys.delete(e.code);
   private onResize = () => {};
 
+  /** Маппинг кодов клавиш → действия ввода. */
+  private actionMap = new Map<string, InputAction>([
+    ["Escape", InputAction.Pause],
+    ["KeyP", InputAction.Pause],
+    ["Tab", InputAction.Inventory],
+    ["KeyI", InputAction.Inventory],
+    ["KeyQ", InputAction.Quests],
+    ["KeyM", InputAction.Mute],
+    ["KeyF", InputAction.UseHeart],
+    ["KeyN", InputAction.ToggleSnow],
+  ]);
+
+  private static KEYDOWN_PREVENT = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab"]);
+
   constructor(private bus: EventBus) {}
 
   register(): void {
@@ -41,10 +66,17 @@ export class InputSystem {
 
   /** Вызвать из keydown события. Возвращает true если событие нужно подавить. */
   keyDown(e: KeyboardEvent): boolean {
-    if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab"].includes(e.code)) e.preventDefault();
+    if (InputSystem.KEYDOWN_PREVENT.has(e.code)) e.preventDefault();
     if (e.repeat) return true;
     this.keys.add(e.code);
     this.pressed.add(e.code);
+
+    // Маппинг кода → абстрактное действие → эмит в EventBus
+    const action = this.actionMap.get(e.code);
+    if (action) {
+      this.bus.emit(action, {});
+    }
+
     return true;
   }
 
