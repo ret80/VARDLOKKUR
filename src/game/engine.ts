@@ -37,12 +37,14 @@ import { GameStore, type GameStoreConfig } from "./store";
 import { PlayerDomain } from "./store/player-domain";
 import { clamp, dist2 } from "./utils";
 import { QuestView } from "./types";
+import { Vec2 } from "planck-js";
 export type { QuestView } from "./types";
 import { QuestSystem } from "./system/quest-system";
 import { DialogueSystem } from "./system/dialogue-system";
 import { DropsSystem } from "./system/drops-system";
 import { FogSystem } from "./system/fog-system";
 import { PhysicsSystem } from "./system/physics-system";
+import { Cat, type PhysicsCallbacks } from "./system/planck-world";
 import { CombatSystem } from "./system/combat-system";
 import { AISystem } from "./system/ai-system";
 import { InteractionSystem } from "./system/interaction-system";
@@ -331,18 +333,57 @@ export class Engine {
         npcs: this.npcs,
         doors: this.doors,
       },
+      planckWorld: this.entityMgr?.planckWorld,
     };
     const store = new GameStore(config);
     return store;
   }
 
   private instantiateSystems(store: GameStore) {
+    // Setup Planck.js collision callbacks
+    const callbacks: PhysicsCallbacks = {
+      onProjectileHitEnemy: (projBody, enemyBody, projData, enemyData) => {
+        // Find the projectile and enemy entities
+        const projRt = (this.projectiles as any).find((p: any) => (p as any).body === projBody);
+        const enemy = this.enemies.find((e: any) => (e as any).body === enemyBody);
+        if (projRt && enemy && !enemy.dead) {
+          this.combat.hitEnemy(enemy, projRt.dmg, projRt.x, projRt.y, true);
+        }
+      },
+      onProjectileHitPlayer: (projBody, playerBody, projData) => {
+        const projRt = (this.projectiles as any).find((p: any) => (p as any).body === projBody);
+        if (projRt) {
+          this.combat.damagePlayer(projRt.dmg, projRt.x, projRt.y);
+        }
+      },
+      onEnemyHitPlayer: (enemyBody, playerBody, enemyData) => {
+        // Contact damage handled in AI system (contactCd)
+      },
+      onProjectileHitTile: (projBody, projData) => {
+        // Projectile will be destroyed by pendingDestroy queue
+      },
+      onPlayerPickupDrop: (playerBody, dropBody, dropData) => {
+        // Find the drop entity and mark as taken
+        const dropRt = this.dropsArr.find((d: any) => (d as any).body === dropBody);
+        if (dropRt && !dropRt.taken) {
+          dropRt.taken = true;
+          // Remove drop body
+          this.entityMgr.planckWorld.destroyBody(dropBody);
+          // Notify drops system
+          this.drops.onPickup(dropRt);
+        }
+      },
+    };
+    this.entityMgr.planckWorld.setCallbacks(callbacks);
+
     this.quests      = new QuestSystem(this.bus, store);
     this.dialogue    = new DialogueSystem(this.bus, store);
     this.drops       = new DropsSystem(this.bus, store, DefaultGraphicsFactory);
     this.fog         = new FogSystem(this.bus, store);
     this.physics     = new PhysicsSystem();
-    this.combat      = new CombatSystem(this.bus, store, this.physics);
+    // Connect PhysicsSystem to PlanckWorld from EntityManager
+    this.physics.setPlanckWorld(this.entityMgr.planckWorld);
+    this.combat      = new CombatSystem(this.bus, store, this.physics, this.entityMgr.planckWorld);
     this.ai          = new AISystem(this.bus, store, this.physics);
     this.interaction = new InteractionSystem(this.bus, store);
     this.hud         = new HudSystem(this.bus, store, this.quests);
@@ -501,7 +542,7 @@ export class Engine {
     this.renderer.setupPlayerG(this.playerG);
 
     // Физическое тело игрока
-    this.playerBody = this.entityMgr.makeBody(p.r, spawn);
+    this.playerBody = this.entityMgr.makeBody(p.r, spawn, Cat.Player, { kind: "player", dead: false });
 
     this.cam.x = clamp(spawn.x - this.viewW / 2, 0, Math.max(0, map.W * T - this.viewW));
     this.cam.y = clamp(spawn.y - this.viewH / 2, 0, Math.max(0, map.H * T - this.viewH));
@@ -642,6 +683,17 @@ export class Engine {
     p.vx = ix * speed;
     p.vy = iy * speed;
 
+    // Apply impulse instead of setLinearVelocity — solver can still apply collision response
+    if (this.playerBody) {
+      const body = this.playerBody;
+      const currentVx = body.getLinearVelocity().x;
+      const currentVy = body.getLinearVelocity().y;
+      const mass = body.getMass();
+      const impulseX = mass * (p.vx - currentVx);
+      const impulseY = mass * (p.vy - currentVy);
+      body.applyLinearImpulse(Vec2(impulseX, impulseY), body.getWorldCenter());
+    }
+
     // Лук
     const bowKeyDown = this.input.isKeyHeld("KeyL") || this.input.isBowVirtualHeld();
     if (bowKeyDown && this.flags.hasBow) {
@@ -675,21 +727,32 @@ export class Engine {
     // Обновление AI врагов
     this.ai.updateEnemies(dt);
 
-    // Физика игрока
-    this.physics.moveWithCollisions(p, p.vx * dt, p.vy * dt, this.map, this.entityMgr.entities.doors, this.entityMgr.barrier);
+    // Физика Planck.js — step
+    this.entityMgr.planckWorld.step(dt);
 
-    // Физика врагов
-    for (const e of this.entityMgr.entities.enemies) {
-      if (e.dead || e.hidden || e.kind === "snake" || e.kind === "ghost") continue;
-      this.physics.moveWithCollisions(e, e.vx * dt, e.vy * dt, this.map, this.entityMgr.entities.doors, this.entityMgr.barrier);
+    // Синхронизация: body.position → entity.x/y (игрок)
+    if (this.playerBody) {
+      const pos = this.playerBody.getPosition();
+      p.x = pos.x;
+      p.y = pos.y;
     }
 
-    // Призраки — флайеры
+    // Синхронизация: body.position → entity.x/y (враги)
     for (const e of this.entityMgr.entities.enemies) {
-      if (e.dead || e.kind !== "ghost") continue;
-      e.x += e.vx * dt;
-      e.y += e.vy * dt;
-      e.vx = 0; e.vy = 0;
+      if (e.dead || e.hidden) continue;
+      const body = (e as any).body;
+      if (body) {
+        const pos = body.getPosition();
+        e.x = pos.x;
+        e.y = pos.y;
+      }
+      // Призраки — кинематические тела, летают сквозь static
+      if (e.kind === "ghost") {
+        const body = (e as any).body;
+        if (body) {
+          body.setLinearVelocity(Vec2(e.vx || 0, e.vy || 0));
+        }
+      }
     }
 
     // Обновление систем
@@ -707,6 +770,22 @@ export class Engine {
         this.pushHud(true);
       }
       if (d.open < 1 && d.open > 0 && !d.locked) d.open = Math.min(1, d.open + dt * 2);
+
+      // Update door body position based on open state
+      const doorBody = (d as any).body;
+      if (doorBody) {
+        const scale = 1 - d.open;
+        doorBody.setPosition(Vec2(d.x, d.y - d.open * 8));
+      }
+    }
+
+    // Update barrier body
+    const barrier = this.entityMgr.barrier;
+    if (barrier) {
+      const barrierBody = (barrier as any).body;
+      if (barrierBody) {
+        barrierBody.setPosition(Vec2(barrier.x, barrier.y - (barrier.active ? 0 : 20)));
+      }
     }
 
     const zn = zoneFor(this.map, Math.floor(p.x / T), Math.floor(p.y / T));

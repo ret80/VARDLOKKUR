@@ -127,6 +127,8 @@ export interface GameStoreConfig {
     npcs: any[];
     doors: any[];
   };
+  // Planck.js world для удаления дропов
+  planckWorld?: any;
 }
 
 /** Глобальное состояние (чтение) */
@@ -152,6 +154,7 @@ export interface GameStoreState {
   floats: FloatText[];
   callbacks: EngineCallbacks;
   _bossRef: Enemy | null;
+  planckWorld: any;
 }
 
 export class GameStore {
@@ -163,7 +166,7 @@ export class GameStore {
     this._config = config;
     this._flags = config.flags;
 
-    const { flags, services, callbacks, player, playerDomain, entitiesArrays } = config;
+    const { flags, services, callbacks, player, playerDomain, entitiesArrays, planckWorld } = config;
 
     this._state = {
       flags: new FlagDomain(flags),
@@ -187,6 +190,7 @@ export class GameStore {
       floats: [],
       callbacks,
       _bossRef: null,
+      planckWorld: planckWorld || null,
     };
   }
 
@@ -287,6 +291,8 @@ export class GameStore {
 
   get bossRef(): Enemy | null { return this._state._bossRef; }
   set bossRef(v: Enemy | null) { this._state._bossRef = v; }
+
+  get planckWorld(): any { return this._state.planckWorld; }
 
   // ── Обновление talkCount ──
 

@@ -32,6 +32,11 @@ export class DropsSystem {
     const d: DropRt = { kind, x, y, t: Math.random() * 5, taken: false, magnet: kind === "heart" || kind === "arrows" || kind === "dew", g: this.gfxFactory.createGraphics(), life };
     d.g.position.set(x, y);
     this.bus.emit("drop:spawned", { g: d.g, x, y });
+    // Create Planck sensor body
+    const planckWorld = this.store.planckWorld;
+    if (planckWorld) {
+      (d as any).body = planckWorld.createDropBody(x, y, 6);
+    }
     this.drops.add(d);
   }
 
@@ -66,6 +71,12 @@ export class DropsSystem {
     d.taken = true;
     if (d.ambientIdx !== undefined) this.takenAmbient.add(d.ambientIdx);
     d.g.destroy();
+    // Удалить Planck body
+    const body = (d as any).body;
+    if (body) {
+      const planckWorld = this.store.planckWorld;
+      if (planckWorld) planckWorld.destroyBody(body);
+    }
     this.drops.remove(i);
 
     const ctx = {
@@ -79,6 +90,14 @@ export class DropsSystem {
 
     this.bus.emit("drop:collected", { kind: d.kind, x: d.x, y: d.y });
     this.bus.emit("hud:dirty", {});
+  }
+
+  /** Вызывается из Engine при контакте Player ↔ Drop sensor */
+  onPickup(dropRt: DropRt) {
+    const i = this.drops.all.indexOf(dropRt);
+    if (i >= 0) {
+      this.collectDrop(i);
+    }
   }
 
   private rollDrops(e: { enemy: any; kind: string; x: number; y: number }) {

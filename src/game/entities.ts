@@ -104,8 +104,8 @@ export interface IPlayerExtra {
 // 1.5 ПОЛНЫЕ ИНТЕРФЕЙСЫ СУЩНОСТЕЙ (для engine.ts)
 // ============================================================
 
-import type { Circle as PhysCircleType } from "kinetics.ts";
-type PhysCircle = PhysCircleType;
+// Physics body type — will be Planck.js Body after migration
+type PhysCircle = any;
 
 export interface Player {
   x: number; y: number; vx: number; vy: number; r: number;

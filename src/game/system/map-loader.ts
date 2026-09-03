@@ -4,8 +4,10 @@
  * Не знает про PixiJS, Graphics, renderers. */
 
 import { Graphics, Sprite } from "pixi.js";
-import { WorldData, Vec, T } from "../world";
+import { WorldData, Vec, T, solidTileAt } from "../world";
 import { clamp } from "../utils";
+import { Cat } from "./planck-world";
+import { Vec2 } from "planck-js";
 import type { Player, Enemy } from "../entities";
 import type { PlayerDomain } from "../store/player-domain";
 import type { ProjectileRt, DropRt, ChestRt, PedestalRt, ShrineRt, NpcRt, DoorRt, FloatText } from "../store";
@@ -71,6 +73,9 @@ export class MapLoader {
     // Очищаем и строим текстуры
     this.entityManager.clearEntities();
 
+    // Создаём тайловые коллайдеры (Planck.js static bodies)
+    this.createTileBodies(map);
+
     // Позиция игрока
     player.x = spawn.x;
     player.y = spawn.y;
@@ -83,7 +88,7 @@ export class MapLoader {
     playerG.zIndex = 100;
 
     // Физика игрока
-    const playerBody = this.entityManager.makeBody(player.r, spawn);
+    const playerBody = this.entityManager.makeBody(player.r, spawn, Cat.Player, { kind: "player", dead: false });
     cam.x = clamp(spawn.x - viewW / 2, 0, Math.max(0, map.W * T - viewW));
     cam.y = clamp(spawn.y - viewH / 2, 0, Math.max(0, map.H * T - viewH));
 
@@ -154,6 +159,10 @@ export class MapLoader {
         this.entities.doors.push({
           x: d.x, y: d.y, open: 0, locked: true, g: null as any,
         });
+        // Create kinematic body for door
+        const planck = this.entityManager.planckWorld;
+        const doorBody = planck.createKinematicBody(d.x, d.y, 18, 16, Cat.Door);
+        (this.entities.doors[this.entities.doors.length - 1] as any).body = doorBody;
       }
     } else {
       // Барьер и алтарь
@@ -164,6 +173,13 @@ export class MapLoader {
         g: null as any,
       };
       this.entityManager.barrier = b;
+
+      // Create kinematic body for barrier
+      if (b.active) {
+        const planck = this.entityManager.planckWorld;
+        const barrierBody = planck.createKinematicBody(b.x, b.y, 40, 16, Cat.Barrier);
+        (b as any).body = barrierBody;
+      }
 
       const a = { x: map.treeAltar.x * T + 8, y: map.treeAltar.y * T + 8, g: null as any };
       this.entityManager.altar = a;
@@ -178,6 +194,24 @@ export class MapLoader {
         taken: false, magnet: sd.kind === "heart" || sd.kind === "arrows" || sd.kind === "dew",
         g: null as any, life: sd.life, ambientIdx: sd.ambientIdx,
       });
+    }
+  }
+
+  // ============================================================
+  // Создание тайловых коллайдеров
+  // ============================================================
+
+  private createTileBodies(map: WorldData): void {
+    const planck = this.entityManager.planckWorld;
+    const r = T / 2; // radius = half tile size
+
+    for (let ty = 0; ty < map.H; ty++) {
+      for (let tx = 0; tx < map.W; tx++) {
+        if (!solidTileAt(map, tx, ty)) continue;
+        const px = tx * T + T / 2;
+        const py = ty * T + T / 2;
+        planck.createTileBody(px, py, r);
+      }
     }
   }
 }

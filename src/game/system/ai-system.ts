@@ -8,6 +8,7 @@ import { audio } from "../audio";
 import { IPhysics } from "./physics-system";
 import { dist2 } from "../utils";
 import { BehaviorRegistry } from "./enemy-behavior";
+import { Vec2 } from "planck-js";
 import {
   DraugrBehavior,
   FrostBehavior,
@@ -98,6 +99,19 @@ export class AISystem {
       const behavior = this.behaviorRegistry.get(e.kind);
       if (behavior) {
         behavior.update(e, dt, p, m, this.physics, this.bus, this.store, inVillage, this.realT);
+      }
+
+      // Sync velocity to Planck body via impulse (not setLinearVelocity — solver needs to apply collision response)
+      const body = (e as any).body;
+      if (body && !e.dead) {
+        const mass = body.getMass();
+        const cv = body.getLinearVelocity();
+        const targetVx = e.vx || 0;
+        const targetVy = e.vy || 0;
+        body.applyLinearImpulse(
+          Vec2(mass * (targetVx - cv.x), mass * (targetVy - cv.y)),
+          body.getWorldCenter()
+        );
       }
 
       // Common contact damage (applied after behavior update)

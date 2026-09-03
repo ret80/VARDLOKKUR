@@ -1,6 +1,13 @@
-/* ============ PhysicsSystem ============ */
+/* ============ PhysicsSystem ============
+ * Адаптер между IPhysics (используется всеми системами) и PlanckWorld.
+ * moveWithCollisions → no-op (Planck обрабатывает коллизии автоматически)
+ * pointSolid → Planck queryAABB
+ * hasLOS → Planck rayCast
+ * followPath → остаётся как есть (AI-логика) */
+
 import { WorldData, Vec, T, solidTileAt } from "../world";
-import { dist2, clamp } from "../utils";
+import { dist2 } from "../utils";
+import { PlanckWorld } from "./planck-world";
 
 /* ---------- Интерфейс физики (DIP: системы зависят от абстракции) ---------- */
 
@@ -26,65 +33,46 @@ export interface IPhysics {
 }
 
 export class PhysicsSystem implements IPhysics {
-  circleHitsSolid(x: number, y: number, r: number, map: WorldData): boolean {
-    const x0 = Math.floor((x - r) / T), x1 = Math.floor((x + r) / T);
-    const y0 = Math.floor((y - r) / T), y1 = Math.floor((y + r) / T);
-    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-      if (!solidTileAt(map, tx, ty)) continue;
-      const cx = clamp(x, tx * T, tx * T + T), cy = clamp(y, ty * T, ty * T + T);
-      if (dist2(x, y, cx, cy) < r * r) return true;
-    }
-    return false;
+  private planck: PlanckWorld | null = null;
+
+  setPlanckWorld(planck: PlanckWorld): void {
+    this.planck = planck;
   }
 
-  solidRects(doors: any[], barrier: any): { x: number; y: number; w: number; h: number }[] {
-    const rs: { x: number; y: number; w: number; h: number }[] = [];
-    for (const d of doors) {
-      if (d.open < 0.9) rs.push({ x: d.x - 9, y: d.y - 8, w: 18, h: 16 });
-    }
-    if (barrier && barrier.active) rs.push({ x: barrier.x - 20, y: barrier.y - 8, w: 40, h: 16 });
-    return rs;
+  // ============================================================
+  // moveWithCollisions — NO-OP
+  // Planck.js обрабатывает коллизии автоматически через body.linearVelocity
+  // Движение управляется через body.setLinearVelocity() в AI/Engine
+  // ============================================================
+
+  moveWithCollisions(e: { x: number; y: number; r: number }, dx: number, dy: number, map: WorldData, doors: any[], barrier: any): void {
+    // NO-OP — Planck handles collision resolution automatically
+    // Movement is controlled via body.setLinearVelocity()
   }
 
-  circleBlocked(x: number, y: number, r: number, map: WorldData, doors: any[], barrier: any): boolean {
-    if (this.circleHitsSolid(x, y, r, map)) return true;
-    const rects = this.solidRects(doors, barrier);
-    for (const rc of rects) {
-      const cx = clamp(x, rc.x, rc.x + rc.w), cy = clamp(y, rc.y, rc.y + rc.h);
-      if (dist2(x, y, cx, cy) < r * r) return true;
+  // ============================================================
+  // pointSolid — проверяем через Planck world query
+  // ============================================================
+
+  pointSolid(x: number, y: number, map: WorldData, doors: PhysicsDoor[], barrier: PhysicsBarrier | null): boolean {
+    if (this.planck) {
+      if (this.planck.pointSolid(x, y, doors, barrier)) return true;
     }
-    return false;
+
+    // Fallback: tile-based check
+    return solidTileAt(map, Math.floor(x / T), Math.floor(y / T));
   }
 
-  moveWithCollisions(e: { x: number; y: number; r: number }, dx: number, dy: number, map: WorldData, doors: any[], barrier: any) {
-    if (dx) { const nx = e.x + dx; if (!this.circleBlocked(nx, e.y, e.r, map, doors, barrier)) e.x = nx; }
-    if (dy) { const ny = e.y + dy; if (!this.circleBlocked(e.x, ny, e.r, map, doors, barrier)) e.y = ny; }
-  }
-
-  resolveTiles(e: { x: number; y: number; r: number }, safe: Vec, map: WorldData) {
-    for (let iter = 0; iter < 3; iter++) {
-      if (!this.circleHitsSolid(e.x, e.y, e.r, map)) return;
-      const x0 = Math.floor((e.x - e.r) / T), x1 = Math.floor((e.x + e.r) / T);
-      const y0 = Math.floor((e.y - e.r) / T), y1 = Math.floor((e.y + e.r) / T);
-      let pushed = false;
-      for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++) {
-        if (!solidTileAt(map, tx, ty)) continue;
-        const cx = clamp(e.x, tx * T, tx * T + T), cy = clamp(e.y, ty * T, ty * T + T);
-        const dx = e.x - cx, dy = e.y - cy;
-        const d2 = dx * dx + dy * dy;
-        if (d2 < e.r * e.r && d2 > 1e-6) {
-          const d = Math.sqrt(d2);
-          e.x = cx + (dx / d) * e.r;
-          e.y = cy + (dy / d) * e.r;
-          pushed = true;
-        }
-      }
-      if (!pushed) break;
-    }
-    if (this.circleHitsSolid(e.x, e.y, e.r, map)) { e.x = safe.x; e.y = safe.y; }
-  }
+  // ============================================================
+  // hasLOS — проверяем через Planck rayCast
+  // ============================================================
 
   hasLOS(x0: number, y0: number, x1: number, y1: number, map: WorldData): boolean {
+    if (this.planck) {
+      if (!this.planck.hasLOS(x0, y0, x1, y1)) return false;
+    }
+
+    // Fallback: Bresenham-style raycast
     const dx = x1 - x0, dy = y1 - y0;
     const d = Math.hypot(dx, dy);
     if (d < 10) return true;
@@ -96,10 +84,9 @@ export class PhysicsSystem implements IPhysics {
     return true;
   }
 
-  pointSolid(x: number, y: number, map: WorldData, doors: any[], barrier: any): boolean {
-    return solidTileAt(map, Math.floor(x / T), Math.floor(y / T)) ||
-      this.solidRects(doors, barrier).some((r) => x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h);
-  }
+  // ============================================================
+  // followPath — без изменений (AI-логика)
+  // ============================================================
 
   followPath(e: any, tx: number, ty: number, speed: number, dt: number, map: WorldData) {
     e.repathT -= dt;
@@ -122,5 +109,3 @@ export class PhysicsSystem implements IPhysics {
     if (d > 2) { e.vx = (dx / d) * speed; e.vy = (dy / d) * speed; }
   }
 }
-
-

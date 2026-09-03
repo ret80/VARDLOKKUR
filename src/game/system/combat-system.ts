@@ -7,19 +7,23 @@ import { audio } from "../audio";
 import { IPhysics } from "./physics-system";
 import { dist2 } from "../utils";
 import { type ProjectileRt } from "../store";
+import { Vec2 } from "planck-js";
+import type { PlanckWorld } from "./planck-world";
 
 export class CombatSystem {
   private store: GameStore;
   private bus: EventBus;
   private physics: IPhysics;
+  private planck: PlanckWorld;
   private axeProj: ProjectileRt | null = null;
   private axeState: "ready" | "out" = "ready";
   private ghostClangT = 0;
 
-  constructor(bus: EventBus, store: GameStore, physics: IPhysics) {
+  constructor(bus: EventBus, store: GameStore, physics: IPhysics, planckWorld?: PlanckWorld) {
     this.bus = bus;
     this.store = store;
     this.physics = physics;
+    this.planck = planckWorld!;
     bus.on("combat:trySword", () => this.trySword());
     bus.on("combat:tryAxe", () => this.tryAxe());
     bus.on("boss:start-dungeon", () => this.startDungeonBoss());
@@ -89,6 +93,11 @@ export class CombatSystem {
     pr.g.position.set(x, y);
     this.projectiles.add(pr);
     this.bus.emit("projectile:spawned", { g: pr.g, x, y });
+
+    // Create Planck body for projectile
+    const body = this.planck.createProjectileBody(x, y, pr.r, vx, vy);
+    (pr as any).body = body;
+
     return pr;
   }
 
@@ -96,6 +105,9 @@ export class CombatSystem {
     const pr = this.projectiles.all[i] as ProjectileRt;
     pr.g.destroy();
     if (this.axeProj === pr) { this.axeProj = null; this.axeState = "ready"; }
+    // Destroy Planck body
+    const body = (pr as any).body;
+    if (body) this.planck.destroyBody(body);
     this.projectiles.remove(i);
   }
 
@@ -122,7 +134,14 @@ export class CombatSystem {
     audio.hit();
     this.float(e, String(dmg), 0xe8dcc0);
     const d = Math.hypot(e.x - sx, e.y - sy) || 1;
-    this.physics.moveWithCollisions(e, ((e.x - sx) / d) * 5, ((e.y - sy) / d) * 5, this.map, this.doors.all, null);
+    // Knockback via Planck body velocity
+    const body = (e as any).body;
+    if (body) {
+      body.applyLinearImpulse(
+        Vec2(((e.x - sx) / d) * 5, ((e.y - sy) / d) * 5),
+        body.getWorldCenter()
+      );
+    }
     this.bus.emit("enemy:hit", { enemy: e, dmg, sx, sy });
     if (e.hp <= 0) this.killEnemy(e);
   }
@@ -156,7 +175,14 @@ export class CombatSystem {
     audio.hurt();
     this.float(p, `-${dmg}`, 0xe06060);
     const d = Math.hypot(p.x - sx, p.y - sy) || 1;
-    this.physics.moveWithCollisions(p, ((p.x - sx) / d) * 8, ((p.y - sy) / d) * 8, this.map, this.doors.all, null);
+    // Knockback via Planck body velocity
+    const body = (this as any).playerBody;
+    if (body) {
+      body.applyLinearImpulse(
+        Vec2(((p.x - sx) / d) * 8, ((p.y - sy) / d) * 8),
+        body.getWorldCenter()
+      );
+    }
     this.bus.emit("hud:dirty", {});
     if (p.hp <= 0) this.bus.emit("player:died", {});
   }
@@ -173,16 +199,34 @@ export class CombatSystem {
       const pr = this.projectiles.all[i] as ProjectileRt;
       pr.life -= dt;
       if (pr.life <= 0) { this.removeProjectile(i); continue; }
+
+      // Sync position from Planck body
+      const body = (pr as any).body;
+      if (body) {
+        const pos = body.getPosition();
+        pr.x = pos.x;
+        pr.y = pos.y;
+        pr.g.position.set(pr.x, pr.y);
+      }
+
       pr.spin += dt * 18;
       if (pr.kind === "axe") {
         if (!pr.returning) {
           pr.dist += Math.hypot(pr.vx, pr.vy) * dt;
-          if (pr.dist > 130 || this.physics.pointSolid(pr.x + pr.vx * dt, pr.y + pr.vy * dt, m, this.doors.all, null)) pr.returning = true;
+          // Planck collision listener handles solid hits — just check distance
+          if (pr.dist > 130) pr.returning = true;
         }
         if (pr.returning) {
           const dx = p.x - pr.x, dy = p.y - 2 - pr.y;
           const d = Math.hypot(dx, dy) || 1;
-          pr.vx = (dx / d) * 240; pr.vy = (dy / d) * 240;
+          const newVx = (dx / d) * 240;
+          const newVy = (dy / d) * 240;
+          // Update projectile velocity via Planck body
+          if (body) {
+            body.setLinearVelocity(Vec2(newVx, newVy));
+          }
+          pr.vx = newVx;
+          pr.vy = newVy;
           if (d < 12) {
             this.axeState = "ready"; this.axeProj = null;
             audio.pickup();
@@ -191,12 +235,9 @@ export class CombatSystem {
           }
         }
       }
-      pr.x += pr.vx * dt; pr.y += pr.vy * dt;
+      // Planck handles movement and collision — skip manual movement
+      // pointSolid check is redundant (Planck collision listener handles tile hits)
       pr.g.position.set(pr.x, pr.y);
-      if (pr.kind !== "axe" && pr.kind !== "spore" && this.physics.pointSolid(pr.x, pr.y, m, this.doors.all, null)) {
-        this.removeProjectile(i);
-        continue;
-      }
       if (pr.kind === "arrow" || pr.kind === "axe") {
         let consumed = false;
         for (const e of this.enemies.all) {

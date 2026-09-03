@@ -1,10 +1,12 @@
 /* ============ EntityManager ============ */
 import { Graphics, Sprite } from "pixi.js";
-import { System as PhysSystem, Circle as PhysCircle, Vector as PhysVector } from "kinetics.ts";
+import type { Body } from "planck-js";
+import { Vec2 } from "planck-js";
 import { EventBus } from "../event-bus";
 import { WorldData, Vec, T, solidTileAt, DUNGEONS } from "../world";
 import { dist2, clamp } from "../utils";
 import { Player, Enemy, Projectile, makeEnemy } from "../entities";
+import { PlanckWorld, Cat } from "./planck-world";
 import type { ProjectileRt, DropRt, ChestRt, PedestalRt, ShrineRt, NpcRt, DoorRt } from "../store";
 import {
   HouseSpriteEntry, WallTextureCache, HouseTextureCache,
@@ -42,7 +44,7 @@ export interface EntityManagerFlags {
 }
 
 export class EntityManager {
-  private phys: PhysSystem;
+  private planck: PlanckWorld;
   private bus: EventBus;
   private services: EntityManagerServices;
   private gfxFactory: GraphicsFactory;
@@ -63,15 +65,12 @@ export class EntityManager {
     this.entities = entities;
     this.dynamic = dynamic;
     this.gfxFactory = gfxFactory;
-    this.phys = new PhysSystem({
-      tickRate: 60, friction: 0,
-      collisionInfo: { cellSize: 4 }, useRAF: false,
-    } as any);
+    this.planck = new PlanckWorld();
   }
 
   /* ===== Свойства ===== */
 
-  get physBody(): PhysSystem { return this.phys; }
+  get planckWorld(): PlanckWorld { return this.planck; }
 
   /* ===== Управление текстурами карты ===== */
 
@@ -123,24 +122,19 @@ export class EntityManager {
     this.altar = null;
   }
 
-  /* ===== Физические тела ===== */
+  /* ===== Физические тела (Planck.js) ===== */
 
-  makeBody(r: number, position: Vec): PhysCircle {
-    const b = new PhysCircle({
-      form: { vertices: [new PhysVector(0, 0)] },
-      radius: r, mass: 10, speed: 4000, rotate: false, elasticity: 0, angularSpeed: 0,
-    } as any, this.phys);
-    b.position = new PhysVector(position.x, position.y);
-    this.phys.addEntity(b);
-    return b;
+  makeBody(r: number, position: Vec, category: number, userData: any = {}): Body {
+    const body = this.planck.createEntityBody(position.x, position.y, r, category, userData);
+    const key = `${position.x}_${position.y}_${Date.now()}_${Math.random()}`;
+    this.planck.registerBody(key, body);
+    return body;
   }
 
-  farBody(b: PhysCircle | null): void {
-    if (!b) return;
-    b.position.x = -9999;
-    b.position.y = -9999;
-    b.velocity.x = 0;
-    b.velocity.y = 0;
+  farBody(body: Body | null): void {
+    if (!body) return;
+    body.setPosition(Vec2(-9999, -9999));
+    body.setLinearVelocity(Vec2(0, 0));
   }
 
   /* ===== Спавн врагов ===== */
@@ -153,11 +147,18 @@ export class EntityManager {
     this.entities.enemies.push(e as Enemy & { g: Graphics });
     this.dynamic.addChild(g);
 
-    const body = this.makeBody(e.r, { x, y });
-    if (kind === "raven" || kind === "snake" || kind === "spider" || kind === "ghost") {
-      this.farBody(body);
+    const isBoss = kind === "reaper" || kind === "giant";
+    if (kind === "ghost") {
+      const body = this.planck.createGhostBody(x, y, e.r);
+      (e as any).body = body;
+    } else if (isBoss) {
+      const body = this.makeBody(e.r, { x, y }, Cat.Boss, { kind, dead: false });
       (e as any).body = body;
     } else {
+      const body = this.makeBody(e.r, { x, y }, Cat.Enemy, { kind, dead: false });
+      if (kind === "raven" || kind === "snake" || kind === "spider") {
+        this.farBody(body);
+      }
       (e as any).body = body;
     }
     return e as Enemy & { g: Graphics };
@@ -184,8 +185,7 @@ export class EntityManager {
             enemy.y = ny;
             enemy.g.position.set(nx, ny);
             if ((enemy as any).body) {
-              (enemy as any).body.position.x = nx;
-              (enemy as any).body.position.y = ny;
+              (enemy as any).body.setPosition(Vec2(nx, ny));
             }
             moved = true;
             break;
