@@ -2,7 +2,7 @@
 
 import { Application, Container, Graphics, RenderTexture, Sprite, Texture, Text } from "pixi.js";
 import {
-  T, Tl, WorldData, Vec, DropKind,
+  T, Tl, WorldData, Vec,
   generateOverworld, generateDungeon, solidTileAt, tileAt, zoneFor, DUNGEONS,
 } from "./world";
 import {
@@ -23,11 +23,8 @@ import {
   HouseTextureCache,
   buildAllTileTextures,
   buildMinimapBase,
-  drawMinimap,
-  MinimapOverlays,
   buildBigMapBase,
   drawBigMap,
-  BigMapOverlays,
 } from "./tiles";
 
 // Подсистемы
@@ -89,8 +86,6 @@ export interface EngineCallbacks {
   onToast: (msg: string) => void;
   onStats: (s: Stats) => void;
 }
-
-interface SlamZone { x: number; y: number; r: number; t: number; boom: boolean }
 
 const ZOOM = 1.18;
 
@@ -499,8 +494,7 @@ export class Engine {
   advanceDialogue() {
     this.dialogueActive = false;
     this.input.clearPressed();
-    this.bus.emit("dialogue:end", { id: this.dialogue.lastId });
-    this.cbs.onDialogue(null);
+    this.dialogue.endDialogue((dd) => this.cbs.onDialogue(dd));
   }
 
   private setScreen(s: Screen) { this.state.screen = s; this.cbs.onScreen(s); }
@@ -600,118 +594,18 @@ export class Engine {
       this.cam, this.viewW, this.viewH, this.floats, this.fadeG, this.fxScreen,
       this.world, this.hudTimer, (v: number) => { this.hudTimer = v; },
       ((f?: boolean) => this.pushHud(f)), () => {},
-      this.drawMinimapCanvas.bind(this),
       this.minimapCanvas, this.mmBase
     );
-  }
-
-  private drawMinimapCanvas(cx: CanvasRenderingContext2D | null, mmBase: ImageData | null) {
-    if (!cx || !mmBase || !this.map) return;
-    drawMinimap(cx, mmBase, {
-      shrines: this.shrines,
-      player: this.player,
-      target: this.quests.trackedTarget(),
-      secretKnown: this.flags.secretKnown,
-      stashSpot: this.map.stashSpot,
-      nornsFavor: this.flags.nornsFavor,
-      pedestals: this.pedestals,
-      map: this.map,
-      realT: this.realT,
-    });
   }
 
   /* ================= NPC ================= */
 
   npcSig(id: string): string {
-    const f = this.flags;
-    switch (id) {
-      case "eirik": return this.mainQuestId();
-      case "raven": return this.mainQuestId();
-      case "daughter": return f.bearGone ? "done" : f.bear ? "ret" : "q";
-      case "sigrid": return f.hornDone ? "done" : f.horn ? "ret" : "";
-      case "astrid": return f.meadDone ? "done" : f.mead ? "ret" : "";
-      case "harald": return f.oreDone ? "done" : f.ore ? "ret" : "";
-      case "shaman": {
-        const got = [f.moss, f.amber, f.flower].filter(Boolean).length;
-        if (f.ghostBane) return "done";
-        if (f.dew >= 3) return "ret";
-        return f.shamanDone ? "done" : got === 3 ? "ret" : "q" + got;
-      }
-      case "refugee": return f.refugeeDone ? "done" : f.diary ? "ret" : "q";
-      case "brand": {
-        const ok = (f.killsByKind["varg"] ?? 0) >= 4 && (f.killsByKind["draugr"] ?? 0) >= 4;
-        return f.cullDone ? "done" : ok ? "ret" : "q";
-      }
-      case "merchant": return f.merchantDone ? "done" : f.bundle ? "ret" : "q";
-      default: return "";
-    }
+    return this.quests.npcSig(id);
   }
 
   mainQuestId(): string {
-    const f = this.flags;
-    if (!f.hasSword) return "m1";
-    if (!f.reaperDead) return "m2";
-    if (!f.spiderDead) return "m3";
-    if (f.runes < 5) return "m4";
-    if (!f.giantDead) return "m5";
-    return "m6";
-  }
-
-  /* ================= наводка (guide arrow) ================= */
-
-  private drawGuide(fx: Graphics) {
-    if (this.state.screen !== "play" || this.dialogueActive || !this.map) return;
-    const p = this.player;
-    const tgt = this.quests.trackedTarget();
-    if (!tgt) return;
-    let wantA: number | null = Math.atan2(tgt.y - p.y, tgt.x - p.x);
-    if (wantA !== null) {
-      let da = wantA - this.arrowA;
-      while (da > Math.PI) da -= Math.PI * 2;
-      while (da < -Math.PI) da += Math.PI * 2;
-      this.arrowA += da * 0.16;
-      const a = this.arrowA + Math.sin(this.realT * 2.1) * 0.09;
-      const rad = 17 + Math.sin(this.realT * 2.6) * 2.2;
-      const px = p.x - this.cam.x + Math.cos(a) * rad;
-      const py = p.y - this.cam.y + Math.sin(a * 1.7) * 10 - 4;
-      const pulse = 0.6 + Math.sin(this.realT * 5) * 0.3;
-      fx.moveTo(px + Math.cos(a) * 5, py + Math.sin(a) * 5)
-        .lineTo(px + Math.cos(a + 2.5) * 4, py + Math.sin(a + 2.5) * 4)
-        .lineTo(px + Math.cos(a - 2.5) * 4, py + Math.sin(a - 2.5) * 4)
-        .closePath().fill({ color: 0xe8c979, alpha: pulse });
-    }
-    // Подсказка взаимодействия (E)
-    const hint = this.interaction.getNearestInteractable();
-    if (hint) {
-      const hx = hint.x - this.cam.x, hy = hint.y - this.cam.y - 20 + Math.sin(this.realT * 5) * 1.5;
-      fx.rect(hx - 6, hy - 6, 12, 10).fill({ color: 0x0a0f16, alpha: 0.85 });
-      fx.rect(hx - 6, hy - 6, 12, 10).stroke({ color: 0xc9a24b, width: 1, alpha: 0.8 });
-      fx.poly([hx - 2, hy - 3, hx + 2, hy - 3, hx + 2, hy - 1, hx, hy - 1, hx, hy + 2, hx - 2, hy + 2]).fill(0xe8dcc0);
-    }
-  }
-
-  /* ================= миникарта ================= */
-
-  private updateMinimap() {
-    const m = this.map;
-    if (!m) return;
-    this.hud.mmTimer -= 0.016;
-    if (this.hud.mmTimer > 0) return;
-    this.hud.mmTimer = 0.15;
-    const txi = Math.floor(this.player.x / T), tyi = Math.floor(this.player.y / T);
-    const blink = Math.floor(this.realT * 3) % 2;
-    const key = txi + "_" + tyi + "_" + blink + "_" + (m.dungeonId ?? -1) + "_" + this.store.trackedQuest;
-    if (key !== this.hud.lastMmKey) {
-      this.hud.lastMmKey = key;
-      if (this.minimapCanvas && this.mmBase && m) {
-        const cx = this.minimapCanvas.getContext("2d");
-        if (cx) {
-          this.mapLoader.drawMinimap(cx, this.mmBase, m, this.player, this.quests.trackedTarget(),
-            this.flags.secretKnown, m.stashSpot, this.flags.nornsFavor,
-            this.entityMgr.entities.pedestals, this.realT, this.entityMgr.entities.shrines);
-        }
-      }
-    }
+    return this.quests.mainQuestId();
   }
 
   /* ================= обновление ================= */
@@ -840,11 +734,8 @@ export class Engine {
 
   /* ================= респавн ================= */
 
-  private dungeonBossDead(id: number): boolean {
-    const f = this.flags;
-    if (id === 0) return f.reaperDead;
-    if (id === 1) return f.spiderDead;
-    return f.giantDead;
+  dungeonBossDead(id: number): boolean {
+    return this.combat.dungeonBossDead(id);
   }
 
   private respawn() {
@@ -876,7 +767,6 @@ export class Engine {
     const d = this.dialogue.startDialogue(id, (dd) => this.cbs.onDialogue(dd));
     if (!d) return;
     this.dialogueActive = true;
-    this.store.talkCount++;
     const sig = this.npcSig(id);
     if (sig) this.talkedSig.set(id, sig);
   }

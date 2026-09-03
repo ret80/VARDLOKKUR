@@ -103,7 +103,6 @@ export class RenderSystem {
     setHudTimer: (v: number) => void,
     pushHud: (force?: boolean) => void,
     setAudioIntensity: (v: number) => void,
-    drawMinimapCanvas: (cx: CanvasRenderingContext2D | null, mmBase: ImageData | null) => void,
     minimapCanvas: HTMLCanvasElement | null,
     mmBase: ImageData | null
   ): number {

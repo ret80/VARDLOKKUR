@@ -163,6 +163,33 @@ export class QuestSystem implements IQuestProvider {
     }
   }
 
+  /* ================= NPC signatures ================= */
+
+  npcSig(id: string): string {
+    const f = this.flags;
+    switch (id) {
+      case "eirik": return this.mainQuestId();
+      case "raven": return this.mainQuestId();
+      case "daughter": return f.bearGone ? "done" : f.bear ? "ret" : "q";
+      case "sigrid": return f.hornDone ? "done" : f.horn ? "ret" : "";
+      case "astrid": return f.meadDone ? "done" : f.mead ? "ret" : "";
+      case "harald": return f.oreDone ? "done" : f.ore ? "ret" : "";
+      case "shaman": {
+        const got = [f.moss, f.amber, f.flower].filter(Boolean).length;
+        if (f.ghostBane) return "done";
+        if (f.dew >= 3) return "ret";
+        return f.shamanDone ? "done" : got === 3 ? "ret" : "q" + got;
+      }
+      case "refugee": return f.refugeeDone ? "done" : f.diary ? "ret" : "q";
+      case "brand": {
+        const ok = (f.killsByKind["varg"] ?? 0) >= 4 && (f.killsByKind["draugr"] ?? 0) >= 4;
+        return f.cullDone ? "done" : ok ? "ret" : "q";
+      }
+      case "merchant": return f.merchantDone ? "done" : f.bundle ? "ret" : "q";
+      default: return "";
+    }
+  }
+
   /* ================= public API ================= */
 
   buildQuests(): QuestView[] {

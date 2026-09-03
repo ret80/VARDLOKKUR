@@ -248,6 +248,14 @@ export class CombatSystem {
   }
 
   /* Боссы */
+
+  dungeonBossDead(id: number): boolean {
+    const f = this.flags;
+    if (id === 0) return f.reaperDead;
+    if (id === 1) return f.spiderDead;
+    return f.giantDead;
+  }
+
   onDungeonBossDeath(payload: { id: number }) {
     const m = this.map;
     const f = this.flags;
