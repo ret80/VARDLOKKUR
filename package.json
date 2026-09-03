@@ -2,13 +2,11 @@
   "name": "sandbox-workspace",
   "private": true,
   "type": "module",
-  "main": "main.js",
   "scripts": {
     "dev": "vite",
-    "electron": "electron .",
-    "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
     "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "electron": "electron ."
   },
   "dependencies": {
     "@dnd-kit/core": "^6.1.0",
@@ -38,12 +36,10 @@
     "@types/react-dom": "^18.2.0",
     "@types/uuid": "^9.0.7",
     "@vitejs/plugin-react": "^4.3.4",
-    "concurrently": "^10.0.5",
     "electron": "^44.1.1",
     "electron-builder": "^26.15.3",
     "tailwindcss": "^4.1.7",
     "typescript": "^5.7.0",
-    "vite": "^6.3.5",
-    "wait-on": "^9.1.0"
+    "vite": "^6.3.5"
   }
 }

@@ -2,12 +2,16 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "pwa-chrome",
-      "name": "Run & Deploy",
+      "type": "node",
       "request": "launch",
-      "url": "http://localhost:3000/VARDLOKKUR/",
-      "preLaunchTask": "Run & Deploy",
-      "webRoot": "${workspaceFolder}"
+      "name": "Launch Electron",
+      "runtimeExecutable": "${workspaceFolder}/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron",
+      "args": ["${workspaceFolder}/main.cjs"],
+      "cwd": "${workspaceFolder}",
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "http://localhost:3000"
+      }
     }
   ]
 }

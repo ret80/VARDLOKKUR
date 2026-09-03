@@ -148,7 +148,10 @@ export class InteractionSystem {
 
   private useShrine(i: number) {
     const m = this.store.map!;
-    this.flags.setFlag("shrineIdx", i);
+    // Святилища работают только в оверворлде — не перезаписывать shrineIdx в подземелье
+    if (!m.isDungeon) {
+      this.flags.setFlag("shrineIdx", i);
+    }
     const firstVisit = !m.isDungeon && !this.visitedShrines.has(i);
     if (firstVisit) {
       this.visitedShrines.add(i);
