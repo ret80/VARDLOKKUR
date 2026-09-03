@@ -10,5 +10,6 @@ export default defineConfig({
     port: 3000,
     strictPort: true,
     hmr: true,
+    open: true, // open default system browser (not hardcoded Chrome)
   },
 });

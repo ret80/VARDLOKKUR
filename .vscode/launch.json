@@ -2,12 +2,18 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "type": "pwa-chrome",
       "name": "Run & Deploy",
+      "type": "node",
       "request": "launch",
-      "url": "http://localhost:3000",
-      "webRoot": "${workspaceFolder}",
-      "preLaunchTask": "Run & Deploy"
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "http://localhost:3000"
+      },
+      "skipFiles": ["<node_internals>/**"],
+      "internalConsoleOptions": "neverOpen",
+      "console": "integratedTerminal"
     }
   ]
 }
