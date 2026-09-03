@@ -5,7 +5,6 @@
 import { Application, Container, Graphics, RenderTexture, Sprite, Texture } from "pixi.js";
 import { NoiseGenerator } from "./noise";
 import { clamp } from "./utils";
-import { IFxManager } from "./system/fx-manager";
 
 /* ======================== Интерфейсы ======================== */
 
@@ -30,7 +29,7 @@ export interface Snowflake {
 
 /* ======================== FxManager ======================== */
 
-export class FxManager implements IFxManager {
+export class FxManager {
   private app!: Application;
   private viewW = 0;
   private viewH = 0;

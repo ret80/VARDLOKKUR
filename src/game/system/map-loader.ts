@@ -1,21 +1,15 @@
-/* ============ MapLoader ============ */
-import { Graphics, Sprite, Texture } from "pixi.js";
-import { EventBus } from "../event-bus";
-import { WorldData, Vec, T, solidTileAt, tileAt, Tl } from "../world";
-import { dist2, clamp } from "../utils";
+/* ============ MapLoader ============
+ * Загружает данные карты: очищает сущности, строит текстуры,
+ * создаёт data-объекты (без Graphics).
+ * Не знает про PixiJS, Graphics, renderers. */
+
+import { Graphics, Sprite } from "pixi.js";
+import { WorldData, Vec, T } from "../world";
+import { clamp } from "../utils";
 import type { Player, Enemy } from "../entities";
 import type { PlayerDomain } from "../store/player-domain";
 import type { ProjectileRt, DropRt, ChestRt, PedestalRt, ShrineRt, NpcRt, DoorRt, FloatText } from "../store";
-import type { EntityManager, EntityManagerServices, EntityManagerEntities } from "./entity-manager";
-import {
-  IPlayerData, IEnemyData, INpcData, IDropData, IProjectileData,
-  IChestData, IPedestalData, IShrineData, IDoorData, IBarrierData, IAltarData,
-  IPlayerExtra,
-  PlayerRenderer, EnemyRenderer, NpcRenderer, DropRenderer, ProjectileRenderer,
-  ChestRenderer, PedestalRenderer, ShrineRenderer, DoorRenderer, BarrierRenderer, AltarRenderer
-} from "../entities";
-import { buildMinimapBase, drawMinimap } from "../tiles";
-import { type GraphicsFactory } from "./render-system";
+import type { EntityManager } from "./entity-manager";
 
 /** Сохранённый дроп, переживший смену карты. */
 interface SavedDrop {
@@ -27,27 +21,19 @@ interface SavedDrop {
 }
 
 export class MapLoader {
-  private renderers = {
-    player: new PlayerRenderer(),
-    enemy: new EnemyRenderer(),
-    npc: new NpcRenderer(),
-    drop: new DropRenderer(),
-    projectile: new ProjectileRenderer(),
-    chest: new ChestRenderer(),
-    pedestal: new PedestalRenderer(),
-    shrine: new ShrineRenderer(),
-    door: new DoorRenderer(),
-    barrier: new BarrierRenderer(),
-    altar: new AltarRenderer(),
-  };
-
   constructor(
-    private bus: EventBus,
     private entityManager: EntityManager,
-    private entities: EntityManagerEntities,
-    private services: EntityManagerServices,
-    private dynamic: { addChild(child: Graphics | Sprite): void; removeChildren(): void },
-    private gfxFactory: GraphicsFactory
+    private entities: {
+      enemies: (Enemy & { g: Graphics })[];
+      projectiles: ProjectileRt[];
+      drops: DropRt[];
+      chests: ChestRt[];
+      pedestals: PedestalRt[];
+      shrines: ShrineRt[];
+      npcs: NpcRt[];
+      doors: DoorRt[];
+    },
+    private dynamicContainer: { addChild(child: Graphics | Sprite): void }
   ) {}
 
   /* ===== Загрузка карты ===== */
@@ -84,7 +70,6 @@ export class MapLoader {
 
     // Очищаем и строим текстуры
     this.entityManager.clearEntities();
-    this.entityManager.buildMapTextures(map);
 
     // Позиция игрока
     player.x = spawn.x;
@@ -94,7 +79,7 @@ export class MapLoader {
     playerDomain.resetTimers();
     player.hp = Math.min(player.hp, player.maxHp);
     playerG.position.set(spawn.x, spawn.y);
-    this.dynamic.addChild(playerG);
+    this.dynamicContainer.addChild(playerG);
     playerG.zIndex = 100;
 
     // Физика игрока
@@ -102,90 +87,73 @@ export class MapLoader {
     cam.x = clamp(spawn.x - viewW / 2, 0, Math.max(0, map.W * T - viewW));
     cam.y = clamp(spawn.y - viewH / 2, 0, Math.max(0, map.H * T - viewH));
 
-    // Спавн врагов
+    // Спавн врагов — используем entityManager.spawnEnemy (без колбэка)
     for (const s of map.spawns) {
-      const enemy = this.services.spawnEnemy(s.kind, s.x, s.y) as Enemy & { g: Graphics };
+      const enemy = this.entityManager.spawnEnemy(s.kind, s.x, s.y) as Enemy & { g: Graphics };
       enemy.g.position.set(s.x, s.y);
     }
     this.entityManager.ensureSpawnSafety(map, spawn);
 
-    // Сундуки
+    // Сундуки (data only, без Graphics)
     for (const c of map.chests) {
       const key = c.x + "_" + c.y;
-      const rt: ChestRt = {
+      this.entities.chests.push({
         x: c.x * T + 8, y: c.y * T + 8, item: c.item,
-        opened: store.openedChests.has(key), g: this.gfxFactory.createGraphics(),
-      };
-      rt.g.position.set(rt.x, rt.y);
-      this.renderers.chest.render(rt.g, { opened: rt.opened } as IChestData);
-      this.entities.chests.push(rt);
-      this.dynamic.addChild(rt.g);
+        opened: store.openedChests.has(key), g: null as any,
+      });
     }
 
     // Секретный сундук
     if (!map.isDungeon && flags.secretKnown) {
       const sk = map.stashSpot.x + "_" + map.stashSpot.y;
-      const rt: ChestRt = {
+      this.entities.chests.push({
         x: map.stashSpot.x * T + 8, y: map.stashSpot.y * T + 8, item: "heartPiece",
-        opened: store.openedChests.has(sk), g: this.gfxFactory.createGraphics(),
-      };
-      rt.g.position.set(rt.x, rt.y);
-      this.renderers.chest.render(rt.g, { opened: rt.opened } as IChestData);
-      this.entities.chests.push(rt);
-      this.dynamic.addChild(rt.g);
+        opened: store.openedChests.has(sk), g: null as any,
+      });
     }
 
     // Пьедесталы
-    map.pedestals.forEach((pd) => {
+    for (const pd of map.pedestals) {
       const id = "ped_" + pd.x + "_" + pd.y;
-      const rt: PedestalRt = {
+      this.entities.pedestals.push({
         id,
         x: pd.x * T + 8, y: pd.y * T + 8,
         taken: store.takenPedestals.has(id),
         guardsLeft: store.takenPedestals.has(id) ? 0 : pd.guards.length,
-        guardsSpawned: false, g: this.gfxFactory.createGraphics(),
-      };
-      rt.g.position.set(rt.x, rt.y);
-      this.entities.pedestals.push(rt);
-      this.dynamic.addChild(rt.g);
-    });
+        guardsSpawned: false, g: null as any,
+      });
+    }
 
     // Святилища
-    map.shrines.forEach((s) => {
-      const rt: ShrineRt = { x: s.x * T + 8, y: s.y * T + 8, g: this.gfxFactory.createGraphics() };
-      rt.g.position.set(rt.x, rt.y);
-      this.entities.shrines.push(rt);
-      this.dynamic.addChild(rt.g);
-    });
+    for (const s of map.shrines) {
+      this.entities.shrines.push({
+        x: s.x * T + 8, y: s.y * T + 8, g: null as any,
+      });
+    }
 
     // NPC
     for (const n of map.npcs) {
-      const rt: NpcRt = { id: n.id, name: n.name, x: n.x * T + 8, y: n.y * T + 8, g: this.gfxFactory.createGraphics() };
-      rt.g.position.set(rt.x, rt.y);
-      this.entities.npcs.push(rt);
-      this.dynamic.addChild(rt.g);
+      this.entities.npcs.push({
+        id: n.id, name: n.name, x: n.x * T + 8, y: n.y * T + 8, g: null as any,
+      });
     }
 
     // Души (не подземелье)
     if (!map.isDungeon) {
-      map.souls.forEach((s, i) => {
-        const rt: NpcRt = {
-          id: `soul${i}`, name: "Потерянная душа",
-          x: s.x * T + 8, y: s.y * T + 8, g: this.gfxFactory.createGraphics(),
-        };
-        rt.g.position.set(rt.x, rt.y);
-        this.entities.npcs.push(rt);
-        this.dynamic.addChild(rt.g);
-      });
+      for (const s of map.souls) {
+        this.entities.npcs.push({
+          id: `soul${map.souls.indexOf(s)}`, name: "Потерянная душа",
+          x: s.x * T + 8, y: s.y * T + 8, g: null as any,
+        });
+      }
     }
 
     // Двери (подземелье)
     if (map.isDungeon) {
       for (const d of map.doors) {
-        const rt: DoorRt = { x: d.x, y: d.y, open: 0, locked: true, g: this.gfxFactory.createGraphics() };
-        rt.g.position.set(rt.x, rt.y);
-        this.entities.doors.push(rt);
-        this.dynamic.addChild(rt.g);
+        this.entities.doors.push({
+          x: d.x, y: d.y, open: 0, locked: true, g: null as any,
+        });
       }
     } else {
       // Барьер и алтарь
@@ -193,62 +161,23 @@ export class MapLoader {
         x: map.treeAltar.x * T + 8,
         y: (map.treeAltar.y + 5) * T + 8,
         active: flags.runes < 5 && !flags.snakeStarted,
-        g: this.gfxFactory.createGraphics(),
+        g: null as any,
       };
-      b.g.position.set(b.x, b.y);
       this.entityManager.barrier = b;
-      this.dynamic.addChild(b.g);
 
-      const a = { x: map.treeAltar.x * T + 8, y: map.treeAltar.y * T + 8, g: this.gfxFactory.createGraphics() };
-      a.g.position.set(a.x, a.y);
+      const a = { x: map.treeAltar.x * T + 8, y: map.treeAltar.y * T + 8, g: null as any };
       this.entityManager.altar = a;
-      this.dynamic.addChild(a.g);
 
       dropsSystem.spawnWorldDrops(map);
     }
 
     // Восстанавливаем дропы
     for (const sd of savedDrops) {
-      const d: DropRt = {
+      dropsArr.push({
         kind: sd.kind, x: sd.x, y: sd.y, t: Math.random() * 5,
         taken: false, magnet: sd.kind === "heart" || sd.kind === "arrows" || sd.kind === "dew",
-        g: this.gfxFactory.createGraphics(), life: sd.life, ambientIdx: sd.ambientIdx,
-      };
-      d.g.position.set(d.x, d.y);
-      dropsArr.push(d);
-      this.dynamic.addChild(d.g);
+        g: null as any, life: sd.life, ambientIdx: sd.ambientIdx,
+      });
     }
-  }
-
-  /* ===== Миникарта ===== */
-
-  buildMinimapBase(map: WorldData): ImageData | null {
-    return buildMinimapBase(map);
-  }
-
-  drawMinimap(
-    cx: CanvasRenderingContext2D,
-    mmBase: ImageData,
-    map: WorldData,
-    player: Player,
-    trackedTarget: { x: number; y: number } | null,
-    secretKnown: boolean,
-    stashSpot: Vec,
-    nornsFavor: boolean,
-    pedestals: PedestalRt[],
-    realT: number,
-    shrines?: ShrineRt[]
-  ): void {
-    drawMinimap(cx, mmBase, {
-      shrines: shrines || [],
-      player,
-      target: trackedTarget,
-      secretKnown,
-      stashSpot,
-      nornsFavor,
-      pedestals,
-      map,
-      realT,
-    });
   }
 }

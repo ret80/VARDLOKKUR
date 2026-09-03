@@ -16,21 +16,19 @@ import {
 import { audio } from "./audio";
 import { FxManager } from "./fx";
 import {
-  TILE_COLORS,
   HouseSpriteEntry,
   WallTextureCache,
   HouseTextureCache,
   buildAllTileTextures,
-  buildMinimapBase,
-  buildBigMapBase,
-  drawBigMap,
 } from "./tiles";
+import { buildMinimapBase, buildBigMapBase, drawBigMap } from "./map-display";
 
 // Подсистемы
 import { InputSystem } from "./system/input-system";
 import { StateManager } from "./system/state-manager";
 import { EntityManager } from "./system/entity-manager";
 import { MapLoader } from "./system/map-loader";
+import { MapRenderer } from "./system/map-renderer";
 import { RenderSystem, DefaultGraphicsFactory } from "./system/render-system";
 
 // Системы
@@ -104,6 +102,7 @@ export class Engine {
   private state = new StateManager();
   private entityMgr!: EntityManager;
   private mapLoader!: MapLoader;
+  private mapRenderer!: MapRenderer;
   private renderer!: RenderSystem;
 
   // Системы
@@ -247,18 +246,6 @@ export class Engine {
 
     // Инициализируем подсистемы ДО buildGameStore
     this.entityMgr = new EntityManager(this.bus, {
-      spawnEnemy: (kind: string, x: number, y: number) => {
-        const { enemy, g } = this.renderer.spawnEnemyGraphics(kind as any, x, y, this.enemies.length);
-        this.enemies.push(enemy as Enemy & { g: Graphics });
-        const body = this.entityMgr.makeBody(enemy.r, { x, y });
-        if (kind === "raven" || kind === "snake" || kind === "spider" || kind === "ghost") {
-          this.entityMgr.farBody(body);
-          (enemy as any).body = body;
-        } else {
-          (enemy as any).body = body;
-        }
-        return enemy as Enemy & { g: Graphics };
-      },
       loadMap: (map: WorldData, spawn: Vec) => this.loadMap(map, spawn),
       toast: (msg: string) => this.toast(msg),
     }, {
@@ -271,7 +258,7 @@ export class Engine {
       npcs: this.npcs,
       doors: this.doors,
     }, this.dynamic, DefaultGraphicsFactory);
-    this.mapLoader = new MapLoader(this.bus, this.entityMgr, {
+    this.mapLoader = new MapLoader(this.entityMgr, {
       enemies: this.enemies,
       projectiles: this.projectiles,
       drops: this.dropsArr,
@@ -280,26 +267,17 @@ export class Engine {
       shrines: this.shrines,
       npcs: this.npcs,
       doors: this.doors,
-    }, {
-      spawnEnemy: (kind: string, x: number, y: number) => {
-        const { enemy, g } = this.renderer.spawnEnemyGraphics(kind as any, x, y, this.enemies.length);
-        this.enemies.push(enemy as Enemy & { g: Graphics });
-        const body = this.entityMgr.makeBody(enemy.r, { x, y });
-        if (kind === "raven" || kind === "snake" || kind === "spider" || kind === "ghost") {
-          this.entityMgr.farBody(body);
-          (enemy as any).body = body;
-        } else {
-          (enemy as any).body = body;
-        }
-        return enemy as Enemy & { g: Graphics };
-      },
-      loadMap: (map: WorldData, spawn: Vec) => this.loadMap(map, spawn),
-      toast: (msg: string) => this.toast(msg),
-    }, this.dynamic, DefaultGraphicsFactory);
+    }, this.dynamic);
 
     // Создаём GameStore и системы
     this.store = this.buildGameStore();
     this.instantiateSystems(this.store);
+
+    // MapRenderer создаём после RenderSystem (ему нужны renderers)
+    this.mapRenderer = new MapRenderer(this.renderer.renderers, DefaultGraphicsFactory, this.dynamic,
+      this.chests, this.pedestals, this.shrines, this.npcs, this.doors, this.dropsArr,
+      this.entityMgr
+    );
   }
 
   private buildGameStore(): GameStore {
@@ -360,7 +338,7 @@ export class Engine {
 
   private instantiateSystems(store: GameStore) {
     this.quests      = new QuestSystem(this.bus, store);
-    this.dialogue    = new DialogueSystem(this.bus, store, this.fx);
+    this.dialogue    = new DialogueSystem(this.bus, store);
     this.drops       = new DropsSystem(this.bus, store, DefaultGraphicsFactory);
     this.fog         = new FogSystem(this.bus, store);
     this.physics     = new PhysicsSystem();
@@ -370,6 +348,7 @@ export class Engine {
     this.hud         = new HudSystem(this.bus, store, this.quests);
     this.renderer    = new RenderSystem({
       factory: DefaultGraphicsFactory,
+      bus: this.bus,
       entityMgr: this.entityMgr,
       fx: this.fx,
       fog: this.fog,
@@ -530,6 +509,9 @@ export class Engine {
     // Очищаем float text перед загрузкой новой карты
     this.renderer.clearFloats();
 
+    // Строим текстуры ДО clearEntities — они будут в начале dynamic
+    this.renderer.buildMapTextures(map, this.entityMgr.roofSnow, this.dynamic);
+
     // Загружаем карту через MapLoader
     this.mapLoader.loadMap(
       map, spawn,
@@ -541,6 +523,9 @@ export class Engine {
       (msg) => this.toast(msg),
       (force?) => this.pushHud(force)
     );
+
+    // Рендерим сущности
+    this.mapRenderer.renderAll(this.realT, this.flags.runes);
   }
 
   /* ================= клавиши-обработчики ================= */
@@ -564,7 +549,8 @@ export class Engine {
   }
 
   private handleSnow() {
-    this.entityMgr.setRoofSnow(!this.entityMgr.roofSnow);
+    this.entityMgr.roofSnow = !this.entityMgr.roofSnow;
+    this.renderer.setRoofSnow(this.entityMgr.roofSnow);
     this.toast(this.entityMgr.roofSnow ? "Снег на крышах: вкл" : "Снег на крышах: выкл");
   }
 

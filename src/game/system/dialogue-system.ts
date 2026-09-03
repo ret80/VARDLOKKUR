@@ -9,7 +9,6 @@ import { EventBus } from "../event-bus";
 import { GameStore } from "../store";
 import { DialogueData } from "../engine";
 import { audio } from "../audio";
-import { IFxManager } from "./fx-manager";
 import { resolveDialogue } from "../dialogues";
 
 export class DialogueSystem {
@@ -17,12 +16,10 @@ export class DialogueSystem {
   private bus: EventBus;
   private active = false;
   private _lastId = "";
-  private fx: IFxManager;
 
-  constructor(bus: EventBus, store: GameStore, fx: IFxManager) {
+  constructor(bus: EventBus, store: GameStore) {
     this.bus = bus;
     this.store = store;
-    this.fx = fx;
     bus.on("dialogue:end", (e) => this.applyDialogueEffects(e.id));
   }
 
@@ -77,7 +74,7 @@ export class DialogueSystem {
       f.hasSword = true;
       audio.rune();
       this.bus.emit("toast", { msg: "Ржавый Меч вернулся к тебе" });
-      this.fx.burst(p.x, p.y, 0xc9a24b, 18, 90, 1.0, 2, -10);
+      this.bus.emit("fx:burst", { x: p.x, y: p.y, color: 0xc9a24b, n: 18, speed: 90, life: 1.0, size: 2, grav: -10 });
       this.bus.emit("hud:dirty", {});
     }
   }
@@ -92,7 +89,7 @@ export class DialogueSystem {
     } else {
       p.hp = this.playerDomain!.fullHeal(); audio.heal();
     }
-    this.fx.burst(p.x, p.y, 0x7ee2a8, 12, 60, 0.8, 2, -20);
+    this.bus.emit("fx:burst", { x: p.x, y: p.y, color: 0x7ee2a8, n: 12, speed: 60, life: 0.8, size: 2, grav: -20 });
     this.bus.emit("hud:dirty", {});
   }
 
@@ -164,7 +161,7 @@ export class DialogueSystem {
       const r = this.playerDomain!.increaseMaxHp(2); p.maxHp = r.maxHp; p.hp = r.hp;
       audio.rune();
       this.bus.emit("toast", { msg: "Кровавая Слеза: максимальное здоровье +2" });
-      this.fx.burst(p.x, p.y, 0xc03050, 16, 80, 1.0, 2, -10);
+      this.bus.emit("fx:burst", { x: p.x, y: p.y, color: 0xc03050, n: 16, speed: 80, life: 1.0, size: 2, grav: -10 });
       this.bus.emit("hud:dirty", {});
     }
   }

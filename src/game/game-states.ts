@@ -75,6 +75,9 @@ export interface GameEvents {
   "input:toggle-snow":   {};
   "input:close-overlay": {};
 
+  // FX
+  "fx:burst":         { x: number; y: number; color: number; n: number; speed: number; life: number; size: number; grav: number };
+
   // UI
   "hud:dirty":        {};
   "hud:float":        { x: number; y: number; text: string; color: number };

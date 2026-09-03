@@ -7,14 +7,13 @@ import { dist2, clamp } from "../utils";
 import { Player, Enemy, Projectile, makeEnemy } from "../entities";
 import type { ProjectileRt, DropRt, ChestRt, PedestalRt, ShrineRt, NpcRt, DoorRt } from "../store";
 import {
-  buildAllTileTextures, buildMinimapBase,
   HouseSpriteEntry, WallTextureCache, HouseTextureCache,
 } from "../tiles";
+import { buildMinimapBase } from "../map-display";
 import { type GraphicsFactory, DefaultGraphicsFactory } from "./render-system";
 
 /** Интерфейс для сервисов, которые требует EntityManager (инверсия зависимостей). */
 export interface EntityManagerServices {
-  spawnEnemy: (kind: string, x: number, y: number) => Enemy;
   loadMap: (map: WorldData, spawn: Vec) => void;
   toast: (msg: string) => void;
 }
@@ -51,10 +50,7 @@ export class EntityManager {
   public dynamic: EntityManagerDynamicContainer;
 
   // Локальные данные сущностей
-  public wallCache = new WallTextureCache();
-  public houseCache = new HouseTextureCache();
   public wallTiles: (Graphics | Sprite)[] = [];
-  public houseSprites: HouseSpriteEntry[] = [];
   public groundSpr: Sprite | null = null;
   public slamZones: { x: number; y: number; r: number; t: number; boom: boolean }[] = [];
   public barrier: { x: number; y: number; active: boolean; g: Graphics } | null = null;
@@ -79,31 +75,17 @@ export class EntityManager {
 
   /* ===== Управление текстурами карты ===== */
 
-  setRoofSnow(on: boolean): void {
-    if (this.roofSnow === on) return;
-    this.roofSnow = on;
-    for (const h of this.houseSprites) {
-      (h.spr as any).texture = this.houseCache.getTexture(h.hw, h.hh, h.v, h.ruined, this.roofSnow);
-    }
-  }
-
-  buildMapTextures(map: WorldData): void {
+  buildMapTextures(map: WorldData, wallCache: WallTextureCache, houseCache: HouseTextureCache, groundSprites: (Graphics | Sprite)[], houseSprites: HouseSpriteEntry[], groundSpr: Sprite): void {
     this.groundSpr?.destroy();
     for (const wt of this.wallTiles) wt.destroy();
     this.wallTiles = [];
-    this.houseSprites = [];
-
-    const result = buildAllTileTextures(map, this.roofSnow);
-    this.wallCache = result.wallCache;
-    this.houseCache = result.houseCache;
-    this.groundSpr = new Sprite(result.groundTexture);
+    this.groundSpr = groundSpr;
     this.groundSpr.zIndex = 0;
     this.dynamic.addChild(this.groundSpr);
-    for (const ws of result.wallSprites) {
+    for (const ws of groundSprites) {
       this.wallTiles.push(ws);
       this.dynamic.addChild(ws);
     }
-    this.houseSprites = result.houseSprites;
   }
 
   buildMinimapBase(map: WorldData): ImageData | null {
@@ -139,7 +121,6 @@ export class EntityManager {
     this.slamZones.length = 0;
     this.barrier = null;
     this.altar = null;
-    this.dynamic.removeChildren();
   }
 
   /* ===== Физические тела ===== */
@@ -218,8 +199,6 @@ export class EntityManager {
   /* ===== Очистка ===== */
 
   destroy(): void {
-    this.wallCache.destroy();
-    this.houseCache.destroy();
     if (this.groundSpr) this.groundSpr.destroy();
     for (const wt of this.wallTiles) wt.destroy();
     for (const e of this.entities.enemies) {

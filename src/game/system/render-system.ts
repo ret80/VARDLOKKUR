@@ -1,7 +1,7 @@
 /* render-system.ts – Единая система отрисовки: снежинки, guide arrow, float text, fog, все сущности */
 /* RenderSystem владеет всеми Graphics-объектами и является единственным мостом к PixiJS */
 
-import { Application, Container, Graphics, Text } from "pixi.js";
+import { Application, Container, Graphics, Sprite, Text } from "pixi.js";
 import { T, WorldData } from "../world";
 import { clamp, dist2 } from "../utils";
 import {
@@ -22,7 +22,9 @@ import { type QuestSystem } from "./quest-system";
 import { type HudSystem } from "./hud-system";
 import { type InteractionSystem } from "./interaction-system";
 import { type EntityManager } from "./entity-manager";
-import { buildBigMapBase, drawBigMap, drawMinimap } from "../tiles";
+import { EventBus } from "../event-bus";
+import { buildBigMapBase, drawBigMap, drawMinimap } from "../map-display";
+import { WallTextureCache, HouseTextureCache, HouseSpriteEntry, buildAllTileTextures } from "../tiles";
 
 // ============================================================
 // 1. ИНТЕРФЕЙС ФАБРИКИ ГРАФИКИ (для тестирования и замены рендера)
@@ -46,6 +48,7 @@ export const DefaultGraphicsFactory: GraphicsFactory = {
 
 export interface RenderSystemConfig {
   factory: GraphicsFactory;
+  bus: EventBus;
   entityMgr: EntityManager;
   fx: FxManager;
   fog: FogSystem;
@@ -87,7 +90,64 @@ export interface RenderSystemConfig {
 export class RenderSystem {
   private cfg: RenderSystemConfig;
   private factory: GraphicsFactory;
-  private renderers = {
+  private arrowA = -Math.PI / 2;
+  private floats: FloatText[] = [];
+
+  // Владельцы текстур
+  public wallCache = new WallTextureCache();
+  public houseCache = new HouseTextureCache();
+  public houseSprites: HouseSpriteEntry[] = [];
+  public wallTiles: (Graphics | Sprite)[] = [];
+  public groundSpr: Sprite | null = null;
+
+  // Метод для обновления текстур карты
+  buildMapTextures(map: WorldData, roofSnow: boolean, dynamic: { addChild(child: Graphics | Sprite): void }) {
+    // Очищаем старые ground/wall спрайты
+    this.groundSpr?.destroy();
+    for (const wt of this.wallTiles) wt.destroy();
+    this.wallTiles = [];
+
+    const result = buildAllTileTextures(map, roofSnow);
+    this.wallCache.destroy();
+    this.houseCache.destroy();
+    this.wallCache = result.wallCache;
+    this.houseCache = result.houseCache;
+    this.houseSprites = result.houseSprites;
+    this.wallTiles = result.wallSprites;
+
+    // Добавляем в dynamic
+    this.groundSpr = new Sprite(result.groundTexture);
+    this.groundSpr.zIndex = 0;
+    dynamic.addChild(this.groundSpr);
+    for (const ws of result.wallSprites) {
+      dynamic.addChild(ws);
+    }
+  }
+
+  // Обновление снега на крышах
+  setRoofSnow(on: boolean) {
+    for (const h of this.houseSprites) {
+      (h.spr as any).texture = this.houseCache.getTexture(h.hw, h.hh, h.v, h.ruined, on);
+    }
+  }
+
+  // Геттер для инверсии дублирования рендереров
+  get renderers() {
+    return {
+      player: this.renderersInternal.player,
+      enemy: this.renderersInternal.enemy,
+      npc: this.renderersInternal.npc,
+      drop: this.renderersInternal.drop,
+      projectile: this.renderersInternal.projectile,
+      chest: this.renderersInternal.chest,
+      pedestal: this.renderersInternal.pedestal,
+      shrine: this.renderersInternal.shrine,
+      door: this.renderersInternal.door,
+      barrier: this.renderersInternal.barrier,
+      altar: this.renderersInternal.altar,
+    };
+  }
+  private renderersInternal = {
     player: new PlayerRenderer(),
     enemy: new EnemyRenderer(),
     npc: new NpcRenderer(),
@@ -101,12 +161,10 @@ export class RenderSystem {
     altar: new AltarRenderer(),
   };
 
-  private arrowA = -Math.PI / 2;
-  private floats: FloatText[] = [];
-
   constructor(cfg: RenderSystemConfig) {
     this.cfg = cfg;
     this.factory = cfg.factory;
+    this.cfg.bus.on("fx:burst", (e) => this.cfg.fx.burst(e.x, e.y, e.color, e.n, e.speed, e.life, e.size, e.grav));
   }
 
   // ============================================================
@@ -168,6 +226,14 @@ export class RenderSystem {
     this.floats.length = 0;
   }
 
+  destroy() {
+    this.clearFloats();
+    this.wallCache.destroy();
+    this.houseCache.destroy();
+    this.groundSpr?.destroy();
+    for (const wt of this.wallTiles) wt.destroy();
+  }
+
   getFloatTexts(): FloatText[] {
     return this.floats;
   }
@@ -175,10 +241,6 @@ export class RenderSystem {
   // ============================================================
   // УНИЧТОЖЕНИЕ
   // ============================================================
-
-  destroy() {
-    this.clearFloats();
-  }
 
   tick(
     rdt: number,
@@ -274,7 +336,7 @@ export class RenderSystem {
       swingDir: player.dir,
       aiming: false,
     };
-    this.renderers.player.render(playerG, player as IPlayerData, t, playerExtra);
+    this.renderersInternal.player.render(playerG, player as IPlayerData, t, playerExtra);
     playerG.position.set(Math.round(player.x), Math.round(player.y));
     playerG.zIndex = player.y;
   }
@@ -340,7 +402,7 @@ export class RenderSystem {
   private renderDoors() {
     for (const d of this.cfg.entityMgr.entities.doors) {
       d.g.zIndex = d.y;
-      this.renderers.door.render(d.g, { open: d.open, locked: d.locked } as IDoorData);
+      this.renderersInternal.door.render(d.g, { open: d.open, locked: d.locked } as IDoorData);
     }
   }
 
