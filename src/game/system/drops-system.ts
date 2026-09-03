@@ -5,18 +5,20 @@ import { DropKind, Vec, T } from "../world";
 import { dist2 } from "../utils";
 import { Drop } from "../entities";
 import { type DropRt } from "../store";
-import { Graphics } from "pixi.js";
 import { DropHandlerRegistry } from "../drop-handlers";
+import { type GraphicsFactory, DefaultGraphicsFactory } from "./render-system";
 
 export class DropsSystem {
   private store: GameStore;
   private bus: EventBus;
   private handlers: DropHandlerRegistry;
+  private gfxFactory: GraphicsFactory;
 
-  constructor(bus: EventBus, store: GameStore) {
+  constructor(bus: EventBus, store: GameStore, gfxFactory: GraphicsFactory = DefaultGraphicsFactory) {
     this.bus = bus;
     this.store = store;
     this.handlers = new DropHandlerRegistry();
+    this.gfxFactory = gfxFactory;
     bus.on("drop:spawn", (e) => this.spawnDrop(e.kind, e.x, e.y, e.life));
     bus.on("enemy:killed", (e) => this.rollDrops(e));
   }
@@ -27,7 +29,7 @@ export class DropsSystem {
   private get takenAmbient() { return this.store.takenAmbient; }
 
   spawnDrop(kind: DropKind, x: number, y: number, life?: number) {
-    const d: DropRt = { kind, x, y, t: Math.random() * 5, taken: false, magnet: kind === "heart" || kind === "arrows" || kind === "dew", g: new Graphics(), life };
+    const d: DropRt = { kind, x, y, t: Math.random() * 5, taken: false, magnet: kind === "heart" || kind === "arrows" || kind === "dew", g: this.gfxFactory.createGraphics(), life };
     d.g.position.set(x, y);
     this.store.services.onDropAdd(d.g);
     this.drops.add(d);

@@ -10,6 +10,7 @@ import {
   buildAllTileTextures, buildMinimapBase,
   HouseSpriteEntry, WallTextureCache, HouseTextureCache,
 } from "../tiles";
+import { type GraphicsFactory, DefaultGraphicsFactory } from "./render-system";
 
 /** Интерфейс для сервисов, которые требует EntityManager (инверсия зависимостей). */
 export interface EntityManagerServices {
@@ -45,6 +46,7 @@ export class EntityManager {
   private phys: PhysSystem;
   private bus: EventBus;
   private services: EntityManagerServices;
+  private gfxFactory: GraphicsFactory;
   public entities: EntityManagerEntities;
   public dynamic: EntityManagerDynamicContainer;
 
@@ -59,11 +61,12 @@ export class EntityManager {
   public altar: { x: number; y: number; g: Graphics } | null = null;
   public roofSnow = true;
 
-  constructor(bus: EventBus, services: EntityManagerServices, entities: EntityManagerEntities, dynamic: EntityManagerDynamicContainer) {
+  constructor(bus: EventBus, services: EntityManagerServices, entities: EntityManagerEntities, dynamic: EntityManagerDynamicContainer, gfxFactory: GraphicsFactory = DefaultGraphicsFactory) {
     this.bus = bus;
     this.services = services;
     this.entities = entities;
     this.dynamic = dynamic;
+    this.gfxFactory = gfxFactory;
     this.phys = new PhysSystem({
       tickRate: 60, friction: 0,
       collisionInfo: { cellSize: 4 }, useRAF: false,
@@ -163,7 +166,7 @@ export class EntityManager {
 
   spawnEnemy(kind: Enemy["kind"], x: number, y: number): Enemy & { g: Graphics } {
     const e = makeEnemy(kind, x, y, this.entities.enemies.length);
-    const g = new Graphics();
+    const g = this.gfxFactory.createGraphics();
     g.position.set(x, y);
     (e as Enemy & { g: Graphics }).g = g;
     this.entities.enemies.push(e as Enemy & { g: Graphics });

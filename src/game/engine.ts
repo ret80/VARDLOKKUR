@@ -1,6 +1,6 @@
 /* engine.ts – Оркестратор: создаёт EventBus, GameStore и системы */
 
-import { Application, Container, Graphics, RenderTexture, Sprite, Texture, Text } from "pixi.js";
+import { Application, Container, Graphics, RenderTexture, Sprite, Texture } from "pixi.js";
 import {
   T, Tl, WorldData, Vec,
   generateOverworld, generateDungeon, solidTileAt, tileAt, zoneFor, DUNGEONS,
@@ -32,7 +32,7 @@ import { InputSystem } from "./system/input-system";
 import { StateManager } from "./system/state-manager";
 import { EntityManager } from "./system/entity-manager";
 import { MapLoader } from "./system/map-loader";
-import { RenderSystem } from "./system/render-system";
+import { RenderSystem, DefaultGraphicsFactory } from "./system/render-system";
 
 // Системы
 import { EventBus } from "./event-bus";
@@ -278,7 +278,7 @@ export class Engine {
       shrines: this.shrines,
       npcs: this.npcs,
       doors: this.doors,
-    }, this.dynamic);
+    }, this.dynamic, DefaultGraphicsFactory);
     this.mapLoader = new MapLoader(this.bus, this.entityMgr, {
       enemies: this.enemies,
       projectiles: this.projectiles,
@@ -292,7 +292,7 @@ export class Engine {
       spawnEnemy: (kind: string, x: number, y: number) => this.spawnEnemy(kind as any, x, y),
       loadMap: (map: WorldData, spawn: Vec) => this.loadMap(map, spawn),
       toast: (msg: string) => this.toast(msg),
-    }, this.dynamic);
+    }, this.dynamic, DefaultGraphicsFactory);
 
     // Создаём GameStore и системы
     this.store = this.buildGameStore();
@@ -360,7 +360,7 @@ export class Engine {
   private instantiateSystems(store: GameStore) {
     this.quests      = new QuestSystem(this.bus, store);
     this.dialogue    = new DialogueSystem(this.bus, store, this.fx);
-    this.drops       = new DropsSystem(this.bus, store);
+    this.drops       = new DropsSystem(this.bus, store, DefaultGraphicsFactory);
     this.fog         = new FogSystem(this.bus, store);
     this.physics     = new PhysicsSystem();
     this.combat      = new CombatSystem(this.bus, store, this.physics);
@@ -368,6 +368,7 @@ export class Engine {
     this.interaction = new InteractionSystem(this.bus, store);
     this.hud         = new HudSystem(this.bus, store, this.quests);
     this.renderer    = new RenderSystem({
+      factory: DefaultGraphicsFactory,
       entityMgr: this.entityMgr,
       fx: this.fx,
       fog: this.fog,
@@ -591,11 +592,21 @@ export class Engine {
     // Рендеринг делегируется RenderSystem
     this.realT = this.renderer.tick(
       rdt, this.app, this.realT, this.state, this.map, this.player, this.playerG,
-      this.cam, this.viewW, this.viewH, this.floats, this.fadeG, this.fxScreen,
-      this.world, this.hudTimer, (v: number) => { this.hudTimer = v; },
-      ((f?: boolean) => this.pushHud(f)), () => {},
-      this.minimapCanvas, this.mmBase
+      this.cam, this.viewW, this.viewH, this.fadeG, this.fxScreen, this.world
     );
+    // Minimap update
+    this.renderer.drawMinimap(this.minimapCanvas, this.mmBase, this.map, this.player, this.realT);
+    // Добавляем float text в stage (RenderSystem управляет ими, но stage принадлежит engine)
+    const floats = this.renderer.getFloatTexts();
+    for (const f of floats) {
+      let found = false;
+      for (const existing of this.floatLayer.children) {
+        if (existing === f.txt) { found = true; break; }
+      }
+      if (!found) {
+        this.floatLayer.addChild(f.txt);
+      }
+    }
   }
 
   /* ================= NPC ================= */
@@ -782,15 +793,7 @@ export class Engine {
   }
 
   private float(x: number, y: number, text: string, color: number) {
-    const t = new Text({
-      text,
-      style: { fontFamily: "Alegreya Sans", fontSize: 9, fontWeight: "700", fill: color },
-    });
-    t.anchor.set(0.5);
-    t.position.set(x, y - 12);
-    this.floatLayer.addChild(t);
-    this.floats.push({ txt: t, life: 0.8 });
-    if (this.floats.length > 24) { const old = this.floats.shift()!; old.txt.destroy(); }
+    this.renderer.addFloatText(x, y, text, color);
   }
 
   /* ================= big map (public) ================= */
@@ -818,20 +821,7 @@ export class Engine {
 
   /* ===== Вспомогательные поля для доступа из других методов ===== */
 
-  /* ===== Рендереры ===== */
-  private renderers = {
-    player: new PlayerRenderer(),
-    enemy: new EnemyRenderer(),
-    npc: new NpcRenderer(),
-    drop: new DropRenderer(),
-    projectile: new ProjectileRenderer(),
-    chest: new ChestRenderer(),
-    pedestal: new PedestalRenderer(),
-    shrine: new ShrineRenderer(),
-    door: new DoorRenderer(),
-    barrier: new BarrierRenderer(),
-    altar: new AltarRenderer(),
-  };
+  /* ===== Вспомогательные поля ===== */
 
   /* ===== Вьюпорт ===== */
 
@@ -874,6 +864,11 @@ export class Engine {
     if (this.app) this.app.destroy(true);
     this.fx.destroy();
     this.bus.clear();
+    // Очищаем float text
+    for (const f of this.renderer.getFloatTexts()) {
+      f.txt.destroy();
+    }
+    this.renderer.getFloatTexts().length = 0;
   }
 
   /* ===== Вспомогательные поля ===== */

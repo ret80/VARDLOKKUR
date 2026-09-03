@@ -1,4 +1,5 @@
-/* render-system.ts – Отрисовка: снежинки, guide arrow, float text, fog, все сущности */
+/* render-system.ts – Единая система отрисовки: снежинки, guide arrow, float text, fog, все сущности */
+/* RenderSystem владеет всеми Graphics-объектами и является единственным мостом к PixiJS */
 
 import { Application, Container, Graphics, Text } from "pixi.js";
 import { T, WorldData } from "../world";
@@ -14,8 +15,6 @@ import {
   PlayerRenderer, EnemyRenderer, NpcRenderer, DropRenderer, ProjectileRenderer,
   ChestRenderer, PedestalRenderer, ShrineRenderer, DoorRenderer, BarrierRenderer, AltarRenderer
 } from "../entities";
-import { type EventBus } from "../event-bus";
-import { type GameStore } from "../store";
 import { type FxManager } from "../fx";
 import { type FogSystem } from "./fog-system";
 import { type QuestSystem } from "./quest-system";
@@ -23,9 +22,29 @@ import { type HudSystem } from "./hud-system";
 import { type InteractionSystem } from "./interaction-system";
 import { type EntityManager } from "./entity-manager";
 import { drawMinimap } from "../tiles";
-import { audio } from "../audio";
+
+// ============================================================
+// 1. ИНТЕРФЕЙС ФАБРИКИ ГРАФИКИ (для тестирования и замены рендера)
+// ============================================================
+
+export interface GraphicsFactory {
+  createGraphics(): Graphics;
+  destroyGraphics(g: Graphics): void;
+  createText(text: string, style: any): Text;
+}
+
+export const DefaultGraphicsFactory: GraphicsFactory = {
+  createGraphics(): Graphics { return new Graphics(); },
+  destroyGraphics(g: Graphics): void { g.destroy(); },
+  createText(text: string, style: any): Text { return new Text({ text, style }); },
+};
+
+// ============================================================
+// 2. КОНФИГУРАЦИЯ RENDER SYSTEM
+// ============================================================
 
 export interface RenderSystemConfig {
+  factory: GraphicsFactory;
   entityMgr: EntityManager;
   fx: FxManager;
   fog: FogSystem;
@@ -64,6 +83,7 @@ export interface RenderSystemConfig {
 
 export class RenderSystem {
   private cfg: RenderSystemConfig;
+  private factory: GraphicsFactory;
   private renderers = {
     player: new PlayerRenderer(),
     enemy: new EnemyRenderer(),
@@ -79,9 +99,11 @@ export class RenderSystem {
   };
 
   private arrowA = -Math.PI / 2;
+  private floats: FloatText[] = [];
 
   constructor(cfg: RenderSystemConfig) {
     this.cfg = cfg;
+    this.factory = cfg.factory;
   }
 
   tick(
@@ -95,16 +117,9 @@ export class RenderSystem {
     cam: { x: number; y: number },
     viewW: number,
     viewH: number,
-    floats: FloatText[],
     fadeG: Graphics,
     fxScreen: Graphics,
-    world: Container,
-    hudTimer: number,
-    setHudTimer: (v: number) => void,
-    pushHud: (force?: boolean) => void,
-    setAudioIntensity: (v: number) => void,
-    minimapCanvas: HTMLCanvasElement | null,
-    mmBase: ImageData | null
+    world: Container
   ): number {
     if (!app) return realT;
 
@@ -126,14 +141,8 @@ export class RenderSystem {
     // Guide arrow
     this.drawGuide(fx, t, map, player, cam, viewW, viewH);
 
-    // Float texts
-    for (let i = floats.length - 1; i >= 0; i--) {
-      const f = floats[i];
-      f.life -= rdt;
-      f.txt.y -= 14 * rdt;
-      f.txt.alpha = Math.max(0, f.life / 0.8);
-      if (f.life <= 0) { f.txt.destroy(); floats.splice(i, 1); }
-    }
+    // Float texts (управляются внутри RenderSystem)
+    this.updateFloatTexts(rdt);
 
     // World FX
     this.cfg.fx.updateParticles(rdt);
@@ -162,6 +171,29 @@ export class RenderSystem {
     if (this.cfg.fog.fogWarned) this.cfg.fx.drawFogEyes(fx, true, t, viewW, viewH);
 
     // ====== RENDER ENTITIES ======
+    this.renderPlayer(player, playerG, t);
+    this.renderEnemies(map, player, t);
+    this.renderNpcs(t);
+    this.renderProjectiles(t);
+    this.renderDrops(t);
+    this.renderChests();
+    this.renderPedestals(t);
+    this.renderShrines(t);
+    this.renderDoors();
+    this.renderBarrier(t);
+    this.renderAltar(t);
+
+    // Fade overlay
+    fadeG.clear();
+
+    return t;
+  }
+
+  // ============================================================
+  // ОТДЕЛЬНЫЕ МЕТОДЫ ОТРИСОВКИ СУЩНОСТЕЙ
+  // ============================================================
+
+  private renderPlayer(player: Player, playerG: Graphics, t: number) {
     const playerExtra: IPlayerExtra = {
       hasSword: this.cfg.flags.hasSword,
       runes: this.cfg.flags.runes,
@@ -171,8 +203,9 @@ export class RenderSystem {
     this.renderers.player.render(playerG, player as IPlayerData, t, playerExtra);
     playerG.position.set(Math.round(player.x), Math.round(player.y));
     playerG.zIndex = player.y;
+  }
 
-    // Enemies
+  private renderEnemies(map: WorldData | undefined, player: Player, t: number) {
     for (const e of this.cfg.entityMgr.entities.enemies) {
       const eg = (e as Enemy & { g: Graphics });
       eg.g.position.set(Math.round(e.x), Math.round(e.y));
@@ -180,22 +213,25 @@ export class RenderSystem {
       eg.g.visible = !e.dead && !(e.hidden && dist2(e.x, e.y, player.x, player.y) > 46 * 46);
       if (!e.dead) this.renderers.enemy.render(eg.g, e as IEnemyData, t);
     }
+  }
 
-    // NPCs
+  private renderNpcs(t: number) {
     for (const n of this.cfg.entityMgr.entities.npcs) {
       n.g.zIndex = n.y;
       const mark = this.npcHasMark(n.id);
       this.renderers.npc.render(n.g, { id: n.id, name: n.name } as INpcData, t, { mark });
     }
+  }
 
-    // Projectiles
+  private renderProjectiles(t: number) {
     for (const p of this.cfg.entityMgr.entities.projectiles) {
       const pr = p as Projectile & { g: Graphics };
       pr.g.zIndex = pr.y;
       this.renderers.projectile.render(pr.g, pr as IProjectileData, t);
     }
+  }
 
-    // Drops
+  private renderDrops(t: number) {
     for (const d of this.cfg.entityMgr.entities.drops) {
       if (!d.taken) {
         const drop = d as Drop & { g: Graphics };
@@ -203,33 +239,38 @@ export class RenderSystem {
         this.renderers.drop.render(drop.g, drop as IDropData, t);
       }
     }
+  }
 
-    // Chests
+  private renderChests() {
     for (const c of this.cfg.entityMgr.entities.chests) {
       c.g.zIndex = c.y;
       this.renderers.chest.render(c.g, { opened: c.opened } as IChestData);
     }
+  }
 
-    // Pedestals
+  private renderPedestals(t: number) {
     for (const p of this.cfg.entityMgr.entities.pedestals) {
       p.g.zIndex = p.y;
       this.renderers.pedestal.render(p.g, { taken: p.taken, guardsLeft: p.guardsLeft } as IPedestalData, t);
     }
+  }
 
-    // Shrines
+  private renderShrines(t: number) {
     for (const s of this.cfg.entityMgr.entities.shrines) {
       s.g.zIndex = s.y;
       const lit = this.cfg.flags.shrineIdx >= this.cfg.entityMgr.entities.shrines.indexOf(s);
       this.renderers.shrine.render(s.g, { lit } as IShrineData, t);
     }
+  }
 
-    // Doors
+  private renderDoors() {
     for (const d of this.cfg.entityMgr.entities.doors) {
       d.g.zIndex = d.y;
       this.renderers.door.render(d.g, { open: d.open, locked: d.locked } as IDoorData);
     }
+  }
 
-    // Barrier
+  private renderBarrier(t: number) {
     if (this.cfg.entityMgr.barrier) {
       this.cfg.entityMgr.barrier.g.zIndex = this.cfg.entityMgr.barrier.y;
       this.cfg.entityMgr.barrier.g.visible = this.cfg.entityMgr.barrier.active;
@@ -237,25 +278,77 @@ export class RenderSystem {
         this.renderers.barrier.render(this.cfg.entityMgr.barrier.g, { active: true } as IBarrierData, t);
       }
     }
+  }
 
-    // Altar
+  private renderAltar(t: number) {
     if (this.cfg.entityMgr.altar) {
       this.cfg.entityMgr.altar.g.zIndex = this.cfg.entityMgr.altar.y - 1;
       this.renderers.altar.render(this.cfg.entityMgr.altar.g, { runes: this.cfg.flags.runes } as IAltarData, t);
     }
+  }
 
-    // Fade overlay
-    fadeG.clear();
-    // (fadeA is managed by StateManager, not here)
+  // ============================================================
+  // FLOAT TEXT (теперь управляется внутри RenderSystem)
+  // ============================================================
 
-    // HUD timer
-    const ht = hudTimer - rdt;
-    if (ht <= 0) { setHudTimer(0.15); pushHud(); } else { setHudTimer(ht); }
+  addFloatText(x: number, y: number, text: string, color: number) {
+    const t = this.factory.createText(text, {
+      fontFamily: "Alegreya Sans", fontSize: 9, fontWeight: "700", fill: color,
+    });
+    t.anchor.set(0.5);
+    t.position.set(x, y - 12);
+    this.floats.push({ txt: t, life: 0.8 });
+    if (this.floats.length > 24) { const old = this.floats.shift()!; old.txt.destroy(); }
+  }
 
-    // Minimap
-    this.updateMinimap(map, player, t, minimapCanvas, mmBase);
+  private updateFloatTexts(rdt: number) {
+    for (let i = this.floats.length - 1; i >= 0; i--) {
+      const f = this.floats[i];
+      f.life -= rdt;
+      f.txt.y -= 14 * rdt;
+      f.txt.alpha = Math.max(0, f.life / 0.8);
+      if (f.life <= 0) { f.txt.destroy(); this.floats.splice(i, 1); }
+    }
+  }
 
-    return t;
+  getFloatTexts(): FloatText[] {
+    return this.floats;
+  }
+
+  // ============================================================
+  // МИНИКАРТА (вынесена в отдельный публичный метод)
+  // ============================================================
+
+  drawMinimap(
+    minimapCanvas: HTMLCanvasElement | null,
+    mmBase: ImageData | null,
+    map: WorldData | undefined,
+    player: Player,
+    realT: number
+  ) {
+    if (!map) return;
+    const txi = Math.floor(player.x / T), tyi = Math.floor(player.y / T);
+    const blink = Math.floor(realT * 3) % 2;
+    const key = txi + "_" + tyi + "_" + blink + "_" + (map.dungeonId ?? -1) + "_" + (this.cfg.store.trackedQuest ?? "");
+    if (key !== this.cfg.hud.lastMmKey) {
+      this.cfg.hud.lastMmKey = key;
+      if (minimapCanvas && mmBase) {
+        const cx = minimapCanvas.getContext("2d");
+        if (cx) {
+          drawMinimap(cx, mmBase, {
+            shrines: this.cfg.entityMgr.entities.shrines,
+            player,
+            target: this.cfg.quests.trackedTarget(),
+            secretKnown: this.cfg.flags.secretKnown,
+            stashSpot: map.stashSpot,
+            nornsFavor: this.cfg.flags.nornsFavor,
+            pedestals: this.cfg.entityMgr.entities.pedestals,
+            map,
+            realT,
+          });
+        }
+      }
+    }
   }
 
   private drawGuide(fx: Graphics, t: number, map: WorldData | undefined, player: Player, cam: { x: number; y: number }, viewW: number, viewH: number) {
