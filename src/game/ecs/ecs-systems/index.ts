@@ -52,12 +52,15 @@ export {
 export {
   spawnDrop,
   dropsUpdateSystem,
-  spawnDropFromEnemy,
+  rollDropsForEnemy,
+  spawnWorldDrops,
 } from './drops-system';
 
 export {
   fogUpdateSystem,
   spawnFogGhost,
+  createFogState,
+  type FogState,
 } from './fog-system';
 
 export {

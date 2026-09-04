@@ -26,6 +26,12 @@ import {
   projectileEnemyCollisionSystem,
   damageEnemy,
   damagePlayer,
+  updateProjectilesEcs,
+  hitEnemy,
+  killEnemy,
+  damageSnake,
+  damagePlayerEcs,
+  fireProjectileEcs,
 } from './ecs-systems/combat-system';
 import {
   aiUpdateSystem,
@@ -215,8 +221,24 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       aiUpdateSystem(world, peid, map, dt, () => {}, () => {});
     }
 
-    // ===== 13. Обновить снаряды =====
-    combat.updateProjectiles(dt);
+    // ===== 13. Обновить снаряды (ECS) =====
+    updateProjectilesEcs(
+      world,
+      dt,
+      peid,
+      flags.ghostBane,
+      planckWorld,
+      (eid) => {}, // onProjectileRemove
+      addFloat,
+      () => {}, // audio.clang
+      () => {}, // audio.hit
+      () => {}, // audio.freeze
+      () => {}, // onEnemyHit
+      () => {}, // onEnemyKilled
+      () => {}, // onPlayerDamaged
+      () => {}, // onSnakeDeath
+      playerDomain
+    );
 
     // ===== 14. Обновить дропы =====
     drops.updateDrops(dt);

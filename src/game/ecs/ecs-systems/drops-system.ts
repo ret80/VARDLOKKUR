@@ -35,7 +35,7 @@ export function spawnDrop(
   Position.x[eid] = x;
   Position.y[eid] = y;
   Radius.value[eid] = 3;
-  Drop[eid] = { kind, t: 0, magnet };
+  Drop[eid] = { kind, t: Math.random() * 5, magnet, life };
   Time.value[eid] = 0;
   RenderLayer.value[eid] = 40;
   Magnet[eid] = magnet;
@@ -64,10 +64,29 @@ export function dropsUpdateSystem(
 
     t[eid] += dt;
 
-    // Remove old drops
-    if (d.life && t[eid] > d.life) {
-      removeEntity(world, eid);
-      continue;
+    // Remove old drops with alpha blink
+    if (d.life !== undefined) {
+      d.life -= dt;
+      if (d.life <= 0) {
+        removeEntity(world, eid);
+        continue;
+      }
+      if (d.life < 5) {
+        // Alpha blink handled in render system
+      }
+    }
+
+    // Magnet pull to player
+    if (d.magnet && playerEid >= 0) {
+      const dx = px[playerEid] - px[eid];
+      const dy = py[playerEid] - py[eid];
+      const distSq = dx * dx + dy * dy;
+      
+      if (distSq < 34 * 34 && distSq > 1) {
+        const dd = Math.sqrt(distSq);
+        px[eid] += (dx / dd) * 120 * dt;
+        py[eid] += (dy / dd) * 120 * dt;
+      }
     }
 
     // Check pickup by player
@@ -75,9 +94,8 @@ export function dropsUpdateSystem(
       const dx = px[eid] - px[playerEid];
       const dy = py[eid] - py[playerEid];
       const distSq = dx * dx + dy * dy;
-      const minDist = (r[eid] + 5) ** 2;
 
-      if (distSq < minDist) {
+      if (distSq < 11 * 11) {
         Taken[eid] = true;
         onDropCollected(eid, d.kind);
         removeEntity(world, eid);
@@ -90,39 +108,71 @@ export function dropsUpdateSystem(
 // Спавн дропа со смерти врага
 // ============================================================
 
-/** Спавн дропа со смерти врага */
-export function spawnDropFromEnemy(
+/** Спавн дропа со смерти врага (rollDrops logic) */
+export function rollDropsForEnemy(
   world: World,
   enemyKind: string,
   x: number,
   y: number,
-  rng: number
+  isGhostLeash: boolean,
+  onDropSpawn: (kind: DropKind, x: number, y: number, life?: number) => void
 ): void {
-  // Determine drop type based on enemy kind and RNG
-  let kind: DropKind | null = null;
-
-  switch (enemyKind) {
-    case 'draugr':
-      kind = rng < 0.3 ? 'heart' : rng < 0.5 ? 'bones' : null;
-      break;
-    case 'varg':
-      kind = rng < 0.2 ? 'heart' : rng < 0.4 ? 'dew' : null;
-      break;
-    case 'raven':
-      kind = rng < 0.3 ? 'arrows' : null;
-      break;
-    case 'shroom':
-      kind = rng < 0.4 ? 'ore' : null;
-      break;
-    case 'ghost':
-      kind = rng < 0.2 ? 'soul' : rng < 0.4 ? 'dew' : null;
-      break;
-    case 'frost':
-      kind = rng < 0.3 ? 'heart' : null;
-      break;
+  if (enemyKind === 'ghost') {
+    // Призрак у змея (leash) — ничего не даёт
+    if (isGhostLeash) return;
+    // Убийство: 90% шанс росы
+    if (Math.random() < 0.9) {
+      onDropSpawn('dew', x, y, 40);
+    }
+    if (Math.random() < 0.35) {
+      onDropSpawn(Math.random() < 0.5 ? 'shard' : 'heart', x, y);
+    }
+    return;
   }
 
-  if (kind) {
-    spawnDrop(world, kind, x, y, false);
+  const roll = Math.random();
+  if (enemyKind !== 'frost') {
+    if (roll < 0.4) onDropSpawn('heart', x, y);
+    else if (roll < 0.62) onDropSpawn('arrows', x, y);
+  } else {
+    onDropSpawn(Math.random() < 0.5 ? 'heart' : 'arrows', x, y);
+  }
+}
+
+// ============================================================
+// Спавн мировых дропов
+// ============================================================
+
+/** Спавн мировых дропов из map data */
+export function spawnWorldDrops(
+  world: World,
+  map: any,
+  flags: any,
+  takenAmbient: Set<number>,
+  onDropSpawn: (kind: DropKind, x: number, y: number, life?: number) => void
+): void {
+  const T = 16; // tile size
+  const add = (kind: DropKind, v: { x: number; y: number }) => {
+    onDropSpawn(kind, v.x * T + 8, v.y * T + 8);
+  };
+
+  if (!flags.bearGone) add('bear', map.bearSpot);
+  if (!flags.hornDone && !flags.horn) add('horn', map.hornSpot);
+  if (!flags.meadDone && !flags.mead) add('mead', map.meadSpot);
+  if (flags.giantDead && !flags.oreDone && !flags.ore) add('ore', map.oreSpot);
+  if (!flags.shamanDone) {
+    if (!flags.moss) add('moss', map.mossSpot);
+    if (!flags.amber) add('amber', map.amberSpot);
+    if (!flags.flower) add('flower', map.flowerSpot);
+  }
+  if (!flags.refugeeDone && !flags.diary) add('diary', map.diarySpot);
+  if (!flags.merchantDone && !flags.bundle) add('bundle', map.bundleSpot);
+  if (!flags.atoneDone && !flags.relic) add('relic', map.relicSpot);
+
+  if (!map.isDungeon) {
+    map.ambient.forEach((a: any, i: number) => {
+      if (takenAmbient.has(i)) return;
+      add(a.kind, { x: a.x, y: a.y });
+    });
   }
 }
