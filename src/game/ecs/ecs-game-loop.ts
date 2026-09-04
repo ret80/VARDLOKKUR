@@ -40,12 +40,17 @@ import {
   dropsUpdateSystem,
 } from './ecs-systems/drops-system';
 import {
+  DropHandlerRegistry,
+} from '../drop-handlers';
+import {
   fogUpdateSystem,
   createFogState,
+  type FogState,
 } from './ecs-systems/fog-system';
 import {
   tryInteract,
   onEnemyKilledEcs,
+  type GuardSpawnCallback,
 } from './ecs-systems/interaction-system';
 import {
   renderSystem,
@@ -122,6 +127,15 @@ export interface EcsGameLoopConfig {
   startDialogue: (id: string) => void;
   npcSig: (id: string) => string;
   onStepAudio: () => void;
+  /** Callback для спавна стражей пьедестала (kind, x, y) */
+  guardSpawn?: GuardSpawnCallback;
+}
+
+/** Глобальный singleton registry дропов */
+let _dropRegistry: DropHandlerRegistry | null = null;
+function getDropRegistry(): DropHandlerRegistry {
+  if (!_dropRegistry) _dropRegistry = new DropHandlerRegistry();
+  return _dropRegistry;
 }
 
 // ============================================================
@@ -135,20 +149,19 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     input, state, cam, map, flags, playerEid: playerEidRef,
     playerDomain, hud, quests, dialogue,
     dungeonBossDead, toast, float: addFloat, pushHud, startDialogue, npcSig,
-    onStepAudio, stepTRef, realTRef,
+    onStepAudio, stepTRef, realTRef, guardSpawn,
   } = config;
 
   let _stepT = stepTRef;
   let _realT = realTRef;
   let _playerEid = playerEidRef;
   let _planckWorld = planckWorld;
+  let _fogState: FogState | null = null;
 
   /** Выполнить один кадр */
   function tick(rdt: number, timeScale: number): void {
     const dt = rdt * timeScale;
     const peid = _playerEid;
-
-    // console.log('\n[GAME LOOP] ===== FRAME ===== peid=', peid, 'dt=', dt.toFixed(4));
 
     // ===== 1. Захват ввода ОДИН раз за кадр =====
     const inputState: InputState = input.getState();
@@ -160,7 +173,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     
     // ===== 3. Обработка действий =====
     processActions(input, bus, () => {
-      tryInteract(world, peid, store, bus, (id: string) => startDialogue(id));
+      tryInteract(world, peid, store, bus, (id: string) => startDialogue(id), guardSpawn);
     }, inputState);
 
     // ===== 4. Лук =====
@@ -171,17 +184,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // ===== 5. Sync Velocity → Physics Body =====
     syncVelocityToBody(world);
 
-    // console.log('[GAME LOOP] Before physics step: Position.x[peid]=', Position.x[peid], 'Position.y[peid]=', Position.y[peid]);
-
     // ===== 6. Физика Planck.js (шаг) =====
     _planckWorld.step(dt);
 
-    // console.log('[GAME LOOP] After physics step: Position.x[peid]=', Position.x[peid], 'Position.y[peid]=', Position.y[peid]);
-
     // ===== 7. Синхронизация: Planck.js body → Position =====
     syncBodyToPosition(world);
-
-    // console.log('[GAME LOOP] After syncBodyToPosition: Position.x[peid]=', Position.x[peid], 'Position.y[peid]=', Position.y[peid]);
 
     // ===== 8. Остальные сущности без физики =====
     {
@@ -257,17 +264,18 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       store,
       bus,
       () => {}, // onDropRemove
-      playerDomain
+      playerDomain,
+      getDropRegistry()
     );
 
     // ===== 15. Обновить туман (ECS) =====
-    const fogState = createFogState();
+    if (!_fogState) _fogState = createFogState();
     fogUpdateSystem(
       world,
       peid,
       dt,
       rdt,
-      fogState,
+      _fogState,
       map,
       flags,
       bus,
@@ -279,6 +287,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     updateDoors(world, peid, store, flags, toast, pushHud);
     updateZone(world, peid, map, store, toast);
     checkDungeonBoss(world, peid, map, dungeonBossDead, bus);
+
+    // ===== 17. Проверка здоровья и удаление мёртвых =====
+    lifeCheckSystem(world);
+    deathCleanupSystem(world);
   }
 
   /** Выполнить ECS рендеринг */

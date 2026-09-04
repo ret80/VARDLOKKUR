@@ -15,6 +15,7 @@ import { Graphics, Text } from "pixi.js";
 import { FlagDomain, GameFlags } from "./flag-domain";
 import { PlayerDomain } from "./player-domain";
 import { Player, Enemy } from "../entities";
+import type { World } from "bitecs";
 
 // ── Переопределяем типы из world-entities, чтобы избежать конфликтов ──
 
@@ -88,7 +89,7 @@ export interface EngineCallbacks {
 
 /** Сервисы, предоставляемые движком */
 export interface EngineServices {
-  spawnEnemy: (kind: string, x: number, y: number) => EnemyRt;
+  spawnEnemy: (kind: string, x: number, y: number) => void;
   loadMap: (map: WorldData, spawn: Vec) => void;
   setScreen: (s: Screen) => void;
   fadeTo: (a: number) => void;
@@ -118,6 +119,8 @@ export interface GameStoreConfig {
   playerDomain?: PlayerDomain;
   // Planck.js world для удаления дропов
   planckWorld?: any;
+  // ECS world для запросов (опционально)
+  ecsWorld?: World;
 }
 
 /** Глобальное состояние (чтение) */
@@ -143,6 +146,7 @@ export interface GameStoreState {
   callbacks: EngineCallbacks;
   _bossRef: Enemy | null;
   planckWorld: any;
+  ecsWorld: World | null;
 }
 
 export class GameStore {
@@ -154,7 +158,7 @@ export class GameStore {
     this._config = config;
     this._flags = config.flags;
 
-    const { flags, services, callbacks, player, playerDomain, planckWorld } = config;
+    const { flags, services, callbacks, player, playerDomain, planckWorld, ecsWorld } = config;
 
     this._state = {
       flags: new FlagDomain(flags),
@@ -178,6 +182,7 @@ export class GameStore {
       callbacks,
       _bossRef: null,
       planckWorld: planckWorld || null,
+      ecsWorld: ecsWorld || null,
     };
   }
 
@@ -275,6 +280,48 @@ export class GameStore {
   set bossRef(v: Enemy | null) { this._state._bossRef = v; }
 
   get planckWorld(): any { return this._state.planckWorld; }
+
+  // ── ECS helpers ──
+
+  get ecsWorld(): World | null { return this._state.ecsWorld; }
+
+  /** Получить все enemy entity IDs из ECS world */
+  get enemyEids(): number[] {
+    if (!this._state.ecsWorld) return [];
+    const { Enemy, Dead } = require('../ecs/ecs-components');
+    const { query } = require('bitecs');
+    const result: number[] = [];
+    for (const eid of query(this._state.ecsWorld!, [Enemy])) {
+      if (!Dead[eid]) result.push(eid);
+    }
+    return result;
+  }
+
+  /** Получить все pedestal entity IDs из ECS world */
+  get pedestalEids(): number[] {
+    if (!this._state.ecsWorld) return [];
+    const { Pedestal } = require('../ecs/ecs-components');
+    const { query } = require('bitecs');
+    const result: number[] = [];
+    for (const eid of query(this._state.ecsWorld!, [Pedestal])) {
+      if (!Pedestal[eid].taken) result.push(eid);
+    }
+    return result;
+  }
+
+  /** Получить Enemy component для entity ID */
+  getEnemy(eid: number): any {
+    if (!this._state.ecsWorld || eid < 0) return null;
+    const { Enemy } = require('../ecs/ecs-components');
+    return Enemy[eid] || null;
+  }
+
+  /** Получить Position для entity ID */
+  getPos(eid: number): { x: number; y: number } | null {
+    if (!this._state.ecsWorld || eid < 0) return null;
+    const { Position } = require('../ecs/ecs-components');
+    return { x: Position.x[eid], y: Position.y[eid] };
+  }
 
   // ── Обновление talkCount ──
 

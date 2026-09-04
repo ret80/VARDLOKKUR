@@ -17,6 +17,7 @@ import {
 import type { DropKind } from '../../generators/types';
 import type { PlanckWorld } from '../../physics/planck-world';
 import { Graphics } from 'pixi.js';
+import { DropHandlerRegistry } from '../../drop-handlers';
 
 // ============================================================
 // ECS Drop Runtime Component
@@ -214,7 +215,8 @@ export function dropsUpdateSystem(
   store: any,
   bus: any,
   onDropRemove: (eid: number) => void,
-  playerDomain: any
+  playerDomain: any,
+  dropRegistry?: DropHandlerRegistry
 ): void {
   const { x: px, y: py } = Position;
   const { value: r } = Radius;
@@ -262,7 +264,15 @@ export function dropsUpdateSystem(
         Taken[eid] = true;
         // Collect drop via drop-handlers
         const dropKind = d.kind;
-        // TODO: integrate drop-handlers.ts here
+        const handler = dropRegistry?.get(dropKind as DropKind);
+        if (handler) {
+          const player = store.player;
+          handler.handle({
+            player: { hp: player.hp, maxHp: player.maxHp },
+            flags: store.flags,
+            bus,
+          });
+        }
         removeEntity(world, eid);
         onDropRemove(eid);
       }

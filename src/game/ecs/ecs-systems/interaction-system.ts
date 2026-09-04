@@ -28,6 +28,9 @@ import { T, Tl, tileAt, solidTileAt } from '../../world';
 
 const INTERACTION_RANGE = 20;
 
+/** Callback для спавна стража пьедестала */
+export type GuardSpawnCallback = (kind: string, x: number, y: number, pedestalIndex: number) => void;
+
 // ============================================================
 // Взаимодействие
 // ============================================================
@@ -38,7 +41,8 @@ export function tryInteract(
   playerEid: number,
   store: GameStore,
   bus: EventBus,
-  onDialogue: (id: string) => void
+  onDialogue: (id: string) => void,
+  onGuardSpawn?: GuardSpawnCallback
 ): boolean {
   if (playerEid < 0 || !store.map) return false;
 
@@ -59,7 +63,7 @@ export function tryInteract(
       openChestEcs(world, hit.eid, hit.ref, store, bus);
       return true;
     case 'pedestal':
-      takePedestalEcs(world, hit.eid, hit.ref, store, bus);
+      takePedestalEcs(world, hit.eid, hit.ref, store, bus, onGuardSpawn);
       return true;
     case 'shrine':
       useShrineEcs(world, hit.eid, hit.ref.i, store, bus);
@@ -188,23 +192,26 @@ function openChestEcs(world: World, chestEid: number, chest: any, store: GameSto
 }
 
 /** Взять предмет с пьедестала */
-function takePedestalEcs(world: World, pedestalEid: number, pd: any, store: GameStore, bus: EventBus): void {
+function takePedestalEcs(
+  world: World, pedestalEid: number, pd: any, store: GameStore, bus: EventBus, onGuardSpawn?: GuardSpawnCallback
+): void {
   const m = store.map!;
   if (pd.guardsLeft > 0) {
     audio.locked();
     bus.emit('toast', { msg: 'Печать крепка' });
     if (!pd.guardsSpawned) {
       pd.guardsSpawned = true;
-      // Спавн стражей — нужно найти определение пьедестала в карте
+      // Спавн стражей через callback
       const pedestalIndex = getPedestalIndex(world, pedestalEid);
       if (pedestalIndex >= 0 && m.pedestals[pedestalIndex]) {
         const def = m.pedestals[pedestalIndex];
         for (const k of def.guards) {
           const a = Math.random() * Math.PI * 2;
-          // TODO: использовать ECS spawnEnemy
-          const e = store.services.spawnEnemy(k, pd.x + Math.cos(a) * 26, pd.y + Math.sin(a) * 26);
-          e.aggro = true;
-          e.guardOf = pedestalIndex;
+          const gx = pd.x + Math.cos(a) * 26;
+          const gy = pd.y + Math.sin(a) * 26;
+          if (onGuardSpawn) {
+            onGuardSpawn(k, gx, gy, pedestalIndex);
+          }
         }
         bus.emit('toast', { msg: 'Стражи пьедестала восстали!' });
         audio.horn();

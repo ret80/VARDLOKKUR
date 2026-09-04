@@ -46,8 +46,6 @@ export class QuestSystem implements IQuestProvider {
   /* ---- event handlers ---- */
 
   private get flags() { return this.store.flags; }
-  private get enemies() { return this.store.entities.enemies; }
-  private get pedestals() { return this.store.entities.pedestals; }
   private get map() { return this.store.map; }
   private get ow() { return this.store.ow; }
   private get revealed() { return this.store.revealed; }

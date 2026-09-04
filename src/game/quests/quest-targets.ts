@@ -3,6 +3,7 @@
 import { Vec, T, WorldData } from "../world";
 import { GameStore } from "../store";
 import { FlagDomain } from "../store/flag-domain";
+import { query } from "bitecs";
 
 /** Контекст для резолвера цели квеста. */
 interface TargetContext {
@@ -11,6 +12,34 @@ interface TargetContext {
   store: GameStore;
   visitedShrines: Set<number>;
   ow: WorldData | null;
+}
+
+/** Получить всех живых врагов из ECS */
+function getAliveEnemiesEcs(ctx: TargetContext): Array<{ kind: string; x: number; y: number }> {
+  const world = ctx.store.ecsWorld;
+  if (!world) return [];
+  const { Enemy, Dead, Position } = require('../ecs/ecs-components');
+  const result: Array<{ kind: string; x: number; y: number }> = [];
+  for (const eid of query(world, [Enemy])) {
+    if (!Dead[eid]) {
+      result.push({ kind: Enemy[eid].kind, x: Position.x[eid], y: Position.y[eid] });
+    }
+  }
+  return result;
+}
+
+/** Получить все незатронутые пьедесталы из ECS */
+function getUntakenPedestalsEcs(ctx: TargetContext): Array<{ x: number; y: number }> {
+  const world = ctx.store.ecsWorld;
+  if (!world) return [];
+  const { Pedestal, Position } = require('../ecs/ecs-components');
+  const result: Array<{ x: number; y: number }> = [];
+  for (const eid of query(world, [Pedestal])) {
+    if (!Pedestal[eid].taken) {
+      result.push({ x: Position.x[eid], y: Position.y[eid] });
+    }
+  }
+  return result;
 }
 
 /** Фабрика резолвера цели квеста. */
@@ -64,16 +93,23 @@ const RESOLVERS: Record<string, TargetResolver> = {
   m4(ctx) {
     if (!ctx.map) return null;
     if (ctx.map.isDungeon) return null;
-    return nearestOf(ctx.store.player,
-      ctx.store.entities.pedestals.all.filter((p) => !p.taken).map((p) => ({ x: p.x, y: p.y })),
-    );
+    const pedestals = getUntakenPedestalsEcs(ctx);
+    return pedestals.length ? nearestOf(ctx.store.player, pedestals) : null;
   },
 
   m5(ctx) { return dungeonTarget(ctx.map, 2); },
 
   m6(ctx) {
-    const boss = ctx.store.bossRef;
-    if (boss) return { x: boss.x, y: boss.y };
+    // Ищем босса змея (Ёрмунганд) через ECS
+    const world = ctx.store.ecsWorld;
+    if (world) {
+      const { Enemy, Dead, Position } = require('../ecs/ecs-components');
+      for (const eid of query(world, [Enemy])) {
+        if (!Dead[eid] && Enemy[eid].kind === 'snake') {
+          return { x: Position.x[eid], y: Position.y[eid] };
+        }
+      }
+    }
     if (!ctx.map) return null;
     if (ctx.map.isDungeon) return null;
     return px(ctx.map.treeAltar);
@@ -128,8 +164,8 @@ const RESOLVERS: Record<string, TargetResolver> = {
   },
 
   s_cull(ctx) {
-    const alive = ctx.store.entities.enemies.all.filter((e) => !e.dead && (e.kind === "varg" || e.kind === "draugr"));
-    return alive.length ? nearestOf(ctx.store.player, alive.map((e) => ({ x: e.x, y: e.y }))) : null;
+    const alive = getAliveEnemiesEcs(ctx).filter((e) => e.kind === "varg" || e.kind === "draugr");
+    return alive.length ? nearestOf(ctx.store.player, alive) : null;
   },
 
   s_bundle(ctx) {
@@ -156,8 +192,8 @@ const RESOLVERS: Record<string, TargetResolver> = {
   },
 
   s_hunt(ctx) {
-    const alive = ctx.store.entities.enemies.all.filter((e) => !e.dead && e.kind !== "snake");
-    return alive.length ? nearestOf(ctx.store.player, alive.map((e) => ({ x: e.x, y: e.y }))) : null;
+    const alive = getAliveEnemiesEcs(ctx).filter((e) => e.kind !== "snake");
+    return alive.length ? nearestOf(ctx.store.player, alive) : null;
   },
 
   s_ghost(ctx) {

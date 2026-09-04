@@ -2,6 +2,20 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Chrome (launch with debug)",
+      "type": "pwa-chrome",
+      "request": "launch",
+      "url": "http://localhost:3000/VARDLOKKUR/",
+      "webRoot": "${workspaceFolder}/src",
+      "port": 19222,
+      "runtimeExecutable": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "runtimeArgs": [
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--user-data-dir=/tmp/vardlokkur-chrome-debug"
+      ]
+    },
+    {
       "type": "node",
       "request": "launch",
       "name": "Launch Electron",

@@ -73,6 +73,7 @@ export const Player = [] as {
 /** Враг */
 export const Enemy = [] as {
   kind: EnemyKind;
+  radius: number;
   facingX: number;
   facingY: number;
   t: number;

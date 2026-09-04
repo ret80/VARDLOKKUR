@@ -123,6 +123,7 @@ export function createEnemyEntity(
   Health.max[eid] = hp;
   setAoS(Enemy, eid, {
     kind: kind as any,
+    radius,
     facingX: 1,
     facingY: 0,
     t: Math.random() * 10,

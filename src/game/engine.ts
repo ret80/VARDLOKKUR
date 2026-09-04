@@ -21,7 +21,7 @@ import {
   HouseTextureCache,
   buildAllTileTextures,
 } from "./tiles";
-import { buildMinimapBase, buildBigMapBase, drawBigMap } from "./map-display";
+import { buildMinimapBase, buildBigMapBase, drawBigMap, drawMinimap } from "./map-display";
 
 // Подсистемы
 import { InputSystem } from "./input/input-system";
@@ -165,6 +165,40 @@ export class Engine {
   private arrowA = -Math.PI / 2;
   public _arrowA = -Math.PI / 2;
   private starting = false;
+
+  /** ECS callback для спавна стражей пьедестала */
+  private guardSpawn(kind: string, x: number, y: number, pedestalIndex: number): void {
+    if (!this.ecsWorld || !this.ecsMapLoader) return;
+    const { createEnemyInEcs } = require('./ecs/ecs-bridge');
+    const g = new Graphics();
+    g.position.set(x, y);
+    const eid = createEnemyInEcs(
+      this.ecsWorld, kind, x, y, g, this.ecsMapLoader.planckWorld,
+      Cat.Enemy, Cat.Enemy | Cat.Player | Cat.Projectile | Cat.Ground
+    );
+    this.dynamic.addChild(g);
+    // Set aggro and guardOf via Enemy component
+    const { Enemy } = require('./ecs/ecs-components');
+    Enemy[eid].aggro = true;
+    Enemy[eid].guardOf = pedestalIndex;
+  }
+
+  private getEnemyStats(kind: string): { r: number; hp: number; speed: number; dmg: number } {
+    const stats: Record<string, { r: number; hp: number; speed: number; dmg: number }> = {
+      draugr:  { r: 6, hp: 3, speed: 52, dmg: 1 },
+      varg:    { r: 6, hp: 3, speed: 68, dmg: 1 },
+      raven:   { r: 5, hp: 2, speed: 78, dmg: 1 },
+      shroom:  { r: 5, hp: 3, speed: 40, dmg: 1 },
+      crawler: { r: 6, hp: 2, speed: 56, dmg: 1 },
+      frost:   { r: 7, hp: 4, speed: 48, dmg: 1 },
+      reaper:  { r: 10, hp: 16, speed: 58, dmg: 1 },
+      spider:  { r: 11, hp: 12, speed: 44, dmg: 1 },
+      giant:   { r: 13, hp: 20, speed: 44, dmg: 2 },
+      snake:   { r: 16, hp: 14, speed: 0,  dmg: 1 },
+      ghost:   { r: 6, hp: 5, speed: 100, dmg: 1 },
+    };
+    return stats[kind] || { r: 5, hp: 1, speed: 50, dmg: 1 };
+  }
 
   constructor(container: HTMLElement, cbs: EngineCallbacks) {
     this.container = container;
@@ -343,6 +377,7 @@ export class Engine {
         onStepAudio: () => audio.step(),
         stepTRef: this.stepT,
         realTRef: this.realT,
+        guardSpawn: (kind: string, x: number, y: number, idx: number) => this.guardSpawn(kind, x, y, idx),
       });
     }
   }
@@ -491,14 +526,14 @@ export class Engine {
     // Строим текстуры — тайлы в tileLayer (под сущностями)
     const tileResult = buildAllTileTextures(map, this.roofSnow);
     tileResult.wallSprites.forEach(ws => this.tileLayer.addChild(ws));
-    tileResult.houseSprites.forEach(hs => this.tileLayer.addChild(hs));
+    tileResult.houseSprites.forEach(hs => this.tileLayer.addChild(hs.spr));
     this.wallCache = tileResult.wallCache;
     this.houseCache = tileResult.houseCache;
 
     // Создаём ECS Map Loader
     this.ecsMapLoader = new EcsMapLoader({
       world: this.ecsWorld,
-      planckWorld: new PlanckWorld(Cat, 1/60),
+      planckWorld: new PlanckWorld(),
       dynamicContainer: this.dynamic,
       openedChests: this.store.openedChests,
       takenPedestals: this.store.takenPedestals,
@@ -570,6 +605,7 @@ export class Engine {
         onStepAudio: () => audio.step(),
         stepTRef: this.stepT,
         realTRef: this.realT,
+        guardSpawn: (kind: string, x: number, y: number, idx: number) => this.guardSpawn(kind, x, y, idx),
       });
     }
   }
@@ -622,8 +658,10 @@ export class Engine {
       else {
         const effectiveDt = rdt * this.state.timeScale;
         // ECS Game Loop
-        this.ecsGameLoop.tick(effectiveDt, 1);
-        this.realT = this.ecsGameLoop.realT;
+        if (this.ecsGameLoop) {
+          this.ecsGameLoop.tick(effectiveDt, 1);
+          this.realT = this.ecsGameLoop.realT;
+        }
       }
     } else {
       audio.setIntensity(0);
@@ -633,9 +671,24 @@ export class Engine {
     }
 
     // Рендеринг через ECS
-    this.ecsGameLoop.render(rdt);
+    if (this.ecsGameLoop) this.ecsGameLoop.render(rdt);
     // Minimap update через утилиту из map-display.ts
-    drawMinimap(this.minimapCanvas, this.mmBase, this.map, this.player, this.realT);
+    if (this.minimapCanvas && this.mmBase) {
+      const ctx = this.minimapCanvas.getContext("2d");
+      if (ctx) {
+        drawMinimap(ctx, this.mmBase, {
+          map: this.map,
+          player: this.player,
+          shrines: [],
+          secretKnown: false,
+          stashSpot: { x: 0, y: 0 },
+          nornsFavor: false,
+          pedestals: [],
+          target: null,
+          realT: this.realT,
+        });
+      }
+    }
   }
 
   /* ================= NPC ================= */
@@ -698,10 +751,10 @@ export class Engine {
   }
 
   private float(x: number, y: number, text: string, color: number) {
-    // Float text теперь добавляется через ECS render system
-    // Вызывается из ecs-game-loop через addFloatText
     import('./ecs/ecs-systems/render-system').then(({ addFloatText }) => {
-      addFloatText(text, x, y, color, this.floatLayer);
+      import("pixi.js").then(({ Text }) => {
+        addFloatText(this.floatLayer, { createText: (t: string, s: any) => new Text({ ...s, text: t }) }, x, y, text, color);
+      });
     });
   }
 
@@ -709,8 +762,24 @@ export class Engine {
 
   drawBigMap(c: HTMLCanvasElement) {
     if (!this.map) return;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
     // Используем утилиту из map-display.ts для рендеринга большой карты
-    drawBigMap(c, this.map, this.player, this.dungeonBossDead.bind(this), this.quests.trackedTarget());
+    drawBigMap(ctx, this.mmBase!, 2, {
+      map: this.map,
+      shrines: this.ow?.shrines ?? [],
+      dungeonBossDead: this.dungeonBossDead.bind(this),
+      dungeonEntries: this.ow?.dungeonEntries ?? [],
+      treeAltar: this.ow?.treeAltar ?? { x: 0, y: 0 },
+      player: { x: this.player.x, y: this.player.y },
+      target: this.quests.trackedTarget(),
+      secretKnown: this.flags.secretKnown,
+      stashSpot: this.ow?.stashSpot ?? { x: 0, y: 0 },
+      pedestals: (this.map.pedestals ?? []).map((p) => ({ x: p.x, y: p.y, taken: this.store.takenPedestals.has(`ped_${p.x}_${p.y}`) })),
+      bossRoom: this.map.isDungeon ? this.map.bossRoom : { x: 0, y: 0, w: 0, h: 0 },
+      bossSpot: this.map.isDungeon ? this.map.bossSpot : { x: 0, y: 0 },
+      dungeonId: this.map.isDungeon ? 0 : -1,
+    });
   }
 
   /* ===== Вспомогательные поля для доступа из других методов ===== */

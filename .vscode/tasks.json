@@ -23,6 +23,21 @@
       "options": {
         "cwd": "${workspaceFolder}"
       }
+    },
+    {
+      "label": "Remove Chrome Debug Dir",
+      "type": "shell",
+      "command": "rm -rf /tmp/vardlokkur-chrome-debug",
+      "problemMatcher": []
+    },
+    {
+      "label": "Launch Chrome Debug",
+      "type": "shell",
+      "command": "rm -rf /tmp/vardlokkur-chrome-debug && open -g -a 'Google Chrome' --args --remote-debugging-port=9222 --no-first-run --no-default-browser-check --user-data-dir=/tmp/vardlokkur-chrome-debug",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "never"
+      }
     }
   ]
 }

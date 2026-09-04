@@ -251,6 +251,7 @@ export function spawnFogGhost(
 
   Enemy[eid] = {
     kind: 'ghost',
+    radius: 6,
     facingX: 1, facingY: 0,
     t: 0, state: 'appear',
     aggro: true, hidden: false,

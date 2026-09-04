@@ -74,7 +74,7 @@ export function createEnemyPrefabs(world: World): Record<string, number> {
     Health.max[eid] = stats.hp;
     RenderLayer.value[eid] = 50;
     Enemy[eid] = {
-      kind, facingX: 1, facingY: 0, t: 0, state: 'idle', aggro: false,
+      kind, radius: stats.r, facingX: 1, facingY: 0, t: 0, state: 'idle', aggro: false,
       hidden: kind === 'crawler', lungeT: 0, freezeT: 0, flashT: 0,
       seed: 0, speed: stats.speed, dmg: stats.dmg, stateT: 0,
       pathI: 0, repathT: 0.5, contactCd: 0, guardOf: -1,
