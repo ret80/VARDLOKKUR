@@ -41,9 +41,11 @@ import {
 } from './ecs-systems/drops-system';
 import {
   fogUpdateSystem,
+  createFogState,
 } from './ecs-systems/fog-system';
 import {
   tryInteract,
+  onEnemyKilledEcs,
 } from './ecs-systems/interaction-system';
 import {
   renderSystem,
@@ -151,7 +153,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     
     // ===== 3. Обработка действий =====
     processActions(input, bus, () => {
-      interaction.tryInteract((id: string) => startDialogue(id));
+      tryInteract(world, peid, store, bus, (id: string) => startDialogue(id));
     }, inputState);
 
     // ===== 4. Лук =====
@@ -240,11 +242,31 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       playerDomain
     );
 
-    // ===== 14. Обновить дропы =====
-    drops.updateDrops(dt);
+    // ===== 14. Обновить дропы (ECS) =====
+    dropsUpdateSystem(
+      world,
+      dt,
+      peid,
+      store,
+      bus,
+      () => {}, // onDropRemove
+      playerDomain
+    );
 
-    // ===== 15. Обновить туман =====
-    fog.updateFog(dt, rdt);
+    // ===== 15. Обновить туман (ECS) =====
+    const fogState = createFogState();
+    fogUpdateSystem(
+      world,
+      peid,
+      dt,
+      rdt,
+      fogState,
+      map,
+      flags,
+      bus,
+      (kind: string, x: number, y: number) => -1, // spawnEnemyInEcs - заглушка
+      () => flags.runes
+    );
 
     // ===== 16. Двери, зоны, боссы =====
     updateDoors(world, peid, store, flags, toast, pushHud);

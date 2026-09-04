@@ -76,10 +76,7 @@ export {
 
 export {
   tryInteract,
-  openChest,
-  lightShrine,
-  openDoor,
-  takeFromPedestal,
+  onEnemyKilledEcs,
 } from './interaction-system';
 
 export {

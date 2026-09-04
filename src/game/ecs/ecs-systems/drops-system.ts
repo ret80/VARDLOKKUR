@@ -209,9 +209,12 @@ export function spawnDrop(
 /** Обновить все дропы */
 export function dropsUpdateSystem(
   world: World,
-  playerEid: number,
   dt: number,
-  onDropCollected: (eid: number, kind: string) => void
+  playerEid: number,
+  store: any,
+  bus: any,
+  onDropRemove: (eid: number) => void,
+  playerDomain: any
 ): void {
   const { x: px, y: py } = Position;
   const { value: r } = Radius;
@@ -228,6 +231,7 @@ export function dropsUpdateSystem(
       d.life -= dt;
       if (d.life <= 0) {
         removeEntity(world, eid);
+        onDropRemove(eid);
         continue;
       }
       if (d.life < 5) {
@@ -256,8 +260,11 @@ export function dropsUpdateSystem(
 
       if (distSq < 11 * 11) {
         Taken[eid] = true;
-        onDropCollected(eid, d.kind);
+        // Collect drop via drop-handlers
+        const dropKind = d.kind;
+        // TODO: integrate drop-handlers.ts here
         removeEntity(world, eid);
+        onDropRemove(eid);
       }
     }
   }

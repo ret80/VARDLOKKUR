@@ -2,32 +2,53 @@
 # Dependencies
 node_modules/
 
-# Build artifacts
+# Build outputs
 dist/
 build/
-*.js.map
-*.ts.map
-*.mjs.map
-
-# Environment
-.env
-.env.local
-*.env.*
-
-# Editors
-.vscode/
-.idea/
+target/
 
 # Logs
 *.log
 
-# Temporary files
-*.tmp
-*.temp
+# Environment variables
+.env
+.env.local
+*.env.*
+
+# IDE files
+.vscode/
+.idea/
 *.swp
 *.swo
+*.tmp
 
-# OS
+# Python specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# MyPy cache
+.mypy_cache/
+
+# Pytest cache
+.pytest_cache/
+
+# Distribution / packaging
+.Python
+*.egg-info/
+.eggs/
+.installed.cfg
+*.egg
+
+# OS generated files
 .DS_Store
 Thumbs.db
 
@@ -54,218 +75,4 @@ Thumbs.db
 *.tar.bz2
 *.tar.xz
 *.tar.zst
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-.venv/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage*
-.nocoverage*
-
-# Node.js
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-node_modules/
-jspm_packages/
-typings/
-
-# React
-*.hot-update.json
-*.hot-update.js
-
-# Vite
-vite.config.js.timestamp*
-vite.config.ts.timestamp*
-
-# Electron
-electron-builder.yaml
-electron-builder.json
-dist-electron/
-release/
-*.app
-*.exe
-*.msi
-*.deb
-*.rpm
-*.AppImage
-*.dmg
-*.pkg
-*.snap
-
-# PixiJS
-pixi.js.cache/
-
-# Lock files
-package-lock.json
-yarn.lock
-
-# Test
-.jest/
-jest.config.js
-jest.setup.js
-
-# ESLint
-.eslintcache
-
-# Prettier
-.prettierrc.js
-
-# Babel
-.babelrc
-.babelrc.js
-
-# TypeScript
-*.tsbuildinfo
-.next/
-.nuxt/
-.vuepress/dist
-.output
-
-# Next.js
-.next/
-out/
-
-# Nuxt.js
-.nuxt/
-dist/
-
-# VuePress
-.vuepress/dist
-
-# Gridsome
-.gridsome/
-
-# Docusaurus
-.docusaurus
-
-# Ionic
-ionic.config.json
-
-# Cordova
-config.xml
-
-# Ionic
-Ionic/
-
-# Capacitor
-capacitor.config.json
-
-# Expo
-.expo/
-.expo-shared/
-
-# Webpack
-webpack.config.js
-
-# Rollup
-rollup.config.js
-
-# Browser-sync
-.browser-sync*
-
-# Grunt
-Gruntfile.js
-
-# Gulp
-gulpfile.js
-
-# Database
-*.db
-*.db.*
-
-# Backup
-*.bak
-*.backup
-*.old
-
-# Sensitive
-config/secrets.yml
-secrets.yml
-.env.production
-.env.development
-.env.test
-
-# Development
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-
-# System
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-desktop.ini
-
-# IDE
-*.swp
-*.swo
-*~
-
-# Temp
-.tmp
-.temp
-
-# Cache
-.cache
-.nyc_output
-coverage/
-.nyc_output/
-istanbul/
-.reports/
-.reports
-
-# Distribution
-dist-electron/
-
-# Output of electron builder
-build/
-dist/
-*.dmg
-*.exe
-*.msi
-*.deb
-*.rpm
-*.AppImage
-*.zip
-*.7z
-*.tar.gz
-*.tar.xz
-*.tar.bz2
-
-# Electron specific
-electron/
-electron.exe
-Electron.app
-
-# PixiJS specific
-node_modules/pixi.js/
-
-# Map files
-*.js.map
-*.ts.map
-*.mjs.map
-
-# Specific files mentioned in changes
-node_modules/
-
 ```
