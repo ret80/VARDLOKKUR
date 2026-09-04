@@ -312,8 +312,15 @@ export class GameStore {
   /** Получить Enemy component для entity ID */
   getEnemy(eid: number): any {
     if (!this._state.ecsWorld || eid < 0) return null;
-    const { Enemy } = require('../ecs/ecs-components');
-    return Enemy[eid] || null;
+    const { Enemy, poolGet, StringPool } = require('../ecs/ecs-components');
+    if (eid >= Enemy.kind.length) return null;
+    return {
+      kind: poolGet(StringPool.enemyKinds, Enemy.kind[eid]),
+      state: Enemy.state[eid],
+      aggro: !!Enemy.aggro[eid],
+      hidden: !!Enemy.hidden[eid],
+      guardOf: Enemy.guardOf[eid],
+    };
   }
 
   /** Получить Position для entity ID */
