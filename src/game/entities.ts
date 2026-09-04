@@ -2,6 +2,7 @@
 
 import { Graphics } from "pixi.js";
 import type { EnemyKind, Vec, DropKind, ProjectileKind, ChestItem } from "./world";
+export type { EnemyKind, Vec, DropKind, ProjectileKind, ChestItem };
 
 // ============================================================
 // 1. ИНТЕРФЕЙСЫ ДАННЫХ (только то, что нужно для отрисовки)
@@ -188,7 +189,7 @@ function P(g: Graphics, x: number, y: number, w: number, h: number, c: number, a
 }
 
 // ---- renderPlayer ----
-function renderPlayer(g: Graphics, data: IPlayerData, time: number, extra: IPlayerExtra) {
+export function renderPlayer(g: Graphics, data: IPlayerData, time: number, extra: IPlayerExtra) {
   g.clear();
   const p = data;
   const bob = p.moving ? Math.sin(p.animT * 12) * 1.2 : Math.sin(time * 2) * 0.4;
@@ -287,7 +288,7 @@ function renderPlayer(g: Graphics, data: IPlayerData, time: number, extra: IPlay
 }
 
 // ---- renderEnemy ----
-function renderEnemy(g: Graphics, data: IEnemyData, time: number) {
+export function renderEnemy(g: Graphics, data: IEnemyData, time: number) {
   g.clear();
   if (data.dead) return;
   const e = data;
@@ -510,7 +511,7 @@ function renderEnemy(g: Graphics, data: IEnemyData, time: number) {
 }
 
 // ---- renderNpc ----
-function renderNpc(g: Graphics, data: INpcData, time: number, mark: boolean) {
+export function renderNpc(g: Graphics, data: INpcData, time: number, mark: boolean) {
   g.clear();
   const bob = Math.sin(time * 2 + data.id.length) * 0.5;
   g.ellipse(0, 5, 5, 2).fill({ color: 0x05080d, alpha: 0.5 });
@@ -577,7 +578,7 @@ function renderNpc(g: Graphics, data: INpcData, time: number, mark: boolean) {
 }
 
 // ---- renderDrop ----
-function renderDrop(g: Graphics, data: IDropData, time: number) {
+export function renderDrop(g: Graphics, data: IDropData, time: number) {
   g.clear();
   if (data.taken) return;
   const bob = Math.sin(time * 3 + data.t) * 1.5;
@@ -685,7 +686,7 @@ function renderDrop(g: Graphics, data: IDropData, time: number) {
 }
 
 // ---- renderProjectile ----
-function renderProjectile(g: Graphics, data: IProjectileData, time: number) {
+export function renderProjectile(g: Graphics, data: IProjectileData, time: number) {
   g.clear();
   const a = Math.atan2(data.vy, data.vx);
   const cos = Math.cos, sin = Math.sin;
@@ -722,7 +723,7 @@ function renderProjectile(g: Graphics, data: IProjectileData, time: number) {
 }
 
 // ---- renderChest ----
-function renderChest(g: Graphics, data: IChestData) {
+export function renderChest(g: Graphics, data: IChestData) {
   g.clear();
   g.ellipse(0, 5, 7, 2.4).fill({ color: 0x05080d, alpha: 0.5 });
   P(g, -6, -2, 12, 7, 0x5a4632); P(g, -6, -2, 12, 2, 0x6e5840);
@@ -737,7 +738,7 @@ function renderChest(g: Graphics, data: IChestData) {
 }
 
 // ---- renderPedestal ----
-function renderPedestal(g: Graphics, data: IPedestalData, time: number) {
+export function renderPedestal(g: Graphics, data: IPedestalData, time: number) {
   g.clear();
   g.ellipse(0, 7, 8, 2.6).fill({ color: 0x05080d, alpha: 0.5 });
   P(g, -6, 2, 12, 4, 0x4e5a68); P(g, -6, 2, 12, 1, 0x5c6875);
@@ -759,7 +760,7 @@ function renderPedestal(g: Graphics, data: IPedestalData, time: number) {
 }
 
 // ---- renderShrine ----
-function renderShrine(g: Graphics, data: IShrineData, time: number) {
+export function renderShrine(g: Graphics, data: IShrineData, time: number) {
   g.clear();
   g.ellipse(0, 4, 6, 1.5).fill({ color: 0x05080d, alpha: 0.5 });
   // камень, воткнутый в землю: шапка, верх, тело с гранями
@@ -781,7 +782,7 @@ function renderShrine(g: Graphics, data: IShrineData, time: number) {
 }
 
 // ---- renderDoor ----
-function renderDoor(g: Graphics, data: IDoorData) {
+export function renderDoor(g: Graphics, data: IDoorData) {
   g.clear();
   const h = 14 * (1 - data.open);
   if (h <= 0.5) return;
@@ -794,7 +795,7 @@ function renderDoor(g: Graphics, data: IDoorData) {
 }
 
 // ---- renderBarrier ----
-function renderBarrier(g: Graphics, data: IBarrierData, time: number) {
+export function renderBarrier(g: Graphics, data: IBarrierData, time: number) {
   g.clear();
   if (!data.active) return;
   const pulse = 0.5 + Math.sin(time * 3) * 0.3;
@@ -806,7 +807,7 @@ function renderBarrier(g: Graphics, data: IBarrierData, time: number) {
 }
 
 // ---- renderAltar ----
-function renderAltar(g: Graphics, data: IAltarData, time: number) {
+export function renderAltar(g: Graphics, data: IAltarData, time: number) {
   g.clear();
   g.ellipse(0, 6, 8, 2).fill({ color: 0x05080d, alpha: 0.45 });
   const eyeP = 0.7 + Math.sin(time * 2.5) * 0.3;
@@ -852,7 +853,7 @@ function renderAltar(g: Graphics, data: IAltarData, time: number) {
 // 3. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (создание сущностей)
 // ============================================================
 
-const ENEMY_STATS: Record<EnemyKind, { r: number; hp: number; speed: number; dmg: number }> = {
+export const ENEMY_STATS: Record<EnemyKind, { r: number; hp: number; speed: number; dmg: number }> = {
   draugr:  { r: 6, hp: 3, speed: 52, dmg: 1 },
   varg:    { r: 6, hp: 3, speed: 68, dmg: 1 },
   raven:   { r: 5, hp: 2, speed: 78, dmg: 1 },

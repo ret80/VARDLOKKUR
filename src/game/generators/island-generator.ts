@@ -2,6 +2,20 @@
 import { mulberry, NoiseGenerator } from "../noise";
 import { WorldData, Tl, Vec, idx, inB } from "./types";
 
+// Типы NPC для спавна
+interface NpcDef {
+  id: string;
+  name: string;
+}
+
+const NPC_DEFS: NpcDef[] = [
+  { id: "eirik", name: "Эйрик" },
+  { id: "astrid", name: "Астрид" },
+  { id: "harald", name: "Гаральд" },
+  { id: "raven", name: "Ворон" },
+  { id: "daughter", name: "Дочь" },
+];
+
 interface IslandState {
   W: number;
   H: number;
@@ -27,6 +41,7 @@ export class IslandGenerator {
     const { cx, cy, R1, R2 } = this.buildBiomes();
     const ruinsC = this.buildRuins();
     this.smoothBiomes();
+    this.spawnNpcs(cx, cy, R1, R2);
     const w = this.createWorldData();
     return { w, cx, cy, R1, R2, ruinsC };
   }
@@ -105,11 +120,55 @@ export class IslandGenerator {
     }
   }
 
+  /** Спавн NPC в деревнях и на путях */
+  private spawnNpcs(cx: number, cy: number, R1: number, R2: number): void {
+    const npcs: { x: number; y: number; id: string; name: string }[] = [];
+    const placed = new Set<string>();
+
+    // Размещаем NPC в лесных/деревенских зонах
+    for (let i = 0; i < NPC_DEFS.length; i++) {
+      const def = NPC_DEFS[i];
+      let attempts = 0;
+      while (attempts < 80) {
+        attempts++;
+        // Ищем место в зоне FOREST (между R1 и R2) или в RUINS
+        const angle = this.s.rng() * Math.PI * 2;
+        const dist = R1 + this.s.rng() * (R2 - R1) + 5;
+        const nx = Math.round(cx + Math.cos(angle) * dist);
+        const ny = Math.round(cy + Math.sin(angle) * dist);
+
+        if (!this.inBounds(nx, ny)) continue;
+        const key = `${nx},${ny}`;
+        if (placed.has(key)) continue;
+
+        const tile = this.getTile(nx, ny);
+        // Ставим NPC на FOREST, RUINS или SWAMP (но не WATER/SHORE)
+        if (tile !== Tl.FOREST && tile !== Tl.RUINS && tile !== Tl.SWAMP) continue;
+
+        // Проверяем расстояние от других NPC (минимум 12 тайлов)
+        let tooClose = false;
+        for (const n of npcs) {
+          const d = Math.hypot(n.x - nx, n.y - ny);
+          if (d < 12) { tooClose = true; break; }
+        }
+        if (tooClose) continue;
+
+        npcs.push({ x: nx, y: ny, id: def.id, name: def.name });
+        placed.add(key);
+        break;
+      }
+    }
+
+    this.npcs = npcs;
+  }
+
+  private npcs: { x: number; y: number; id: string; name: string }[] = [];
+
   private createWorldData(): WorldData {
     const w: WorldData = {
       W: this.s.W, H: this.s.H, tiles: this.s.tiles, nav: null as unknown as import("navmesh").NavMesh,
       isDungeon: false, dungeonId: -1, dungeonName: "", bossReward: null,
-      spawn: { x: 0, y: 0 }, zones: [], shrines: [], npcs: [], chests: [],
+      spawn: { x: 0, y: 0 }, zones: [], shrines: [], npcs: this.npcs, chests: [],
       pedestals: [], spawns: [], doors: [], souls: [], ambient: [], dungeonEntries: [],
       exitSpot: { x: 0, y: 0 }, hornSpot: { x: 0, y: 0 }, meadSpot: { x: 0, y: 0 },
       oreSpot: { x: 0, y: 0 }, bearSpot: { x: 0, y: 0 },
