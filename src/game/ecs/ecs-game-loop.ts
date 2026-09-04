@@ -82,6 +82,8 @@ export interface EcsGameLoop {
   setPlayerEid: (eid: number) => void;
   getPlayerEid: () => number;
   isDungeonBossDead: (id: number) => boolean;
+  getDropsForTransition: () => Array<{ kind: string; x: number; y: number; life: number; ambientIdx?: number }>;
+  setPlanckWorld: (pw: PlanckWorld) => void;
 }
 
 export interface EcsGameLoopConfig {
@@ -113,11 +115,6 @@ export interface EcsGameLoopConfig {
   hud: any;
   quests: any;
   dialogue: any;
-  drops: any;
-  fog: any;
-  combat: any;
-  ai: any;
-  interaction: any;
   dungeonBossDead: (id: number) => boolean;
   toast: (msg: string) => void;
   float: (x: number, y: number, text: string, color: number) => void;
@@ -136,7 +133,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   const {
     world, bus, store, planckWorld, app, dynamic, floatLayer, gameWorld,
     input, state, cam, map, flags, playerEid: playerEidRef,
-    playerDomain, hud, quests, dialogue, drops, fog, combat, ai, interaction,
+    playerDomain, hud, quests, dialogue,
     dungeonBossDead, toast, float: addFloat, pushHud, startDialogue, npcSig,
     onStepAudio, stepTRef, realTRef,
   } = config;
@@ -144,6 +141,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   let _stepT = stepTRef;
   let _realT = realTRef;
   let _playerEid = playerEidRef;
+  let _planckWorld = planckWorld;
 
   /** Выполнить один кадр */
   function tick(rdt: number, timeScale: number): void {
@@ -176,7 +174,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // console.log('[GAME LOOP] Before physics step: Position.x[peid]=', Position.x[peid], 'Position.y[peid]=', Position.y[peid]);
 
     // ===== 6. Физика Planck.js (шаг) =====
-    planckWorld.step(dt);
+    _planckWorld.step(dt);
 
     // console.log('[GAME LOOP] After physics step: Position.x[peid]=', Position.x[peid], 'Position.y[peid]=', Position.y[peid]);
 
@@ -238,7 +236,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       dt,
       peid,
       flags.ghostBane,
-      planckWorld,
+      _planckWorld,
       (eid) => {}, // onProjectileRemove
       addFloat,
       () => {}, // audio.clang
@@ -305,5 +303,23 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     setPlayerEid: (eid: number) => { _playerEid = eid; },
     getPlayerEid: () => _playerEid,
     isDungeonBossDead: (id: number) => dungeonBossDead(id),
+    getDropsForTransition: () => {
+      const drops: Array<{ kind: string; x: number; y: number; life: number; ambientIdx?: number }> = [];
+      try {
+        const { Drop } = require('./ecs-components');
+        const { query } = require('bitecs');
+        for (const eid of query(world, [Drop])) {
+          drops.push({ 
+            kind: Drop.kind[eid], 
+            x: Drop.x[eid], 
+            y: Drop.y[eid], 
+            life: Drop.life[eid], 
+            ambientIdx: Drop.ambientIdx[eid] 
+          });
+        }
+      } catch (e) {}
+      return drops;
+    },
+    setPlanckWorld: (pw: PlanckWorld) => { _planckWorld = pw; },
   };
 }

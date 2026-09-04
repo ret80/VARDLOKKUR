@@ -322,11 +322,18 @@ function dungeonUnlocked(id: number, f: any): { ok: boolean; req: string } {
 export function onEnemyKilledEcs(world: World, enemyEid: number, store: GameStore, bus: EventBus): void {
   if (!hasComponent(world, enemyEid, Enemy)) return;
   const g = Enemy[enemyEid];
-  if (g.guardOf < 0 || g.guardOf >= store.entities.pedestals.all.length) return;
-  const pd = store.entities.pedestals.all[g.guardOf];
-  if (!pd || pd.taken || pd.guardsLeft <= 0) return;
-  pd.guardsLeft = Math.max(0, pd.guardsLeft - 1);
-  if (pd.guardsLeft === 0) {
+  if (g.guardOf < 0) return;
+  
+  // Найти пьедестал через ECS query
+  const { Pedestal } = require('../ecs-components');
+  const { query } = require('bitecs');
+  const pedestals = query(world, [Pedestal]);
+  if (g.guardOf >= pedestals.length) return;
+  
+  const pdEid = pedestals[g.guardOf];
+  if (!pdEid || Pedestal.taken[pdEid] || Pedestal.guardsLeft[pdEid] <= 0) return;
+  Pedestal.guardsLeft[pdEid] = Math.max(0, Pedestal.guardsLeft[pdEid] - 1);
+  if (Pedestal.guardsLeft[pdEid] === 0) {
     bus.emit('toast', { msg: 'Печать пьедестала пала' });
     audio.chime();
   }

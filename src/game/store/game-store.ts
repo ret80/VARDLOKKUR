@@ -15,30 +15,17 @@ import { Graphics, Text } from "pixi.js";
 import { FlagDomain, GameFlags } from "./flag-domain";
 import { PlayerDomain } from "./player-domain";
 import { Player, Enemy } from "../entities";
-import {
-  WorldEntities,
-  EnemyRt,
-  ProjectileRt,
-  DropRt,
-  ChestRt as ChestRtType,
-  PedestalRt as PedestalRtType,
-  ShrineRt as ShrineRtType,
-  NpcRt as NpcRtType,
-  DoorRt as DoorRtType,
-  BarrierRt as BarrierRtType,
-  AltarRt as AltarRtType,
-} from "./world-entities";
 
 // ── Переопределяем типы из world-entities, чтобы избежать конфликтов ──
 
-export interface ChestRt extends ChestRtType {
+export interface ChestRt {
   x: number; y: number;
   item: string;
   opened: boolean;
   g: Graphics;
 }
 
-export interface PedestalRt extends PedestalRtType {
+export interface PedestalRt {
   x: number; y: number;
   taken: boolean;
   guardsLeft: number;
@@ -46,39 +33,49 @@ export interface PedestalRt extends PedestalRtType {
   g: Graphics;
 }
 
-export interface ShrineRt extends ShrineRtType {
+export interface ShrineRt {
   x: number; y: number;
   g: Graphics;
 }
 
-export interface NpcRt extends NpcRtType {
+export interface NpcRt {
   id: string; name: string;
   x: number; y: number;
   g: Graphics;
 }
 
-export interface DoorRt extends DoorRtType {
+export interface DoorRt {
   x: number; y: number;
   open: number;
   locked: boolean;
   g: Graphics;
 }
 
-export interface BarrierRt extends BarrierRtType {
+export interface BarrierRt {
   x: number; y: number;
   active: boolean;
   g: Graphics;
 }
 
-export interface AltarRt extends AltarRtType {
+export interface AltarRt {
   x: number; y: number;
   g: Graphics;
 }
 
 export interface FloatText { txt: Text; life: number }
 
-// Ре-экспорт типов из world-entities для совместимости
-export type { ProjectileRt, DropRt } from "./world-entities";
+// Типы для снарядов и дропов (для обратной совместимости)
+export interface ProjectileRt {
+  x: number; y: number; vx: number; vy: number;
+  kind: string;
+  g: Graphics;
+}
+
+export interface DropRt {
+  x: number; y: number;
+  kind: string;
+  g: Graphics;
+}
 
 /** Колбэки движка */
 export interface EngineCallbacks {
@@ -119,17 +116,6 @@ export interface GameStoreConfig {
   player: Player;
   // PlayerDomain — инкапсулированные мутации игрока
   playerDomain?: PlayerDomain;
-  // Массивы движка — store.entities ссылается на них
-  entitiesArrays?: {
-    enemies: any[];
-    projectiles: any[];
-    drops: any[];
-    chests: any[];
-    pedestals: any[];
-    shrines: any[];
-    npcs: any[];
-    doors: any[];
-  };
   // Planck.js world для удаления дропов
   planckWorld?: any;
 }
@@ -139,7 +125,6 @@ export interface GameStoreState {
   flags: FlagDomain;
   player: Player;
   playerDomain: PlayerDomain | null;
-  entities: WorldEntities;
   map: WorldData | null;
   ow: WorldData | null;
   screen: Screen;
@@ -169,13 +154,12 @@ export class GameStore {
     this._config = config;
     this._flags = config.flags;
 
-    const { flags, services, callbacks, player, playerDomain, entitiesArrays, planckWorld } = config;
+    const { flags, services, callbacks, player, playerDomain, planckWorld } = config;
 
     this._state = {
       flags: new FlagDomain(flags),
       player,
       playerDomain: playerDomain || null,
-      entities: new WorldEntities(entitiesArrays),
       map: null,
       ow: null,
       screen: "title",
@@ -215,11 +199,6 @@ export class GameStore {
   /** Получить PlayerDomain (инкапсулированные мутации) */
   get playerDomain(): PlayerDomain | null {
     return this._state.playerDomain;
-  }
-
-  /** Получить WorldEntities */
-  get entities(): WorldEntities {
-    return this._state.entities;
   }
 
   /** Получить сервисы */
@@ -284,11 +263,11 @@ export class GameStore {
   }
 
   // ── Управление барьером/алтарём ──
-
-  setBarrier(b: BarrierRt | null): void { this._state.entities.setBarrier(b); }
-  setAltar(a: AltarRt | null): void { this._state.entities.setAltar(a); }
-  get barrier(): BarrierRt | null { return this._state.entities.barrier; }
-  get altar(): AltarRt | null { return this._state.entities.altar; }
+  // Barrier и Altar теперь хранятся в ECS, эти методы устарели
+  setBarrier(b: BarrierRt | null): void { /* deprecated - ECS handles barriers */ }
+  setAltar(a: AltarRt | null): void { /* deprecated - ECS handles altars */ }
+  get barrier(): BarrierRt | null { return null; /* deprecated */ }
+  get altar(): AltarRt | null { return null; /* deprecated */ }
 
   // ── Босс-референс ──
 
