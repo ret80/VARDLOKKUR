@@ -185,13 +185,13 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     });
 
     // ===== 5. Sync Velocity → Physics Body =====
-    syncVelocityToBody(world);
+    syncVelocityToBody(world, peid);
 
     // ===== 6. Физика Planck.js (шаг) =====
     _planckWorld.step(dt);
 
     // ===== 7. Синхронизация: Planck.js body → Position =====
-    syncBodyToPosition(world);
+    syncBodyToPosition(world, peid);
 
     // ===== 8. Остальные сущности без физики =====
     {

@@ -183,7 +183,7 @@ function endWave(state: FogState, dropDew: boolean, bus: any, getRunes: () => nu
   state.fogTimer = Math.max(60, 80 - getRunes() * 4 + Math.random() * 30);
   
   if (flags) {
-    flags.incrementFlag('fogWaves', 1);
+    flags.fogWaves = (flags.fogWaves || 0) + 1;
   }
   
   audio.setFog(false);
@@ -406,7 +406,7 @@ function endWaveLegacy(state: FogStateLegacy, dropDew: boolean, bus: any, getRun
   state.fogTimer = Math.max(60, 80 - getRunes() * 4 + Math.random() * 30);
   
   if (flags) {
-    flags.incrementFlag('fogWaves', 1);
+    flags.fogWaves = (flags.fogWaves || 0) + 1;
   }
   
   audio.setFog(false);

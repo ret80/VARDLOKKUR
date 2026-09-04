@@ -79,7 +79,7 @@ export function updateSpritePosition(world: World, eid: number): void {
 export function renderSprites(world: World): void {
   const { x: px, y: py } = Position;
 
-  for (const eid of query(world, [Position, Sprite])) {
+  for (const eid of query(world, [Position, SpriteComp])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
     
@@ -133,7 +133,7 @@ export function renderPlayer(
   playerEid: number,
   time: number
 ): void {
-  if (playerEid < 0 || !Player.moving.length) return;
+  if (playerEid < 0 || !Player.moving[playerEid]) return;
   
   const ref = getSpriteRef(playerEid);
   if (!ref) return;

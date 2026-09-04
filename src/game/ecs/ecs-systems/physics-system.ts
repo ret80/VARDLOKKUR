@@ -50,7 +50,7 @@ export function syncPositionToBody(world: World): void {
 }
 
 /** Синхронизировать Velocity из ECS в Planck.js body */
-export function syncVelocityToBody(world: World): void {
+export function syncVelocityToBody(world: World, playerEid?: number): void {
   const { x: vx, y: vy } = Velocity;
 
   for (const eid of query(world, [Velocity, PhysicsBody])) {
@@ -62,7 +62,7 @@ export function syncVelocityToBody(world: World): void {
 }
 
 /** Синхронизировать позицию из Planck.js body в Position */
-export function syncBodyToPosition(world: World): void {
+export function syncBodyToPosition(world: World, playerEid?: number): void {
   const { x: px, y: py } = Position;
 
   for (const eid of query(world, [Position, PhysicsBody])) {
