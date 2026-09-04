@@ -21,7 +21,7 @@ import {
 } from '../ecs-components';
 import { dist2 } from '../../utils';
 import type { EnemyKind, ProjectileKind } from '../../generators/types';
-import type { PlanckWorld } from '../../system/planck-world';
+import type { PlanckWorld } from '../../physics/planck-world';
 import { Vec2 } from 'planck-js';
 
 // ============================================================

@@ -7,7 +7,7 @@ import {
   Direction,
   Player,
 } from '../ecs-components';
-import type { InputSystem, InputState } from '../../system/input-system';
+import type { InputSystem, InputState } from '../../input/input-system';
 import type { EventBus } from '../../event-bus';
 
 // ============================================================

@@ -55,7 +55,7 @@ import {
   processActions,
   updateBow,
 } from './ecs-systems/input-system';
-import type { InputState } from '../system/input-system';
+import type { InputState } from '../input/input-system';
 import {
   updateDoors,
   updateZone,
@@ -63,17 +63,26 @@ import {
 } from './ecs-systems/world-system';
 import { hasComponent } from 'bitecs';
 import { Position, Velocity, PhysicsBody, Player, Direction } from './ecs-components';
-import type { InputSystem } from '../system/input-system';
+import type { InputSystem } from '../input/input-system';
 import type { EventBus } from '../event-bus';
 import type { GameStore } from '../store';
-import type { PlanckWorld } from '../system/planck-world';
+import type { PlanckWorld } from '../physics/planck-world';
 import type { Application, Container } from 'pixi.js';
 import type { FxManager } from '../fx';
-import type { StateManager } from '../system/state-manager';
+import type { StateManager } from '../state/state-manager';
 
 // ============================================================
 // Конфигурация Game Loop
 // ============================================================
+
+export interface EcsGameLoop {
+  tick: (rdt: number, timeScale: number) => void;
+  render: (rdt: number) => void;
+  realT: number;
+  setPlayerEid: (eid: number) => void;
+  getPlayerEid: () => number;
+  isDungeonBossDead: (id: number) => boolean;
+}
 
 export interface EcsGameLoopConfig {
   world: World;
@@ -295,5 +304,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     set realT(v: number) { _realT = v; },
     setPlayerEid: (eid: number) => { _playerEid = eid; },
     getPlayerEid: () => _playerEid,
+    isDungeonBossDead: (id: number) => dungeonBossDead(id),
   };
 }

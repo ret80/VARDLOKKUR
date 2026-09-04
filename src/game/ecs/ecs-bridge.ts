@@ -36,8 +36,8 @@ import {
 } from './ecs-components';
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
 import type { Graphics } from 'pixi.js';
-import type { PlanckWorld } from '../system/planck-world';
-import type { Cat } from '../system/planck-world';
+import type { PlanckWorld } from '../physics/planck-world';
+import type { Cat } from '../physics/planck-world';
 import { createBodyForEntity } from './ecs-systems';
 
 // ============================================================

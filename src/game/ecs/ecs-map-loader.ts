@@ -2,10 +2,10 @@
 
 import { type World } from 'bitecs';
 import { Graphics } from 'pixi.js';
-import { Cat } from '../system/planck-world';
+import { Cat } from '../physics/planck-world';
 import { T, WorldData, Vec, solidTileAt } from '../world';
 import { clamp } from '../utils';
-import type { PlanckWorld } from '../system/planck-world';
+import type { PlanckWorld } from '../physics/planck-world';
 import type { DropKind } from '../generators/types';
 import {
   createPlayerInEcs,

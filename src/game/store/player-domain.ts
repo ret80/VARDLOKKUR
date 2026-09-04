@@ -1,7 +1,7 @@
 /* ============ PlayerDomain — инкапсулированная модель игрока ============ */
 
 import { Vec } from "../world";
-import type { PlayerModel } from "./models";
+import { Player } from "../entities";
 
 /** События игрока */
 export interface PlayerEvents {
@@ -198,7 +198,7 @@ export class PlayerDomain implements IPlayerDomain, IPlayerMutations {
   }
 
   /** Получить immutable модель */
-  toModel(): PlayerModel {
+  toModel(): Player {
     return {
       x: this._x, y: this._y,
       vx: this._vx, vy: this._vy,
