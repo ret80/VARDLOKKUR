@@ -37,26 +37,26 @@ export function updatePlayerInput(
   const iy = captured.iy;
   const mag = Math.hypot(ix, iy);
 
-  const p = Player[playerEid];
+  const p = Player;
   if (!p) return { stepT, realT };
 
   // Обновляем направление и анимацию
   if (mag > 0.12) {
     vx[playerEid] = ix * 92;
     vy[playerEid] = iy * 92;
-    p.moving = true;
+    p.moving[playerEid] = 1;
     dx[playerEid] = ix / Math.max(1, mag);
     dy[playerEid] = iy / Math.max(1, mag);
   } else {
     vx[playerEid] = 0;
     vy[playerEid] = 0;
-    p.moving = false;
+    p.moving[playerEid] = 0;
   }
 
   // Обновляем таймеры игрока
-  if (p.slowT > 0) p.slowT -= 0.016;
-  if (p.hurtT > 0) p.hurtT -= 0.016;
-  if (p.swingT > 0) p.swingT -= 0.016;
+  if (p.slowT[playerEid] > 0) p.slowT[playerEid] -= 0.016;
+  if (p.hurtT[playerEid] > 0) p.hurtT[playerEid] -= 0.016;
+  if (p.swingT[playerEid] > 0) p.swingT[playerEid] -= 0.016;
 
   // Звуки шагов
   stepT -= 0.016;

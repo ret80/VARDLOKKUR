@@ -7,6 +7,7 @@ import {
   Velocity,
   Radius,
   PhysicsBody,
+  PhysicsBodyRegistry,
 } from '../ecs-components';
 
 // ============================================================
@@ -30,13 +31,18 @@ export interface PhysicsCallbacks {
 // Управление физическими телами
 // ============================================================
 
+/** Получить Planck.js body из registry */
+function getBody(eid: number): any {
+  const idx = PhysicsBody.body[eid];
+  return idx > 0 ? PhysicsBodyRegistry[idx - 1] : undefined;
+}
+
 /** Синхронизировать позицию из Position в Planck.js body */
 export function syncPositionToBody(world: World): void {
   const { x: px, y: py } = Position;
-  const pb = PhysicsBody;
 
   for (const eid of query(world, [Position, PhysicsBody])) {
-    const body = pb[eid]?.body;
+    const body = getBody(eid);
     if (body) {
       body.setPosition({ x: px[eid], y: py[eid] });
     }
@@ -46,10 +52,9 @@ export function syncPositionToBody(world: World): void {
 /** Синхронизировать Velocity из ECS в Planck.js body */
 export function syncVelocityToBody(world: World): void {
   const { x: vx, y: vy } = Velocity;
-  const pb = PhysicsBody;
 
   for (const eid of query(world, [Velocity, PhysicsBody])) {
-    const body = pb[eid]?.body;
+    const body = getBody(eid);
     if (body) {
       body.setLinearVelocity(Vec2(vx[eid], vy[eid]));
     }
@@ -59,10 +64,9 @@ export function syncVelocityToBody(world: World): void {
 /** Синхронизировать позицию из Planck.js body в Position */
 export function syncBodyToPosition(world: World): void {
   const { x: px, y: py } = Position;
-  const pb = PhysicsBody;
 
   for (const eid of query(world, [Position, PhysicsBody])) {
-    const body = pb[eid]?.body;
+    const body = getBody(eid);
     if (body) {
       const pos = body.getPosition();
       px[eid] = pos.x;
@@ -81,11 +85,11 @@ export function createBodyForEntity(
   mask: number
 ): void {
   const { x: px, y: py } = Position;
-  const pb = PhysicsBody;
 
   // Создаём физическое тело
   const body = planckWorld.createEntityBody(px[eid], py[eid], radius, category, {});
-  pb[eid] = { body };
+  PhysicsBody.body[eid] = PhysicsBodyRegistry.length + 1;
+  PhysicsBodyRegistry.push(body);
 }
 
 /** Удалить физическое тело сущности */
@@ -93,10 +97,13 @@ export function destroyBodyForEntity(
   planckWorld: any,
   eid: number
 ): void {
-  const pb = PhysicsBody;
-  if (pb[eid]?.body) {
-    planckWorld.destroyBody(pb[eid].body);
-    pb[eid] = { body: null };
+  const idx = PhysicsBody.body[eid];
+  if (idx > 0) {
+    const body = PhysicsBodyRegistry[idx - 1];
+    if (body) {
+      planckWorld.destroyBody(body);
+    }
+    PhysicsBody.body[eid] = 0;
   }
 }
 

@@ -13,6 +13,9 @@ import {
   Health,
   Dead,
   PhysicsBody,
+  poolGet,
+  poolAdd,
+  StringPool,
 } from '../ecs-components';
 import type { DropKind } from '../../generators/types';
 import type { PlanckWorld } from '../../physics/planck-world';
@@ -195,10 +198,13 @@ export function spawnDrop(
   Position.x[eid] = x;
   Position.y[eid] = y;
   Radius.value[eid] = 3;
-  Drop[eid] = { kind, t: Math.random() * 5, magnet, life };
+  Drop.kind[eid] = poolAdd(StringPool.dropKinds, kind);
+  Drop.t[eid] = Math.random() * 5;
+  Drop.magnet[eid] = magnet ? 1 : 0;
+  Drop.life[eid] = life ?? 0;
   Time.value[eid] = 0;
   RenderLayer.value[eid] = 40;
-  Magnet[eid] = magnet;
+  Magnet[eid] = magnet ? 1 : 0;
 
   return eid;
 }
@@ -219,30 +225,27 @@ export function dropsUpdateSystem(
   dropRegistry?: DropHandlerRegistry
 ): void {
   const { x: px, y: py } = Position;
-  const { value: r } = Radius;
-  const t = Time.value;
 
   for (const eid of query(world, [Position, Drop, Time])) {
-    const d = Drop[eid];
-    if (!d || Taken[eid]) continue;
+    if (Taken[eid]) continue;
 
-    t[eid] += dt;
+    Time.value[eid] += dt;
 
     // Remove old drops with alpha blink
-    if (d.life !== undefined) {
-      d.life -= dt;
-      if (d.life <= 0) {
+    if (Drop.life[eid] !== 0) {
+      Drop.life[eid] -= dt;
+      if (Drop.life[eid] <= 0) {
         removeEntity(world, eid);
         onDropRemove(eid);
         continue;
       }
-      if (d.life < 5) {
+      if (Drop.life[eid] < 5) {
         // Alpha blink handled in render system
       }
     }
 
     // Magnet pull to player
-    if (d.magnet && playerEid >= 0) {
+    if (Drop.magnet[eid] && playerEid >= 0) {
       const dx = px[playerEid] - px[eid];
       const dy = py[playerEid] - py[eid];
       const distSq = dx * dx + dy * dy;
@@ -261,10 +264,10 @@ export function dropsUpdateSystem(
       const distSq = dx * dx + dy * dy;
 
       if (distSq < 11 * 11) {
-        Taken[eid] = true;
+        Taken[eid] = 1;
         // Collect drop via drop-handlers
-        const dropKind = d.kind;
-        const handler = dropRegistry?.get(dropKind as DropKind);
+        const dropKind = poolGet(StringPool.dropKinds, Drop.kind[eid]) as DropKind;
+        const handler = dropRegistry?.get(dropKind);
         if (handler) {
           const player = store.player;
           handler.handle({

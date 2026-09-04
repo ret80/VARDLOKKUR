@@ -26,8 +26,13 @@ import {
   Sprite,
   PhysicsBody,
   EnemyAI,
+  EnemyState,
   Time,
   RenderLayer,
+  poolAdd,
+  StringPool,
+  SpriteRegistry,
+  EnemyAIRegistry,
 } from '../ecs-components';
 import { ENEMY_STATS, type EnemyKind } from '../../entities';
 
@@ -50,10 +55,17 @@ export function createPlayerPrefab(world: World): number {
   Health.current[eid] = 12;
   Health.max[eid] = 12;
   RenderLayer.value[eid] = 100;
-  Player[eid] = {
-    moving: false, animT: 0, swingT: 0, hurtT: 0, slowT: 0,
-    hasSword: false, runes: 0, swingDirX: 0, swingDirY: 1, aiming: false,
-  };
+  // SoA поля Player
+  Player.moving[eid] = 0;
+  Player.animT[eid] = 0;
+  Player.swingT[eid] = 0;
+  Player.hurtT[eid] = 0;
+  Player.slowT[eid] = 0;
+  Player.hasSword[eid] = 0;
+  Player.runes[eid] = 0;
+  Player.swingDirX[eid] = 0;
+  Player.swingDirY[eid] = 1;
+  Player.aiming[eid] = 0;
   _playerPrefab = eid;
   return eid;
 }
@@ -73,14 +85,31 @@ export function createEnemyPrefabs(world: World): Record<string, number> {
     Health.current[eid] = stats.hp;
     Health.max[eid] = stats.hp;
     RenderLayer.value[eid] = 50;
-    Enemy[eid] = {
-      kind, radius: stats.r, facingX: 1, facingY: 0, t: 0, state: 'idle', aggro: false,
-      hidden: kind === 'crawler', lungeT: 0, freezeT: 0, flashT: 0,
-      seed: 0, speed: stats.speed, dmg: stats.dmg, stateT: 0,
-      pathI: 0, repathT: 0.5, contactCd: 0, guardOf: -1,
-      fade: kind === 'ghost' ? 0 : 1, dropDew: false,
-    };
-    EnemyAI[eid] = { path: null };
+    // SoA поля Enemy
+    Enemy.kind[eid] = poolAdd(StringPool.enemyKinds, kind);
+    Enemy.radius[eid] = stats.r;
+    Enemy.facingX[eid] = 1;
+    Enemy.facingY[eid] = 0;
+    Enemy.t[eid] = 0;
+    Enemy.state[eid] = EnemyState.idle;
+    Enemy.aggro[eid] = 0;
+    Enemy.hidden[eid] = kind === 'crawler' ? 1 : 0;
+    Enemy.lungeT[eid] = 0;
+    Enemy.freezeT[eid] = 0;
+    Enemy.flashT[eid] = 0;
+    Enemy.seed[eid] = 0;
+    Enemy.speed[eid] = stats.speed;
+    Enemy.dmg[eid] = stats.dmg;
+    Enemy.stateT[eid] = 0;
+    Enemy.pathI[eid] = 0;
+    Enemy.repathT[eid] = 0.5;
+    Enemy.contactCd[eid] = 0;
+    Enemy.guardOf[eid] = -1;
+    Enemy.fade[eid] = kind === 'ghost' ? 0 : 1;
+    Enemy.dropDew[eid] = 0;
+    // EnemyAI
+    EnemyAI.path[eid] = 0;
+    EnemyAIRegistry[eid] = null;
     prefabs[kind] = eid;
   }
   _enemyPrefabs = prefabs;
@@ -97,7 +126,13 @@ export function createProjectilePrefabs(world: World): void {
   Velocity.y[eid] = 0;
   Time.value[eid] = 0;
   RenderLayer.value[eid] = 60;
-  Projectile[eid] = { kind: 'arrow', dmg: 1, life: 3, dist: 0, returning: false, spin: 0 };
+  // SoA поля Projectile
+  Projectile.kind[eid] = poolAdd(StringPool.projectileKinds, 'arrow');
+  Projectile.dmg[eid] = 1;
+  Projectile.life[eid] = 3;
+  Projectile.dist[eid] = 0;
+  Projectile.returning[eid] = 0;
+  Projectile.spin[eid] = 0;
 }
 
 /** Создать префаб дропа */
@@ -107,7 +142,11 @@ export function createDropPrefabs(world: World): void {
   Radius.value[eid] = 3;
   Time.value[eid] = 0;
   RenderLayer.value[eid] = 40;
-  Drop[eid] = { kind: 'heart', t: 0, magnet: false };
+  // SoA поля Drop
+  Drop.kind[eid] = poolAdd(StringPool.dropKinds, 'heart');
+  Drop.t[eid] = 0;
+  Drop.magnet[eid] = 0;
+  Drop.life[eid] = 0;
 }
 
 /** Создать префабы NPC */
@@ -116,7 +155,11 @@ export function createNPCPrefabs(world: World): void {
   addComponents(world, eid, Position, Radius, NPC, Sprite, RenderLayer);
   Radius.value[eid] = 5;
   RenderLayer.value[eid] = 30;
-  NPC[eid] = { id: 'default', name: '' };
+  // SoA поля NPC
+  NPC.id[eid] = poolAdd(StringPool.npcIds, 'default');
+  NPC.name[eid] = poolAdd(StringPool.npcNames, '');
+  // Sprite
+  Sprite.ref[eid] = 0;
 }
 
 /** Создать префаб сундука */
@@ -125,7 +168,11 @@ export function createChestPrefabs(world: World): void {
   addComponents(world, eid, Position, Radius, Chest, Sprite, RenderLayer);
   Radius.value[eid] = 6;
   RenderLayer.value[eid] = 20;
-  Chest[eid] = { item: 'arrows', opened: false };
+  // SoA поля Chest
+  Chest.item[eid] = poolAdd(StringPool.chestItems, 'arrows');
+  Chest.opened[eid] = 0;
+  // Sprite
+  Sprite.ref[eid] = 0;
 }
 
 /** Создать префаб пьедестала */
@@ -134,7 +181,13 @@ export function createPedestalPrefabs(world: World): void {
   addComponents(world, eid, Position, Radius, Pedestal, Sprite, RenderLayer);
   Radius.value[eid] = 6;
   RenderLayer.value[eid] = 10;
-  Pedestal[eid] = { id: 'default', taken: false, guardsLeft: 3, guardsSpawned: false };
+  // SoA поля Pedestal
+  Pedestal.id[eid] = poolAdd(StringPool.pedestalIds, 'default');
+  Pedestal.taken[eid] = 0;
+  Pedestal.guardsLeft[eid] = 3;
+  Pedestal.guardsSpawned[eid] = 0;
+  // Sprite
+  Sprite.ref[eid] = 0;
 }
 
 /** Создать префаб святилища */
@@ -143,7 +196,10 @@ export function createShrinePrefabs(world: World): void {
   addComponents(world, eid, Position, Radius, Shrine, Sprite, RenderLayer);
   Radius.value[eid] = 6;
   RenderLayer.value[eid] = 10;
-  Shrine[eid] = { lit: false };
+  // SoA поля Shrine
+  Shrine.lit[eid] = 0;
+  // Sprite
+  Sprite.ref[eid] = 0;
 }
 
 /** Создать префаб двери */
@@ -152,7 +208,11 @@ export function createDoorPrefabs(world: World): void {
   addComponents(world, eid, Position, Radius, Door, Sprite, RenderLayer);
   Radius.value[eid] = 6;
   RenderLayer.value[eid] = 15;
-  Door[eid] = { open: 0, locked: false };
+  // SoA поля Door
+  Door.open[eid] = 0;
+  Door.locked[eid] = 0;
+  // Sprite
+  Sprite.ref[eid] = 0;
 }
 
 /** Создать префаб барьера */
@@ -161,7 +221,10 @@ export function createBarrierPrefabs(world: World): void {
   addComponents(world, eid, Position, Radius, Barrier, Sprite, RenderLayer);
   Radius.value[eid] = 8;
   RenderLayer.value[eid] = 10;
-  Barrier[eid] = { active: true };
+  // SoA поля Barrier
+  Barrier.active[eid] = 1;
+  // Sprite
+  Sprite.ref[eid] = 0;
 }
 
 /** Создать префаб алтаря */
@@ -170,7 +233,10 @@ export function createAltarPrefabs(world: World): void {
   addComponents(world, eid, Position, Radius, Altar, Sprite, RenderLayer);
   Radius.value[eid] = 8;
   RenderLayer.value[eid] = 10;
-  Altar[eid] = { runes: 0 };
+  // SoA поля Altar
+  Altar.runes[eid] = 0;
+  // Sprite
+  Sprite.ref[eid] = 0;
 }
 
 // ============================================================

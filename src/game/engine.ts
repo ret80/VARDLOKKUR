@@ -177,10 +177,10 @@ export class Engine {
       Cat.Enemy, Cat.Enemy | Cat.Player | Cat.Projectile | Cat.Ground
     );
     this.dynamic.addChild(g);
-    // Set aggro and guardOf via Enemy component
+    // Set aggro and guardOf via Enemy component (SoA)
     const { Enemy } = require('./ecs/ecs-components');
-    Enemy[eid].aggro = true;
-    Enemy[eid].guardOf = pedestalIndex;
+    Enemy.aggro[eid] = 1;
+    Enemy.guardOf[eid] = pedestalIndex;
   }
 
   private getEnemyStats(kind: string): { r: number; hp: number; speed: number; dmg: number } {
@@ -523,8 +523,15 @@ export class Engine {
     // Сохраняем дропы перед очисткой мира
     const savedDrops = this.ecsGameLoop ? this.ecsGameLoop.getDropsForTransition() : [];
 
-    // Строим текстуры — тайлы в tileLayer (под сущностями)
+    // Строим текстуры — ground как фон, стены/дома в tileLayer
     const tileResult = buildAllTileTextures(map, this.roofSnow);
+    
+    // Ground texture — фон мира
+    const groundSprite = new Sprite(tileResult.groundTexture);
+    groundSprite.position.set(0, 0);
+    groundSprite.zIndex = 0;
+    this.tileLayer.addChildAt(groundSprite, 0);
+    
     tileResult.wallSprites.forEach(ws => this.tileLayer.addChild(ws));
     tileResult.houseSprites.forEach(hs => this.tileLayer.addChild(hs.spr));
     this.wallCache = tileResult.wallCache;
@@ -555,6 +562,9 @@ export class Engine {
 
     const result = this.ecsMapLoader.loadMap(this.playerG, this.playerDomain);
     this.ecsPlayerBody = result.playerBody;
+    
+    // Построить mmBase для minimap и big map
+    this.mmBase = buildMinimapBase(map);
     
     // Установить PlanckWorld в game loop
     if (this.ecsGameLoop) {

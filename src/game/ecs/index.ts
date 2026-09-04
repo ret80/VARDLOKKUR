@@ -42,8 +42,8 @@ export {
   // Utility functions
   setSoA,
   getSoA,
-  setAoS,
-  getAoS,
+  poolAdd,
+  poolGet,
 } from './ecs-components';
 export {
   // Relations

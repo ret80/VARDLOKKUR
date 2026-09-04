@@ -67,19 +67,16 @@ export function playerMovementSystem(
 
   if (playerEid < 0) return;
 
-  const p = Player[playerEid];
-  if (!p) return;
-
   // Apply input
   const mag = Math.sqrt(inputX * inputX + inputY * inputY);
   if (mag > 0.12) {
     vx[playerEid] = inputX * speed;
     vy[playerEid] = inputY * speed;
-    p.moving = true;
+    Player.moving[playerEid] = 1;
   } else {
     vx[playerEid] = 0;
     vy[playerEid] = 0;
-    p.moving = false;
+    Player.moving[playerEid] = 0;
   }
 
   // Update direction
@@ -89,8 +86,8 @@ export function playerMovementSystem(
   }
 
   // Update slow timer
-  if (p.slowT > 0) {
-    p.slowT -= 0.016;
+  if (Player.slowT[playerEid] > 0) {
+    Player.slowT[playerEid] -= 0.016;
   }
 }
 

@@ -19,6 +19,10 @@ import {
   Taken,
   Attacking,
   Aiming,
+  EnemyState,
+  poolGet,
+  StringPool,
+  EnemyAIRegistry,
 } from '../ecs-components';
 import { dist2 } from '../../utils';
 import type { EnemyKind } from '../../generators/types';
@@ -62,19 +66,16 @@ export function aiUpdateSystem(
   const inVillage = zone === 'Поселение выживших' || zone === 'Воронья Гавань';
 
   for (const enemyEid of query(world, [Enemy, Position, Velocity, Health])) {
-    if (Dead[enemyEid]) continue;
-
-    const e = Enemy[enemyEid];
-    if (!e) continue;
+    if (!!Dead[enemyEid]) continue;
 
     // Common updates
-    t[enemyEid] += dt;
-    e.flashT = Math.max(0, e.flashT - dt);
-    e.contactCd = Math.max(0, e.contactCd - dt);
-    e.lungeT = Math.max(0, e.lungeT - dt);
+    Time.value[enemyEid] += dt;
+    Enemy.flashT[enemyEid] = Math.max(0, Enemy.flashT[enemyEid] - dt);
+    Enemy.contactCd[enemyEid] = Math.max(0, Enemy.contactCd[enemyEid] - dt);
+    Enemy.lungeT[enemyEid] = Math.max(0, Enemy.lungeT[enemyEid] - dt);
 
     // Frozen enemies skip AI
-    if (e.freezeT > 0) {
+    if (Enemy.freezeT[enemyEid] > 0) {
       vx[enemyEid] = 0;
       vy[enemyEid] = 0;
       continue;
@@ -84,17 +85,18 @@ export function aiUpdateSystem(
     const px_e = px[enemyEid];
     const py_e = py[enemyEid];
     const d2p = (px_e - playerX) ** 2 + (py_e - playerY) ** 2;
-    const isFlyer = e.kind === 'raven' || e.kind === 'ghost';
-    const aggroR = e.kind === 'raven' ? 150 : e.kind === 'crawler' ? 42 : e.kind === 'ghost' ? 160 : 100;
+    const ek = poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]);
+    const isFlyer = ek === 'raven' || ek === 'ghost';
+    const aggroR = ek === 'raven' ? 150 : ek === 'crawler' ? 42 : ek === 'ghost' ? 160 : 100;
 
     // Apply aggro rules (original logic)
-    if (inVillage && e.aggro) { e.aggro = false; }
-    if (!e.aggro && !inVillage && d2p < aggroR * aggroR) e.aggro = true;
-    if (e.aggro && !isFlyer && d2p > 300 * 300) { e.aggro = false; }
-    if (e.aggro && isFlyer && d2p > 300 * 300) e.aggro = false;
+    if (inVillage && !!Enemy.aggro[enemyEid]) { Enemy.aggro[enemyEid] = 0; }
+    if (!!!Enemy.aggro[enemyEid] && !inVillage && d2p < aggroR * aggroR) Enemy.aggro[enemyEid] = 1;
+    if (!!Enemy.aggro[enemyEid] && !isFlyer && d2p > 300 * 300) { Enemy.aggro[enemyEid] = 0; }
+    if (!!Enemy.aggro[enemyEid] && isFlyer && d2p > 300 * 300) Enemy.aggro[enemyEid] = 0;
 
     // Apply behavior based on kind
-    switch (e.kind) {
+    switch (ek) {
       case 'draugr':
         updateDraugr(world, enemyEid, playerEid, playerX, playerY, map, dt, inVillage);
         break;
@@ -143,20 +145,18 @@ function updateDraugr(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   const d = Math.sqrt((px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2);
-  const stopD = Enemy[eid].radius + 5 + 2;
+  const stopD = Enemy.radius[eid] + 5 + 2;
 
-  if (e.aggro) {
+  if (!!Enemy.aggro[eid]) {
     if (d > stopD + 1) {
       // followPath not available in ECS — direct toward player
       const dx = playerX - px[eid];
       const dy = playerY - py[eid];
       const dd = Math.sqrt(dx * dx + dy * dy) || 1;
-      vx[eid] = (dx / dd) * e.speed;
-      vy[eid] = (dy / dd) * e.speed;
+      vx[eid] = (dx / dd) * Enemy.speed[eid];
+      vy[eid] = (dy / dd) * Enemy.speed[eid];
     }
     if (d > 1) {
       const dx = playerX - px[eid];
@@ -165,8 +165,8 @@ function updateDraugr(
       Direction.x[eid] = dx / dd;
       Direction.y[eid] = dy / dd;
     }
-  } else if (Math.floor(e.t) % 4 === 0) {
-    vx[eid] = Math.sin(e.t * 0.7 + e.seed) * e.speed * 0.3;
+  } else if (Math.floor(Enemy.t[eid]) % 4 === 0) {
+    vx[eid] = Math.sin(Enemy.t[eid] * 0.7 + Enemy.seed[eid]) * Enemy.speed[eid] * 0.3;
   } else {
     vx[eid] = 0;
     vy[eid] = 0;
@@ -180,13 +180,11 @@ function updateVarg(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   const d = Math.sqrt((px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2);
-  const stopD = Enemy[eid].radius + 5 + 2;
+  const stopD = Enemy.radius[eid] + 5 + 2;
 
-  if (e.aggro) {
+  if (!!Enemy.aggro[eid]) {
     if (d > 1) {
       const dx = playerX - px[eid];
       const dy = playerY - py[eid];
@@ -194,25 +192,25 @@ function updateVarg(
       Direction.x[eid] = dx / dd;
       Direction.y[eid] = dy / dd;
     }
-    if (e.stateT > 0) {
-      e.stateT -= dt;
-      vx[eid] = Direction.x[eid] * e.speed * 2.0;
-      vy[eid] = Direction.y[eid] * e.speed * 2.0;
-      if (e.stateT <= 0) e.lungeT = 1.0;
-    } else if (d < 46 && e.lungeT <= 0) {
-      e.stateT = 0.35;
+    if (Enemy.stateT[eid] > 0) {
+      Enemy.stateT[eid] -= dt;
+      vx[eid] = Direction.x[eid] * Enemy.speed[eid] * 2.0;
+      vy[eid] = Direction.y[eid] * Enemy.speed[eid] * 2.0;
+      if (Enemy.stateT[eid] <= 0) Enemy.lungeT[eid] = 1.0;
+    } else if (d < 46 && Enemy.lungeT[eid] <= 0) {
+      Enemy.stateT[eid] = 0.35;
       // audio.swing();
     } else if (d > stopD + 1) {
       // followPath not available in ECS — direct toward player
       const dx = playerX - px[eid];
       const dy = playerY - py[eid];
       const dd = Math.sqrt(dx * dx + dy * dy) || 1;
-      vx[eid] = (dx / dd) * e.speed;
-      vy[eid] = (dy / dd) * e.speed;
+      vx[eid] = (dx / dd) * Enemy.speed[eid];
+      vy[eid] = (dy / dd) * Enemy.speed[eid];
     }
   } else {
-    vx[eid] = Math.sin(e.t * 0.9 + e.seed) * e.speed * 0.35;
-    vy[eid] = Math.cos(e.t * 0.7 + e.seed) * e.speed * 0.35;
+    vx[eid] = Math.sin(Enemy.t[eid] * 0.9 + Enemy.seed[eid]) * Enemy.speed[eid] * 0.35;
+    vy[eid] = Math.cos(Enemy.t[eid] * 0.7 + Enemy.seed[eid]) * Enemy.speed[eid] * 0.35;
     if (vx[eid] !== 0 || vy[eid] !== 0) {
       const m2 = Math.sqrt(vx[eid] * vx[eid] + vy[eid] * vy[eid]);
       Direction.x[eid] = vx[eid] / m2;
@@ -228,35 +226,33 @@ function updateRaven(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   const d = Math.sqrt((px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2);
 
-  if (e.aggro) {
-    if (e.state !== 'dive') {
-      e.stateT -= dt;
-      const orbit = 34 + Math.sin(e.t * 2 + e.seed) * 8;
+  if (!!Enemy.aggro[eid]) {
+    if (Enemy.state[eid] !== EnemyState.dive) {
+      Enemy.stateT[eid] -= dt;
+      const orbit = 34 + Math.sin(Enemy.t[eid] * 2 + Enemy.seed[eid]) * 8;
       const tang = Math.atan2(playerY - py[eid], playerX - px[eid]) + Math.PI / 2;
       const radial = d > orbit ? 1 : -0.6;
-      vx[eid] = Math.cos(tang) * e.speed * 0.8 + ((playerX - px[eid]) / (d || 1)) * e.speed * 0.5 * radial;
-      vy[eid] = Math.sin(tang) * e.speed * 0.8 + ((playerY - py[eid]) / (d || 1)) * e.speed * 0.5 * radial;
-      if (d < 52 && e.stateT <= 0) {
-        e.state = 'dive';
-        e.stateT = 0.55;
+      vx[eid] = Math.cos(tang) * Enemy.speed[eid] * 0.8 + ((playerX - px[eid]) / (d || 1)) * Enemy.speed[eid] * 0.5 * radial;
+      vy[eid] = Math.sin(tang) * Enemy.speed[eid] * 0.8 + ((playerY - py[eid]) / (d || 1)) * Enemy.speed[eid] * 0.5 * radial;
+      if (d < 52 && Enemy.stateT[eid] <= 0) {
+        Enemy.state[eid] = EnemyState.dive;
+        Enemy.stateT[eid] = 0.55;
         const dd = Math.sqrt((playerX - px[eid]) ** 2 + (playerY - py[eid]) ** 2) || 1;
         Direction.x[eid] = (playerX - px[eid]) / dd;
         Direction.y[eid] = (playerY - py[eid]) / dd;
       }
     } else {
-      e.stateT -= dt;
-      vx[eid] = Direction.x[eid] * e.speed * 2.2;
-      vy[eid] = Direction.y[eid] * e.speed * 2.2;
-      if (e.stateT <= 0) { e.state = 'hover'; e.stateT = 1.4; }
+      Enemy.stateT[eid] -= dt;
+      vx[eid] = Direction.x[eid] * Enemy.speed[eid] * 2.2;
+      vy[eid] = Direction.y[eid] * Enemy.speed[eid] * 2.2;
+      if (Enemy.stateT[eid] <= 0) { Enemy.state[eid] = EnemyState.hover; Enemy.stateT[eid] = 1.4; }
     }
   } else {
-    vx[eid] = Math.sin(e.t * 1.2 + e.seed) * 30;
-    vy[eid] = Math.cos(e.t * 0.9 + e.seed) * 24;
+    vx[eid] = Math.sin(Enemy.t[eid] * 1.2 + Enemy.seed[eid]) * 30;
+    vy[eid] = Math.cos(Enemy.t[eid] * 0.9 + Enemy.seed[eid]) * 24;
   }
   if (vx[eid] !== 0) Direction.x[eid] = vx[eid] >= 0 ? 1 : -1;
 }
@@ -268,12 +264,10 @@ function updateShroom(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   const d = Math.sqrt((px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2);
   const d2p = (px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2;
-  const sees = e.aggro && d2p < 105 * 105;
+  const sees = !!Enemy.aggro[eid] && d2p < 105 * 105;
 
   if (sees) {
     Direction.x[eid] = Math.sign(playerX - px[eid]) || 1;
@@ -282,20 +276,20 @@ function updateShroom(
       vx[eid] = ((px[eid] - playerX) / d) * 40;
       vy[eid] = ((py[eid] - playerY) / d) * 40;
     }
-    e.stateT -= dt;
-    if (e.state === 'cool') {
-      if (e.stateT <= 0) { e.state = 'charge'; e.stateT = 0.7; }
-    } else if (e.state !== 'charge') {
-      e.state = 'charge';
-      e.stateT = 0.7;
-    } else if (e.stateT <= 0) {
-      e.state = 'cool';
-      e.stateT = 2.5;
+    Enemy.stateT[eid] -= dt;
+    if (Enemy.state[eid] === EnemyState.cool) {
+      if (Enemy.stateT[eid] <= 0) { Enemy.state[eid] = EnemyState.charge; Enemy.stateT[eid] = 0.7; }
+    } else if (Enemy.state[eid] !== EnemyState.charge) {
+      Enemy.state[eid] = EnemyState.charge;
+      Enemy.stateT[eid] = 0.7;
+    } else if (Enemy.stateT[eid] <= 0) {
+      Enemy.state[eid] = EnemyState.cool;
+      Enemy.stateT[eid] = 2.5;
       // Shoot spore projectile toward player
       // bus.emit("projectile:fire", { kind: "spore", x: px[eid], y: py[eid] - 4, vx: ((playerX - px[eid]) / d) * 74, vy: ((playerY - py[eid]) / d) * 74, dmg: 1 });
     }
   } else {
-    e.state = 'idle';
+    Enemy.state[eid] = EnemyState.idle;
   }
 }
 
@@ -306,22 +300,20 @@ function updateCrawler(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   const d2p = (px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2;
   const d = Math.sqrt(d2p);
-  const stopD = Enemy[eid].radius + 5 + 2;
+  const stopD = Enemy.radius[eid] + 5 + 2;
 
-  if (e.hidden) {
+  if (!!Enemy.hidden[eid]) {
     if (d2p < 40 * 40) {
-      e.hidden = false;
+      Enemy.hidden[eid] = 0;
       // audio.splash();
-      e.aggro = true;
+      Enemy.aggro[eid] = 1;
     }
     return;
   }
-  if (e.aggro) {
+  if (!!Enemy.aggro[eid]) {
     if (d > 1) {
       const dx = playerX - px[eid];
       const dy = playerY - py[eid];
@@ -329,7 +321,7 @@ function updateCrawler(
       Direction.x[eid] = dx / dd;
       Direction.y[eid] = dy / dd;
     }
-    if (d > stopD) { vx[eid] = Direction.x[eid] * e.speed; vy[eid] = Direction.y[eid] * e.speed; }
+    if (d > stopD) { vx[eid] = Direction.x[eid] * Enemy.speed[eid]; vy[eid] = Direction.y[eid] * Enemy.speed[eid]; }
   }
 }
 
@@ -340,19 +332,17 @@ function updateFrost(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   const d = Math.sqrt((px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2);
-  const stopD = Enemy[eid].radius + 5 + 2;
+  const stopD = Enemy.radius[eid] + 5 + 2;
 
-  if (e.aggro) {
+  if (!!Enemy.aggro[eid]) {
     if (d > stopD + 1) {
       const dx = playerX - px[eid];
       const dy = playerY - py[eid];
       const dd = Math.sqrt(dx * dx + dy * dy) || 1;
-      vx[eid] = (dx / dd) * e.speed;
-      vy[eid] = (dy / dd) * e.speed;
+      vx[eid] = (dx / dd) * Enemy.speed[eid];
+      vy[eid] = (dy / dd) * Enemy.speed[eid];
     }
     if (d > 1) {
       const dx = playerX - px[eid];
@@ -361,8 +351,8 @@ function updateFrost(
       Direction.x[eid] = dx / dd;
       Direction.y[eid] = dy / dd;
     }
-  } else if (Math.floor(e.t) % 4 === 0) {
-    vx[eid] = Math.sin(e.t * 0.7 + e.seed) * e.speed * 0.3;
+  } else if (Math.floor(Enemy.t[eid]) % 4 === 0) {
+    vx[eid] = Math.sin(Enemy.t[eid] * 0.7 + Enemy.seed[eid]) * Enemy.speed[eid] * 0.3;
   } else {
     vx[eid] = 0;
     vy[eid] = 0;
@@ -376,28 +366,26 @@ function updateGhost(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   const d = Math.sqrt((px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2);
   const d2p = (px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2;
 
   // Dissipate phase (when fog ghost fading out)
-  if (e.state === 'dissipate') {
-    e.fade = Math.max(0, (e.fade ?? 0.85) - dt / 2);
-    vx[eid] = Math.sin(e.t * 1.3 + e.seed) * 12;
+  if (Enemy.state[eid] === EnemyState.dissipate) {
+    Enemy.fade[eid] = Math.max(0, Enemy.fade[eid] - dt / 2);
+    vx[eid] = Math.sin(Enemy.t[eid] * 1.3 + Enemy.seed[eid]) * 12;
     vy[eid] = -14;
-    if (e.fade <= 0) {
-      if (e.dropDew) {
+    if (Enemy.fade[eid] <= 0) {
+      if (!!Enemy.dropDew[eid]) {
         // bus.emit("drop:spawn", { kind: "dew", x: px[eid], y: py[eid], life: 40 });
       }
-      Dead[eid] = true;
+      Dead[eid] = 1;
     }
     return;
   }
 
   // Fade in
-  if ((e.fade ?? 0) < 0.85) e.fade = Math.min(0.85, (e.fade ?? 0) + dt / 1.5);
+  if (Enemy.fade[eid] < 0.85) Enemy.fade[eid] = Math.min(0.85, Enemy.fade[eid] + dt / 1.5);
 
   let repX = 0, repY = 0;
   // TODO: shrine repulsion - check distance to shrines
@@ -405,43 +393,45 @@ function updateGhost(
   if (repX || repY) { vx[eid] = repX; vy[eid] = repY; return; }
 
   // Leash mechanic (snake leash)
-  if (e.leash) {
-    const leashDist = Math.sqrt((px[eid] - e.leash.x) ** 2 + (py[eid] - e.leash.y) ** 2);
+  const lmx = Enemy.leashX[eid];
+  const lmy = Enemy.leashY[eid];
+  if (lmx !== 0 || lmy !== 0) {
+    const leashDist = Math.sqrt((px[eid] - lmx) ** 2 + (py[eid] - lmy) ** 2);
     if (leashDist > 260 * 260) {
-      const ld = Math.sqrt((e.leash.x - px[eid]) ** 2 + (e.leash.y - py[eid]) ** 2) || 1;
-      vx[eid] = ((e.leash.x - px[eid]) / ld) * e.speed;
-      vy[eid] = ((e.leash.y - py[eid]) / ld) * e.speed;
+      const ld = Math.sqrt((lmx - px[eid]) ** 2 + (lmy - py[eid]) ** 2) || 1;
+      vx[eid] = ((lmx - px[eid]) / ld) * Enemy.speed[eid];
+      vy[eid] = ((lmy - py[eid]) / ld) * Enemy.speed[eid];
       return;
     }
   }
 
-  if (e.aggro) {
-    if (e.state === 'dive') {
-      e.stateT -= dt;
-      vx[eid] = Direction.x[eid] * e.speed * 2.4;
-      vy[eid] = Direction.y[eid] * e.speed * 2.4;
-      if (e.stateT <= 0) {
-        e.state = 'hover';
-        e.stateT = 1.5 + Math.random() * 1.0;
+  if (!!Enemy.aggro[eid]) {
+    if (Enemy.state[eid] === EnemyState.dive) {
+      Enemy.stateT[eid] -= dt;
+      vx[eid] = Direction.x[eid] * Enemy.speed[eid] * 2.4;
+      vy[eid] = Direction.y[eid] * Enemy.speed[eid] * 2.4;
+      if (Enemy.stateT[eid] <= 0) {
+        Enemy.state[eid] = EnemyState.hover;
+        Enemy.stateT[eid] = 1.5 + Math.random() * 1.0;
       }
     } else {
-      e.stateT -= dt;
-      const orbit = 30 + Math.sin(e.t * 2 + e.seed) * 8;
+      Enemy.stateT[eid] -= dt;
+      const orbit = 30 + Math.sin(Enemy.t[eid] * 2 + Enemy.seed[eid]) * 8;
       const tang = Math.atan2(playerY - py[eid], playerX - px[eid]) + Math.PI / 2;
       const radial = d > orbit ? 1 : -0.6;
-      vx[eid] = Math.cos(tang) * e.speed * 0.9 + ((playerX - px[eid]) / (d || 1)) * e.speed * 0.6 * radial;
-      vy[eid] = Math.sin(tang) * e.speed * 0.9 + ((playerY - py[eid]) / (d || 1)) * e.speed * 0.6 * radial;
-      if (e.stateT <= 0) {
-        e.state = 'dive';
-        e.stateT = 0.55;
+      vx[eid] = Math.cos(tang) * Enemy.speed[eid] * 0.9 + ((playerX - px[eid]) / (d || 1)) * Enemy.speed[eid] * 0.6 * radial;
+      vy[eid] = Math.sin(tang) * Enemy.speed[eid] * 0.9 + ((playerY - py[eid]) / (d || 1)) * Enemy.speed[eid] * 0.6 * radial;
+      if (Enemy.stateT[eid] <= 0) {
+        Enemy.state[eid] = EnemyState.dive;
+        Enemy.stateT[eid] = 0.55;
         const dd = Math.sqrt((playerX - px[eid]) ** 2 + (playerY - py[eid]) ** 2) || 1;
         Direction.x[eid] = (playerX - px[eid]) / dd;
         Direction.y[eid] = (playerY - py[eid]) / dd;
       }
     }
   } else {
-    vx[eid] = Math.sin(e.t * 1.1 + e.seed) * 26;
-    vy[eid] = Math.cos(e.t * 0.8 + e.seed) * 20 - 6;
+    vx[eid] = Math.sin(Enemy.t[eid] * 1.1 + Enemy.seed[eid]) * 26;
+    vy[eid] = Math.cos(Enemy.t[eid] * 0.8 + Enemy.seed[eid]) * 20 - 6;
   }
   if (vx[eid] !== 0) Direction.x[eid] = vx[eid] >= 0 ? 1 : -1;
 }
@@ -457,8 +447,6 @@ function updateReaper(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   const dx = playerX - px[eid];
   const dy = playerY - py[eid];
@@ -469,58 +457,58 @@ function updateReaper(
   }
 
   const phase2 = Health.current[eid] <= Health.max[eid] / 2;
-  const spd = phase2 ? 72 : e.speed;
+  const spd = phase2 ? 72 : Enemy.speed[eid];
 
-  e.stateT -= dt;
+  Enemy.stateT[eid] -= dt;
 
-  switch (e.state) {
-    case 'enter':
-      if (e.stateT <= 0) { e.state = 'chase'; e.stateT = phase2 ? 1.4 : 2.2; }
+  switch (Enemy.state[eid]) {
+    case EnemyState.enter:
+      if (Enemy.stateT[eid] <= 0) { Enemy.state[eid] = EnemyState.chase; Enemy.stateT[eid] = phase2 ? 1.4 : 2.2; }
       break;
-    case 'chase':
-      if (d > Enemy[eid].radius + 5 + 4) {
+    case EnemyState.chase:
+      if (d > Enemy.radius[eid] + 5 + 4) {
         vx[eid] = Direction.x[eid] * spd;
         vy[eid] = Direction.y[eid] * spd;
       } else {
         vx[eid] = 0;
         vy[eid] = 0;
       }
-      if (e.stateT <= 0 || d < 30) {
-        e.state = 'wind';
-        e.stateT = phase2 ? 0.42 : 0.6;
+      if (Enemy.stateT[eid] <= 0 || d < 30) {
+        Enemy.state[eid] = EnemyState.wind;
+        Enemy.stateT[eid] = phase2 ? 0.42 : 0.6;
         vx[eid] = 0;
         vy[eid] = 0;
       }
       break;
-    case 'wind':
+    case EnemyState.wind:
       vx[eid] = 0;
       vy[eid] = 0;
-      if (e.stateT <= 0) { e.state = 'swing'; e.stateT = 0.26; }
+      if (Enemy.stateT[eid] <= 0) { Enemy.state[eid] = EnemyState.swing; Enemy.stateT[eid] = 0.26; }
       break;
-    case 'swing':
+    case EnemyState.swing:
       vx[eid] = 0;
       vy[eid] = 0;
       // Contact damage during swing
-      if (e.contactCd <= 0 && d < 40) {
+      if (Enemy.contactCd[eid] <= 0 && d < 40) {
         // Damage player via bus
       }
-      e.contactCd = Math.max(0, e.contactCd - dt);
-      if (e.stateT <= 0) {
-        e.state = 'stuck';
-        e.stateT = phase2 ? 1.25 : 1.8;
+      Enemy.contactCd[eid] = Math.max(0, Enemy.contactCd[eid] - dt);
+      if (Enemy.stateT[eid] <= 0) {
+        Enemy.state[eid] = EnemyState.stuck;
+        Enemy.stateT[eid] = phase2 ? 1.25 : 1.8;
       }
       break;
-    case 'stuck':
+    case EnemyState.stuck:
       vx[eid] = 0;
       vy[eid] = 0;
-      if (e.stateT <= 0) { e.state = 'chase'; e.stateT = phase2 ? 1.4 : 2.2; }
+      if (Enemy.stateT[eid] <= 0) { Enemy.state[eid] = EnemyState.chase; Enemy.stateT[eid] = phase2 ? 1.4 : 2.2; }
       break;
   }
 
   // Common contact damage (reaper close contact)
-  if (e.contactCd <= 0 && d < Enemy[eid].radius + 5 + 4) {
+  if (Enemy.contactCd[eid] <= 0 && d < Enemy.radius[eid] + 5 + 4) {
     // bus.emit("player:damaged", { dmg: 1, sx: px[eid], sy: py[eid] });
-    e.contactCd = 1.1;
+    Enemy.contactCd[eid] = 1.1;
   }
 }
 
@@ -535,8 +523,6 @@ function updateSpider(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   const dx = playerX - px[eid];
   const dy = playerY - py[eid];
@@ -546,25 +532,25 @@ function updateSpider(
     Direction.y[eid] = dy / d;
   }
 
-  e.stateT -= dt;
+  Enemy.stateT[eid] -= dt;
   vx[eid] = 0;
   vy[eid] = 0;
 
-  if (e.state === 'enter') {
-    if (e.stateT <= 0) { e.state = 'aim'; e.stateT = 1.2; }
-  } else if (e.state === 'aim') {
-    if (e.stateT <= 0) {
+  if (Enemy.state[eid] === EnemyState.enter) {
+    if (Enemy.stateT[eid] <= 0) { Enemy.state[eid] = EnemyState.aim; Enemy.stateT[eid] = 1.2; }
+  } else if (Enemy.state[eid] === EnemyState.aim) {
+    if (Enemy.stateT[eid] <= 0) {
       // Shoot 3 spores in a fan toward player
       // bus.emit("projectile:fire", { kind: "spore", x: px[eid], y: py[eid] - 6, vx: Math.cos(base) * 110, vy: Math.sin(base) * 110, dmg: 1 });
-      e.state = 'ring';
-      e.stateT = 1.8;
+      Enemy.state[eid] = EnemyState.ring;
+      Enemy.stateT[eid] = 1.8;
     }
-  } else if (e.state === 'ring') {
-    if (e.stateT <= 0) {
+  } else if (Enemy.state[eid] === EnemyState.ring) {
+    if (Enemy.stateT[eid] <= 0) {
       // Shoot 8 spores in a ring
       // bus.emit("projectile:fire", { kind: "spore", x: px[eid], y: py[eid] - 6, vx: Math.cos(a) * 85, vy: Math.sin(a) * 85, dmg: 1 });
-      e.state = 'aim';
-      e.stateT = 1.4;
+      Enemy.state[eid] = EnemyState.aim;
+      Enemy.stateT[eid] = 1.4;
     }
   }
 
@@ -574,9 +560,9 @@ function updateSpider(
   }
 
   // Contact damage
-  if (e.contactCd <= 0 && d < Enemy[eid].radius + 5 + 4) {
+  if (Enemy.contactCd[eid] <= 0 && d < Enemy.radius[eid] + 5 + 4) {
     // bus.emit("player:damaged", { dmg: 1, sx: px[eid], sy: py[eid] });
-    e.contactCd = 1.1;
+    Enemy.contactCd[eid] = 1.1;
   }
 }
 
@@ -591,8 +577,6 @@ function updateGiant(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   const dx = playerX - px[eid];
   const dy = playerY - py[eid];
@@ -603,60 +587,60 @@ function updateGiant(
   }
 
   const phase2 = Health.current[eid] <= Health.max[eid] / 2;
-  const spd = phase2 ? 58 : e.speed;
+  const spd = phase2 ? 58 : Enemy.speed[eid];
 
-  e.stateT -= dt;
+  Enemy.stateT[eid] -= dt;
 
-  switch (e.state) {
-    case 'enter':
-      if (e.stateT <= 0) { e.state = 'chase'; e.stateT = 2.0; }
+  switch (Enemy.state[eid]) {
+    case EnemyState.enter:
+      if (Enemy.stateT[eid] <= 0) { Enemy.state[eid] = EnemyState.chase; Enemy.stateT[eid] = 2.0; }
       break;
-    case 'chase':
-      if (d > Enemy[eid].radius + 5 + 4) {
+    case EnemyState.chase:
+      if (d > Enemy.radius[eid] + 5 + 4) {
         vx[eid] = Direction.x[eid] * spd;
         vy[eid] = Direction.y[eid] * spd;
       } else {
         vx[eid] = 0;
         vy[eid] = 0;
       }
-      if (e.stateT <= 0 || d < 34) {
-        e.state = 'wind';
-        e.stateT = phase2 ? 0.4 : 0.62;
+      if (Enemy.stateT[eid] <= 0 || d < 34) {
+        Enemy.state[eid] = EnemyState.wind;
+        Enemy.stateT[eid] = phase2 ? 0.4 : 0.62;
         vx[eid] = 0;
         vy[eid] = 0;
       }
       break;
-    case 'wind':
+    case EnemyState.wind:
       vx[eid] = 0;
       vy[eid] = 0;
-      if (e.stateT <= 0) {
-        e.state = 'swing';
-        e.stateT = 0.3;
+      if (Enemy.stateT[eid] <= 0) {
+        Enemy.state[eid] = EnemyState.swing;
+        Enemy.stateT[eid] = 0.3;
       }
       break;
-    case 'swing':
+    case EnemyState.swing:
       vx[eid] = 0;
       vy[eid] = 0;
-      if (e.contactCd <= 0 && d < 46) {
+      if (Enemy.contactCd[eid] <= 0 && d < 46) {
         // bus.emit("player:damaged", { dmg: 2, sx: px[eid], sy: py[eid] });
       }
-      e.contactCd = Math.max(0, e.contactCd - dt);
-      if (e.stateT <= 0) {
-        e.state = 'stuck';
-        e.stateT = phase2 ? 1.1 : 1.7;
+      Enemy.contactCd[eid] = Math.max(0, Enemy.contactCd[eid] - dt);
+      if (Enemy.stateT[eid] <= 0) {
+        Enemy.state[eid] = EnemyState.stuck;
+        Enemy.stateT[eid] = phase2 ? 1.1 : 1.7;
       }
       break;
-    case 'stuck':
+    case EnemyState.stuck:
       vx[eid] = 0;
       vy[eid] = 0;
-      if (e.stateT <= 0) { e.state = 'chase'; e.stateT = 2.0; }
+      if (Enemy.stateT[eid] <= 0) { Enemy.state[eid] = EnemyState.chase; Enemy.stateT[eid] = 2.0; }
       break;
   }
 
   // Common contact damage
-  if (e.contactCd <= 0 && d < Enemy[eid].radius + 5 + 4) {
+  if (Enemy.contactCd[eid] <= 0 && d < Enemy.radius[eid] + 5 + 4) {
     // bus.emit("player:damaged", { dmg: 2, sx: px[eid], sy: py[eid] });
-    e.contactCd = 1.1;
+    Enemy.contactCd[eid] = 1.1;
   }
 }
 
@@ -671,21 +655,19 @@ function updateSnake(
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
-  const e = Enemy[eid];
-  if (!e) return;
 
   // Snake doesn't move
   vx[eid] = 0;
   vy[eid] = 0;
 
-  e.stateT -= dt;
+  Enemy.stateT[eid] -= dt;
 
   const mouthX = px[eid] + Math.sin(0 /* realT */ * 1.6) * 4;
   const mouthY = py[eid] - 2;
 
-  if (e.state === 'closed') {
-    if (e.stateT <= 1.5 && e.seed > 0.5) {
-      e.seed = 0.2;
+  if (Enemy.state[eid] === EnemyState.closed) {
+    if (Enemy.stateT[eid] <= 1.5 && Enemy.seed[eid] > 0.5) {
+      Enemy.seed[eid] = 0.2;
       // Fire 3 fire projectiles toward player
       // const base = Math.atan2(playerY - mouthY, playerX - mouthX);
       // for (let i = -1; i <= 1; i++) {
@@ -693,16 +675,16 @@ function updateSnake(
       //   bus.emit("projectile:fire", { kind: "fire", x: mouthX, y: mouthY, vx: Math.cos(a) * 84, vy: Math.sin(a) * 84, dmg: 1 });
       // }
     }
-    if (e.stateT <= 0.7 && e.seed < 0.5) {
-      e.seed = -1;
+    if (Enemy.stateT[eid] <= 0.7 && Enemy.seed[eid] < 0.5) {
+      Enemy.seed[eid] = -1;
     }
-    if (e.stateT <= 0) { e.state = 'open'; e.stateT = 3.0; }
-  } else if (e.state === 'open') {
-    if (e.stateT <= 0) { e.state = 'closed'; e.stateT = 3.8; e.seed = 1; }
+    if (Enemy.stateT[eid] <= 0) { Enemy.state[eid] = EnemyState.open; Enemy.stateT[eid] = 3.0; }
+  } else if (Enemy.state[eid] === EnemyState.open) {
+    if (Enemy.stateT[eid] <= 0) { Enemy.state[eid] = EnemyState.closed; Enemy.stateT[eid] = 3.8; Enemy.seed[eid] = 1; }
   } else {
     // Default: start closed
-    e.state = 'closed';
-    e.stateT = 3.8;
-    e.seed = 1;
+    Enemy.state[eid] = EnemyState.closed;
+    Enemy.stateT[eid] = 3.8;
+    Enemy.seed[eid] = 1;
   }
 }

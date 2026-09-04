@@ -31,10 +31,14 @@ import {
   Sprite,
   PhysicsBody,
   EnemyAI,
+  EnemyState,
   setSoA,
   getSoA,
-  setAoS,
-  getAoS,
+  poolAdd,
+  StringPool,
+  PhysicsBodyRegistry,
+  SpriteRegistry,
+  EnemyAIRegistry,
 } from './ecs-components';
 
 // ============================================================
@@ -76,7 +80,7 @@ export function createLivingEntity(world: World, hp: number, layer: number = 0):
 
 /** Создать игрока */
 export function createPlayerEntity(world: World, x: number, y: number): number {
-  const eid = createLivingEntity(world, 12, 100); // высокий layer
+  const eid = createLivingEntity(world, 12, 100);
   addComponents(world, eid, Player, Direction, Velocity);
   addComponent(world, eid, PhysicsBody);
   Position.x[eid] = x;
@@ -85,18 +89,17 @@ export function createPlayerEntity(world: World, x: number, y: number): number {
   Direction.y[eid] = 1;
   Velocity.x[eid] = 0;
   Velocity.y[eid] = 0;
-  setAoS(Player, eid, {
-    moving: false,
-    animT: 0,
-    swingT: 0,
-    hurtT: 0,
-    slowT: 0,
-    hasSword: false,
-    runes: 0,
-    swingDirX: 0,
-    swingDirY: 1,
-    aiming: false,
-  });
+  // SoA поля Player
+  Player.moving[eid] = 0;
+  Player.animT[eid] = 0;
+  Player.swingT[eid] = 0;
+  Player.hurtT[eid] = 0;
+  Player.slowT[eid] = 0;
+  Player.hasSword[eid] = 0;
+  Player.runes[eid] = 0;
+  Player.swingDirX[eid] = 0;
+  Player.swingDirY[eid] = 1;
+  Player.aiming[eid] = 0;
   return eid;
 }
 
@@ -121,30 +124,31 @@ export function createEnemyEntity(
   Velocity.y[eid] = 0;
   Health.current[eid] = hp;
   Health.max[eid] = hp;
-  setAoS(Enemy, eid, {
-    kind: kind as any,
-    radius,
-    facingX: 1,
-    facingY: 0,
-    t: Math.random() * 10,
-    state: 'idle',
-    aggro: false,
-    hidden: kind === 'crawler',
-    lungeT: 0,
-    freezeT: 0,
-    flashT: 0,
-    seed: Math.random() * 100,
-    speed,
-    dmg,
-    stateT: 0,
-    pathI: 0,
-    repathT: 0.5,
-    contactCd: 0,
-    guardOf: -1,
-    fade: kind === 'ghost' ? 0 : 1,
-    dropDew: false,
-  });
-  setAoS(EnemyAI, eid, { path: null });
+  // SoA поля Enemy
+  Enemy.kind[eid] = poolAdd(StringPool.enemyKinds, kind);
+  Enemy.radius[eid] = radius;
+  Enemy.facingX[eid] = 1;
+  Enemy.facingY[eid] = 0;
+  Enemy.t[eid] = Math.random() * 10;
+  Enemy.state[eid] = EnemyState.idle;
+  Enemy.aggro[eid] = 0;
+  Enemy.hidden[eid] = kind === 'crawler' ? 1 : 0;
+  Enemy.lungeT[eid] = 0;
+  Enemy.freezeT[eid] = 0;
+  Enemy.flashT[eid] = 0;
+  Enemy.seed[eid] = Math.random() * 100;
+  Enemy.speed[eid] = speed;
+  Enemy.dmg[eid] = dmg;
+  Enemy.stateT[eid] = 0;
+  Enemy.pathI[eid] = 0;
+  Enemy.repathT[eid] = 0.5;
+  Enemy.contactCd[eid] = 0;
+  Enemy.guardOf[eid] = -1;
+  Enemy.fade[eid] = kind === 'ghost' ? 0 : 1;
+  Enemy.dropDew[eid] = 0;
+  // EnemyAI
+  EnemyAI.path[eid] = 0;
+  EnemyAIRegistry[eid] = null;
   return eid;
 }
 
@@ -165,14 +169,13 @@ export function createProjectileEntity(
   Position.y[eid] = y;
   Velocity.x[eid] = vx;
   Velocity.y[eid] = vy;
-  setAoS(Projectile, eid, {
-    kind: kind as any,
-    dmg,
-    life,
-    dist: 0,
-    returning: false,
-    spin: 0,
-  });
+  // SoA поля Projectile
+  Projectile.kind[eid] = poolAdd(StringPool.projectileKinds, kind);
+  Projectile.dmg[eid] = dmg;
+  Projectile.life[eid] = life;
+  Projectile.dist[eid] = 0;
+  Projectile.returning[eid] = 0;
+  Projectile.spin[eid] = 0;
   return eid;
 }
 
@@ -187,11 +190,11 @@ export function createDropEntity(
   addComponents(world, eid, Drop, Time);
   Position.x[eid] = x;
   Position.y[eid] = y;
-  setAoS(Drop, eid, {
-    kind: kind as any,
-    t: Math.random() * 10,
-    magnet: false,
-  });
+  // SoA поля Drop
+  Drop.kind[eid] = poolAdd(StringPool.dropKinds, kind);
+  Drop.t[eid] = Math.random() * 10;
+  Drop.magnet[eid] = 0;
+  Drop.life[eid] = 0;
   Time.value[eid] = 0;
   return eid;
 }

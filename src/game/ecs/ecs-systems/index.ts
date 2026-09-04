@@ -80,7 +80,6 @@ export {
 } from './interaction-system';
 
 export {
-  type RenderSystemConfig,
   updateSpritePosition,
   renderSprites,
   renderVisibilitySystem,

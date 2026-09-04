@@ -18,6 +18,8 @@ import {
   Dead,
   Player,
   Enemy,
+  poolGet,
+  StringPool,
 } from '../ecs-components';
 import { dist2 } from '../../utils';
 import { T, Tl, tileAt, solidTileAt } from '../../world';
@@ -110,26 +112,26 @@ function findNearest(world: World, playerEid: number, store: GameStore): Interac
 
   // NPCs
   for (const eid of query(world, [Position, NPC])) {
-    consider('npc', eid, NPC[eid], px[eid], py[eid]);
+    consider('npc', eid, { id: poolGet(StringPool.npcIds, NPC.id[eid]), name: poolGet(StringPool.npcNames, NPC.name[eid]) }, px[eid], py[eid]);
   }
 
   // Chests (не открытые)
   for (const eid of query(world, [Position, Chest])) {
-    if (!Chest[eid].opened) {
-      consider('chest', eid, Chest[eid], px[eid], py[eid]);
+    if (!Chest.opened[eid]) {
+      consider('chest', eid, { item: poolGet(StringPool.chestItems, Chest.item[eid]) }, px[eid], py[eid]);
     }
   }
 
   // Pedestals (не взятые)
   for (const eid of query(world, [Position, Pedestal])) {
-    if (!Pedestal[eid].taken) {
-      consider('pedestal', eid, Pedestal[eid], px[eid], py[eid]);
+    if (!Pedestal.taken[eid]) {
+      consider('pedestal', eid, { id: poolGet(StringPool.pedestalIds, Pedestal.id[eid]), guardsLeft: Pedestal.guardsLeft[eid], guardsSpawned: !!Pedestal.guardsSpawned[eid] }, px[eid], py[eid]);
     }
   }
 
   // Shrines
   for (const eid of query(world, [Position, Shrine])) {
-    consider('shrine', eid, { s: Shrine[eid], i: eid }, px[eid], py[eid]);
+    consider('shrine', eid, { s: Shrine.lit[eid], i: eid }, px[eid], py[eid]);
   }
 
   // Altar (barrier) — если есть руны и змея не начата
@@ -157,16 +159,16 @@ function findNearest(world: World, playerEid: number, store: GameStore): Interac
 }
 
 /** Открыть сундук */
-function openChestEcs(world: World, chestEid: number, chest: any, store: GameStore, bus: EventBus): void {
-  chest.opened = true;
+function openChestEcs(world: World, chestEid: number, _chest: any, store: GameStore, bus: EventBus): void {
+  Chest.opened[chestEid] = 1;
   const m = store.map!;
-  const cx = Math.round((chest.x - 8) / T);
-  const cy = Math.round((chest.y - 8) / T);
+  const cx = Math.round((Position.x[chestEid] - 8) / T);
+  const cy = Math.round((Position.y[chestEid] - 8) / T);
   store.openedChests.add(`${cx}_${cy}`);
   audio.chest();
 
   const f = store.flags;
-  switch (chest.item) {
+  switch (poolGet(StringPool.chestItems, Chest.item[chestEid])) {
     case 'bow':
       f.setFlag('hasBow', true);
       bus.emit('toast', { msg: 'Лук Сумерек [удерживай L] — время замирает, стрела летит' });
@@ -193,22 +195,22 @@ function openChestEcs(world: World, chestEid: number, chest: any, store: GameSto
 
 /** Взять предмет с пьедестала */
 function takePedestalEcs(
-  world: World, pedestalEid: number, pd: any, store: GameStore, bus: EventBus, onGuardSpawn?: GuardSpawnCallback
+  world: World, pedestalEid: number, _pd: any, store: GameStore, bus: EventBus, onGuardSpawn?: GuardSpawnCallback
 ): void {
   const m = store.map!;
-  if (pd.guardsLeft > 0) {
+  if (Pedestal.guardsLeft[pedestalEid] > 0) {
     audio.locked();
     bus.emit('toast', { msg: 'Печать крепка' });
-    if (!pd.guardsSpawned) {
-      pd.guardsSpawned = true;
+    if (!Pedestal.guardsSpawned[pedestalEid]) {
+      Pedestal.guardsSpawned[pedestalEid] = 1;
       // Спавн стражей через callback
       const pedestalIndex = getPedestalIndex(world, pedestalEid);
       if (pedestalIndex >= 0 && m.pedestals[pedestalIndex]) {
         const def = m.pedestals[pedestalIndex];
         for (const k of def.guards) {
           const a = Math.random() * Math.PI * 2;
-          const gx = pd.x + Math.cos(a) * 26;
-          const gy = pd.y + Math.sin(a) * 26;
+          const gx = Position.x[pedestalEid] + Math.cos(a) * 26;
+          const gy = Position.y[pedestalEid] + Math.sin(a) * 26;
           if (onGuardSpawn) {
             onGuardSpawn(k, gx, gy, pedestalIndex);
           }
@@ -220,10 +222,10 @@ function takePedestalEcs(
     return;
   }
 
-  pd.taken = true;
-  store.takenPedestals.add(pd.id);
+  Pedestal.taken[pedestalEid] = 1;
+  store.takenPedestals.add(poolGet(StringPool.pedestalIds, Pedestal.id[pedestalEid]));
   audio.chime();
-  bus.emit('drop:spawn', { kind: 'rune' as any, x: pd.x, y: pd.y - 6 });
+  bus.emit('drop:spawn', { kind: 'rune' as any, x: Position.x[pedestalEid], y: Position.y[pedestalEid] - 6 });
   const pedestalIndex = getPedestalIndex(world, pedestalEid);
   if (pedestalIndex >= 0) {
     bus.emit('pedestal:unsealed', { pedestalIndex });
@@ -327,22 +329,18 @@ function dungeonUnlocked(id: number, f: any): { ok: boolean; req: string } {
 
 /** Обработка убийства врага-стража */
 export function onEnemyKilledEcs(world: World, enemyEid: number, store: GameStore, bus: EventBus): void {
-  if (!hasComponent(world, enemyEid, Enemy)) return;
-  const g = Enemy[enemyEid];
-  if (g.guardOf < 0) return;
-  
+  if (Enemy.guardOf[enemyEid] < 0) return;
+
   // Найти пьедестал через ECS query
-  const { Pedestal } = require('../ecs-components');
-  const { query } = require('bitecs');
-  const pedestals = query(world, [Pedestal]);
-  if (g.guardOf >= pedestals.length) return;
-  
-  const pdEid = pedestals[g.guardOf];
+  const pedestals = query(world, [Position, Pedestal]);
+  if (Enemy.guardOf[enemyEid] >= pedestals.length) return;
+
+  const pdEid = pedestals[Enemy.guardOf[enemyEid]];
   if (!pdEid || Pedestal.taken[pdEid] || Pedestal.guardsLeft[pdEid] <= 0) return;
   Pedestal.guardsLeft[pdEid] = Math.max(0, Pedestal.guardsLeft[pdEid] - 1);
   if (Pedestal.guardsLeft[pdEid] === 0) {
     bus.emit('toast', { msg: 'Печать пьедестала пала' });
     audio.chime();
   }
-  bus.emit('pedestal:guardKilled', { pedestalIndex: g.guardOf });
+  bus.emit('pedestal:guardKilled', { pedestalIndex: Enemy.guardOf[enemyEid] });
 }

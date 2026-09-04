@@ -18,11 +18,11 @@ interface TargetContext {
 function getAliveEnemiesEcs(ctx: TargetContext): Array<{ kind: string; x: number; y: number }> {
   const world = ctx.store.ecsWorld;
   if (!world) return [];
-  const { Enemy, Dead, Position } = require('../ecs/ecs-components');
+  const { Enemy, Dead, Position, poolGet, StringPool } = require('../ecs/ecs-components');
   const result: Array<{ kind: string; x: number; y: number }> = [];
   for (const eid of query(world, [Enemy])) {
     if (!Dead[eid]) {
-      result.push({ kind: Enemy[eid].kind, x: Position.x[eid], y: Position.y[eid] });
+      result.push({ kind: poolGet(StringPool.enemyKinds, Enemy.kind[eid]), x: Position.x[eid], y: Position.y[eid] });
     }
   }
   return result;
@@ -35,7 +35,7 @@ function getUntakenPedestalsEcs(ctx: TargetContext): Array<{ x: number; y: numbe
   const { Pedestal, Position } = require('../ecs/ecs-components');
   const result: Array<{ x: number; y: number }> = [];
   for (const eid of query(world, [Pedestal])) {
-    if (!Pedestal[eid].taken) {
+    if (!Pedestal.taken[eid]) {
       result.push({ x: Position.x[eid], y: Position.y[eid] });
     }
   }
@@ -103,9 +103,9 @@ const RESOLVERS: Record<string, TargetResolver> = {
     // Ищем босса змея (Ёрмунганд) через ECS
     const world = ctx.store.ecsWorld;
     if (world) {
-      const { Enemy, Dead, Position } = require('../ecs/ecs-components');
+      const { Enemy, Dead, Position, poolGet, StringPool } = require('../ecs/ecs-components');
       for (const eid of query(world, [Enemy])) {
-        if (!Dead[eid] && Enemy[eid].kind === 'snake') {
+        if (!Dead[eid] && poolGet(StringPool.enemyKinds, Enemy.kind[eid]) === 'snake') {
           return { x: Position.x[eid], y: Position.y[eid] };
         }
       }

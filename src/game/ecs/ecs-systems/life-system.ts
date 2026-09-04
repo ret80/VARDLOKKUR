@@ -25,7 +25,7 @@ import {
 export function lifeCheckSystem(world: World): void {
   for (const eid of query(world, [Health])) {
     if (Health.current[eid] <= 0 && !Dead[eid]) {
-      Dead[eid] = true;
+      Dead[eid] = 1;
       // bus.emit('entity:died', { eid });
     }
   }
@@ -47,23 +47,19 @@ export function deathCleanupSystem(world: World): void {
 export function stateTimerSystem(world: World, dt: number): void {
   // Player timers
   for (const eid of query(world, [Player])) {
-    const p = Player[eid];
-    if (!p) continue;
-    if (p.hurtT > 0) p.hurtT -= dt;
-    if (p.slowT > 0) p.slowT -= dt;
-    if (p.swingT > 0) p.swingT -= dt;
+    if (Player.hurtT[eid] > 0) Player.hurtT[eid] -= dt;
+    if (Player.slowT[eid] > 0) Player.slowT[eid] -= dt;
+    if (Player.swingT[eid] > 0) Player.swingT[eid] -= dt;
   }
 
   // Enemy timers
   for (const eid of query(world, [Enemy])) {
-    const e = Enemy[eid];
-    if (!e) continue;
-    if (e.flashT > 0) e.flashT -= dt;
-    if (e.freezeT > 0) e.freezeT -= dt;
-    if (e.lungeT > 0) e.lungeT -= dt;
-    if (e.stateT > 0) e.stateT -= dt;
-    if (e.repathT > 0) e.repathT -= dt;
-    if (e.contactCd > 0) e.contactCd -= dt;
+    if (Enemy.flashT[eid] > 0) Enemy.flashT[eid] -= dt;
+    if (Enemy.freezeT[eid] > 0) Enemy.freezeT[eid] -= dt;
+    if (Enemy.lungeT[eid] > 0) Enemy.lungeT[eid] -= dt;
+    if (Enemy.stateT[eid] > 0) Enemy.stateT[eid] -= dt;
+    if (Enemy.repathT[eid] > 0) Enemy.repathT[eid] -= dt;
+    if (Enemy.contactCd[eid] > 0) Enemy.contactCd[eid] -= dt;
   }
 }
 
@@ -110,8 +106,7 @@ export function returningProjectileSystem(world: World, playerEid: number, dt: n
   const { x: vx, y: vy } = Velocity;
 
   for (const eid of query(world, [Position, Velocity, Projectile])) {
-    const proj = Projectile[eid];
-    if (!proj || !proj.returning) continue;
+    if (!Projectile.returning[eid]) continue;
 
     const dx = px[playerEid] - px[eid];
     const dy = py[playerEid] - py[eid];

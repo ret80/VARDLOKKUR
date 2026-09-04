@@ -67,7 +67,10 @@ import {
   checkDungeonBoss,
 } from './ecs-systems/world-system';
 import { hasComponent } from 'bitecs';
-import { Position, Velocity, PhysicsBody, Player, Direction } from './ecs-components';
+import {
+  Position, Velocity, PhysicsBody, Player, Direction,
+  Drop, poolGet, StringPool, PhysicsBodyRegistry,
+} from './ecs-components';
 import type { InputSystem } from '../input/input-system';
 import type { EventBus } from '../event-bus';
 import type { GameStore } from '../store';
@@ -196,7 +199,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       const { x: vx, y: vy } = Velocity;
       for (const eid of query(world, [Position, Velocity])) {
         if (eid === peid) continue;
-        if (hasComponent(world, eid, PhysicsBody)) continue;
+        if (PhysicsBody.body[eid] > 0) continue;
         px[eid] += vx[eid] * dt;
         py[eid] += vy[eid] * dt;
       }
@@ -211,11 +214,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       store.player.y = Position.y[peid];
       store.player.vx = Velocity.x[peid];
       store.player.vy = Velocity.y[peid];
-      store.player.moving = Player[peid]?.moving ?? false;
-      store.player.slowT = Player[peid]?.slowT ?? 0;
-      store.player.animT = Player[peid]?.animT ?? 0;
-      store.player.swingT = Player[peid]?.swingT ?? 0;
-      store.player.hurtT = Player[peid]?.hurtT ?? 0;
+      store.player.moving = !!Player.moving[peid];
+      store.player.slowT = Player.slowT[peid];
+      store.player.animT = Player.animT[peid];
+      store.player.swingT = Player.swingT[peid];
+      store.player.hurtT = Player.hurtT[peid];
       store.player.dir.x = Direction.x[peid];
       store.player.dir.y = Direction.y[peid];
 
@@ -317,19 +320,15 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     isDungeonBossDead: (id: number) => dungeonBossDead(id),
     getDropsForTransition: () => {
       const drops: Array<{ kind: string; x: number; y: number; life: number; ambientIdx?: number }> = [];
-      try {
-        const { Drop } = require('./ecs-components');
-        const { query } = require('bitecs');
-        for (const eid of query(world, [Drop])) {
-          drops.push({ 
-            kind: Drop.kind[eid], 
-            x: Drop.x[eid], 
-            y: Drop.y[eid], 
-            life: Drop.life[eid], 
-            ambientIdx: Drop.ambientIdx[eid] 
-          });
-        }
-      } catch (e) {}
+      for (const eid of query(world, [Drop])) {
+        drops.push({ 
+          kind: poolGet(StringPool.dropKinds, Drop.kind[eid]), 
+          x: Position.x[eid], 
+          y: Position.y[eid], 
+          life: Drop.life[eid], 
+          ambientIdx: 0 
+        });
+      }
       return drops;
     },
     setPlanckWorld: (pw: PlanckWorld) => { _planckWorld = pw; },

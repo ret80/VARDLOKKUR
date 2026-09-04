@@ -31,18 +31,15 @@ export function updateDoors(
   const { x: px, y: py } = Position;
 
   for (const doorEid of query(world, [Position, Door])) {
-    const d = Door[doorEid];
-    if (!d) continue;
-
-    if (d.locked && flags.hasKey && dist2(px[doorEid], py[doorEid], px[playerEid], py[playerEid]) < 24 * 24) {
-      d.locked = false;
+    if (Door.locked[doorEid] && flags.hasKey && dist2(px[doorEid], py[doorEid], px[playerEid], py[playerEid]) < 24 * 24) {
+      Door.locked[doorEid] = 0;
       flags.hasKey = false;
-      d.open = 0.01;
+      Door.open[doorEid] = 0.01;
       toast("Ключ повернут — путь к стражу открыт");
       pushHud(true);
     }
-    if (d.open < 1 && d.open > 0 && !d.locked) {
-      d.open = Math.min(1, d.open + 0.032); // ~2 секунды при 60fps
+    if (Door.open[doorEid] < 1 && Door.open[doorEid] > 0 && !Door.locked[doorEid]) {
+      Door.open[doorEid] = Math.min(1, Door.open[doorEid] + 0.032); // ~2 секунды при 60fps
     }
   }
 }
@@ -104,11 +101,8 @@ export function updateBarriers(
   flags: { runes: number; snakeStarted: boolean }
 ): void {
   for (const barrierEid of query(world, [Position, Barrier])) {
-    const b = Barrier[barrierEid];
-    if (!b) continue;
-
     // Барьер активируется/деактивируется в зависимости от рун
     const active = flags.runes < 5 && !flags.snakeStarted;
-    b.active = active;
+    Barrier.active[barrierEid] = active ? 1 : 0;
   }
 }

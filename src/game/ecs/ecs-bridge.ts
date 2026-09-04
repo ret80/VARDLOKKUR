@@ -33,12 +33,18 @@ import {
   Magnet,
   Taken,
   Flashing,
+  StringPool,
+  poolAdd,
+  SpriteRegistry,
+  PhysicsBodyRegistry,
+  EnemyAIRegistry,
 } from './ecs-components';
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
 import type { Graphics } from 'pixi.js';
 import type { PlanckWorld } from '../physics/planck-world';
 import type { Cat } from '../physics/planck-world';
 import { createBodyForEntity } from './ecs-systems';
+import { addComponent, addComponents } from 'bitecs';
 
 // ============================================================
 // ECS Entity Bridge — создаёт ECS сущности из данных карты
@@ -52,7 +58,9 @@ export function createPlayerInEcs(
   spriteRef: Graphics
 ): number {
   const eid = createPlayerEntity(world, x, y);
-  Sprite[eid] = { ref: spriteRef };
+  addComponent(world, eid, Sprite);
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   return eid;
 }
 
@@ -69,7 +77,9 @@ export function createEnemyInEcs(
 ): number {
   const stats = getEnemyStats(kind);
   const eid = createEnemyEntity(world, kind, x, y, stats.hp, stats.r, stats.speed, stats.dmg);
-  Sprite[eid] = { ref: spriteRef };
+  addComponent(world, eid, Sprite);
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   
   // Create physics body
   createBodyForEntity(planckWorld, world, eid, stats.r, category, mask);
@@ -181,7 +191,9 @@ export function createProjectileInEcs(
   spriteRef: Graphics
 ): number {
   const eid = createProjectileEntity(world, kind, x, y, vx, vy, dmg, life);
-  Sprite[eid] = { ref: spriteRef };
+  addComponent(world, eid, Sprite);
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   return eid;
 }
 
@@ -194,15 +206,15 @@ export function createDropInEcs(
   spriteRef: Graphics
 ): number {
   const eid = createDropEntity(world, kind, x, y);
-  Sprite[eid] = { ref: spriteRef };
+  addComponent(world, eid, Sprite);
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   return eid;
 }
 
 // ============================================================
 // Вспомогательные функции
 // ============================================================
-
-import { addComponents } from 'bitecs';
 
 function getEnemyStats(kind: EnemyKind) {
   const stats: Record<string, { r: number; hp: number; speed: number; dmg: number }> = {
@@ -223,56 +235,75 @@ function getEnemyStats(kind: EnemyKind) {
 
 function addNpcComponents(world: World, eid: number, id: string, name: string, x: number, y: number, spriteRef: Graphics): void {
   addComponents(world, eid, NPC, Sprite);
-  NPC[eid] = { id, name };
-  Sprite[eid] = { ref: spriteRef };
+  NPC.id[eid] = poolAdd(StringPool.npcIds, id);
+  NPC.name[eid] = poolAdd(StringPool.npcNames, name);
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
 function addChestComponents(world: World, eid: number, item: string, x: number, y: number, spriteRef: Graphics): void {
-  addComponents(world, eid, Chest, Sprite);
-  Chest[eid] = { item, opened: false };
-  Sprite[eid] = { ref: spriteRef };
+  addComponents(world, eid, Chest);
+  addComponent(world, eid, Sprite);
+  Chest.item[eid] = poolAdd(StringPool.chestItems, item);
+  Chest.opened[eid] = 0;
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
 function addPedestalComponents(world: World, eid: number, id: string, x: number, y: number, guardsLeft: number, spriteRef: Graphics): void {
-  addComponents(world, eid, Pedestal, Sprite);
-  Pedestal[eid] = { id, taken: false, guardsLeft, guardsSpawned: false };
-  Sprite[eid] = { ref: spriteRef };
+  addComponents(world, eid, Pedestal);
+  addComponent(world, eid, Sprite);
+  Pedestal.id[eid] = poolAdd(StringPool.pedestalIds, id);
+  Pedestal.taken[eid] = 0;
+  Pedestal.guardsLeft[eid] = guardsLeft;
+  Pedestal.guardsSpawned[eid] = 0;
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
 function addShrineComponents(world: World, eid: number, x: number, y: number, spriteRef: Graphics): void {
-  addComponents(world, eid, Shrine, Sprite);
-  Shrine[eid] = { lit: false };
-  Sprite[eid] = { ref: spriteRef };
+  addComponents(world, eid, Shrine);
+  addComponent(world, eid, Sprite);
+  Shrine.lit[eid] = 0;
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
 function addDoorComponents(world: World, eid: number, x: number, y: number, locked: boolean, spriteRef: Graphics): void {
-  addComponents(world, eid, Door, Sprite);
-  Door[eid] = { open: 0, locked };
-  Sprite[eid] = { ref: spriteRef };
+  addComponents(world, eid, Door);
+  addComponent(world, eid, Sprite);
+  Door.open[eid] = 0;
+  Door.locked[eid] = locked ? 1 : 0;
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
 function addBarrierComponents(world: World, eid: number, x: number, y: number, active: boolean, spriteRef: Graphics): void {
-  addComponents(world, eid, Barrier, Sprite);
-  Barrier[eid] = { active };
-  Sprite[eid] = { ref: spriteRef };
+  addComponents(world, eid, Barrier);
+  addComponent(world, eid, Sprite);
+  Barrier.active[eid] = active ? 1 : 0;
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
 function addAltarComponents(world: World, eid: number, x: number, y: number, spriteRef: Graphics): void {
-  addComponents(world, eid, Altar, Sprite);
-  Altar[eid] = { runes: 0 };
-  Sprite[eid] = { ref: spriteRef };
+  addComponents(world, eid, Altar);
+  addComponent(world, eid, Sprite);
+  Altar.runes[eid] = 0;
+  SpriteRegistry.push(spriteRef);
+  Sprite.ref[eid] = SpriteRegistry.length;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }

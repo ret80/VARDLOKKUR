@@ -8,6 +8,7 @@ import {
   Radius,
   Direction,
   Enemy,
+  EnemyState,
   Time,
   RenderLayer,
   Dead,
@@ -25,6 +26,9 @@ import {
   Sprite,
   PhysicsBody,
   EnemyAI,
+  poolAdd,
+  poolGet,
+  StringPool,
 } from '../ecs-components';
 import { dist2 } from '../../utils';
 import { T } from '../../world';
@@ -201,8 +205,7 @@ function ensureGhosts(
   // Count alive ghosts
   let alive = 0;
   for (const eid of query(world, [Enemy])) {
-    const e = Enemy[eid];
-    if (e && e.kind === 'ghost' && e.state !== 'dissipate') {
+    if (poolGet(StringPool.enemyKinds, Enemy.kind[eid]) === 'ghost' && Enemy.state[eid] !== EnemyState.dissipate) {
       alive++;
     }
   }
@@ -219,13 +222,9 @@ function ensureGhosts(
     if (x < T || y < T || x > (map.W - 1) * T || y > (map.H - 1) * T) continue;
     
     const eid = spawnEnemyInEcs('ghost', x, y);
-    const e = Enemy[eid];
-    if (e) {
-      e.aggro = true;
-      e.state = 'hover';
-      e.stateT = 0.5 + Math.random();
-      if (leashed) e.leash = { x: targetCx, y: targetCy };
-    }
+    Enemy.aggro[eid] = 1;
+    Enemy.state[eid] = EnemyState.hover;
+    Enemy.stateT[eid] = 0.5 + Math.random();
   }
 }
 
@@ -249,20 +248,28 @@ export function spawnFogGhost(
   Time.value[eid] = 0;
   RenderLayer.value[eid] = 50;
 
-  Enemy[eid] = {
-    kind: 'ghost',
-    radius: 6,
-    facingX: 1, facingY: 0,
-    t: 0, state: 'appear',
-    aggro: true, hidden: false,
-    lungeT: 0, freezeT: 0, flashT: 0,
-    seed: Math.random() * 100,
-    speed: FOG_GHOST_SPEED, dmg: 1,
-    stateT: 0, pathI: 0, repathT: 0.5,
-    contactCd: 0, guardOf: -1,
-    fade: 0, dropDew: false,
-  };
-  EnemyAI[eid] = { path: null };
+  Enemy.kind[eid] = poolAdd(StringPool.enemyKinds, 'ghost');
+  Enemy.radius[eid] = 6;
+  Enemy.facingX[eid] = 1;
+  Enemy.facingY[eid] = 0;
+  Enemy.t[eid] = 0;
+  Enemy.state[eid] = EnemyState.appear;
+  Enemy.aggro[eid] = 1;
+  Enemy.hidden[eid] = 0;
+  Enemy.lungeT[eid] = 0;
+  Enemy.freezeT[eid] = 0;
+  Enemy.flashT[eid] = 0;
+  Enemy.seed[eid] = Math.random() * 100;
+  Enemy.speed[eid] = FOG_GHOST_SPEED;
+  Enemy.dmg[eid] = 1;
+  Enemy.stateT[eid] = 0;
+  Enemy.pathI[eid] = 0;
+  Enemy.repathT[eid] = 0.5;
+  Enemy.contactCd[eid] = 0;
+  Enemy.guardOf[eid] = -1;
+  Enemy.fade[eid] = 0;
+  Enemy.dropDew[eid] = 0;
+  EnemyAI.path[eid] = 0;
 
   return eid;
 }
