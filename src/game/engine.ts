@@ -334,11 +334,6 @@ export class Engine {
         hud: this.hud,
         quests: this.quests,
         dialogue: this.dialogue,
-        drops: null as any,
-        fog: null as any,
-        combat: null as any,
-        ai: null as any,
-        interaction: null as any,
         dungeonBossDead: this.dungeonBossDead.bind(this),
         toast: (msg: string) => this.toast(msg),
         float: (x: number, y: number, text: string, color: number) => this.float(x, y, text, color),
@@ -482,7 +477,7 @@ export class Engine {
     this.cam.y = clamp(spawn.y - this.viewH / 2, 0, Math.max(0, map.H * T - this.viewH));
 
     // Очищаем float text перед загрузкой новой карты
-    this.renderer.clearFloats();
+    // Float text очищается в ECS render system
 
     // ECS загрузка карты
     this.loadMapEcs(map, spawn);
@@ -490,18 +485,20 @@ export class Engine {
 
   /** ECS загрузка карты */
   private loadMapEcs(map: WorldData, spawn: Vec) {
-    // Сохраняем дропы
-    const savedDrops = this.dropsArr.filter((d: any) => !d.taken).map((d: any) => ({
-      kind: d.kind, x: d.x, y: d.y, life: d.life, ambientIdx: d.ambientIdx,
-    }));
+    // Сохраняем дропы перед очисткой мира
+    const savedDrops = this.ecsGameLoop ? this.ecsGameLoop.getDropsForTransition() : [];
 
     // Строим текстуры — тайлы в tileLayer (под сущностями)
-    this.renderer.buildMapTextures(map, this.entityMgr.roofSnow, this.tileLayer);
+    const tileResult = buildAllTileTextures(map, this.roofSnow);
+    tileResult.wallSprites.forEach(ws => this.tileLayer.addChild(ws));
+    tileResult.houseSprites.forEach(hs => this.tileLayer.addChild(hs));
+    this.wallCache = tileResult.wallCache;
+    this.houseCache = tileResult.houseCache;
 
     // Создаём ECS Map Loader
     this.ecsMapLoader = new EcsMapLoader({
       world: this.ecsWorld,
-      planckWorld: this.entityMgr.planckWorld,
+      planckWorld: new PlanckWorld(Cat, 1/60),
       dynamicContainer: this.dynamic,
       openedChests: this.store.openedChests,
       takenPedestals: this.store.takenPedestals,
@@ -522,25 +519,30 @@ export class Engine {
     });
 
     const result = this.ecsMapLoader.loadMap(this.playerG, this.playerDomain);
-    this.ecsPlayerBody = this.playerBody; // TODO: получить из ECS
+    this.ecsPlayerBody = result.playerBody;
+    
+    // Установить PlanckWorld в game loop
+    if (this.ecsGameLoop) {
+      this.ecsGameLoop.setPlanckWorld(this.ecsMapLoader.planckWorld);
+    }
     
     // Обновить playerEid в game loop
     if (this.ecsGameLoop) {
       this.ecsGameLoop.setPlayerEid(result.playerEid);
     }
 
-    // Обновляем game loop с новыми данными
+    // Обновляем game loop с новыми данными (без legacy систем)
     if (this.ecsGameLoop) {
       // Пересоздаём game loop с новыми параметрами
       this.ecsGameLoop = createEcsGameLoop({
         world: this.ecsWorld,
         bus: this.bus,
         store: this.store,
-        planckWorld: this.entityMgr.planckWorld,
+        planckWorld: this.ecsMapLoader.planckWorld,
         app: this.app,
         dynamic: this.dynamic,
         floatLayer: this.floatLayer,
-        gameWorld: this.world, // world контейнер для камеры (tileLayer + dynamic)
+        gameWorld: this.world,
         fx: this.fx,
         input: this.input,
         state: this.state,
@@ -559,11 +561,6 @@ export class Engine {
         hud: this.hud,
         quests: this.quests,
         dialogue: this.dialogue,
-        drops: this.drops,
-        fog: this.fog,
-        combat: this.combat,
-        ai: this.ai,
-        interaction: this.interaction,
         dungeonBossDead: this.dungeonBossDead.bind(this),
         toast: (msg: string) => this.toast(msg),
         float: (x: number, y: number, text: string, color: number) => this.float(x, y, text, color),
@@ -598,9 +595,8 @@ export class Engine {
   }
 
   private handleSnow() {
-    this.entityMgr.roofSnow = !this.entityMgr.roofSnow;
-    this.renderer.setRoofSnow(this.entityMgr.roofSnow);
-    this.toast(this.entityMgr.roofSnow ? "Снег на крышах: вкл" : "Снег на крышах: выкл");
+    this.roofSnow = !this.roofSnow;
+    this.toast(this.roofSnow ? "Снег на крышах: вкл" : "Снег на крышах: выкл");
   }
 
   private useStoredHeart() {
@@ -638,8 +634,8 @@ export class Engine {
 
     // Рендеринг через ECS
     this.ecsGameLoop.render(rdt);
-    // Minimap update
-    this.renderer.drawMinimap(this.minimapCanvas, this.mmBase, this.map, this.player, this.realT);
+    // Minimap update через утилиту из map-display.ts
+    drawMinimap(this.minimapCanvas, this.mmBase, this.map, this.player, this.realT);
   }
 
   /* ================= NPC ================= */
@@ -702,14 +698,19 @@ export class Engine {
   }
 
   private float(x: number, y: number, text: string, color: number) {
-    this.renderer.addFloatText(x, y, text, color);
+    // Float text теперь добавляется через ECS render system
+    // Вызывается из ecs-game-loop через addFloatText
+    import('./ecs/ecs-systems/render-system').then(({ addFloatText }) => {
+      addFloatText(text, x, y, color, this.floatLayer);
+    });
   }
 
   /* ================= big map (public) ================= */
 
   drawBigMap(c: HTMLCanvasElement) {
     if (!this.map) return;
-    this.renderer.drawBigMap(c, this.map, this.player, this.dungeonBossDead.bind(this), this.quests.trackedTarget());
+    // Используем утилиту из map-display.ts для рендеринга большой карты
+    drawBigMap(c, this.map, this.player, this.dungeonBossDead.bind(this), this.quests.trackedTarget());
   }
 
   /* ===== Вспомогательные поля для доступа из других методов ===== */
@@ -753,7 +754,6 @@ export class Engine {
     if (this.app) this.app.destroy(true);
     this.fx.destroy();
     this.bus.clear();
-    this.renderer.destroy();
   }
 
   /* ===== Вспомогательные поля ===== */

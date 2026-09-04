@@ -60,6 +60,7 @@ export class EcsMapLoader {
     this.config = config;
   }
 
+  get planckWorld(): PlanckWorld { return this.config.planckWorld; }
   get playerEidValue(): number { return this.playerEid; }
 
   /** Загрузить карту в ECS */
