@@ -24,12 +24,8 @@ import {
 import { buildMinimapBase, buildBigMapBase, drawBigMap } from "./map-display";
 
 // Подсистемы
-import { InputSystem } from "./system/input-system";
-import { StateManager } from "./system/state-manager";
-import { EntityManager } from "./system/entity-manager";
-import { MapLoader } from "./system/map-loader";
-import { MapRenderer } from "./system/map-renderer";
-import { RenderSystem, DefaultGraphicsFactory } from "./system/render-system";
+import { InputSystem } from "./input/input-system";
+import { StateManager } from "./state/state-manager";
 
 // Системы
 import { EventBus } from "./event-bus";
@@ -39,22 +35,16 @@ import { clamp, dist2 } from "./utils";
 import { QuestView } from "./types";
 import { Vec2 } from "planck-js";
 export type { QuestView } from "./types";
-import { QuestSystem } from "./system/quest-system";
-import { DialogueSystem } from "./system/dialogue-system";
-import { DropsSystem } from "./system/drops-system";
-import { FogSystem } from "./system/fog-system";
-import { PhysicsSystem } from "./system/physics-system";
-import { Cat, type PhysicsCallbacks } from "./system/planck-world";
-import { CombatSystem } from "./system/combat-system";
-import { AISystem } from "./system/ai-system";
-import { InteractionSystem } from "./system/interaction-system";
-import { HudSystem } from "./system/hud-system";
+import { QuestSystem } from "./quests/quest-system";
+import { DialogueSystem } from "./dialogue/dialogue-system";
+import { HudSystem } from "./hud/hud-system";
 
 // ECS интеграция
 import { createEcsWorld, getEcsWorld } from './ecs/ecs-world';
 import { initPrefabs } from './ecs/ecs-systems';
-import { createEcsGameLoop } from './ecs/ecs-game-loop';
+import { createEcsGameLoop, type EcsGameLoop } from './ecs/ecs-game-loop';
 import { EcsMapLoader } from './ecs/ecs-map-loader';
+import { PlanckWorld, Cat, type PhysicsCallbacks } from './physics/planck-world';
 
 // Импорты рендереров
 import {
@@ -108,28 +98,17 @@ export class Engine {
   // Подсистемы
   private input = new InputSystem(this.bus);
   private state = new StateManager();
-  private entityMgr!: EntityManager;
-  private mapLoader!: MapLoader;
-  private mapRenderer!: MapRenderer;
-  private renderer!: RenderSystem;
 
   // ECS интеграция
   private ecsWorld: any = null;
-  private ecsGameLoop: any = null;
+  private ecsGameLoop: EcsGameLoop | null = null;
   private ecsMapLoader: EcsMapLoader | null = null;
   private ecsPlayerBody: any = null;
   private ecsPlayerEid: number = -1;
-  private useEcs = true; // ВКЛЮЧЕНО: переход на bitECS
 
-  // Системы
+  // Системы (ECS или legacy)
   private quests!: QuestSystem;
   private dialogue!: DialogueSystem;
-  private drops!: DropsSystem;
-  private fog!: FogSystem;
-  private physics!: PhysicsSystem;
-  private combat!: CombatSystem;
-  private ai!: AISystem;
-  private interaction!: InteractionSystem;
   private hud!: HudSystem;
 
   // Слои
@@ -163,6 +142,9 @@ export class Engine {
   private dungeons: WorldData[] = [];
   private map!: WorldData;
 
+  // Состояние рендеринга
+  private roofSnow = false;
+
   // Флаги
   private flags = {
     hasSword: false, hasAxe: false, hasBow: false, hasHammer: false, hasKey: false,
@@ -183,16 +165,6 @@ export class Engine {
   private arrowA = -Math.PI / 2;
   public _arrowA = -Math.PI / 2;
   private starting = false;
-
-  // Массивы сущностей (для передачи в EntityManager)
-  private enemies: (Enemy & { g: Graphics })[] = [];
-  private projectiles: ProjectileRt[] = [];
-  private dropsArr: DropRt[] = [];
-  private chests: ChestRt[] = [];
-  private pedestals: PedestalRt[] = [];
-  private shrines: ShrineRt[] = [];
-  private npcs: NpcRt[] = [];
-  private doors: DoorRt[] = [];
 
   constructor(container: HTMLElement, cbs: EngineCallbacks) {
     this.container = container;
@@ -249,10 +221,8 @@ export class Engine {
     this.input.register();
 
     // Инициализация ECS мира (только мир и префабы)
-    if (this.useEcs) {
-      this.ecsWorld = createEcsWorld();
-      initPrefabs(this.ecsWorld);
-    }
+    this.ecsWorld = createEcsWorld();
+    initPrefabs(this.ecsWorld);
 
     // Подписки на абстрактные действия ввода
     this.bus.on("input:pause", () => this.handlePause());
@@ -269,40 +239,9 @@ export class Engine {
     app.ticker.maxFPS = 60;
     app.ticker.add((tk) => this.tick(Math.min(tk.deltaMS / 1000, 0.05)));
 
-    // Инициализируем подсистемы ДО buildGameStore
-    this.entityMgr = new EntityManager(this.bus, {
-      loadMap: (map: WorldData, spawn: Vec) => this.loadMap(map, spawn),
-      toast: (msg: string) => this.toast(msg),
-    }, {
-      enemies: this.enemies,
-      projectiles: this.projectiles,
-      drops: this.dropsArr,
-      chests: this.chests,
-      pedestals: this.pedestals,
-      shrines: this.shrines,
-      npcs: this.npcs,
-      doors: this.doors,
-    }, this.dynamic, DefaultGraphicsFactory);
-    this.mapLoader = new MapLoader(this.entityMgr, {
-      enemies: this.enemies,
-      projectiles: this.projectiles,
-      drops: this.dropsArr,
-      chests: this.chests,
-      pedestals: this.pedestals,
-      shrines: this.shrines,
-      npcs: this.npcs,
-      doors: this.doors,
-    }, this.dynamic);
-
     // Создаём GameStore и системы
     this.store = this.buildGameStore();
     this.instantiateSystems(this.store);
-
-    // MapRenderer создаём после RenderSystem (ему нужны renderers)
-    this.mapRenderer = new MapRenderer(this.renderer.renderers, DefaultGraphicsFactory, this.dynamic,
-      this.chests, this.pedestals, this.shrines, this.npcs, this.doors, this.dropsArr,
-      this.entityMgr
-    );
   }
 
   private buildGameStore(): GameStore {
@@ -329,7 +268,7 @@ export class Engine {
       player: eng.player,
       playerDomain: eng.playerDomain,
       services: {
-        spawnEnemy: (kind: string, x: number, y: number) => eng.entityMgr?.spawnEnemy(kind as any, x, y)!,
+        spawnEnemy: (kind: string, x: number, y: number) => null as any,
         loadMap: (map: WorldData, spawn: Vec) => eng.loadMap(map, spawn),
         setScreen: (s: Screen) => eng.setScreen(s),
         fadeTo: (a: number) => eng.fadeTo(a),
@@ -346,107 +285,37 @@ export class Engine {
         onToast: (msg: string) => eng.toast(msg),
         onStats: (data: any) => eng.bus.emit("hud:dirty", {}),
       },
-      entitiesArrays: {
-        enemies: this.enemies,
-        projectiles: this.projectiles,
-        drops: this.dropsArr,
-        chests: this.chests,
-        pedestals: this.pedestals,
-        shrines: this.shrines,
-        npcs: this.npcs,
-        doors: this.doors,
-      },
-      planckWorld: this.entityMgr?.planckWorld,
     };
     const store = new GameStore(config);
     return store;
   }
 
   private instantiateSystems(store: GameStore) {
-    // Setup Planck.js collision callbacks
-    const callbacks: PhysicsCallbacks = {
-      onProjectileHitEnemy: (projBody, enemyBody, projData, enemyData) => {
-        // Find the projectile and enemy entities
-        const projRt = (this.projectiles as any).find((p: any) => (p as any).body === projBody);
-        const enemy = this.enemies.find((e: any) => (e as any).body === enemyBody);
-        if (projRt && enemy && !enemy.dead) {
-          this.combat.hitEnemy(enemy, projRt.dmg, projRt.x, projRt.y, true);
-        }
-      },
-      onProjectileHitPlayer: (projBody, playerBody, projData) => {
-        const projRt = (this.projectiles as any).find((p: any) => (p as any).body === projBody);
-        if (projRt) {
-          this.combat.damagePlayer(projRt.dmg, projRt.x, projRt.y);
-        }
-      },
-      onEnemyHitPlayer: (enemyBody, playerBody, enemyData) => {
-        // Contact damage handled in AI system (contactCd)
-      },
-      onProjectileHitTile: (projBody, projData) => {
-        // Projectile will be destroyed by pendingDestroy queue
-      },
-      onPlayerPickupDrop: (playerBody, dropBody, dropData) => {
-        // Find the drop entity and mark as taken
-        const dropRt = this.dropsArr.find((d: any) => (d as any).body === dropBody);
-        if (dropRt && !dropRt.taken) {
-          dropRt.taken = true;
-          // Remove drop body
-          this.entityMgr.planckWorld.destroyBody(dropBody);
-          // Notify drops system
-          this.drops.onPickup(dropRt);
-        }
-      },
-    };
-    this.entityMgr.planckWorld.setCallbacks(callbacks);
-
+    // ECS world уже создан, Planck world будет создан в EcsMapLoader
+    
     this.quests      = new QuestSystem(this.bus, store);
     this.dialogue    = new DialogueSystem(this.bus, store);
-    this.drops       = new DropsSystem(this.bus, store, DefaultGraphicsFactory);
-    this.fog         = new FogSystem(this.bus, store);
-    this.physics     = new PhysicsSystem();
-    // Connect PhysicsSystem to PlanckWorld from EntityManager
-    this.physics.setPlanckWorld(this.entityMgr.planckWorld);
-    this.combat      = new CombatSystem(this.bus, store, this.physics, this.entityMgr.planckWorld);
-    this.ai          = new AISystem(this.bus, store, this.physics);
-    this.interaction = new InteractionSystem(this.bus, store);
     this.hud         = new HudSystem(this.bus, store, this.quests);
-    this.renderer    = new RenderSystem({
-      factory: DefaultGraphicsFactory,
-      bus: this.bus,
-      entityMgr: this.entityMgr,
-      fx: this.fx,
-      fog: this.fog,
-      quests: this.quests,
-      hud: this.hud,
-      interaction: this.interaction,
-      npcSigProvider: this,
-      talkedSig: this.talkedSig,
-      flags: this.store.flags,
-      store: { bossRef: () => this.store.bossRef, map: () => this.store.map ?? undefined },
-      floatLayer: this.floatLayer,
-      dynamic: this.dynamic,
-    });
+    
     // Подписки на события движка
     this.bus.on("engine:enter-dungeon", (e) => this.enterDungeon(e));
     this.bus.on("engine:exit-dungeon", (e) => this.exitDungeon(e));
     this.bus.on("hud:float", (e) => this.float(e.x, e.y, e.text, e.color));
     this.bus.on("player:died", () => this.state.onPlayerDied());
-    this.bus.on("projectile:spawned", (e) => this.dynamic.addChild(e.g));
-    this.bus.on("drop:spawned", (e) => this.dynamic.addChild(e.g));
     // Связываем смену экрана в state с уведомлением App.tsx
     this.state.setHandlers((s) => this.setScreen(s), (msg) => this.toast(msg));
 
     // Инициализация ECS Game Loop (после всех систем)
-    if (this.useEcs && this.ecsWorld) {
+    if (this.ecsWorld) {
       this.ecsGameLoop = createEcsGameLoop({
         world: this.ecsWorld,
         bus: this.bus,
         store: this.store,
-        planckWorld: this.entityMgr.planckWorld,
+        planckWorld: null as any, // будет установлен после загрузки карты
         app: this.app,
         dynamic: this.dynamic,
         floatLayer: this.floatLayer,
-        gameWorld: this.world, // world контейнер для камеры (tileLayer + dynamic)
+        gameWorld: this.world,
         fx: this.fx,
         input: this.input,
         state: this.state,
@@ -460,16 +329,16 @@ export class Engine {
         dialogueActive: this.dialogueActive,
         stepT: this.stepT,
         realT: this.realT,
-        playerEid: -1, // будет обновлён при загрузке карты
+        playerEid: -1,
         playerDomain: this.playerDomain,
         hud: this.hud,
         quests: this.quests,
         dialogue: this.dialogue,
-        drops: this.drops,
-        fog: this.fog,
-        combat: this.combat,
-        ai: this.ai,
-        interaction: this.interaction,
+        drops: null as any,
+        fog: null as any,
+        combat: null as any,
+        ai: null as any,
+        interaction: null as any,
         dungeonBossDead: this.dungeonBossDead.bind(this),
         toast: (msg: string) => this.toast(msg),
         float: (x: number, y: number, text: string, color: number) => this.float(x, y, text, color),
@@ -608,11 +477,6 @@ export class Engine {
     this.playerDomain.resetTimers();
     p.hp = Math.min(p.hp, p.maxHp);
     this.playerG.position.set(spawn.x, spawn.y);
-    
-    // В ECS режиме playerG добавляется в dynamic через loadMapEcs
-    if (!this.useEcs) {
-      this.renderer.setupPlayerG(this.playerG);
-    }
 
     this.cam.x = clamp(spawn.x - this.viewW / 2, 0, Math.max(0, map.W * T - this.viewW));
     this.cam.y = clamp(spawn.y - this.viewH / 2, 0, Math.max(0, map.H * T - this.viewH));
@@ -620,38 +484,8 @@ export class Engine {
     // Очищаем float text перед загрузкой новой карты
     this.renderer.clearFloats();
 
-    // Строим текстуры ДО clearEntities — они будут в tileLayer (под сущностями)
-    this.renderer.buildMapTextures(map, this.entityMgr.roofSnow, this.tileLayer);
-
-    if (this.useEcs && this.ecsWorld) {
-      // ECS загрузка карты
-      this.loadMapEcs(map, spawn);
-    } else {
-      // Старый путь
-      this.loadMapLegacy(map, spawn);
-    }
-  }
-
-  /** Старый путь загрузки карты */
-  private loadMapLegacy(map: WorldData, spawn: Vec) {
-    const p = this.player;
-    // Физическое тело игрока
-    this.playerBody = this.entityMgr.makeBody(p.r, spawn, Cat.Player, { kind: "player", dead: false });
-
-    // Загружаем карту через MapLoader
-    this.mapLoader.loadMap(
-      map, spawn,
-      this.player, this.playerDomain, this.playerG,
-      this.cam, this.viewW, this.viewH,
-      this.flags, this.store,
-      this.drops, this.entityMgr.entities.drops,
-      this.renderer.getFloatTexts(),
-      (msg) => this.toast(msg),
-      (force?) => this.pushHud(force)
-    );
-
-    // Рендерим сущности
-    this.mapRenderer.renderAll(this.realT, this.flags.runes);
+    // ECS загрузка карты
+    this.loadMapEcs(map, spawn);
   }
 
   /** ECS загрузка карты */
@@ -791,15 +625,9 @@ export class Engine {
       if (this.state.hitstop > 0) this.state.hitstop -= rdt;
       else {
         const effectiveDt = rdt * this.state.timeScale;
-        
-        if (this.useEcs && this.ecsGameLoop) {
-          // ECS Game Loop
-          this.ecsGameLoop.tick(effectiveDt, 1);
-          this.realT = this.ecsGameLoop.realT;
-        } else {
-          // Старый Game Loop
-          this.update(effectiveDt, rdt);
-        }
+        // ECS Game Loop
+        this.ecsGameLoop.tick(effectiveDt, 1);
+        this.realT = this.ecsGameLoop.realT;
       }
     } else {
       audio.setIntensity(0);
@@ -808,17 +636,8 @@ export class Engine {
       }
     }
 
-    // Рендеринг
-    if (this.useEcs && this.ecsGameLoop) {
-      // ECS Game Loop — рендеринг через ECS render-system
-      this.ecsGameLoop.render(rdt);
-    } else {
-      // Старый RenderSystem
-      this.realT = this.renderer.tick(
-        rdt, this.app, this.realT, this.state, this.map, this.player, this.playerG,
-        this.cam, this.viewW, this.viewH, this.fadeG, this.fxScreen, this.world
-      );
-    }
+    // Рендеринг через ECS
+    this.ecsGameLoop.render(rdt);
     // Minimap update
     this.renderer.drawMinimap(this.minimapCanvas, this.mmBase, this.map, this.player, this.realT);
   }
@@ -833,172 +652,11 @@ export class Engine {
     return this.quests.mainQuestId();
   }
 
-  /* ================= обновление ================= */
-
-  private update(dt: number, rdt: number) {
-    const p = this.player;
-
-    // Синхронизация PlayerDomain с реальным Player
-    this.playerDomain.syncFrom({
-      x: p.x, y: p.y,
-      vx: p.vx, vy: p.vy,
-      hp: p.hp, maxHp: p.maxHp,
-      swingT: p.swingT, hurtT: p.hurtT, slowT: p.slowT,
-    });
-
-    // Получаем состояние ввода
-    const input = this.input.getState();
-
-    // Движение
-    let ix = input.ix, iy = input.iy;
-    const mag = Math.hypot(ix, iy);
-    if (mag > 0.12) p.dir = { x: ix / Math.max(1, mag), y: iy / Math.max(1, mag) };
-
-    const tile = tileAt(this.map, Math.floor(p.x / T), Math.floor(p.y / T));
-    let speed = 92;
-    if (p.slowT > 0) speed *= 0.6;
-    if (tile === Tl.SWAMP) speed = 62;
-    if (tile === Tl.POOL) {
-      speed = 48;
-      if (Math.floor(this.realT * 1.4) !== Math.floor((this.realT - dt) * 1.4)) {
-        this.bus.emit("player:damaged", { dmg: 1, sx: p.x, sy: p.y + 10 });
-        this.fx.burst(p.x, p.y + 4, 0x3a6a5c, 3, 20, 0.5, 2, -20);
-      }
-    }
-    p.moving = mag > 0.12;
-    if (p.moving) {
-      p.animT += dt;
-      this.stepT -= dt;
-      if (this.stepT <= 0) { this.stepT = 0.32; audio.step(); }
-    }
-    p.vx = ix * speed;
-    p.vy = iy * speed;
-
-    // Apply impulse instead of setLinearVelocity — solver can still apply collision response
-    if (this.playerBody) {
-      const body = this.playerBody;
-      const currentVx = body.getLinearVelocity().x;
-      const currentVy = body.getLinearVelocity().y;
-      const mass = body.getMass();
-      const impulseX = mass * (p.vx - currentVx);
-      const impulseY = mass * (p.vy - currentVy);
-      body.applyLinearImpulse(Vec2(impulseX, impulseY), body.getWorldCenter());
-    }
-
-    // Лук
-    const bowKeyDown = this.input.isKeyHeld("KeyL") || this.input.isBowVirtualHeld();
-    if (bowKeyDown && this.flags.hasBow) {
-      this.input.updateBow(true);
-      this.state.setTsTarget(0.45);
-    } else if (this.input.getBowHeld()) {
-      this.input.updateBow(false);
-      this.state.setTsTarget(1);
-      if (this.flags.arrows > 0) {
-        this.flags.arrows--;
-        const a = Math.atan2(p.dir.y, p.dir.x);
-        this.bus.emit("projectile:fire", {
-          kind: "arrow" as any,
-          x: p.x + Math.cos(a) * 8, y: p.y - 2 + Math.sin(a) * 8,
-          vx: Math.cos(a) * 260, vy: Math.sin(a) * 260, dmg: 2,
-        });
-        audio.arrow();
-        this.pushHud(true);
-      } else this.float(p.x, p.y, "Нет стрел", 0xc9a24b);
-    }
-    if (!this.input.getBowHeld()) this.state.setTsTarget(1);
-
-    // Действия
-    if (input.atkPressed) this.bus.emit("combat:trySword", {});
-    if (input.axePressed) this.bus.emit("combat:tryAxe", {});
-    if (input.actPressed) this.interaction.tryInteract((id) => this.startDialogue(id));
-    this.input.clearPressed();
-
-    this.playerDomain.updateTimers(dt);
-
-    // Обновление AI врагов
-    this.ai.updateEnemies(dt);
-
-    // Физика Planck.js — step
-    this.entityMgr.planckWorld.step(dt);
-
-    // Синхронизация: body.position → entity.x/y (игрок)
-    if (this.playerBody) {
-      const pos = this.playerBody.getPosition();
-      p.x = pos.x;
-      p.y = pos.y;
-    }
-
-    // Синхронизация: body.position → entity.x/y (враги)
-    for (const e of this.entityMgr.entities.enemies) {
-      if (e.dead || e.hidden) continue;
-      const body = (e as any).body;
-      if (body) {
-        const pos = body.getPosition();
-        e.x = pos.x;
-        e.y = pos.y;
-      }
-      // Призраки — кинематические тела, летают сквозь static
-      if (e.kind === "ghost") {
-        const body = (e as any).body;
-        if (body) {
-          body.setLinearVelocity(Vec2(e.vx || 0, e.vy || 0));
-        }
-      }
-    }
-
-    // Обновление систем
-    this.combat.updateProjectiles(dt);
-    this.drops.updateDrops(dt);
-    this.fog.updateFog(dt, rdt);
-
-    for (const d of this.entityMgr.entities.doors) {
-      if (d.locked && this.flags.hasKey && dist2(d.x, d.y, p.x, p.y) < 24 * 24) {
-        d.locked = false;
-        this.flags.hasKey = false;
-        d.open = 0.01;
-        audio.door();
-        this.toast("Ключ повернут — путь к стражу открыт");
-        this.pushHud(true);
-      }
-      if (d.open < 1 && d.open > 0 && !d.locked) d.open = Math.min(1, d.open + dt * 2);
-
-      // Update door body position based on open state
-      const doorBody = (d as any).body;
-      if (doorBody) {
-        const scale = 1 - d.open;
-        doorBody.setPosition(Vec2(d.x, d.y - d.open * 8));
-      }
-    }
-
-    // Update barrier body
-    const barrier = this.entityMgr.barrier;
-    if (barrier) {
-      const barrierBody = (barrier as any).body;
-      if (barrierBody) {
-        barrierBody.setPosition(Vec2(barrier.x, barrier.y - (barrier.active ? 0 : 20)));
-      }
-    }
-
-    const zn = zoneFor(this.map, Math.floor(p.x / T), Math.floor(p.y / T));
-    if (zn !== this.store.zone) {
-      if (this.store.zone !== "") this.toast(zn);
-      this.store.setZone(zn);
-      this.pushHud(true);
-    }
-
-    if (this.map.isDungeon && !this.dungeonBossDead(this.map.dungeonId) && !this.store.bossRef) {
-      const br = this.map.bossRoom;
-      if (p.x > br.x && p.x < br.x + br.w && p.y > br.y && p.y < br.y + br.h) this.bus.emit("boss:start-dungeon", {});
-    }
-
-    // Синхронизация Player ← PlayerDomain
-    this.playerDomain.syncToPlayer(p);
-  }
-
   /* ================= респавн ================= */
 
   dungeonBossDead(id: number): boolean {
-    return this.combat.dungeonBossDead(id);
+    // ECS version - query world for boss status
+    return this.ecsGameLoop ? this.ecsGameLoop.isDungeonBossDead(id) : false;
   }
 
   private respawn() {
@@ -1017,12 +675,8 @@ export class Engine {
     this.state.playerDead = false;
     this.setScreen("play");
     this.fadeTo(1);
-    if (this.map.isDungeon) {
-      this.loadMap(this.ow, spawn);
-    } else {
-      this.playerG.position.set(spawn.x, spawn.y);
-      this.renderer.setupPlayerG(this.playerG);
-    }
+    // Всегда загружаем карту через ECS
+    this.loadMap(this.ow, spawn);
     this.hud.pushHud(true);
     this.bus.emit("player:respawned", {});
   }
@@ -1090,14 +744,10 @@ export class Engine {
     }
   }
 
-  /* ===== Туман (вспомогательное) ===== */
-  private get fogWarned(): boolean { return this.fog.fogWarned; }
-
   /* ===== Уничтожение ===== */
 
   destroy() {
     this.input.unregister();
-    this.entityMgr.destroy();
     this.wallCache.destroy();
     this.houseCache.destroy();
     if (this.app) this.app.destroy(true);

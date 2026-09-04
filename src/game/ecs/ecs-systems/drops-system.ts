@@ -15,7 +15,7 @@ import {
   PhysicsBody,
 } from '../ecs-components';
 import type { DropKind } from '../../generators/types';
-import type { PlanckWorld } from '../../system/planck-world';
+import type { PlanckWorld } from '../../physics/planck-world';
 import { Graphics } from 'pixi.js';
 
 // ============================================================

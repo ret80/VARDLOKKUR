@@ -3,7 +3,7 @@ import { EventBus } from "../event-bus";
 import { GameStore } from "../store";
 import { HudData, Stats } from "../engine";
 import { QuestView } from "../types";
-import { IQuestProvider } from "./quest-provider";
+import { IQuestProvider } from "../quests/quest-provider";
 import { audio } from "../audio";
 
 export class HudSystem {

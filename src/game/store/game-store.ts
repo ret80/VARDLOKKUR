@@ -77,6 +77,9 @@ export interface AltarRt extends AltarRtType {
 
 export interface FloatText { txt: Text; life: number }
 
+// Ре-экспорт типов из world-entities для совместимости
+export type { ProjectileRt, DropRt } from "./world-entities";
+
 /** Колбэки движка */
 export interface EngineCallbacks {
   onHud: (data: any) => void;
