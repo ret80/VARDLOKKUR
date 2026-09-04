@@ -792,7 +792,6 @@ export class Engine {
       else {
         const effectiveDt = rdt * this.state.timeScale;
         
-        console.log('[ENGINE] useEcs=', this.useEcs, 'ecsGameLoop=', !!this.ecsGameLoop, 'screen=', this.state.screen);
         if (this.useEcs && this.ecsGameLoop) {
           // ECS Game Loop
           this.ecsGameLoop.tick(effectiveDt, 1);

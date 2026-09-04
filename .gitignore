@@ -1,66 +1,48 @@
-# MCP
-.playwright-mcp
-
+```
 # Dependencies
 node_modules/
 
-# Build artifacts
+# TypeScript build output
 dist/
 build/
 *.js.map
 
-# Logs and temp files
-*.log
-*.tmp
-*.pid
-
-# Environment
+# Environment variables
 .env
 .env.local
 *.env.*
 
-# Editors
+# IDE files
 .vscode/
 .idea/
+*.swp
+*.swo
 
-# Python
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+
+# Coverage reports
+coverage/
+htmlcov/
+*.coverage
+
+# Python cache (if any Python files exist in project)
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
-# Compiled files
-*.o
-*.obj
-*.so
-*.dll
-*.exe
-
-# Coverage
-coverage/
-htmlcov/
-.coverage
-
-# Compression
+# Distribution / build artifacts
+*.tar.gz
 *.zip
 *.gz
-*.tar
 *.tgz
 *.bz2
 *.xz
 *.7z
 *.rar
 *.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+```
