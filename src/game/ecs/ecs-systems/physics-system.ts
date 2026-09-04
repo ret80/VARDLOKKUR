@@ -45,21 +45,13 @@ export function syncPositionToBody(world: World): void {
 
 /** Синхронизировать Velocity из ECS в Planck.js body */
 export function syncVelocityToBody(world: World): void {
-  console.log('[PHYSICS] syncVelocityToBody CALLED');
   const { x: vx, y: vy } = Velocity;
   const pb = PhysicsBody;
-  const matches = Array.from(query(world, [Velocity, PhysicsBody]));
-  console.log('[PHYSICS] query matches:', matches.length, matches);
 
-  for (const eid of matches) {
+  for (const eid of query(world, [Velocity, PhysicsBody])) {
     const body = pb[eid]?.body;
     if (body) {
-      const type = body.getType();
-      const curVel = body.getLinearVelocity();
-      console.log('[PHYSICS] syncVel: eid=', eid, 'vx=', vx[eid], 'vy=', vy[eid], 'type=', type, 'curVel=', curVel.x, curVel.y);
       body.setLinearVelocity(Vec2(vx[eid], vy[eid]));
-      const newVel = body.getLinearVelocity();
-      console.log('[PHYSICS] after setVel: newVel=', newVel.x, newVel.y);
     }
   }
 }

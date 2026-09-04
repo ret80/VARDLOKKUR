@@ -92,6 +92,7 @@ export const Enemy = [] as {
   guardOf: number;
   fade: number;
   dropDew: boolean;
+  leash?: { x: number; y: number };
 }[];
 
 /** Снаряд */

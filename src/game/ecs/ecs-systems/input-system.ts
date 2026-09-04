@@ -40,8 +40,6 @@ export function updatePlayerInput(
   const p = Player[playerEid];
   if (!p) return { stepT, realT };
 
-  console.log('[INPUT] ix=', ix, 'iy=', iy, 'mag=', mag, 'eid=', playerEid);
-
   // Обновляем направление и анимацию
   if (mag > 0.12) {
     vx[playerEid] = ix * 92;
@@ -49,7 +47,6 @@ export function updatePlayerInput(
     p.moving = true;
     dx[playerEid] = ix / Math.max(1, mag);
     dy[playerEid] = iy / Math.max(1, mag);
-    console.log('[INPUT] SET_VEL: vx=', vx[playerEid], 'vy=', vy[playerEid], 'eid=', playerEid);
   } else {
     vx[playerEid] = 0;
     vy[playerEid] = 0;
