@@ -303,6 +303,9 @@ export default function App() {
   const mmRef = useRef<HTMLCanvasElement>(null);
   const padRef = useRef<HTMLDivElement>(null);
 
+  // Debug mode: проверяем ?debug в URL
+  const debugMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") !== null;
+
   const pushToast = useCallback((msg: string) => {
     const id = ++toastId;
     setToasts((t) => [...t.slice(-2), { id, msg }]);
@@ -313,10 +316,10 @@ export default function App() {
     if (!hostRef.current) return;
     const eng = new Engine(hostRef.current, {
       onHud: setHud, onScreen: setScreen, onDialogue: setDialogue, onToast: pushToast, onStats: setStats,
-    });
+    }, debugMode);
     engineRef.current = eng;
     return () => { eng.destroy(); engineRef.current = null; };
-  }, [pushToast]);
+  }, [pushToast, debugMode]);
 
   const eng = () => engineRef.current;
 
@@ -346,6 +349,14 @@ export default function App() {
         fail("Не удалось начать сагу: " + (err?.message ?? String(err)));
       });
   };
+
+  // Автозапуск в debug-режиме — пропускаем меню
+  useEffect(() => {
+    if (debugMode && engineRef.current && screen === "title") {
+      console.log("[App] DEBUG MODE: auto-starting game...");
+      startSaga();
+    }
+  }, [debugMode, screen]);
 
   /* диалог: печатная машинка */
   const [lineIdx, setLineIdx] = useState(0);
@@ -524,6 +535,9 @@ export default function App() {
               <div className="absolute inset-0 flex items-center justify-center"><span className="font-display text-4xl text-[#e8c979] text-shadow-gold">ᛒ</span></div>
             </div>
             <h1 className="font-display text-[clamp(38px,8vw,84px)] leading-none tracking-[0.14em] text-[#dfe8f0] text-shadow-carve">ВАРДЛОКУР</h1>
+            {debugMode && (
+              <div className="mt-1 font-display text-[11px] tracking-[0.3em] text-[#e06060] uppercase animate-pulse">⚠ DEBUG MODE ⚠</div>
+            )}
             <div className="mt-2 font-display text-[clamp(13px,2.4vw,20px)] tracking-[0.4em] text-[#8fd8e8] uppercase anim-pulse-ice">Эхо Ветвей Иггдрасиля</div>
             <div className="mt-8 flex flex-col sm:flex-row items-center gap-3.5">
               <button className="btn-rune text-[17px]" onClick={startSaga} disabled={summoning}>

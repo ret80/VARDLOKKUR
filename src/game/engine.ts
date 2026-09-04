@@ -200,11 +200,17 @@ export class Engine {
     return stats[kind] || { r: 5, hp: 1, speed: 50, dmg: 1 };
   }
 
-  constructor(container: HTMLElement, cbs: EngineCallbacks) {
+  private _debugMode: boolean;
+
+  constructor(container: HTMLElement, cbs: EngineCallbacks, debugMode: boolean = false) {
     this.container = container;
     this.cbs = cbs;
+    this._debugMode = debugMode;
     this.ready = this.init(container);
   }
+
+  /** Получить debug-флаг */
+  get debugMode() { return this._debugMode; }
 
   /* ================= инициализация ================= */
 
@@ -413,20 +419,38 @@ export class Engine {
     audio.init();
     audio.startMusic();
     audio.uiClick();
-    const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
-    try {
-      this.ow = generateOverworld(seed);
-      this.dungeons = DUNGEONS.map((cfg) => {
-        const entry = this.ow.dungeonEntries.find((e) => e.id === cfg.id)!;
-        return generateDungeon(seed, cfg, { x: entry.x * T + 8, y: (entry.y + 2) * T + 8 });
-      });
-      this.store.setOw(this.ow);
-    } catch (e) {
-      this.starting = false;
-      console.error("Сбой генерации мира:", e);
-      this.toast("Ниды не сложились... Попробуйте ещё раз");
-      throw e;
+
+    // Debug mode: загружаем тестовую карту без генерации мира
+    if (this._debugMode) {
+      console.log("[Engine] DEBUG MODE: loading test map");
+      try {
+        const { createTestMap } = await import("./generators/createTestMap");
+        const testMap = createTestMap(21, { x: 10 * 16 + 8, y: 10 * 16 + 8 });
+        this.ow = testMap;
+        this.store.setOw(this.ow);
+      } catch (e) {
+        this.starting = false;
+        console.error("Сбой загрузки тестовой карты:", e);
+        this.toast("Не удалось загрузить тестовую карту");
+        throw e;
+      }
+    } else {
+      const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
+      try {
+        this.ow = generateOverworld(seed);
+        this.dungeons = DUNGEONS.map((cfg) => {
+          const entry = this.ow.dungeonEntries.find((e) => e.id === cfg.id)!;
+          return generateDungeon(seed, cfg, { x: entry.x * T + 8, y: (entry.y + 2) * T + 8 });
+        });
+        this.store.setOw(this.ow);
+      } catch (e) {
+        this.starting = false;
+        console.error("Сбой генерации мира:", e);
+        this.toast("Ниды не сложились... Попробуйте ещё раз");
+        throw e;
+      }
     }
+
     const f = this.flags;
     f.hasSword = false; f.hasAxe = false; f.hasBow = false; f.hasHammer = false; f.hasKey = false;
     f.swordUp = false; f.axeUp = false; f.furyRune = false; f.nornsFavor = false; f.hearts = 2;
@@ -449,7 +473,10 @@ export class Engine {
       this.loadMap(this.ow, this.ow.spawn);
       this.setScreen("play");
       this.fadeTo(1);
-      this.startDialogue("eirik");
+      // В debug-режиме пропускаем диалог с Эйриком
+      if (!this._debugMode) {
+        this.startDialogue("eirik");
+      }
       this.pushHud(true);
     } catch (e) {
       this.starting = false;
@@ -714,8 +741,10 @@ export class Engine {
   /* ================= респавн ================= */
 
   dungeonBossDead(id: number): boolean {
-    // ECS version - query world for boss status
-    return this.ecsGameLoop ? this.ecsGameLoop.isDungeonBossDead(id) : false;
+    // Map dungeonId to boss name and check flags directly (avoids ECS loop recursion)
+    const boss = DUNGEONS[id]?.boss;
+    if (boss) return (this.flags as unknown as Record<string, boolean>)[`${boss}Dead`] === true;
+    return false;
   }
 
   private respawn() {
