@@ -1,11 +1,11 @@
 /* map-loader-service.ts – Загрузка карт (тайлы, ECS сущности, миникарта) */
 
 import { Sprite, Texture } from "pixi.js";
+import { PlanckWorld } from "../physics/planck-world";
 import type { WorldData, Vec } from "../world";
 import type { GameStore } from "../store";
 import type { EventBus } from "../event-bus";
 import type { World } from "bitecs";
-import type { PlanckWorld } from "../physics/planck-world";
 import type { EcsMapLoader } from "../ecs/ecs-map-loader";
 import type { SceneManager } from "./scene-manager";
 import type { ViewportController } from "./viewport-controller";
@@ -101,7 +101,7 @@ export class MapLoaderService {
   private wallCache = new WallTextureCache();
   private houseCache = new HouseTextureCache();
   private ecsMapLoader: EcsMapLoader | null = null;
-  private mmBase: ImageData | null = null;
+  private _mmBase: ImageData | null = null;
 
   constructor(
     private scene: SceneManager,
@@ -112,7 +112,7 @@ export class MapLoaderService {
 
   get wallCacheInstance(): WallTextureCache { return this.wallCache; }
   get houseCacheInstance(): HouseTextureCache { return this.houseCache; }
-  get mmBase(): ImageData | null { return this.mmBase; }
+  get mmBase(): ImageData | null { return this._mmBase; }
 
   /** Загрузить карту (тайлы + позиция игрока) */
   loadMap(map: WorldData, spawn: Vec, playerDomain: PlayerDomain): void {
@@ -159,7 +159,7 @@ export class MapLoaderService {
     // Создаём ECS Map Loader
     this.ecsMapLoader = this.cbs.createEcsMapLoader({
       world: this.cbs.createEcsWorld(),
-      planckWorld: new (require('../physics/planck-world').PlanckWorld)(),
+      planckWorld: new PlanckWorld(),
       dynamicContainer: this.scene.dynamic,
       openedChests: this.store.openedChests,
       takenPedestals: this.store.takenPedestals,
@@ -185,26 +185,14 @@ export class MapLoaderService {
     );
 
     // Построить mmBase для minimap и big map
-    this.mmBase = buildMinimapBase(map);
+    this._mmBase = buildMinimapBase(map);
 
     return result;
-  }
-
-  /** Установить PlanckWorld в game loop */
-  setPlanckWorld(planckWorld: PlanckWorld): void {
-    if (this.ecsMapLoader) {
-      this.ecsMapLoader.setPlanckWorld(planckWorld);
-    }
   }
 
   /** Установить playerEid в game loop */
   setPlayerEid(playerEid: number): void {
     // Передано через updateGameLoop
-  }
-
-  /** Очистить тайловые текстуры */
-  clearTiles(): void {
-    this.scene.clearTiles();
   }
 
   /** Уничтожить кэши текстур */

@@ -54,12 +54,6 @@ export {
   dropsUpdateSystem,
   rollDropsForEnemy,
   spawnWorldDrops,
-  // Legacy runtime exports
-  spawnDropLegacy,
-  updateDropsLegacy,
-  spawnWorldDropsLegacy,
-  createDropsState,
-  type DropsState,
   type DropRt,
 } from './drops-system';
 
@@ -68,10 +62,6 @@ export {
   spawnFogGhost,
   createFogState,
   type FogState,
-  // Legacy runtime exports
-  updateFogLegacy,
-  fogHolesLegacy,
-  type FogState as LegacyFogState,
 } from './fog-system';
 
 export {

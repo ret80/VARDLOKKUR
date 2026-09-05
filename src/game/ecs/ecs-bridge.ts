@@ -45,6 +45,7 @@ import type { PlanckWorld } from '../physics/planck-world';
 import type { Cat } from '../physics/planck-world';
 import { createBodyForEntity } from './ecs-systems';
 import { addComponent, addComponents } from 'bitecs';
+import { ENEMY_STATS } from '../entities';
 
 // ============================================================
 // ECS Entity Bridge — создаёт ECS сущности из данных карты
@@ -75,7 +76,7 @@ export function createEnemyInEcs(
   category: number,
   mask: number
 ): number {
-  const stats = getEnemyStats(kind);
+  const stats = ENEMY_STATS[kind];
   const eid = createEnemyEntity(world, kind, x, y, stats.hp, stats.r, stats.speed, stats.dmg);
   addComponent(world, eid, Sprite);
   SpriteRegistry.push(spriteRef);
@@ -215,23 +216,6 @@ export function createDropInEcs(
 // ============================================================
 // Вспомогательные функции
 // ============================================================
-
-function getEnemyStats(kind: EnemyKind) {
-  const stats: Record<string, { r: number; hp: number; speed: number; dmg: number }> = {
-    draugr:  { r: 6, hp: 3, speed: 52, dmg: 1 },
-    varg:    { r: 6, hp: 3, speed: 68, dmg: 1 },
-    raven:   { r: 5, hp: 2, speed: 78, dmg: 1 },
-    shroom:  { r: 5, hp: 3, speed: 40, dmg: 1 },
-    crawler: { r: 6, hp: 2, speed: 56, dmg: 1 },
-    frost:   { r: 7, hp: 4, speed: 48, dmg: 1 },
-    reaper:  { r: 10, hp: 16, speed: 58, dmg: 1 },
-    spider:  { r: 11, hp: 12, speed: 44, dmg: 1 },
-    giant:   { r: 13, hp: 20, speed: 44, dmg: 2 },
-    snake:   { r: 16, hp: 14, speed: 0,  dmg: 1 },
-    ghost:   { r: 6, hp: 5, speed: 100, dmg: 1 },
-  };
-  return stats[kind] || { r: 5, hp: 1, speed: 50, dmg: 1 };
-}
 
 function addNpcComponents(world: World, eid: number, id: string, name: string, x: number, y: number, spriteRef: Graphics): void {
   addComponents(world, eid, NPC, Sprite);

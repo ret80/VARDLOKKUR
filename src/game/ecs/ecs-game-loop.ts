@@ -47,6 +47,7 @@ import {
   createFogState,
   type FogState,
 } from './ecs-systems/fog-system';
+import { Graphics } from 'pixi.js';
 import {
   tryInteract,
   onEnemyKilledEcs,
@@ -70,14 +71,24 @@ import { hasComponent } from 'bitecs';
 import {
   Position, Velocity, PhysicsBody, Player, Direction,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
+  Flashing, Enemy, Sprite, SpriteRegistry,
 } from './ecs-components';
 import type { InputSystem } from '../input/input-system';
 import type { EventBus } from '../event-bus';
 import type { GameStore } from '../store';
-import type { PlanckWorld } from '../physics/planck-world';
+import { createEnemyInEcs } from './ecs-bridge';
+import { PlanckWorld, Cat } from '../physics/planck-world';
 import type { Application, Container } from 'pixi.js';
 import type { FxManager } from '../fx';
 import type { StateManager } from '../state/state-manager';
+import { audio } from '../audio';
+
+// ============================================================
+// Утилиты
+// ============================================================
+
+/** Обёртка для передачи по ссылке */
+interface Ref<T> { value: T; }
 
 // ============================================================
 // Конфигурация Game Loop
@@ -92,6 +103,7 @@ export interface EcsGameLoop {
   isDungeonBossDead: (id: number) => boolean;
   getDropsForTransition: () => Array<{ kind: string; x: number; y: number; life: number; ambientIdx?: number }>;
   setPlanckWorld: (pw: PlanckWorld) => void;
+  updateConfig: (config: Partial<EcsGameLoopConfig>) => void;
 }
 
 export interface EcsGameLoopConfig {
@@ -112,8 +124,8 @@ export interface EcsGameLoopConfig {
   map: any;
   ow: any;
   flags: any;
-  talkedSig: any;
-  dialogueActive: boolean;
+  talkedSig: Ref<Map<string, string>>;
+  dialogueActive: Ref<boolean>;
   stepT: number;
   realT: number;
   stepTRef: number;
@@ -153,6 +165,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     playerDomain, hud, quests, dialogue,
     dungeonBossDead, toast, float: addFloat, pushHud, startDialogue, npcSig,
     onStepAudio, stepTRef, realTRef, guardSpawn,
+    dialogueActive, talkedSig,
   } = config;
 
   let _stepT = stepTRef;
@@ -160,6 +173,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   let _playerEid = playerEidRef;
   let _planckWorld = planckWorld;
   let _fogState: FogState | null = null;
+
+  // Локальные копии для updateConfig
+  let config_map = map;
+  let config_flags = flags;
 
   /** Выполнить один кадр */
   function tick(rdt: number, timeScale: number): void {
@@ -236,8 +253,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     stateTimerSystem(world, dt);
 
     // ===== 12. AI врагов =====
-    if (map && peid >= 0) {
-      aiUpdateSystem(world, peid, map, dt, () => {}, () => {});
+    if (config_map && peid >= 0) {
+      aiUpdateSystem(world, peid, config_map, dt, () => {}, () => {});
     }
 
     // ===== 13. Обновить снаряды (ECS) =====
@@ -245,17 +262,34 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       world,
       dt,
       peid,
-      flags.ghostBane,
+      config_flags.ghostBane,
       _planckWorld,
-      (eid) => {}, // onProjectileRemove
+      (eid) => {
+        // onProjectileRemove: удалить Graphics + Planck body снаряда
+        const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
+        if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
+        spriteRef?.destroy();
+        const body = PhysicsBodyRegistry[PhysicsBody.body[eid] - 1];
+        if (body) _planckWorld.worldRef.destroyBody(body);
+      },
       addFloat,
-      () => {}, // audio.clang
-      () => {}, // audio.hit
-      () => {}, // audio.freeze
-      () => {}, // onEnemyHit
-      () => {}, // onEnemyKilled
-      () => {}, // onPlayerDamaged
-      () => {}, // onSnakeDeath
+      () => audio.clang(),
+      () => audio.hit(),
+      () => audio.freeze(),
+      (enemyEid: number) => {
+        Flashing[enemyEid] = 1;
+        Enemy.flashT[enemyEid] = 0.2;
+      },
+      (enemyEid: number) => {
+        bus.emit('enemy:killed', { enemy: enemyEid, kind: poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]) as any, x: Position.x[enemyEid], y: Position.y[enemyEid] });
+      },
+      () => {
+        // onPlayerDamaged — уже обработан в damagePlayerEcs через playerDomain
+      },
+      () => {
+        config_flags.snakeDead = true;
+        bus.emit('boss:killed', { kind: 'snake' as any, id: -1 });
+      },
       playerDomain
     );
 
@@ -266,7 +300,12 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       peid,
       store,
       bus,
-      () => {}, // onDropRemove
+      (eid: number) => {
+        // Удалить Graphics + Planck body дропа
+        const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
+        if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
+        spriteRef?.destroy();
+      },
       playerDomain,
       getDropRegistry()
     );
@@ -279,11 +318,21 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       dt,
       rdt,
       _fogState,
-      map,
-      flags,
+      config_map,
+      config_flags,
       bus,
-      (kind: string, x: number, y: number) => -1, // spawnEnemyInEcs - заглушка
-      () => flags.runes
+      (kind: string, x: number, y: number) => {
+        // Создать врага-призрака
+        const g = new Graphics();
+        g.position.set(x, y);
+        const eid = createEnemyInEcs(
+          world, kind as any, x, y, g, _planckWorld,
+          Cat.Ghost, Cat.Ghost | Cat.Player | Cat.Projectile
+        );
+        dynamic.addChild(g);
+        return eid;
+      },
+      () => config_flags.runes
     );
 
     // ===== 16. Двери, зоны, боссы =====
@@ -332,5 +381,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       return drops;
     },
     setPlanckWorld: (pw: PlanckWorld) => { _planckWorld = pw; },
+    updateConfig: (cfg: Partial<EcsGameLoopConfig>) => {
+      if (cfg.planckWorld !== undefined) _planckWorld = cfg.planckWorld;
+      if (cfg.map !== undefined) config_map = cfg.map;
+      if (cfg.playerEid !== undefined) { _playerEid = cfg.playerEid; }
+      if (cfg.flags) config_flags = cfg.flags;
+    },
   };
 }

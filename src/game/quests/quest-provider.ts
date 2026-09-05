@@ -1,5 +1,5 @@
 /* ============ IQuestProvider ============ */
-import { QuestView } from "../types";
+import { QuestView } from "../models";
 
 /**
  * Интерфейс провайдера квестов (DIP: HudSystem зависит от абстракции, а не от QuestSystem).

@@ -42,7 +42,7 @@ export class SceneManager {
   clearTiles(): void {
     for (const child of this.tileLayer.children) {
       if (child instanceof Container) {
-        child.destroy({ destroyChildren: true, texture: true, baseTexture: true });
+        child.destroy({ children: true, texture: true });
       }
     }
     this.tileLayer.removeChildren();
@@ -51,7 +51,7 @@ export class SceneManager {
   /** Очистить dynamic контейнер */
   clearDynamic(): void {
     for (const child of this.dynamic.children) {
-      child.destroy({ destroyChildren: true, texture: true, baseTexture: true });
+      child.destroy({ children: true, texture: true });
     }
     this.dynamic.removeChildren();
   }
@@ -59,7 +59,7 @@ export class SceneManager {
   /** Очистить floatLayer */
   clearFloatLayer(): void {
     for (const child of this.floatLayer.children) {
-      child.destroy({ destroyChildren: true, texture: true, baseTexture: true });
+      child.destroy({ children: true, texture: true });
     }
     this.floatLayer.removeChildren();
   }
@@ -70,7 +70,7 @@ export class SceneManager {
     this.clearDynamic();
     this.clearFloatLayer();
     this.fxWorld.removeChildren();
-    this.fxScreen.destroy({ texture: true, baseTexture: true });
-    this.fadeG.destroy({ texture: true, baseTexture: true });
+    this.fxScreen.destroy({ texture: true });
+    this.fadeG.destroy({ texture: true });
   }
 }

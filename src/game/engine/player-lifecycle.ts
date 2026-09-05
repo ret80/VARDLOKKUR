@@ -65,7 +65,7 @@ export class PlayerLifecycle {
     this.playerDomain.resetTimers();
     player.hp = this.playerDomain.fullHeal();
 
-    this.store.screen = "play";
+    this.store.setScreen("play");
     this.cbs.fadeTo(1);
     this.cbs.loadMap(ow, spawn);
     this.hud.pushHud(true);

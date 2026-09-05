@@ -43,6 +43,7 @@ import { QuestSystem } from "./quests/quest-system";
 import { DialogueSystem } from "./dialogue/dialogue-system";
 import { HudSystem } from "./hud/hud-system";
 
+import type { World } from 'bitecs';
 // ECS интеграция
 import { createEcsWorld, getEcsWorld } from './ecs/ecs-world';
 import { initPrefabs } from './ecs/ecs-systems';
@@ -50,7 +51,8 @@ import { createEcsGameLoop, type EcsGameLoop } from './ecs/ecs-game-loop';
 import { EcsMapLoader } from './ecs/ecs-map-loader';
 import { PlanckWorld, Cat, type PhysicsCallbacks } from './physics/planck-world';
 import { createEnemyInEcs } from './ecs/ecs-bridge';
-import { Enemy as EcsEnemy } from './ecs/ecs-components';
+import { Enemy as EcsEnemy, Shrine, Pedestal, Position } from './ecs/ecs-components';
+import { query } from 'bitecs';
 
 // Импорты рендереров
 import {
@@ -79,7 +81,7 @@ export class Engine {
   private state = new StateManager();
 
   // ECS интеграция
-  private ecsWorld: any = null;
+  private ecsWorld: World | null = null;
   private ecsGameLoop: EcsGameLoop | null = null;
   private ecsMapLoader: EcsMapLoader | null = null;
   private ecsPlayerBody: any = null;
@@ -125,7 +127,8 @@ export class Engine {
   private roofSnow = false;
 
   private talkedSig = new Map<string, string>();
-  private dialogueActive = false;
+  private dialogueActiveRef = { value: false };
+  private talkedSigRef = { value: new Map<string, string>() };
   private arrowA = -Math.PI / 2;
   public _arrowA = -Math.PI / 2;
   private starting = false;
@@ -330,8 +333,8 @@ export class Engine {
         map: this.map,
         ow: this.ow,
         flags: this.store.flags,
-        talkedSig: this.talkedSig,
-        dialogueActive: this.dialogueActive,
+        talkedSig: this.talkedSigRef,
+        dialogueActive: this.dialogueActiveRef,
         stepT: this.stepT,
         realT: this.realT,
         playerEid: -1,
@@ -466,7 +469,7 @@ export class Engine {
   }
 
   advanceDialogue() {
-    this.dialogueActive = false;
+    this.dialogueActiveRef.value = false;
     this.input.clearPressed();
     this.dialogue.endDialogue((dd) => this.cbs.onDialogue(dd));
   }
@@ -519,7 +522,7 @@ export class Engine {
 
     // Создаём ECS Map Loader
     this.ecsMapLoader = new EcsMapLoader({
-      world: this.ecsWorld,
+      world: this.ecsWorld!,
       planckWorld: new PlanckWorld(),
       dynamicContainer: this.dynamic,
       openedChests: this.store.openedChests,
@@ -556,46 +559,13 @@ export class Engine {
       this.ecsGameLoop.setPlayerEid(result.playerEid);
     }
 
-    // Обновляем game loop с новыми данными (без legacy систем)
+    // Обновляем game loop с новыми данными (без пересоздания)
     if (this.ecsGameLoop) {
-      // Пересоздаём game loop с новыми параметрами
-      this.ecsGameLoop = createEcsGameLoop({
-        world: this.ecsWorld,
-        bus: this.bus,
-        store: this.store,
-        planckWorld: this.ecsMapLoader.planckWorld,
-        app: this.app,
-        dynamic: this.dynamic,
-        floatLayer: this.floatLayer,
-        gameWorld: this.world,
-        fx: this.fx,
-        input: this.input,
-        state: this.state,
-        cam: this.cam,
-        viewW: this.viewW,
-        viewH: this.viewH,
+      this.ecsGameLoop.setPlanckWorld(this.ecsMapLoader.planckWorld);
+      this.ecsGameLoop.setPlayerEid(result.playerEid);
+      this.ecsGameLoop.updateConfig({
         map,
-        ow: this.ow,
         flags: this.store.flags,
-        talkedSig: this.talkedSig,
-        dialogueActive: this.dialogueActive,
-        stepT: this.stepT,
-        realT: this.realT,
-        playerEid: result.playerEid,
-        playerDomain: this.playerDomain,
-        hud: this.hud,
-        quests: this.quests,
-        dialogue: this.dialogue,
-        dungeonBossDead: this.dungeonBossDead.bind(this),
-        toast: (msg: string) => this.toast(msg),
-        float: (x: number, y: number, text: string, color: number) => this.float(x, y, text, color),
-        pushHud: (force?: boolean) => this.pushHud(force),
-        startDialogue: (id: string) => this.startDialogue(id),
-        npcSig: (id: string) => this.npcSig(id),
-        onStepAudio: () => audio.step(),
-        stepTRef: this.stepT,
-        realTRef: this.realT,
-        guardSpawn: (kind: string, x: number, y: number, idx: number) => this.guardSpawn(kind, x, y, idx),
       });
     }
   }
@@ -643,7 +613,7 @@ export class Engine {
     
     // Обновление StateManager и обработка состояний
     this.state.update(rdt);
-    if (this.state.screen === "play" && !this.dialogueActive) {
+    if (this.state.screen === "play" && !this.dialogueActiveRef.value) {
       if (this.state.hitstop > 0) this.state.hitstop -= rdt;
       else {
         const effectiveDt = rdt * this.state.timeScale;
@@ -662,19 +632,33 @@ export class Engine {
 
     // Рендеринг через ECS
     if (this.ecsGameLoop) this.ecsGameLoop.render(rdt);
-    // Minimap update через утилиту из map-display.ts
+    // Minimap update через ECS queries
     if (this.minimapCanvas && this.mmBase) {
       const ctx = this.minimapCanvas.getContext("2d");
       if (ctx) {
+        // ECS shrines
+        const shrines: Array<{ x: number; y: number; lit: number }> = [];
+        if (this.ecsWorld) {
+          for (const eid of query(this.ecsWorld, [Shrine, Position])) {
+            shrines.push({ x: Position.x[eid], y: Position.y[eid], lit: Shrine.lit[eid] });
+          }
+        }
+        // ECS pedestals
+        const pedestals: Array<{ x: number; y: number; taken: boolean }> = [];
+        if (this.ecsWorld) {
+          for (const eid of query(this.ecsWorld, [Pedestal, Position])) {
+            pedestals.push({ x: Position.x[eid], y: Position.y[eid], taken: !!Pedestal.taken[eid] });
+          }
+        }
         drawMinimap(ctx, this.mmBase, {
           map: this.map,
           player: this.store.player,
-          shrines: [],
-          secretKnown: false,
-          stashSpot: { x: 0, y: 0 },
-          nornsFavor: false,
-          pedestals: [],
-          target: null,
+          shrines,
+          secretKnown: this.store.flags.secretKnown,
+          stashSpot: this.ow?.stashSpot ?? { x: 0, y: 0 },
+          nornsFavor: this.store.flags.nornsFavor,
+          pedestals,
+          target: this.quests.trackedTarget(),
           realT: this.realT,
         });
       }
@@ -727,7 +711,7 @@ export class Engine {
   private startDialogue(id: string) {
     const d = this.dialogue.startDialogue(id, (dd) => this.cbs.onDialogue(dd));
     if (!d) return;
-    this.dialogueActive = true;
+    this.dialogueActiveRef.value = true;
     const sig = this.npcSig(id);
     if (sig) this.talkedSig.set(id, sig);
   }
