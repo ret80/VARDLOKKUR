@@ -88,10 +88,14 @@ export function renderSprites(world: World): void {
   }
 }
 
-/** Обновить видимость спрайтов (Dead, Hidden) */
-export function renderVisibilitySystem(world: World): void {
+/** Обновить видимость спрайтов (Dead, Hidden, hurt-мигание) */
+export function renderVisibilitySystem(
+  world: World,
+  time: number
+): void {
   const dead = Dead;
   const hidden = Hidden;
+  const hurtT = Player.hurtT;
 
   for (const eid of query(world, [SpriteComp])) {
     const ref = getSpriteRef(eid);
@@ -101,13 +105,16 @@ export function renderVisibilitySystem(world: World): void {
       ref.alpha = 0;
     } else if (hidden[eid]) {
       ref.alpha = 0.25;
+    } else if (Player.hurtT[eid] > 0 && Math.floor(time * 14) % 2 === 0) {
+      // hurt-мигание для игрока
+      ref.alpha = 0.35;
     } else {
       ref.alpha = 1;
     }
   }
 }
 
-/** Обновить мигание (получение урона) */
+/** Обновить мигание (получение урона врагов) */
 export function renderFlashSystem(world: World, time: number): void {
   const flashing = Flashing;
 
@@ -133,17 +140,18 @@ export function renderPlayer(
   playerEid: number,
   time: number
 ): void {
-  if (playerEid < 0 || !Player.moving[playerEid]) return;
+  if (playerEid < 0) return;
   
   const ref = getSpriteRef(playerEid);
   if (!ref) return;
   
   const d = Direction;
+  const moving = !!Player.moving[playerEid];
   
   drawPlayer(
     ref as Graphics,
     d.x[playerEid], d.y[playerEid],
-    !!Player.moving[playerEid], Player.animT[playerEid], Player.swingT[playerEid],
+    moving, Player.animT[playerEid], Player.swingT[playerEid],
     Player.hurtT[playerEid], Player.slowT[playerEid],
     !!Player.hasSword[playerEid], Player.runes[playerEid],
     Player.swingDirX[playerEid], Player.swingDirY[playerEid],
@@ -375,6 +383,14 @@ export function renderSystem(
   cam: { x: number; y: number },
   gameWorld: Container | null
 ): void {
+  // Слежение камеры за игроком
+  if (playerEid >= 0 && Position.x.length > playerEid) {
+    const halfW = app.renderer.width / 2;
+    const halfH = app.renderer.height / 2;
+    cam.x = Position.x[playerEid] - halfW;
+    cam.y = Position.y[playerEid] - halfH;
+  }
+  
   // Применяем камеру к world контейнеру — он содержит tileLayer + dynamic
   if (gameWorld) {
     gameWorld.position.set(-Math.round(cam.x), -Math.round(cam.y));
@@ -384,7 +400,7 @@ export function renderSystem(
   renderSprites(world);
   
   // Update visibility
-  renderVisibilitySystem(world);
+  renderVisibilitySystem(world, time);
   
   // Update flash effects
   renderFlashSystem(world, time);

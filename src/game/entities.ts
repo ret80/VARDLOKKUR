@@ -193,62 +193,60 @@ export function renderPlayer(g: Graphics, data: IPlayerData, time: number, extra
   g.clear();
   const p = data;
   const bob = p.moving ? Math.sin(p.animT * 12) * 1.2 : Math.sin(time * 2) * 0.4;
-  const blink = p.hurtT > 0 && Math.floor(time * 14) % 2 === 0;
-  const alpha = blink ? 0.35 : 1;
   const legSwing = p.moving ? Math.sin(p.animT * 12) * 2.5 : 0;
 
   // направление: +1 вправо, -1 влево
   const f = p.dir.x > 0.3 ? 1 : p.dir.x < -0.3 ? -1 : 0;
 
   // тень
-  g.ellipse(0, 5, 6, 2.4).fill({ color: 0x05080d, alpha: 0.5 * alpha });
+  g.ellipse(0, 5, 6, 2.4).fill({ color: 0x05080d, alpha: 0.5 });
 
   // ноги (центрированы)
-  P(g, -4, 1 + legSwing * 0.3, 3, 4, 0x2c3038, alpha);
-  P(g, 1, 1 - legSwing * 0.3, 3, 4, 0x2c3038, alpha);
+  P(g, -4, 1 + legSwing * 0.3, 3, 4, 0x2c3038, 1);
+  P(g, 1, 1 - legSwing * 0.3, 3, 4, 0x2c3038, 1);
 
   // плащ (сзади, сдвигается в сторону, противоположную направлению)
   const cape = Math.sin(time * 3) * 1;
   if (f >= 0) {
-    P(g, -6 + cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, alpha);
-    P(g, -5 + cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, alpha);
+    P(g, -6 + cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, 1);
+    P(g, -5 + cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, 1);
   } else {
-    P(g, 2 - cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, alpha);
-    P(g, 3 - cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, alpha);
+    P(g, 2 - cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, 1);
+    P(g, 3 - cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, 1);
   }
 
   // тело (центрировано)
-  P(g, -4, -8 + bob, 8, 9, 0x4e5a68, alpha);
-  P(g, -4, -8 + bob, 8, 2, 0x5c6875, alpha);
-  P(g, -4, -1 + bob, 8, 2, 0x3a3226, alpha);
-  if (extra.runes > 0) P(g, -3, -1 + bob, Math.min(6, extra.runes * 2), 1, 0x63d8c8, alpha);
+  P(g, -4, -8 + bob, 8, 9, 0x4e5a68, 1);
+  P(g, -4, -8 + bob, 8, 2, 0x5c6875, 1);
+  P(g, -4, -1 + bob, 8, 2, 0x3a3226, 1);
+  if (extra.runes > 0) P(g, -3, -1 + bob, Math.min(6, extra.runes * 2), 1, 0x63d8c8, 1);
 
   // голова (смещена в сторону взгляда)
   if (f >= 0) {
-    P(g, -3, -14 + bob, 7, 6, 0xc8a88a, alpha);
-    P(g, -4, -15 + bob, 9, 3, 0x2c3038, alpha);
-    P(g, -4, -13 + bob, 1, 4, 0x2c3038, alpha);
+    P(g, -3, -14 + bob, 7, 6, 0xc8a88a, 1);
+    P(g, -4, -15 + bob, 9, 3, 0x2c3038, 1);
+    P(g, -4, -13 + bob, 1, 4, 0x2c3038, 1);
   } else {
-    P(g, -4, -14 + bob, 7, 6, 0xc8a88a, alpha);
-    P(g, -5, -15 + bob, 9, 3, 0x2c3038, alpha);
-    P(g, 3, -13 + bob, 1, 4, 0x2c3038, alpha);
+    P(g, -4, -14 + bob, 7, 6, 0xc8a88a, 1);
+    P(g, -5, -15 + bob, 9, 3, 0x2c3038, 1);
+    P(g, 3, -13 + bob, 1, 4, 0x2c3038, 1);
   }
   // борода (смещена в сторону взгляда)
   if (f >= 0) {
-    P(g, -2, -9 + bob, 5, 2, 0x8a7a62, alpha);
+    P(g, -2, -9 + bob, 5, 2, 0x8a7a62, 1);
   } else {
-    P(g, -3, -9 + bob, 5, 2, 0x8a7a62, alpha);
+    P(g, -3, -9 + bob, 5, 2, 0x8a7a62, 1);
   }
   const ex = p.dir.x > 0.3 ? 1 : p.dir.x < -0.3 ? -1 : 0;
   if (ex > 0) {
-    P(g, 0, -12 + bob, 1, 1, 0x0d1218, alpha);
-    P(g, 3, -12 + bob, 1, 1, 0x0d1218, alpha);
+    P(g, 0, -12 + bob, 1, 1, 0x0d1218, 1);
+    P(g, 3, -12 + bob, 1, 1, 0x0d1218, 1);
   } else if (ex < 0) {
-    P(g, -3, -12 + bob, 1, 1, 0x0d1218, alpha);
-    P(g, 0, -12 + bob, 1, 1, 0x0d1218, alpha);
+    P(g, -3, -12 + bob, 1, 1, 0x0d1218, 1);
+    P(g, 0, -12 + bob, 1, 1, 0x0d1218, 1);
   } else {
-    P(g, -1, -12 + bob, 1, 1, 0x0d1218, alpha);
-    P(g, 2, -12 + bob, 1, 1, 0x0d1218, alpha);
+    P(g, -1, -12 + bob, 1, 1, 0x0d1218, 1);
+    P(g, 2, -12 + bob, 1, 1, 0x0d1218, 1);
   }
 
   // меч
@@ -261,16 +259,16 @@ export function renderPlayer(g: Graphics, data: IPlayerData, time: number, extra
       .lineTo(hx * 13, -4 + bob + hy * 13)
       .lineTo(hx * 13 + -hy * 2, -4 + bob + hy * 13 + hx * 2)
       .lineTo(hx * 5 + -hy * 2, -4 + bob + hy * 5 + hx * 2)
-      .closePath().fill({ color: 0xb9c2c9, alpha });
+      .closePath().fill({ color: 0xb9c2c9, alpha: 1 });
     g.arc(0, -4 + bob, 14, baseA - 1.2, baseA - 1.2 + prog * 2.4)
       .stroke({ color: 0xe8f4fc, width: 1.5, alpha: 0.5 * (1 - prog) });
   } else if (extra.hasSword) {
     if (f >= 0) {
-      P(g, 5, -10 + bob, 2, 8, 0xb9c2c9, alpha);
-      P(g, 4, -4 + bob, 4, 1, 0x5a4632, alpha);
+      P(g, 5, -10 + bob, 2, 8, 0xb9c2c9, 1);
+      P(g, 4, -4 + bob, 4, 1, 0x5a4632, 1);
     } else {
-      P(g, -7, -10 + bob, 2, 8, 0xb9c2c9, alpha);
-      P(g, -8, -4 + bob, 4, 1, 0x5a4632, alpha);
+      P(g, -7, -10 + bob, 2, 8, 0xb9c2c9, 1);
+      P(g, -8, -4 + bob, 4, 1, 0x5a4632, 1);
     }
   }
 

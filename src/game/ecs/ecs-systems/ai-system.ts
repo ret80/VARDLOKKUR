@@ -70,6 +70,7 @@ export function aiUpdateSystem(
 
     // Common updates
     Time.value[enemyEid] += dt;
+    Enemy.t[enemyEid] += dt;
     Enemy.flashT[enemyEid] = Math.max(0, Enemy.flashT[enemyEid] - dt);
     Enemy.contactCd[enemyEid] = Math.max(0, Enemy.contactCd[enemyEid] - dt);
     Enemy.lungeT[enemyEid] = Math.max(0, Enemy.lungeT[enemyEid] - dt);
