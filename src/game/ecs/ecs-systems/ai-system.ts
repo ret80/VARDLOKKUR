@@ -84,9 +84,10 @@ export function aiUpdateSystem(
     }
 
     // Contact damage — наносим урон игроку при столкновении
+    // Буфер +3: урон наносится ДО физического касания, иначе Planck не даёт телам сблизиться
     {
       const d2 = (px[enemyEid] - playerX) ** 2 + (py[enemyEid] - playerY) ** 2;
-      const minDist = Enemy.radius[enemyEid] + 5 + 2;
+      const minDist = Enemy.radius[enemyEid] + 5 + 3;
       if (d2 < minDist * minDist && Enemy.contactCd[enemyEid] <= 0) {
         Enemy.contactCd[enemyEid] = 0.5;
         const dmg = Enemy.dmg[enemyEid];
