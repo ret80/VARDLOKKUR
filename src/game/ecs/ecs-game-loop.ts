@@ -5,6 +5,7 @@ import {
   syncPositionToBody,
   syncVelocityToBody,
   syncBodyToPosition,
+  createBodyForEntity,
 } from './ecs-systems/physics-system';
 import {
   playerMovementSystem,
@@ -69,9 +70,9 @@ import {
 } from './ecs-systems/world-system';
 import { hasComponent } from 'bitecs';
 import {
-  Position, Velocity, PhysicsBody, Player, Direction,
+  Position, Velocity, PhysicsBody, Player, Direction, Health,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
-  Flashing, Enemy, Sprite, SpriteRegistry,
+  Flashing, Enemy, Sprite, SpriteRegistry, Radius,
 } from './ecs-components';
 import type { InputSystem } from '../input/input-system';
 import type { EventBus } from '../event-bus';
@@ -186,10 +187,79 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   let config_map = map;
   let config_flags = flags;
 
+  // ── Подписки на события боя (обработка атак игрока) ──
+
+  bus.on("combat:trySword", () => {
+    const peid = _playerEid;
+    if (peid < 0) return;
+    swordAttackSystem(
+      world, peid,
+      store.flags.hasItem("sword"),
+      store.flags.swordUp,
+      store.flags.hasHammer,
+      store.flags.ghostBane,
+      (enemyEid, dmg, fx, fy) => {
+        // Нанести урон врагу через ECS Health
+        Health.current[enemyEid] -= dmg;
+        Flashing[enemyEid] = 1;
+        Enemy.flashT[enemyEid] = 0.12;
+        bus.emit("enemy:hit", { enemy: enemyEid, dmg });
+        // Проверить смерть врага
+        if (Health.current[enemyEid] <= 0) {
+          bus.emit("enemy:killed", { enemy: enemyEid, kind: poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]) as any, x: Position.x[enemyEid], y: Position.y[enemyEid] });
+        }
+      },
+      () => {},
+      (x, y, text, color) => addFloat(x, y, text, color),
+      () => audio.hit(),
+      () => audio.clang(),
+      _planckWorld
+    );
+  });
+
+  bus.on("combat:tryAxe", () => {
+    const peid = _playerEid;
+    if (peid < 0) return;
+    const eid = axeThrowSystem(world, peid, store.flags.hasAxe, store.flags.axeUp, (eid: number) => {
+      // Спавн графики для топора
+      const g = new Graphics();
+      g.position.set(Position.x[eid], Position.y[eid]);
+      dynamic.addChild(g);
+    });
+    if (eid >= 0) {
+      // Добавить физику для топора
+      createBodyForEntity(_planckWorld, world, eid, 3, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground);
+    }
+  });
+
+  bus.on("projectile:fire", (e) => {
+    const peid = _playerEid;
+    if (peid < 0) return;
+    const lifetime = e.kind === 'arrow' ? 2.2 : 3;
+    const eid = fireProjectileEcs(
+      world, e.kind as any, e.x, e.y, e.vx, e.vy, e.dmg,
+      lifetime,
+      (eid: number) => {
+        const g = new Graphics();
+        g.position.set(e.x, e.y);
+        dynamic.addChild(g);
+      }
+    );
+    if (eid >= 0) {
+      // Добавить физику для снаряда
+      createBodyForEntity(_planckWorld, world, eid, 4, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground);
+    }
+  });
+
   /** Выполнить один кадр */
   function tick(rdt: number, timeScale: number): void {
     const dt = rdt * timeScale;
     const peid = _playerEid;
+
+    // ===== 0. Синхронизация ECS Player.hasSword ↔ store flags =====
+    if (peid >= 0 && config_flags.hasItem('sword')) {
+      Player.hasSword[peid] = 1;
+    }
 
     // ===== 1. Захват ввода ОДИН раз за кадр =====
     const inputState: InputState = input.getState();
