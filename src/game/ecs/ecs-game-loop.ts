@@ -435,7 +435,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       floatLayer,
       rdt,
       cam,
-      gameWorld
+      gameWorld,
+      npcSig
     );
   }
 

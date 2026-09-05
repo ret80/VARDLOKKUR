@@ -228,17 +228,21 @@ export function renderDrops(world: World, time: number): void {
 }
 
 /** Рендеринг NPC */
-export function renderNPCs(world: World, time: number): void {
+export function renderNPCs(world: World, time: number, getNpcMark?: (npcId: string) => string): void {
   for (const eid of query(world, [SpriteComp, NPC])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
     
+    const npcId = poolGet(StringPool.npcIds, NPC.id[eid]);
+    const mark = getNpcMark ? getNpcMark(npcId) : "";
+    if (mark === "") continue; // нет маркера — пропускаем отрисовку
+    
     drawNpc(
       ref as Graphics,
-      poolGet(StringPool.npcIds, NPC.id[eid]),
+      npcId,
       poolGet(StringPool.npcNames, NPC.name[eid]),
       time,
-      true // mark — показывать маркер
+      true // mark — показывать маркер (решено выше)
     );
   }
 }
@@ -381,7 +385,8 @@ export function renderSystem(
   floatLayer: Container,
   dt: number,
   cam: { x: number; y: number },
-  gameWorld: Container | null
+  gameWorld: Container | null,
+  getNpcMark?: (npcId: string) => string
 ): void {
   // Слежение камеры за игроком
   if (playerEid >= 0 && Position.x.length > playerEid) {
@@ -410,7 +415,7 @@ export function renderSystem(
   renderEnemies(world, time);
   renderProjectiles(world, time);
   renderDrops(world, time);
-  renderNPCs(world, time);
+  renderNPCs(world, time, getNpcMark);
   renderChests(world, time);
   renderPedestals(world, time);
   renderShrines(world, time);
