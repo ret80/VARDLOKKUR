@@ -84,7 +84,7 @@ import type { StateManager } from '../state/state-manager';
 import { audio } from '../audio';
 import type { WorldData } from '../world';
 import type { FlagDomain } from '../store/flag-domain';
-import type { PlayerDomain } from '../store/player-domain';
+import type { PlayerDomain, IEcsPlayerHelpers } from '../store/player-domain';
 import type { HudSystem } from '../hud/hud-system';
 import type { QuestSystem } from '../quests/quest-system';
 import type { DialogueSystem } from '../dialogue/dialogue-system';
@@ -138,6 +138,8 @@ export interface EcsGameLoopConfig {
   realTRef: number;
   playerEid: number;
   playerDomain: PlayerDomain;
+  /** ECS-хелперы для мутаций игрока (takeDamage, heal, etc.) */
+  playerHelpers?: IEcsPlayerHelpers;
   hud: HudSystem;
   quests: QuestSystem;
   dialogue: DialogueSystem;
@@ -168,7 +170,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   const {
     world, bus, store, planckWorld, app, dynamic, floatLayer, gameWorld,
     input, state, cam, map, flags, playerEid: playerEidRef,
-    playerDomain, hud, quests, dialogue,
+    playerDomain, playerHelpers, hud, quests, dialogue,
     dungeonBossDead, toast, float: addFloat, pushHud, startDialogue, npcSig,
     onStepAudio, stepTRef, realTRef, guardSpawn,
     dialogueActive, talkedSig,
@@ -231,7 +233,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // ===== 9. Направление из скорости =====
     directionFromVelocitySystem(world);
 
-    // ===== 10. Синхронизация в store.player =====
+    // ===== 10. Синхронизация в store.player (view-layer) =====
     if (peid >= 0) {
       store.player.x = Position.x[peid];
       store.player.y = Position.y[peid];
@@ -244,15 +246,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       store.player.hurtT = Player.hurtT[peid];
       store.player.dir.x = Direction.x[peid];
       store.player.dir.y = Direction.y[peid];
-
-      // PlayerDomain sync
-      playerDomain?.syncFrom({
-        x: store.player.x, y: store.player.y,
-        vx: store.player.vx, vy: store.player.vy,
-        hp: store.player.hp, maxHp: store.player.maxHp,
-        swingT: store.player.swingT, hurtT: store.player.hurtT, slowT: store.player.slowT,
-      });
-      playerDomain?.syncToPlayer(store.player);
+      // HP читается напрямую из ECS Health component через PlayerDomain
     }
 
     // ===== 11. Таймеры состояний =====
@@ -266,7 +260,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         (dmg, sx, sy) => {
           playerDomain?.takeDamage(dmg, sx, sy);
           Player.moving[peid] = 0;
-        }
+        },
       );
     }
 

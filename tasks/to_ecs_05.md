@@ -187,21 +187,41 @@ GameStoreState {
 - `store.openedChests`, `store.takenPedestals`, `store.visitedShrines`, `store.takenAmbient`
 - `store.playerDomain` → для мутаций (см. ниже)
 
-### ❌ 3. PlayerDomain как read-only view над ECS (отложено)
+### ✅ 3. PlayerDomain как read-only view над ECS (высокий приоритет)
 
-**Статус:** отложено как high-risk рефакторинг.
+**Статус:** выполнено.
 
-**Причина:** `PlayerDomain` глубоко интегрирован в 6+ файлов:
-- `ecs-game-loop.ts` — syncFrom/syncToPlayer, takeDamage
-- `combat-system.ts` — damagePlayerEcs
-- `player-lifecycle.ts` — respawn, useStoredHeart
-- `dialogue-system.ts` — increaseMaxHp, fullHeal
-- `interaction-system.ts` — shrine healing, altar atonement
+**Изменения:**
 
-**Рекомендация:** выполнить как отдельный PR с:
-1. Переносом `takeDamage`/`heal` в ECS combat/life системы
-2. Удалением внутреннего состояния из `PlayerDomain`
-3. Делегированием геттеров к ECS Player component
+| Файл | Что изменилось |
+|------|----------------|
+| `ecs-components.ts` | Добавлен `Player.maxHp`, ECS-хелперы: `damageEntityEcs`, `healEntityEcs`, `fullHealEntityEcs`, `increaseMaxHpEcs` |
+| `player-domain.ts` | Полная переписалка: конструктор принимает `eid` + `IEcsPlayerHelpers`, все геттеры читают из ECS (Position, Velocity, Health, Player, Direction), мутации делегируют через `_helpers` |
+| `ecs-game-loop.ts` | Убраны `syncFrom`/`syncToPlayer`, добавлен `playerHelpers` в конфиг |
+| `combat-system.ts` | `damagePlayerEcs` пишет напрямую в `Health.current[eid]` + `Player.hurtT[eid]` |
+| `player-lifecycle.ts` | `respawn` пишет в ECS компоненты (Position, Velocity, Health, Player) |
+| `dialogue-system.ts` | `increaseMaxHp`/`fullHeal` через `playerDomain` (теперь делегирует в ECS) |
+| `interaction-system.ts` | `useShrineEcs`/`atoneEcs` через `playerDomain` → ECS |
+| `engine.ts` | `PlayerDomain` создаётся с `eid=-1`, обновляется через `setEid()` при загрузке карты, переданы `playerHelpers` |
+
+**Архитектура после рефакторинга:**
+
+```
+ECS World (source of truth)
+├── Health.current[eid]  ← takeDamage, heal, fullHeal
+├── Health.max[eid]      ← increaseMaxHp
+├── Player.swingT/hurtT/slowT  ← timers
+├── Position.x/y[eid]    ← movement, respawn
+├── Velocity.x/y[eid]    ← movement
+└── Direction.x/y[eid]   ← direction-from-velocity
+
+PlayerDomain (read-only view)
+├── геттеры → читают из ECS компонентов
+└── мутации → делегируют через IEcsPlayerHelpers
+
+store.player (view-layer sync)
+└── читается из ECS в ecs-game-loop step 10
+```
 
 ## Итог
 
@@ -209,7 +229,7 @@ GameStoreState {
 |--------|--------|-----------|
 | Decompose GameFlags | ✅ Выполнено | 6 доменных групп, INITIAL_FLAGS |
 | Split GameStore | ✅ Выполнено | WorldStore + GameStore |
-| PlayerDomain read-only | ❌ Отложено | high-risk, требует отдельного PR |
+| PlayerDomain read-only | ✅ Выполнено | ECS-хелперы, read-only view, 0 ошибок tsc |
 | Type check | ✅ 0 ошибок | `tsc --noEmit` проходит |
 
 ---

@@ -1,7 +1,21 @@
-/* ============ PlayerDomain — инкапсулированная модель игрока ============ */
+/* ============ PlayerDomain — read-only view над ECS Player + Health ============
+ *
+ * PlayerDomain больше НЕ хранит состояние. Это view-layer для HUD/UI:
+ * - Все геттеры читают из ECS компонентов (Player, Health, Position, Velocity)
+ * - Все мутации удалены — вместо них ECS-системы (combat, life, movement)
+ * - IPlayerMutations сохраним как type alias для обратной совместимости
+ *
+ * Связь с ECS:
+ * - takeDamage → damageEntityEcs (ecs-components.ts)
+ * - heal/fullHeal → healEntityEcs / fullHealEntityEcs
+ * - increaseMaxHp → increaseMaxHpEcs
+ * - setPosition/setVelocity → не нужны (movement-system управляет Position/Velocity)
+ */
 
-import { Vec } from "../world";
-import { Player } from "../entities";
+import {
+  Position, Velocity, Health, Player, Direction,
+} from "../ecs/ecs-components";
+import type { Vec } from "../world";
 
 /** События игрока */
 export interface PlayerEvents {
@@ -11,206 +25,216 @@ export interface PlayerEvents {
   onHeartUsed?: (amount: number) => void;
 }
 
-/** Интерфейс для получения данных игрока */
+/** Интерфейс для получения данных игрока (read-only) */
 export interface IPlayerDomain {
-  /** Текущее здоровье */
   readonly hp: number;
-  /** Максимальное здоровье */
   readonly maxHp: number;
-  /** Позиция */
   readonly pos: Vec;
-  /** Направление */
   readonly dir: Vec;
-  /** Таймер атаки */
   readonly swingT: number;
-  /** Таймер урона */
   readonly hurtT: number;
-  /** Таймер замедления */
   readonly slowT: number;
-  /** Радиус */
   readonly r: number;
 }
 
-/** Мутаторы игрока */
+/** Мутаторы игрока (DEPRECATED — использовать ECS-хелперы) */
 export interface IPlayerMutations {
-  /** Нанести урон */
+  /** @deprecated Используйте damageEntityEcs */
   takeDamage(dmg: number, sx: number, sy: number): number;
-  /** Лечение */
+  /** @deprecated Используйте healEntityEcs */
   heal(amount: number): number;
-  /** Полное лечение */
+  /** @deprecated Используйте fullHealEntityEcs */
   fullHeal(): number;
-  /** Использовать сердце */
+  /** @deprecated Используйте healEntityEcs + flags.hearts-- */
   useHeart(amount: number): void;
-  /** Сбросить таймеры */
+  /** @deprecated Таймеры сбрасываются через ECS Player component */
   resetTimers(): void;
-  /** Установить позицию */
+  /** @deprecated Не используется — movement-system управляет позицией */
   setPosition(x: number, y: number): void;
-  /** Установить скорость */
+  /** @deprecated Не используется — movement-system управляет скоростью */
   setVelocity(vx: number, vy: number): void;
-  /** Установить направление */
+  /** @deprecated Не используется — direction-from-velocity system */
   setDirection(dir: Vec): void;
 }
 
+/** ECS-хелперы для мутаций (встраиваются в GameStoreConfig) */
+export interface IEcsPlayerHelpers {
+  damageEntityEcs: (eid: number, dmg: number) => number;
+  healEntityEcs: (eid: number, amount: number) => number;
+  fullHealEntityEcs: (eid: number) => number;
+  increaseMaxHpEcs: (eid: number, amount: number) => { hp: number; maxHp: number };
+}
+
 export class PlayerDomain implements IPlayerDomain, IPlayerMutations {
-  private _hp: number;
-  private _maxHp: number;
-  private _x: number;
-  private _y: number;
-  private _vx: number;
-  private _vy: number;
-  private _dir: Vec;
-  private _r: number;
-  private _swingT: number;
-  private _hurtT: number;
-  private _slowT: number;
-  private events: PlayerEvents;
+  private _eid: number;
+  private _helpers: IEcsPlayerHelpers | null;
+  private _events: PlayerEvents;
 
   constructor(
-    hp: number,
-    maxHp: number,
-    x: number,
-    y: number,
-    vx: number,
-    vy: number,
-    dir: Vec,
-    r: number,
+    eid: number,
+    helpers?: IEcsPlayerHelpers,
     events?: PlayerEvents
   ) {
-    this._hp = hp;
-    this._maxHp = maxHp;
-    this._x = x;
-    this._y = y;
-    this._vx = vx;
-    this._vy = vy;
-    this._dir = dir;
-    this._r = r;
-    this._swingT = 0;
-    this._hurtT = 0;
-    this._slowT = 0;
-    this.events = events ?? {};
+    this._eid = eid;
+    this._helpers = helpers ?? null;
+    this._events = events ?? {};
   }
 
-  // ── Геттеры (IPlayerDomain) ──
+  /** Установить ECS entity ID (для респавна) */
+  setEid(eid: number): void {
+    this._eid = eid;
+  }
 
-  get hp(): number { return this._hp; }
-  set hp(v: number) { this._hp = v; }
-  get maxHp(): number { return this._maxHp; }
-  set maxHp(v: number) { this._maxHp = v; }
-  get pos(): Vec { return { x: this._x, y: this._y }; }
-  get x(): number { return this._x; }
-  set x(v: number) { this._x = v; }
-  get y(): number { return this._y; }
-  set y(v: number) { this._y = v; }
-  get dir(): Vec { return this._dir; }
-  get swingT(): number { return this._swingT; }
-  set swingT(v: number) { this._swingT = v; }
-  get hurtT(): number { return this._hurtT; }
-  set hurtT(v: number) { this._hurtT = v; }
-  get slowT(): number { return this._slowT; }
-  set slowT(v: number) { this._slowT = v; }
-  get r(): number { return this._r; }
+  // ── Геттеры (IPlayerDomain — читают из ECS) ──
 
-  // ── Мутаторы (IPlayerMutations) ──
+  get hp(): number {
+    return this._eid >= 0 ? Health.current[this._eid] : 0;
+  }
+
+  get maxHp(): number {
+    // Приоритет: Player.maxHp (если инициализирован) → Health.max
+    return this._eid >= 0
+      ? (Player.maxHp[this._eid] > 0 ? Player.maxHp[this._eid] : Health.max[this._eid])
+      : 0;
+  }
+
+  get pos(): Vec {
+    return this._eid >= 0
+      ? { x: Position.x[this._eid], y: Position.y[this._eid] }
+      : { x: 0, y: 0 };
+  }
+
+  get x(): number {
+    return this._eid >= 0 ? Position.x[this._eid] : 0;
+  }
+
+  get y(): number {
+    return this._eid >= 0 ? Position.y[this._eid] : 0;
+  }
+
+  get dir(): Vec {
+    return this._eid >= 0
+      ? { x: Direction.x[this._eid], y: Direction.y[this._eid] }
+      : { x: 0, y: 1 };
+  }
+
+  get swingT(): number {
+    return this._eid >= 0 ? Player.swingT[this._eid] : 0;
+  }
+
+  get hurtT(): number {
+    return this._eid >= 0 ? Player.hurtT[this._eid] : 0;
+  }
+
+  get slowT(): number {
+    return this._eid >= 0 ? Player.slowT[this._eid] : 0;
+  }
+
+  get r(): number {
+    return 10; // player radius
+  }
+
+  // ── Мутаторы (IPlayerMutations — делегируют ECS-хелперам) ──
 
   takeDamage(dmg: number, sx: number, sy: number): number {
-    this._hp = Math.max(0, this._hp - dmg);
-    this._hurtT = 0.35;
-    return this._hp;
+    if (this._eid < 0 || !this._helpers) return 0;
+    const hp = this._helpers.damageEntityEcs(this._eid, dmg);
+    this._events.onDamaged?.(dmg, sx, sy);
+    return hp;
   }
 
   heal(amount: number): number {
-    this._hp = Math.min(this._maxHp, this._hp + amount);
-    return this._hp;
+    if (this._eid < 0 || !this._helpers) return 0;
+    const hp = this._helpers.healEntityEcs(this._eid, amount);
+    this._events.onHealed?.(amount);
+    return hp;
   }
 
   fullHeal(): number {
-    this._hp = this._maxHp;
-    return this._hp;
+    if (this._eid < 0 || !this._helpers) return 0;
+    const hp = this._helpers.fullHealEntityEcs(this._eid);
+    this._events.onHealed?.(this.maxHp);
+    return hp;
   }
 
   useHeart(amount: number): void {
     this.heal(amount * 4);
-    this.events.onHeartUsed?.(amount);
+    this._events.onHeartUsed?.(amount);
   }
 
   resetTimers(): void {
-    this._swingT = 0;
-    this._hurtT = 0;
-    this._slowT = 0;
+    if (this._eid >= 0) {
+      Player.swingT[this._eid] = 0;
+      Player.hurtT[this._eid] = 0;
+      Player.slowT[this._eid] = 0;
+    }
   }
 
-  setPosition(x: number, y: number): void {
-    this._x = x;
-    this._y = y;
+  setPosition(_x: number, _y: number): void {
+    // DEPRECATED — position управляется через Position ECS component
+    if (this._eid >= 0) {
+      Position.x[this._eid] = _x;
+      Position.y[this._eid] = _y;
+    }
   }
 
-  setVelocity(vx: number, vy: number): void {
-    this._vx = vx;
-    this._vy = vy;
+  setVelocity(_vx: number, _vy: number): void {
+    // DEPRECATED — velocity управляется через Velocity ECS component
+    if (this._eid >= 0) {
+      Velocity.x[this._eid] = _vx;
+      Velocity.y[this._eid] = _vy;
+    }
   }
 
-  setDirection(dir: Vec): void {
-    this._dir = dir;
+  setDirection(_dir: Vec): void {
+    // DEPRECATED — direction управляется direction-from-velocity system
+    if (this._eid >= 0) {
+      Direction.x[this._eid] = _dir.x;
+      Direction.y[this._eid] = _dir.y;
+    }
   }
 
   // ── Утилиты ──
 
-  isAlive(): boolean { return this._hp > 0; }
+  isAlive(): boolean {
+    return this._eid >= 0 && Health.current[this._eid] > 0;
+  }
 
-  /** Увеличить максимальное здоровье */
+  /** Увеличить максимальное здоровье (DEPRECATED — используйте increaseMaxHpEcs) */
   increaseMaxHp(amount: number): { hp: number; maxHp: number } {
-    this._maxHp += amount;
-    this._hp = Math.min(this._maxHp, this._hp + amount);
-    return { hp: this._hp, maxHp: this._maxHp };
+    if (this._eid >= 0 && this._helpers) {
+      return this._helpers.increaseMaxHpEcs(this._eid, amount);
+    }
+    return { hp: 0, maxHp: 0 };
   }
 
-  /** Обновить таймеры */
-  updateTimers(dt: number): void {
-    this._swingT = Math.max(0, this._swingT - dt);
-    this._hurtT = Math.max(0, this._hurtT - dt);
-    this._slowT = Math.max(0, this._slowT - dt);
-  }
-
-  /** Обновить из старого Player (engine tick) */
-  syncFrom(old: { x: number; y: number; vx: number; vy: number; hp: number; maxHp: number; swingT: number; hurtT: number; slowT: number }): void {
-    this._x = old.x;
-    this._y = old.y;
-    this._vx = old.vx;
-    this._vy = old.vy;
-    this._hp = old.hp;
-    this._maxHp = old.maxHp;
-    this._swingT = old.swingT;
-    this._hurtT = old.hurtT;
-    this._slowT = old.slowT;
+  /** Обновить таймеры (DEPRECATED — stateTimerSystem делает это в ECS) */
+  updateTimers(_dt: number): void {
+    // stateTimerSystem в life-system.ts обрабатывает это в ECS
   }
 
   /** Получить скорость с учётом замедления */
   getSpeed(baseSpeed: number): number {
-    return this._slowT > 0 ? baseSpeed * 0.6 : baseSpeed;
+    return this.slowT > 0 ? baseSpeed * 0.6 : baseSpeed;
   }
 
-  /** Синхронизировать hp/maxHp/timers обратно в Player (после тика) */
-  syncToPlayer(p: { hp: number; maxHp: number; swingT: number; hurtT: number; slowT: number }): void {
-    p.hp = this._hp;
-    p.maxHp = this._maxHp;
-    p.swingT = this._swingT;
-    p.hurtT = this._hurtT;
-    p.slowT = this._slowT;
-  }
-
-  /** Получить immutable модель */
-  toModel(): Player {
+  /** Получить immutable модель (для HUD/UI) */
+  toModel(): import("../models").Player {
+    const eid = this._eid;
     return {
-      x: this._x, y: this._y,
-      vx: this._vx, vy: this._vy,
-      r: this._r,
-      hp: this._hp, maxHp: this._maxHp,
-      dir: this._dir,
-      moving: false,
-      animT: 0,
-      swingT: this._swingT,
-      hurtT: this._hurtT,
-      slowT: this._slowT,
+      x: eid >= 0 ? Position.x[eid] : 0,
+      y: eid >= 0 ? Position.y[eid] : 0,
+      vx: eid >= 0 ? Velocity.x[eid] : 0,
+      vy: eid >= 0 ? Velocity.y[eid] : 0,
+      r: 10,
+      hp: this.hp,
+      maxHp: this.maxHp,
+      dir: this.dir,
+      moving: eid >= 0 ? !!Player.moving[eid] : false,
+      animT: eid >= 0 ? Player.animT[eid] : 0,
+      swingT: this.swingT,
+      hurtT: this.hurtT,
+      slowT: this.slowT,
     };
   }
 }

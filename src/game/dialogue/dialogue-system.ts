@@ -50,6 +50,7 @@ export class DialogueSystem {
   }
 
   private get playerDomain() { return this.store.playerDomain; }
+  private get playerEid() { return (this.store as any)._playerEid ?? -1; }
 
   // ── Thin dispatcher: делегирует поиск диалога declarative definitions ──
 
@@ -84,10 +85,13 @@ export class DialogueSystem {
     const p = this.store.player;
     if (f.mead && !f.meadDone) {
       f.mead = false; f.meadDone = true;
-      const r = this.playerDomain!.increaseMaxHp(2); p.maxHp = r.maxHp; p.hp = r.hp;
+      const r = this.playerDomain!.increaseMaxHp(2);
+      p.maxHp = r.maxHp; p.hp = r.hp;
       audio.rune(); this.bus.emit("toast", { msg: "Зелье из дикого мёда: максимальное здоровье +2" });
     } else {
-      p.hp = this.playerDomain!.fullHeal(); audio.heal();
+      this.playerDomain!.fullHeal();
+      p.hp = p.maxHp;
+      audio.heal();
     }
     this.bus.emit("fx:burst", { x: p.x, y: p.y, color: 0x7ee2a8, n: 12, speed: 60, life: 0.8, size: 2, grav: -20 });
     this.bus.emit("hud:dirty", {});
@@ -147,7 +151,9 @@ export class DialogueSystem {
     const f = this.store.flags;
     const p = this.store.player;
     if (!f.cullDone && (f.killsByKind?.["varg"] ?? 0) >= 4 && (f.killsByKind?.["draugr"] ?? 0) >= 4) {
-      f.cullDone = true; const r = this.playerDomain!.increaseMaxHp(2); p.maxHp = r.maxHp; p.hp = r.hp;
+      f.cullDone = true;
+      const r = this.playerDomain!.increaseMaxHp(2);
+      p.maxHp = r.maxHp; p.hp = r.hp;
       audio.rune(); this.bus.emit("toast", { msg: "Бранд кивает: максимальное здоровье +2" });
       this.bus.emit("hud:dirty", {});
     }
@@ -158,7 +164,8 @@ export class DialogueSystem {
     const p = this.store.player;
     if (f.bear && !f.bearGone) {
       f.bear = false; f.bearGone = true;
-      const r = this.playerDomain!.increaseMaxHp(2); p.maxHp = r.maxHp; p.hp = r.hp;
+      const r = this.playerDomain!.increaseMaxHp(2);
+      p.maxHp = r.maxHp; p.hp = r.hp;
       audio.rune();
       this.bus.emit("toast", { msg: "Кровавая Слеза: максимальное здоровье +2" });
       this.bus.emit("fx:burst", { x: p.x, y: p.y, color: 0xc03050, n: 16, speed: 80, life: 1.0, size: 2, grav: -10 });

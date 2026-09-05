@@ -18,6 +18,7 @@ import {
   Dead,
   Player,
   Enemy,
+  Health,
   poolGet,
   StringPool,
 } from '../ecs-components';
@@ -253,7 +254,9 @@ function useShrineEcs(world: World, shrineEid: number, i: number, store: GameSto
     store.visitedShrines.add(i);
     bus.emit('quest:reveal', { id: 's_shrines' });
   }
-  store.player.hp = store.playerDomain!.fullHeal();
+  // Full heal via PlayerDomain (delegates to ECS)
+  store.playerDomain!.fullHeal();
+  store.player.hp = store.player.maxHp;
   audio.chime();
   audio.heal();
   bus.emit('toast', { msg: 'Святилище запомнило тебя. Раны затянулись' });

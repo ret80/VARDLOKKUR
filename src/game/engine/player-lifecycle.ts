@@ -1,8 +1,9 @@
 /* player-lifecycle.ts – Управление респавном и использованием сердца */
 
 import { T } from "../world";
+import { Position, Velocity, Player, Health } from "../ecs/ecs-components";
 import type { GameStore } from "../store";
-import type { PlayerDomain } from "../store/player-domain";
+import { PlayerDomain } from "../store/player-domain";
 import type { EventBus } from "../event-bus";
 import type { HudSystem } from "../hud/hud-system";
 
@@ -59,13 +60,30 @@ export class PlayerLifecycle {
       if (s) spawn = { x: s.x * T + 8, y: s.y * T + 8 };
     }
 
+    const eid = this.playerDomain instanceof PlayerDomain 
+      ? (this.playerDomain as any)._eid ?? -1 
+      : -1;
+
+    // Set position via ECS
+    if (eid >= 0) {
+      Position.x[eid] = spawn.x;
+      Position.y[eid] = spawn.y;
+      Velocity.x[eid] = 0;
+      Velocity.y[eid] = 0;
+    }
+
+    // Full heal via ECS
+    if (eid >= 0) {
+      Health.current[eid] = Health.max[eid];
+      Player.swingT[eid] = 0;
+      Player.hurtT[eid] = 0;
+      Player.slowT[eid] = 0;
+    }
+
+    // Also sync to store.player for view-layer
     player.x = spawn.x;
     player.y = spawn.y;
-    this.playerDomain.setPosition(spawn.x, spawn.y);
-    this.playerDomain.setVelocity(0, 0);
-    this.playerDomain.fullHeal();
-    this.playerDomain.resetTimers();
-    player.hp = this.playerDomain.fullHeal();
+    player.hp = player.maxHp;
 
     this.cbs.resetDeath?.();
     this.store.setScreen("play");

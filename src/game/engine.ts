@@ -235,23 +235,13 @@ export class Engine {
     // Создаём WorldStore — персистентное состояние мира
     const worldStore = new WorldStore({ flags: initialFlags });
 
-    // Создаём PlayerDomain с колбэками на события
-    eng.playerDomain = new PlayerDomain(
-      initialPlayer.hp,
-      initialPlayer.maxHp,
-      initialPlayer.x,
-      initialPlayer.y,
-      initialPlayer.vx,
-      initialPlayer.vy,
-      initialPlayer.dir,
-      initialPlayer.r,
-      {
-        onDamaged: (dmg, sx, sy) => eng.bus.emit("player:damaged", { dmg, sx, sy }),
-        onDied: () => eng.bus.emit("player:died", {}),
-        onHealed: (amount) => eng.bus.emit("player:healed", { amount }),
-        onHeartUsed: (amount) => eng.bus.emit("player:heartUsed", { amount }),
-      }
-    );
+    // Создаём PlayerDomain — read-only view над ECS (eid будет установлен при загрузке карты)
+    eng.playerDomain = new PlayerDomain(-1, undefined, {
+      onDamaged: (dmg, sx, sy) => eng.bus.emit("player:damaged", { dmg, sx, sy }),
+      onDied: () => eng.bus.emit("player:died", {}),
+      onHealed: (amount) => eng.bus.emit("player:healed", { amount }),
+      onHeartUsed: (amount) => eng.bus.emit("player:heartUsed", { amount }),
+    });
 
     const config: GameStoreConfig = {
       player: initialPlayer,
@@ -340,6 +330,24 @@ export class Engine {
         realT: this.realT,
         playerEid: -1,
         playerDomain: this.playerDomain,
+        playerHelpers: {
+          damageEntityEcs: (eid: number, dmg: number) => {
+            const { damageEntityEcs } = require('../ecs/ecs-components');
+            return damageEntityEcs(eid, dmg);
+          },
+          healEntityEcs: (eid: number, amount: number) => {
+            const { healEntityEcs } = require('../ecs/ecs-components');
+            return healEntityEcs(eid, amount);
+          },
+          fullHealEntityEcs: (eid: number) => {
+            const { fullHealEntityEcs } = require('../ecs/ecs-components');
+            return fullHealEntityEcs(eid);
+          },
+          increaseMaxHpEcs: (eid: number, amount: number) => {
+            const { increaseMaxHpEcs } = require('../ecs/ecs-components');
+            return increaseMaxHpEcs(eid, amount);
+          },
+        },
         hud: this.hud,
         quests: this.quests,
         dialogue: this.dialogue,
@@ -478,16 +486,11 @@ export class Engine {
 
     const p = this.store.player;
     p.x = spawn.x; p.y = spawn.y;
-    this.playerDomain.setPosition(spawn.x, spawn.y);
-    this.playerDomain.setVelocity(0, 0);
-    this.playerDomain.resetTimers();
+    // HP/timers будут установлены ECS при создании Player (createPlayerInEcs)
     p.hp = Math.min(p.hp, p.maxHp);
     this.playerG.position.set(spawn.x, spawn.y);
 
     this.viewport.clampCamera(map.W * 16, map.H * 16, spawn.x, spawn.y);
-
-    // Очищаем float text перед загрузкой новой карты
-    // Float text очищается в ECS render system
 
     // ECS загрузка карты
     this.loadMapEcs(map, spawn);
@@ -510,6 +513,7 @@ export class Engine {
     if (this.ecsGameLoop) {
       this.ecsGameLoop.setPlanckWorld(this.ecsMapLoader!.planckWorld);
       this.ecsGameLoop.setPlayerEid(result.playerEid);
+      this.playerDomain.setEid(result.playerEid);
       this.ecsGameLoop.updateConfig({
         map,
         flags: this.store.flags,

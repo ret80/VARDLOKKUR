@@ -31,6 +31,33 @@ export const Health = {
   max: new Float32Array(10000),
 } as const;
 
+// ── ECS-хелперы для здоровья ──
+
+/** Нанести урон сущности через ECS Health */
+export function damageEntityEcs(eid: number, dmg: number): number {
+  Health.current[eid] = Math.max(0, Health.current[eid] - dmg);
+  return Health.current[eid];
+}
+
+/** Лечение сущности (не выше max) */
+export function healEntityEcs(eid: number, amount: number): number {
+  Health.current[eid] = Math.min(Health.max[eid], Health.current[eid] + amount);
+  return Health.current[eid];
+}
+
+/** Полное лечение сущности */
+export function fullHealEntityEcs(eid: number): number {
+  Health.current[eid] = Health.max[eid];
+  return Health.current[eid];
+}
+
+/** Увеличить max HP сущности и текущее HP */
+export function increaseMaxHpEcs(eid: number, amount: number): { hp: number; maxHp: number } {
+  Health.max[eid] += amount;
+  Health.current[eid] = Math.min(Health.max[eid], Health.current[eid] + amount);
+  return { hp: Health.current[eid], maxHp: Health.max[eid] };
+}
+
 /** Радиус (SoA) */
 export const Radius = {
   value: new Float32Array(10000),
@@ -68,6 +95,7 @@ export const Player = {
   swingDirX: new Float32Array(10000),
   swingDirY: new Float32Array(10000),
   aiming: new Uint8Array(10000),
+  maxHp: new Float32Array(10000),
 } as const;
 
 // --- Enemy ---

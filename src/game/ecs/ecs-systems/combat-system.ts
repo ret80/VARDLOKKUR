@@ -593,7 +593,7 @@ export function damageSnake(
   }
 }
 
-/** Damage player */
+/** Damage player (ECS-based) */
 export function damagePlayerEcs(
   world: World,
   playerEid: number,
@@ -611,8 +611,10 @@ export function damagePlayerEcs(
   if (!pierce && Player.hurtT[playerEid] > 0) return;
   if (pierce && Player.hurtT[playerEid] > 0.6) return;
 
-  // Apply damage via PlayerDomain
-  playerDomain?.takeDamage(dmg, sx, sy);
+  // Apply damage via ECS Health component
+  Health.current[playerEid] -= dmg;
+  Player.hurtT[playerEid] = 0.35; // invulnerability window
+
   onAudioHurt();
   onFloat(Position.x[playerEid], Position.y[playerEid], `-${dmg}`, 0xe06060);
 
@@ -631,10 +633,7 @@ export function damagePlayerEcs(
 
   onPlayerDamaged();
 
-  // Check death
-  if (Health.current[playerEid] <= 0) {
-    // Death handled by life-system
-  }
+  // Check death — handled by lifeCheckSystem
 }
 
 /** Create projectile entity */
