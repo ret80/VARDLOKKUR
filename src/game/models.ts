@@ -17,7 +17,6 @@ export type Screen = "title" | "play" | "pause" | "death" | "victory" | "quests"
 
 // ── HUD ─────────────────────────────────────────────────────────────────
 
-import type { QuestView } from "./types";
 export { type QuestView } from "./types";
 
 export interface HudData {

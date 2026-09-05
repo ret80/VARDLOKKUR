@@ -263,6 +263,12 @@ export class GameStore {
 
   get planckWorld(): any { return this._state.planckWorld; }
 
+  // ── Визуальные настройки ──
+
+  private _roofSnow = false;
+  get roofSnow(): boolean { return this._roofSnow; }
+  set roofSnow(v: boolean) { this._roofSnow = v; }
+
   // ── ECS helpers ──
 
   get ecsWorld(): World | null { return this._state.ecsWorld; }
