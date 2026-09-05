@@ -192,6 +192,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   bus.on("combat:trySword", () => {
     const peid = _playerEid;
     if (peid < 0) return;
+    // Направление замаха = направление взгляда игрока
+    Player.swingDirX[peid] = Direction.x[peid];
+    Player.swingDirY[peid] = Direction.y[peid];
     swordAttackSystem(
       world, peid,
       store.flags.hasItem("sword"),
