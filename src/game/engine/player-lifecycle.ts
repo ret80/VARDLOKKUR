@@ -17,6 +17,8 @@ export interface PlayerLifecycleCallbacks {
   playHeal: () => void;
   /** Эффект частиц */
   fxBurst: (x: number, y: number, color: number, count: number, size: number, life: number, speed: number, yOff: number) => void;
+  /** Сбросить состояние смерти игрока (вызывается при респавне) */
+  resetDeath?: () => void;
 }
 
 export class PlayerLifecycle {
@@ -65,6 +67,7 @@ export class PlayerLifecycle {
     this.playerDomain.resetTimers();
     player.hp = this.playerDomain.fullHeal();
 
+    this.cbs.resetDeath?.();
     this.store.setScreen("play");
     this.cbs.fadeTo(1);
     this.cbs.loadMap(ow, spawn);

@@ -34,11 +34,11 @@ export interface IPlayerDomain {
 /** Мутаторы игрока */
 export interface IPlayerMutations {
   /** Нанести урон */
-  takeDamage(dmg: number, sx: number, sy: number): void;
+  takeDamage(dmg: number, sx: number, sy: number): number;
   /** Лечение */
-  heal(amount: number): void;
+  heal(amount: number): number;
   /** Полное лечение */
-  fullHeal(): void;
+  fullHeal(): number;
   /** Использовать сердце */
   useHeart(amount: number): void;
   /** Сбросить таймеры */
@@ -114,6 +114,7 @@ export class PlayerDomain implements IPlayerDomain, IPlayerMutations {
 
   takeDamage(dmg: number, sx: number, sy: number): number {
     this._hp = Math.max(0, this._hp - dmg);
+    this._hurtT = 0.35;
     return this._hp;
   }
 

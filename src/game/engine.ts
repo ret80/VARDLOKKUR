@@ -53,6 +53,11 @@ import { PlanckWorld, Cat, type PhysicsCallbacks } from './physics/planck-world'
 import { createEnemyInEcs } from './ecs/ecs-bridge';
 import { Enemy as EcsEnemy, Shrine, Pedestal, Position } from './ecs/ecs-components';
 import { query } from 'bitecs';
+import { ViewportController } from './engine/viewport-controller';
+import { SceneManager } from './engine/scene-manager';
+import { ScreenRouter } from './engine/screen-router';
+import { PlayerLifecycle } from './engine/player-lifecycle';
+import { MapLoaderService } from './engine/map-loader-service';
 
 // Импорты рендереров
 import {
@@ -62,8 +67,6 @@ import {
   PlayerRenderer, EnemyRenderer, NpcRenderer, DropRenderer, ProjectileRenderer,
   ChestRenderer, PedestalRenderer, ShrineRenderer, DoorRenderer, BarrierRenderer, AltarRenderer
 } from "./entities";
-
-const ZOOM = 1.18;
 
 export class Engine {
   private cbs: EngineCallbacks;
@@ -92,21 +95,14 @@ export class Engine {
   private dialogue!: DialogueSystem;
   private hud!: HudSystem;
 
-  // Слои
-  private tileLayer = new Container();
-  private world = new Container();
-  private dynamic = new Container();
-  private fxWorld = new Container();
-  private floatLayer = new Container();
-  private fxScreen = new Graphics();
+  // Слои сцены и вьюпорт
   private fx = new FxManager();
-  private fadeG = new Graphics();
   private canvasEl: HTMLCanvasElement | null = null;
-
-  // Вьюпорт
-  private viewW = 480;
-  private viewH = 270;
-  private cam = { x: 0, y: 0 };
+  private scene!: SceneManager;
+  private viewport!: ViewportController;
+  private screenRouter!: ScreenRouter;
+  private playerLifecycle!: PlayerLifecycle;
+  private mapLoader!: MapLoaderService;
 
   // Локальные данные (для рендеринга и обновления)
   // Все данные игрока теперь через this.store.player и this.store.flags
@@ -123,9 +119,7 @@ export class Engine {
   private dungeons: WorldData[] = [];
   private map!: WorldData;
 
-  // Состояние рендеринга
-  private roofSnow = false;
-
+  // Состояние рендеринга (roofSnow хранится в store.roofSnow)
   private talkedSig = new Map<string, string>();
   private dialogueActiveRef = { value: false };
   private talkedSigRef = { value: new Map<string, string>() };
@@ -142,7 +136,7 @@ export class Engine {
       this.ecsWorld, kind as EnemyKind, x, y, g, this.ecsMapLoader.planckWorld,
       Cat.Enemy, Cat.Enemy | Cat.Player | Cat.Projectile | Cat.Ground
     );
-    this.dynamic.addChild(g);
+    this.scene.dynamic.addChild(g);
     // Set aggro and guardOf via Enemy component (SoA)
     EcsEnemy.aggro[eid] = 1;
     EcsEnemy.guardOf[eid] = pedestalIndex;
@@ -164,12 +158,15 @@ export class Engine {
 
   private async init(container: HTMLElement) {
     const app = new Application();
-    this.applyViewSize();
+    this.viewport = new ViewportController(container, null, { x: 0, y: 0 });
+    this.viewport.applyViewSize();
     await app.init({
       background: 0x05080d, antialias: false, resolution: 1,
-      width: this.viewW, height: this.viewH,
+      width: this.viewport.viewW, height: this.viewport.viewH,
     });
     this.app = app;
+    this.viewport = new ViewportController(container, app, { x: 0, y: 0 });
+    this.scene = new SceneManager(app);
     const cv = app.canvas as HTMLCanvasElement;
     cv.classList.add("pixi");
     cv.style.position = "absolute";
@@ -178,31 +175,24 @@ export class Engine {
     cv.style.height = "100%";
     container.appendChild(cv);
     this.canvasEl = cv;
-    this.applyViewSize();
-    app.renderer.resize(this.viewW, this.viewH);
+    this.viewport.apply(app.renderer);
 
     // Инициализация FX-менеджера
-    this.fx.init(app, this.viewW, this.viewH);
+    this.fx.init(app, this.viewport.viewW, this.viewport.viewH);
 
-    this.world.sortableChildren = true;
-    this.tileLayer.sortableChildren = true;
-    // dynamic НЕ sortableChildren — z-order определяется порядком addChild
-    this.fxWorld.addChild(this.fx.worldParticleGraphics);
-    this.world.addChild(this.tileLayer);
-    this.world.addChild(this.dynamic);
-    this.world.addChild(this.fxWorld);
-    this.world.addChild(this.floatLayer);
-    app.stage.addChild(this.world);
+    // Слои сцены привязываются к stage (world, fxScreen, fadeG)
+    this.scene.attachToStage();
+    this.scene.addFxGraphics(this.fx.worldParticleGraphics);
 
-    app.stage.addChild(this.fxScreen);
+    // Вигнетки и фейд размещаем в исходном порядке (fadeG поверх вигнеток)
+    app.stage.removeChild(this.scene.fadeG);
     this.fx.buildVignette();
     if (this.fx.vignette) app.stage.addChild(this.fx.vignette);
 
     this.fx.buildFogVignette();
     this.fx.buildNoiseTexture();
     if (this.fx.fogVignette) app.stage.addChild(this.fx.fogVignette!);
-
-    app.stage.addChild(this.fadeG);
+    app.stage.addChild(this.scene.fadeG);
     this.fx.initSnow();
 
     // Регистрируем ввод
@@ -221,7 +211,7 @@ export class Engine {
     this.bus.on("input:toggle-snow", () => this.handleSnow());
     this.bus.on("input:close-overlay", () => this.closeOverlay());
 
-    this.applyViewSize();
+    this.viewport.apply(app.renderer);
 
     // Игровой цикл
     app.ticker.maxFPS = 60;
@@ -304,6 +294,25 @@ export class Engine {
     this.quests      = new QuestSystem(this.bus, store);
     this.dialogue    = new DialogueSystem(this.bus, store);
     this.hud         = new HudSystem(this.bus, store, this.quests);
+    this.screenRouter = new ScreenRouter(
+      this.state, this.bus, store, this.quests,
+      (s) => this.cbs.onScreen(s),
+      (msg) => this.cbs.onToast(msg),
+      () => audio.uiClick()
+    );
+    this.mapLoader = new MapLoaderService(this.scene, store, this.viewport, this.ecsWorld!);
+    this.playerLifecycle = new PlayerLifecycle(
+      store, this.playerDomain, this.bus, this.hud,
+      {
+        fadeTo: (a) => this.fadeTo(a),
+        loadMap: (map, spawn) => this.loadMap(map, spawn),
+        float: (x, y, text, color) => this.float(x, y, text, color),
+        playHeal: () => audio.heal(),
+        fxBurst: (x, y, color, count, size, life, speed, yOff) =>
+          this.fx.burst(x, y, color, count, size, life, speed, yOff),
+        resetDeath: () => { this.state.playerDead = false; },
+      }
+    );
     
     // Подписки на события движка
     this.bus.on("engine:enter-dungeon", (e) => this.enterDungeon(e));
@@ -321,15 +330,15 @@ export class Engine {
         store: this.store,
         planckWorld: null as any, // будет установлен после загрузки карты
         app: this.app,
-        dynamic: this.dynamic,
-        floatLayer: this.floatLayer,
-        gameWorld: this.world,
+        dynamic: this.scene.dynamic,
+        floatLayer: this.scene.floatLayer,
+        gameWorld: this.scene.world,
         fx: this.fx,
         input: this.input,
         state: this.state,
-        cam: this.cam,
-        viewW: this.viewW,
-        viewH: this.viewH,
+        cam: this.viewport.cam,
+        viewW: this.viewport.viewW,
+        viewH: this.viewport.viewH,
         map: this.map,
         ow: this.ow,
         flags: this.store.flags,
@@ -454,19 +463,11 @@ export class Engine {
     if (this.minimapCanvas !== c) { this.minimapCanvas = c; this.mmBase = this.map ? buildMinimapBase(this.map) : null; }
   }
 
-  openQuests() { if (this.state.screen === "play") this.setScreen("quests"); }
-  openInventory() { if (this.state.screen === "play") this.setScreen("inventory"); }
-  openMap() { if (this.state.screen === "play") this.setScreen("map"); }
-  closeOverlay() {
-    if (this.state.screen === "quests" || this.state.screen === "inventory" || this.state.screen === "map") this.setScreen("play");
-  }
-  trackQuest(id: string) {
-    this.store.trackedQuest = id;
-    const def = this.quests.questDefs().find((q) => q.id === id);
-    this.toast(def ? `Стрелка ведёт: ${def.title}` : "Цель обновлена");
-    audio.uiClick();
-    this.pushHud(true);
-  }
+  openQuests() { this.screenRouter.openQuests(); }
+  openInventory() { this.screenRouter.openInventory(); }
+  openMap() { this.screenRouter.openMap(); }
+  closeOverlay() { this.screenRouter.closeOverlay(); }
+  trackQuest(id: string) { this.screenRouter.trackQuest(id); }
 
   advanceDialogue() {
     this.dialogueActiveRef.value = false;
@@ -474,7 +475,7 @@ export class Engine {
     this.dialogue.endDialogue((dd) => this.cbs.onDialogue(dd));
   }
 
-  private setScreen(s: Screen) { this.state.screen = s; this.cbs.onScreen(s); }
+  private setScreen(s: Screen) { this.screenRouter.setScreen(s); }
   private toast(msg: string) { this.cbs.onToast(msg); }
   private fadeTo(a: number) { this.state.setFadeTarget(a); }
 
@@ -491,8 +492,7 @@ export class Engine {
     p.hp = Math.min(p.hp, p.maxHp);
     this.playerG.position.set(spawn.x, spawn.y);
 
-    this.cam.x = clamp(spawn.x - this.viewW / 2, 0, Math.max(0, map.W * T - this.viewW));
-    this.cam.y = clamp(spawn.y - this.viewH / 2, 0, Math.max(0, map.H * T - this.viewH));
+    this.viewport.clampCamera(map.W * 16, map.H * 16, spawn.x, spawn.y);
 
     // Очищаем float text перед загрузкой новой карты
     // Float text очищается в ECS render system
@@ -501,67 +501,22 @@ export class Engine {
     this.loadMapEcs(map, spawn);
   }
 
-  /** ECS загрузка карты */
+  /** ECS загрузка карты (делегирование в MapLoaderService) */
   private loadMapEcs(map: WorldData, spawn: Vec) {
     // Сохраняем дропы перед очисткой мира
     const savedDrops = this.ecsGameLoop ? this.ecsGameLoop.getDropsForTransition() : [];
 
-    // Строим текстуры — ground как фон, стены/дома в tileLayer
-    const tileResult = buildAllTileTextures(map, this.roofSnow);
-    
-    // Ground texture — фон мира
-    const groundSprite = new Sprite(tileResult.groundTexture);
-    groundSprite.position.set(0, 0);
-    groundSprite.zIndex = 0;
-    this.tileLayer.addChildAt(groundSprite, 0);
-    
-    tileResult.wallSprites.forEach(ws => this.tileLayer.addChild(ws));
-    tileResult.houseSprites.forEach(hs => this.tileLayer.addChild(hs.spr));
-    this.wallCache = tileResult.wallCache;
-    this.houseCache = tileResult.houseCache;
-
-    // Создаём ECS Map Loader
-    this.ecsMapLoader = new EcsMapLoader({
-      world: this.ecsWorld!,
-      planckWorld: new PlanckWorld(),
-      dynamicContainer: this.dynamic,
-      openedChests: this.store.openedChests,
-      takenPedestals: this.store.takenPedestals,
-      visitedShrines: this.store.visitedShrines,
-      flags: {
-        secretKnown: this.store.flags.secretKnown,
-        shrineIdx: this.store.flags.shrineIdx,
-        runes: this.store.flags.runes,
-        snakeStarted: this.store.flags.snakeStarted,
-        hasKey: this.store.flags.hasKey,
-      },
-      map,
-      spawn,
-      viewW: this.viewW,
-      viewH: this.viewH,
-      savedDrops,
-      toast: (msg) => this.toast(msg),
-    });
-
-    const result = this.ecsMapLoader.loadMap(this.playerG, this.playerDomain);
+    const result = this.mapLoader.loadMapEcs(
+      map, spawn, this.playerDomain, this.playerG, savedDrops,
+      (msg) => this.toast(msg)
+    );
+    this.ecsMapLoader = this.mapLoader.ecsMapLoader;
     this.ecsPlayerBody = result.playerBody;
-    
-    // Построить mmBase для minimap и big map
-    this.mmBase = buildMinimapBase(map);
-    
-    // Установить PlanckWorld в game loop
-    if (this.ecsGameLoop) {
-      this.ecsGameLoop.setPlanckWorld(this.ecsMapLoader.planckWorld);
-    }
-    
-    // Обновить playerEid в game loop
-    if (this.ecsGameLoop) {
-      this.ecsGameLoop.setPlayerEid(result.playerEid);
-    }
+    this.mmBase = this.mapLoader.mmBase;
 
     // Обновляем game loop с новыми данными (без пересоздания)
     if (this.ecsGameLoop) {
-      this.ecsGameLoop.setPlanckWorld(this.ecsMapLoader.planckWorld);
+      this.ecsGameLoop.setPlanckWorld(this.ecsMapLoader!.planckWorld);
       this.ecsGameLoop.setPlayerEid(result.playerEid);
       this.ecsGameLoop.updateConfig({
         map,
@@ -572,39 +527,13 @@ export class Engine {
 
   /* ================= клавиши-обработчики ================= */
 
-  private handlePause() {
-    if (this.state.screen === "play") this.setScreen("pause");
-    else if (this.state.screen === "pause") this.setScreen("play");
-    else this.closeOverlay();
-  }
-
-  private handleInventory() {
-    if (this.state.screen === "play") this.setScreen("inventory");
-    else if (this.state.screen === "inventory") this.setScreen("play");
-    audio.uiClick();
-  }
-
-  private handleQuests() {
-    if (this.state.screen === "play") this.setScreen("quests");
-    else if (this.state.screen === "quests") this.setScreen("play");
-    audio.uiClick();
-  }
-
-  private handleSnow() {
-    this.roofSnow = !this.roofSnow;
-    this.toast(this.roofSnow ? "Снег на крышах: вкл" : "Снег на крышах: выкл");
-  }
+  private handlePause() { this.screenRouter.handlePause(); }
+  private handleInventory() { this.screenRouter.handleInventory(); }
+  private handleQuests() { this.screenRouter.handleQuests(); }
+  private handleSnow() { this.screenRouter.handleSnow(); }
 
   private useStoredHeart() {
-    const p = this.store.player;
-    if (p.hp >= p.maxHp) { this.float(p.x, p.y, "Здоровье полное", 0x6e7f8d); return; }
-    if (this.store.flags.hearts <= 0) { this.float(p.x, p.y, "Сума пуста", 0x6e7f8d); return; }
-    this.store.flags.hearts--;
-    this.playerDomain.heal(4);
-    audio.heal();
-    this.fx.burst(p.x, p.y, 0x7ee2a8, 10, 50, 0.8, 2, -20);
-    this.float(p.x, p.y - 10, "+4", 0x7ee2a8);
-    this.pushHud(true);
+    this.playerLifecycle.useStoredHeart();
   }
 
   /* ================= главный цикл ================= */
@@ -685,25 +614,7 @@ export class Engine {
   }
 
   private respawn() {
-    let spawn = this.map?.spawn ?? { x: 0, y: 0 };
-    const f = this.store.flags;
-    if (f.shrineIdx >= 0 && this.ow) {
-      const s = this.ow.shrines[f.shrineIdx];
-      if (s) spawn = { x: s.x * T + 8, y: s.y * T + 8 };
-    }
-    this.store.player.x = spawn.x; this.store.player.y = spawn.y;
-    this.playerDomain.setPosition(spawn.x, spawn.y);
-    this.playerDomain.setVelocity(0, 0);
-    this.playerDomain.fullHeal();
-    this.playerDomain.resetTimers();
-    this.store.player.hp = this.playerDomain.fullHeal();
-    this.state.playerDead = false;
-    this.setScreen("play");
-    this.fadeTo(1);
-    // Всегда загружаем карту через ECS
-    this.loadMap(this.ow, spawn);
-    this.hud.pushHud(true);
-    this.bus.emit("player:respawned", {});
+    this.playerLifecycle.respawn();
   }
 
   /* ================= диалоги ================= */
@@ -727,7 +638,7 @@ export class Engine {
   }
 
   private float(x: number, y: number, text: string, color: number) {
-    addFloatText(this.floatLayer, { createText: (t: string, s: any) => new Text({ ...s, text: t }) }, x, y, text, color);
+    addFloatText(this.scene.floatLayer, { createText: (t: string, s: any) => new Text({ ...s, text: t }) }, x, y, text, color);
   }
 
   /* ================= big map (public) ================= */
@@ -758,46 +669,23 @@ export class Engine {
 
   /* ===== Вспомогательные поля ===== */
 
-  /* ===== Вьюпорт ===== */
+  /* ===== Вьюпорт (делегирование в ViewportController) ===== */
 
   private applyViewSize() {
-    const cw = Math.max(1, this.container.clientWidth || window.innerWidth);
-    const ch = Math.max(1, this.container.clientHeight || window.innerHeight);
-    const aspect = cw / ch;
-    let vw: number, vh: number;
-    if (aspect >= 1) {
-      vh = Math.round(270 / ZOOM);
-      vw = Math.round(vh * aspect);
-      if (vw > 760) { vw = 760; vh = Math.round(vw / aspect); }
-    } else {
-      vw = Math.round(235 / ZOOM);
-      vh = Math.round(vw / aspect);
-      if (vh > 760) { vh = 760; vw = Math.round(vh * aspect); }
-    }
-    this.viewW = Math.max(120, vw);
-    this.viewH = Math.max(120, vh);
+    this.viewport.applyViewSize();
   }
 
   private applyView() {
-    const ow = this.viewW, oh = this.viewH;
-    this.applyViewSize();
-    if ((this.viewW !== ow || this.viewH !== oh) && this.app) {
-      this.app.renderer.resize(this.viewW, this.viewH);
-    }
+    this.viewport.apply(this.app ? this.app.renderer : null);
   }
 
   /* ===== Уничтожение ===== */
 
   destroy() {
     this.input.unregister();
-    this.wallCache.destroy();
-    this.houseCache.destroy();
+    this.mapLoader?.destroy();
     if (this.app) this.app.destroy(true);
     this.fx.destroy();
     this.bus.clear();
   }
-
-  /* ===== Вспомогательные поля ===== */
-  private wallCache = new WallTextureCache();
-  private houseCache = new HouseTextureCache();
 }

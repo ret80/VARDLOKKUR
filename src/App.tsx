@@ -1,85 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Engine } from "./game/engine";
-import type { Screen, HudData, DialogueData, Stats, QuestView } from "./game/models";
+import { useEngine } from "./hooks/useEngine";
+import { KnotFrame } from "./components/icons";
+import {
+  SwordIco, AxeIco, BowIco, HammerIco, HeartIco, ArrowIco, RuneIco, BagIco, BookIco,
+} from "./components/icons";
+import { QuestsScreen } from "./components/screens/QuestsScreen";
+import { InventoryScreen } from "./components/screens/InventoryScreen";
+import { WorldMapScreen } from "./components/screens/WorldMapScreen";
+import { HealthBar } from "./components/hud/HealthBar";
 
-let toastId = 0;
-type Toast = { id: number; msg: string };
-
-/* ---------- пиксельные иконки ---------- */
 const px = { imageRendering: "pixelated" as const };
-const SwordIco = ({ dim }: { dim?: boolean }) => (
-  <svg width="15" height="15" viewBox="0 0 12 12" style={{ ...px, opacity: dim ? 0.3 : 1 }}>
-    <rect x="8" y="1" width="2" height="2" fill="#c8d3dc" />
-    <rect x="7" y="2" width="2" height="2" fill="#c8d3dc" />
-    <rect x="6" y="3" width="2" height="2" fill="#c8d3dc" />
-    <rect x="5" y="4" width="2" height="2" fill="#a9b6c2" />
-    <rect x="3" y="5" width="3" height="2" fill="#8a744a" />
-    <rect x="2" y="8" width="2" height="2" fill="#5a4632" />
-    <rect x="1" y="10" width="2" height="1" fill="#c9a24b" />
-  </svg>
-);
-const AxeIco = ({ dim }: { dim?: boolean }) => (
-  <svg width="15" height="15" viewBox="0 0 12 12" style={{ ...px, opacity: dim ? 0.3 : 1 }}>
-    <rect x="5" y="1" width="4" height="4" fill="#9fe0ee" />
-    <rect x="4" y="2" width="2" height="3" fill="#7fc4d4" />
-    <rect x="5" y="5" width="2" height="6" fill="#5a4632" />
-    <rect x="6" y="2" width="1" height="1" fill="#d8f4fa" />
-  </svg>
-);
-const BowIco = ({ dim }: { dim?: boolean }) => (
-  <svg width="15" height="15" viewBox="0 0 12 12" style={{ ...px, opacity: dim ? 0.3 : 1 }}>
-    <rect x="2" y="1" width="1" height="3" fill="#8a744a" />
-    <rect x="1" y="4" width="1" height="4" fill="#8a744a" />
-    <rect x="2" y="8" width="1" height="3" fill="#8a744a" />
-    <rect x="2" y="1" width="1" height="10" fill="#c9a24b" opacity="0.5" />
-    <rect x="3" y="5" width="7" height="1" fill="#c8d3dc" />
-    <rect x="10" y="5" width="2" height="1" fill="#e8c979" />
-  </svg>
-);
-const HammerIco = ({ dim }: { dim?: boolean }) => (
-  <svg width="15" height="15" viewBox="0 0 12 12" style={{ ...px, opacity: dim ? 0.3 : 1 }}>
-    <rect x="2" y="1" width="8" height="4" fill="#63d8c8" />
-    <rect x="2" y="1" width="8" height="1" fill="#a8ece2" />
-    <rect x="5" y="5" width="2" height="6" fill="#5a4632" />
-  </svg>
-);
-const HeartIco = () => (
-  <svg width="13" height="13" viewBox="0 0 12 12" style={px}>
-    <rect x="2" y="2" width="3" height="2" fill="#c03050" />
-    <rect x="7" y="2" width="3" height="2" fill="#c03050" />
-    <rect x="1" y="4" width="10" height="3" fill="#c03050" />
-    <rect x="3" y="7" width="6" height="2" fill="#a02840" />
-    <rect x="4" y="9" width="4" height="1" fill="#a02840" />
-    <rect x="5" y="10" width="2" height="1" fill="#a02840" />
-  </svg>
-);
-const ArrowIco = () => (
-  <svg width="13" height="13" viewBox="0 0 12 12" style={px}>
-    <rect x="9" y="1" width="2" height="2" fill="#e8c979" />
-    <rect x="5" y="3" width="5" height="1" fill="#c8d3dc" />
-    <rect x="1" y="7" width="6" height="1" fill="#8a744a" />
-    <rect x="1" y="6" width="2" height="1" fill="#6e7f8d" />
-    <rect x="1" y="8" width="2" height="1" fill="#6e7f8d" />
-  </svg>
-);
-const RuneIco = () => (
-  <svg width="13" height="13" viewBox="0 0 12 12" style={px}>
-    <rect x="4" y="1" width="4" height="10" fill="#3d5a66" />
-    <rect x="5" y="2" width="2" height="8" fill="#63d8c8" />
-    <rect x="3" y="4" width="1" height="4" fill="#63d8c8" />
-    <rect x="8" y="4" width="1" height="4" fill="#63d8c8" />
-  </svg>
-);
-const KnotFrame = ({ className }: { className?: string }) => (
-  <svg viewBox="0 0 100 100" className={className} fill="none" stroke="currentColor" strokeWidth="2">
-    <circle cx="50" cy="50" r="46" opacity="0.5" />
-    <circle cx="50" cy="50" r="38" opacity="0.25" strokeDasharray="6 5" />
-    <path d="M50 8 L58 22 L50 18 L42 22 Z" fill="currentColor" stroke="none" opacity="0.8" />
-    <path d="M50 92 L58 78 L50 82 L42 78 Z" fill="currentColor" stroke="none" opacity="0.8" />
-    <path d="M8 50 L22 42 L18 50 L22 58 Z" fill="currentColor" stroke="none" opacity="0.8" />
-    <path d="M92 50 L78 42 L82 50 L78 58 Z" fill="currentColor" stroke="none" opacity="0.8" />
-  </svg>
-);
 
 const CONTROLS: [string, string][] = [
   ["WASD / стрелки", "движение"],
@@ -138,199 +68,23 @@ function HelpOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
-function QuestScreen({ quests, trackedId, onTrack, onClose }: {
-  quests: QuestView[]; trackedId: string; onTrack: (id: string) => void; onClose: () => void;
-}) {
-  const [prevTrackedId, setPrevTrackedId] = useState(trackedId);
-  const [refreshKey, setRefreshKey] = useState(0);
-  useEffect(() => {
-    if (trackedId !== prevTrackedId) {
-      setPrevTrackedId(trackedId);
-      setRefreshKey((k) => k + 1);
-    }
-  }, [trackedId, prevTrackedId]);
-  const main = quests.filter((q) => q.main);
-  const side = quests.filter((q) => !q.main);
-  const Row = ({ q }: { q: QuestView }) => {
-    const isTracked = q.id === trackedId;
-    return (
-      <button
-        onClick={() => { if (!q.done) onTrack(q.id); }}
-        className={`w-full text-left px-3 py-2 border transition-colors cursor-pointer ${
-          isTracked ? "border-[#c9a24b] bg-[#c9a24b14]" : q.done ? "border-[#2c3d4d] opacity-50" : "border-[#2c3d4d] hover:border-[#4a6a7a]"
-        }`}
-      >
-        <div className="flex items-center justify-between gap-2">
-          <span className={`font-display text-[13px] tracking-[0.12em] uppercase ${q.done ? "text-[#6e7f8d] line-through" : "text-[#dfe8f0]"}`}>{q.title}</span>
-          {isTracked && <span className="text-[10px] font-bold tracking-widest text-[#e8c979] uppercase">ведёт</span>}
-          {q.done && <span className="text-[10px] font-bold tracking-widest text-[#63d8c8] uppercase">сделано</span>}
-        </div>
-        <div className="mt-0.5 text-[11.5px] text-[#8fa0ae]">{q.desc}</div>
-      </button>
-    );
-  };
-  return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#04060acc] anim-fade-in p-3" onClick={onClose}>
-      <div className="nord-panel nord-frame w-full max-w-[560px] max-h-[92%] overflow-y-auto px-5 py-5 anim-fade-up" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-baseline justify-between">
-          <div className="font-display text-xl tracking-[0.25em] text-[#dfe8f0] uppercase text-shadow-carve">Журнал саги</div>
-          <button className="text-[#6e7f8d] hover:text-[#dfe8f0] text-xl leading-none cursor-pointer" onClick={onClose}>✕</button>
-        </div>
-        <div className="mt-3 font-display text-[12px] tracking-[0.25em] text-[#c9a24b] uppercase">Путь саги</div>
-        <div className="mt-1.5 space-y-1.5">
-          {main.length ? main.map((q) => <Row key={q.id} q={q} />) : <div className="text-[12px] text-[#6e7f8d]">Сага ещё не началась…</div>}
-        </div>
-        <div className="mt-4 font-display text-[12px] tracking-[0.25em] text-[#8fd8e8] uppercase">Побочные тропы</div>
-        <div className="mt-1.5 space-y-1.5">
-          {side.length ? side.map((q) => <Row key={q.id} q={q} />) : (
-            <div className="text-[12px] text-[#6e7f8d]">Пока тихо. Жители Нидов хранят свои просьбы — заговори с ними.</div>
-          )}
-        </div>
-        <div className="mt-4 text-[10.5px] text-[#4a5a68] tracking-widest">КВЕСТЫ ВПИСЫВАЮТСЯ САМИ · КЛИК — СЛЕДИТЬ · <span className="kbd">Q</span>/<span className="kbd">ESC</span> ЗАКРЫТЬ</div>
-      </div>
-    </div>
-  );
-}
-
-function InventoryScreen({ hud, onClose }: { hud: HudData; onClose: () => void }) {
-  const Weapon = ({ owned, name, rune, desc, kbd, tag, children }: {
-    owned: boolean; name: string; rune: string; desc: string; kbd: string; tag?: string; children: React.ReactNode;
-  }) => (
-    <div className={`relative px-3 py-2.5 border ${owned ? "border-[#c9a24b88] bg-[#c9a24b0d]" : "border-[#2c3d4d] opacity-45"}`}>
-      <div className="flex items-center gap-2.5">
-        <span className="font-display text-lg text-[#63d8c8]">{rune}</span>
-        {children}
-        <div className="flex-1">
-          <div className="font-display text-[13px] tracking-[0.1em] text-[#dfe8f0] uppercase">{name}{tag && <span className="ml-2 text-[9px] text-[#7ee2a8] border border-[#7ee2a866] px-1 py-0.5 align-middle">{tag}</span>}</div>
-          <div className="text-[11px] text-[#8fa0ae] leading-snug">{desc}</div>
-        </div>
-        <span className="kbd">{kbd}</span>
-      </div>
-    </div>
-  );
-  const Gift = ({ on, name, desc }: { on: boolean; name: string; desc: string }) => (
-    <div className={`px-3 py-2 border text-[12px] ${on ? "border-[#63d8c888] text-[#a8ece2]" : "border-[#2c3d4d] text-[#4a5a68]"}`}>
-      <span className="font-display tracking-wider">{on ? "✦ " : "· "}{name}</span>
-      <span className="text-[#6e7f8d]"> — {desc}</span>
-    </div>
-  );
-  return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#04060acc] anim-fade-in p-3" onClick={onClose}>
-      <div className="nord-panel nord-frame w-full max-w-[540px] max-h-[92%] overflow-y-auto px-5 py-5 anim-fade-up" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-baseline justify-between">
-          <div className="font-display text-xl tracking-[0.25em] text-[#dfe8f0] uppercase text-shadow-carve">Сума Бьорна</div>
-          <button className="text-[#6e7f8d] hover:text-[#dfe8f0] text-xl leading-none cursor-pointer" onClick={onClose}>✕</button>
-        </div>
-        <div className="mt-3 font-display text-[12px] tracking-[0.25em] text-[#c9a24b] uppercase">Оружие</div>
-        <div className="mt-1.5 space-y-1.5">
-          <Weapon owned={hud.hasSword} name="Ржавый Меч" rune="ᚦ" desc="Клинок клана. Короткий, но верный удар." kbd="SPACE" tag={hud.swordUp ? "+УРОН" : undefined}><SwordIco dim={!hud.hasSword} /></Weapon>
-          <Weapon owned={hud.hasAxe} name="Ледяная Секира" rune="ᛁ" desc="Летит и возвращается. Замораживает врагов — щиты не спасут." kbd="J" tag={hud.axeUp ? "+УРОН" : undefined}><AxeIco dim={!hud.hasAxe} /></Weapon>
-          <Weapon owned={hud.hasBow} name="Лук Сумерек" rune="ᛖ" desc="Удерживай, чтобы замерло время. Стрелы бьют издалека." kbd="L"><BowIco dim={!hud.hasBow} /></Weapon>
-          <Weapon owned={hud.hasHammer} name="Рунический Молот" rune="ᚺ" desc="Дар Каменной Крепости. Удары меча теперь оглушают." kbd="ПАС." tag={hud.hasHammer ? "ОГЛУШЕНИЕ" : undefined}><HammerIco dim={!hud.hasHammer} /></Weapon>
-        </div>
-        <div className="mt-4 font-display text-[12px] tracking-[0.25em] text-[#8fd8e8] uppercase">Припасы и дары</div>
-        <div className="mt-1.5 grid grid-cols-2 gap-1.5 text-[12px]">
-          <div className="px-3 py-2 border border-[#2c3d4d] flex items-center gap-2"><ArrowIco /><span className="text-[#dfe8f0] font-bold">{hud.arrows}</span><span className="text-[#6e7f8d]">стрел</span></div>
-          <div className="px-3 py-2 border border-[#2c3d4d] flex items-center gap-2"><HeartIco /><span className="text-[#dfe8f0] font-bold">{hud.hearts}</span><span className="text-[#6e7f8d]">в суме <span className="kbd">F</span></span></div>
-          <div className="px-3 py-2 border border-[#2c3d4d] flex items-center gap-2"><RuneIco /><span className="text-[#dfe8f0] font-bold">{hud.runes}/5</span><span className="text-[#6e7f8d]">Забытых Рун</span></div>
-          <div className="px-3 py-2 border border-[#2c3d4d] flex items-center gap-2"><span className="text-[#c9a24b]">{hud.hasKey ? "⚿" : "·"}</span><span className={hud.hasKey ? "text-[#dfe8f0]" : "text-[#4a5a68]"}>Ключ Хранителя</span></div>
-        </div>
-        <div className="mt-1.5 space-y-1.5">
-          <Gift on={hud.furyRune} name="Руна Ярости" desc="быстрее замах" />
-          <Gift on={hud.nornsFavor} name="Благоволенье Норн" desc="пьедесталы видны на карте" />
-          <Gift on={hud.secretKnown} name="Тайник" desc="клад отмечен на карте" />
-          <Gift on={hud.bear} name="Медвежонок" desc="ждёт хозяйку" />
-        </div>
-        <div className="mt-4 text-[10.5px] text-[#4a5a68] tracking-widest"><span className="kbd">TAB</span>/<span className="kbd">ESC</span> ЗАКРЫТЬ</div>
-      </div>
-    </div>
-  );
-}
-
-function WorldMapScreen({ zone, draw, onClose }: { zone: string; draw: (c: HTMLCanvasElement) => void; onClose: () => void }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => { if (ref.current) draw(ref.current); }, [draw]);
-  return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#04060ad9] anim-fade-in p-3" onClick={onClose}>
-      <div className="nord-panel nord-frame w-full max-w-[620px] px-5 py-5 anim-fade-up" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-baseline justify-between">
-          <div className="font-display text-xl tracking-[0.25em] text-[#dfe8f0] uppercase text-shadow-carve">Карта Нидов</div>
-          <button className="text-[#6e7f8d] hover:text-[#dfe8f0] text-xl leading-none cursor-pointer" onClick={onClose}>✕</button>
-        </div>
-        <div className="mt-1 text-[11px] text-[#6e7f8d] tracking-widest uppercase">ты здесь: <span className="text-[#8fd8e8]">{zone}</span></div>
-        <canvas ref={ref} className="mt-3 w-full border border-[#2c3d4d]" style={{ ...px, background: "#0a121c" }} />
-        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[10.5px] text-[#6e7f8d] tracking-wider">
-          <span><span className="inline-block w-2 h-2 align-middle" style={{ background: "#c9a24b" }} /> подземелья</span>
-          <span><span className="inline-block w-2 h-2 align-middle" style={{ background: "#63d8c8" }} /> руны / алтарь</span>
-          <span><span className="inline-block w-2 h-2 align-middle" style={{ background: "#8fd8e8" }} /> святилища</span>
-          <span><span className="inline-block w-2 h-2 align-middle" style={{ background: "#e8c979" }} /> цель</span>
-          <span><span className="inline-block w-2 h-2 align-middle" style={{ background: "#f4f8fc" }} /> ты</span>
-        </div>
-        <div className="mt-3 text-[10.5px] text-[#4a5a68] tracking-widest"><span className="kbd">ESC</span> ЗАКРЫТЬ</div>
-      </div>
-    </div>
-  );
-}
-
-function HealthBar({ hp, maxHp }: { hp: number; maxHp: number }) {
-  const segs = maxHp;
-  const filled = hp;
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="font-display text-[11px] tracking-widest text-[#e06060] uppercase">Жизнь</span>
-      <div className="flex gap-[2px]">
-        {Array.from({ length: segs }, (_, i) => (
-          <div key={i} className="w-[7px] h-[13px] border border-[#c9a24b66]"
-            style={{ background: i < filled ? "linear-gradient(180deg,#d05555,#7a1e2e)" : "rgba(20,26,34,0.7)", transform: "skewX(-8deg)" }} />
-        ))}
-      </div>
-      <span className="text-[11px] font-bold text-[#e8dcc0]">{filled}/{segs}</span>
-    </div>
-  );
-}
-
 export default function App() {
   const hostRef = useRef<HTMLDivElement>(null);
-  const engineRef = useRef<Engine | null>(null);
-  const [screen, setScreen] = useState<Screen>("title");
-  const [hud, setHud] = useState<HudData | null>(null);
-  const [dialogue, setDialogue] = useState<DialogueData | null>(null);
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const [stats, setStats] = useState<Stats | null>(null);
+  const { engineRef, eng, screen, hud, dialogue, stats, toasts, debugMode } = useEngine(hostRef);
   const [showHelp, setShowHelp] = useState(false);
+  const [summoning, setSummoning] = useState(false);
+  const [bootErr, setBootErr] = useState<string | null>(null);
   const [coarse] = useState(() => window.matchMedia("(pointer: coarse)").matches);
   const mmRef = useRef<HTMLCanvasElement>(null);
   const padRef = useRef<HTMLDivElement>(null);
 
-  // Debug mode: проверяем ?debug в URL
-  const debugMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") !== null;
-
-  const pushToast = useCallback((msg: string) => {
-    const id = ++toastId;
-    setToasts((t) => [...t.slice(-2), { id, msg }]);
-    window.setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200);
-  }, []);
-
-  useEffect(() => {
-    if (!hostRef.current) return;
-    const eng = new Engine(hostRef.current, {
-      onHud: setHud, onScreen: setScreen, onDialogue: setDialogue, onToast: pushToast, onStats: setStats,
-    }, debugMode);
-    engineRef.current = eng;
-    return () => { eng.destroy(); engineRef.current = null; };
-  }, [pushToast, debugMode]);
-
-  const eng = () => engineRef.current;
-
   useEffect(() => {
     if (screen === "play" && mmRef.current) eng()?.attachMinimap(mmRef.current);
-  }, [screen, hud]);
+  }, [screen, hud, eng]);
 
-  const drawBigMap = useCallback((c: HTMLCanvasElement) => { engineRef.current?.drawBigMap(c); }, []);
+  const drawBigMap = useCallback((c: HTMLCanvasElement) => { engineRef.current?.drawBigMap(c); }, [engineRef]);
 
   /* запуск саги с видимой обратной связью */
-  const [summoning, setSummoning] = useState(false);
-  const [bootErr, setBootErr] = useState<string | null>(null);
   const startSaga = () => {
     setBootErr(null);
     setSummoning(true);
@@ -355,6 +109,7 @@ export default function App() {
       console.log("[App] DEBUG MODE: auto-starting game...");
       startSaga();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debugMode, screen]);
 
   /* диалог: печатная машинка */
@@ -373,7 +128,7 @@ export default function App() {
     if (chars < line.length) { setChars(line.length); return; }
     if (lineIdx < dialogue.lines.length - 1) { setLineIdx((i) => i + 1); setChars(0); return; }
     eng()?.advanceDialogue();
-  }, [dialogue, chars, line, lineIdx]);
+  }, [dialogue, chars, line, lineIdx, eng]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -386,9 +141,9 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [dialogue, advanceDialogue]);
 
-  /* тач-управление: классический джойстик — большой круг + ручка */
+  /* тач-управление: классический джойстик */
   const knobRef = useRef<HTMLDivElement>(null);
-  const STICK_MAX = 44; // максимальное смещение ручки, px
+  const STICK_MAX = 44;
   const updateStick = (clientX: number, clientY: number) => {
     const base = padRef.current, knob = knobRef.current;
     if (!base || !knob) return;
@@ -400,7 +155,7 @@ export default function App() {
     knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
     const nx = dx / STICK_MAX, ny = dy / STICK_MAX;
     const len = Math.hypot(nx, ny);
-    const dead = 0.14; // мёртвая зона в центре
+    const dead = 0.14;
     eng()?.setVirtual({ x: len < dead ? 0 : nx, y: len < dead ? 0 : ny });
   };
   const resetStick = () => {
@@ -448,7 +203,7 @@ export default function App() {
               className="nord-panel w-9 h-9 flex items-center justify-center pointer-events-auto cursor-pointer"
               onClick={() => eng()?.openInventory()} title="Инвентарь (Tab)"
             >
-              <svg width="15" height="15" viewBox="0 0 12 12" style={px}><rect x="4" y="1" width="4" height="1" fill="#8a744a" /><rect x="2" y="4" width="8" height="6" fill="#5a4632" /><rect x="2" y="4" width="8" height="2" fill="#7a6248" /><rect x="5" y="6" width="2" height="2" fill="#c9a24b" /></svg>
+              <BagIco />
             </button>
           </div>
 
@@ -464,7 +219,7 @@ export default function App() {
               </div>
             </div>
             <button className="nord-panel w-9 h-9 flex items-center justify-center pointer-events-auto cursor-pointer" onClick={() => eng()?.openQuests()} title="Журнал квестов (Q)">
-              <svg width="15" height="15" viewBox="0 0 12 12" style={px}><rect x="5" y="1" width="2" height="2" fill="#e8c979" /><rect x="4" y="3" width="4" height="1" fill="#e8c979" /><rect x="5" y="4" width="2" height="4" fill="#c9a24b" /><rect x="5" y="8" width="2" height="1" fill="#8a744a" /></svg>
+              <BookIco />
             </button>
           </div>
 
@@ -518,7 +273,7 @@ export default function App() {
 
       {/* оверлеи */}
       {screen === "quests" && hud && (
-        <QuestScreen quests={hud.quests} trackedId={hud.trackedId} onTrack={(id) => eng()?.trackQuest(id)} onClose={() => eng()?.closeOverlay()} />
+        <QuestsScreen quests={hud.quests} trackedId={hud.trackedId} onTrack={(id) => eng()?.trackQuest(id)} onClose={() => eng()?.closeOverlay()} />
       )}
       {screen === "inventory" && hud && <InventoryScreen hud={hud} onClose={() => eng()?.closeOverlay()} />}
       {screen === "map" && hud && <WorldMapScreen zone={hud.zone} draw={drawBigMap} onClose={() => eng()?.closeOverlay()} />}

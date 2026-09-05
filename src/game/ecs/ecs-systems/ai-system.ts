@@ -48,7 +48,8 @@ export function aiUpdateSystem(
   map: WorldData | null,
   dt: number,
   onEnemySpawned: (eid: number) => void,
-  onEnemyDied: (eid: number) => void
+  onEnemyDied: (eid: number) => void,
+  onPlayerDamaged?: (dmg: number, sx: number, sy: number) => void
 ): void {
   if (playerEid < 0 || !map) return;
 
@@ -80,6 +81,19 @@ export function aiUpdateSystem(
       vx[enemyEid] = 0;
       vy[enemyEid] = 0;
       continue;
+    }
+
+    // Contact damage — наносим урон игроку при столкновении
+    {
+      const d2 = (px[enemyEid] - playerX) ** 2 + (py[enemyEid] - playerY) ** 2;
+      const minDist = Enemy.radius[enemyEid] + 5 + 2;
+      if (d2 < minDist * minDist && Enemy.contactCd[enemyEid] <= 0) {
+        Enemy.contactCd[enemyEid] = 0.5;
+        const dmg = Enemy.dmg[enemyEid];
+        if (onPlayerDamaged) onPlayerDamaged(dmg, px[enemyEid], py[enemyEid]);
+        // Flash enemy on hit
+        Enemy.flashT[enemyEid] = 0.12;
+      }
     }
 
     // Compute aggro (common for non-boss enemies)

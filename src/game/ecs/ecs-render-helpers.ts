@@ -2,10 +2,12 @@
 
 import { Graphics } from 'pixi.js';
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
-import {
+import type {
   IPlayerData, IEnemyData, INpcData, IDropData, IProjectileData,
   IChestData, IPedestalData, IShrineData, IDoorData, IBarrierData, IAltarData,
   IPlayerExtra,
+} from '../models';
+import {
   renderPlayer,
   renderEnemy,
   renderNpc,
@@ -17,8 +19,8 @@ import {
   renderDoor,
   renderBarrier,
   renderAltar,
-  ENEMY_STATS,
-} from '../entities';
+} from '../renderers';
+import { ENEMY_STATS } from '../balance';
 
 // ============================================================
 // ECS компоненты (импортируются через require для избежания циклических зависимостей)

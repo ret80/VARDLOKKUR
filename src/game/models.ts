@@ -72,7 +72,8 @@ export type PlayerBody = Body;
 
 // ── World-данные ────────────────────────────────────────────────────────
 
-import type { WorldData, Vec } from "./world";
+import type { WorldData, Vec, EnemyKind, DropKind, ProjectileKind, ChestItem } from "./world";
+export type { WorldData, Vec, EnemyKind, DropKind, ProjectileKind, ChestItem };
 
 export interface IWorldData {
   map: WorldData | null;
@@ -191,4 +192,164 @@ export interface GameStoreState {
   _bossRef: any;
   planckWorld: any;
   ecsWorld: World | null;
+}
+
+// ── Данные для отрисовки сущностей ──────────────────────────────────────
+
+export interface IPlayerData {
+  x: number; y: number;
+  dir: Vec;
+  moving: boolean;
+  animT: number;
+  swingT: number;
+  hurtT: number;
+  slowT: number;
+  r: number;
+}
+
+export interface IEnemyData {
+  x: number; y: number;
+  kind: EnemyKind;
+  r: number;
+  hp: number; maxHp: number;
+  facing: Vec;
+  t: number;
+  state: string;
+  aggro: boolean;
+  dead: boolean;
+  hidden: boolean;
+  lungeT: number;
+  freezeT: number;
+  flashT: number;
+  seed: number;
+  fade: number;
+  leash: Vec | null;
+  dropDew: boolean;
+}
+
+export interface INpcData {
+  x: number; y: number;
+  id: string;
+  name: string;
+}
+
+export interface IDropData {
+  x: number; y: number;
+  kind: DropKind;
+  t: number;
+  taken: boolean;
+  magnet: boolean;
+}
+
+export interface IProjectileData {
+  x: number; y: number;
+  kind: ProjectileKind;
+  r: number;
+  spin: number;
+  vx: number; vy: number;
+}
+
+export interface IChestData {
+  x: number; y: number;
+  opened: boolean;
+}
+
+export interface IPedestalData {
+  x: number; y: number;
+  taken: boolean;
+  guardsLeft: number;
+}
+
+export interface IShrineData {
+  x: number; y: number;
+  lit: boolean;
+}
+
+export interface IDoorData {
+  x: number; y: number;
+  open: number;
+  locked: boolean;
+}
+
+export interface IBarrierData {
+  x: number; y: number;
+  active: boolean;
+}
+
+export interface IAltarData {
+  x: number; y: number;
+  runes: number;
+}
+
+export interface IPlayerExtra {
+  hasSword: boolean;
+  runes: number;
+  swingDir: Vec;
+  aiming: boolean;
+}
+
+// ── Полные plain-object типы сущностей ──────────────────────────────────
+
+export interface Player {
+  x: number; y: number; vx: number; vy: number; r: number;
+  hp: number; maxHp: number;
+  dir: Vec;
+  moving: boolean;
+  animT: number;
+  swingT: number;
+  hurtT: number;
+  slowT: number;
+}
+
+export interface Enemy {
+  kind: EnemyKind;
+  x: number; y: number;
+  vx: number; vy: number;
+  r: number;
+  hp: number; maxHp: number;
+  facing: Vec;
+  t: number;
+  state: string;
+  aggro: boolean;
+  dead: boolean;
+  hidden: boolean;
+  lungeT: number;
+  freezeT: number;
+  flashT: number;
+  seed: number;
+  body: any | null;
+  speed: number;
+  dmg: number;
+  stateT: number;
+  path: { x: number; y: number }[] | null;
+  pathI: number;
+  repathT: number;
+  contactCd: number;
+  guardOf: number;
+  fade?: number;
+  leash?: { x: number; y: number };
+  dropDew?: boolean;
+}
+
+export interface Projectile {
+  kind: ProjectileKind;
+  x: number; y: number;
+  vx: number; vy: number;
+  r: number;
+  dmg: number;
+  life: number;
+  dist: number;
+  returning: boolean;
+  dead: boolean;
+  spin: number;
+}
+
+export interface Drop {
+  kind: DropKind;
+  x: number; y: number;
+  t: number;
+  taken: boolean;
+  magnet: boolean;
+  ambientIdx?: number;
+  life?: number;
 }

@@ -82,6 +82,12 @@ import type { Application, Container } from 'pixi.js';
 import type { FxManager } from '../fx';
 import type { StateManager } from '../state/state-manager';
 import { audio } from '../audio';
+import type { WorldData } from '../world';
+import type { FlagDomain } from '../store/flag-domain';
+import type { PlayerDomain } from '../store/player-domain';
+import type { HudSystem } from '../hud/hud-system';
+import type { QuestSystem } from '../quests/quest-system';
+import type { DialogueSystem } from '../dialogue/dialogue-system';
 
 // ============================================================
 // Утилиты
@@ -121,9 +127,9 @@ export interface EcsGameLoopConfig {
   cam: { x: number; y: number };
   viewW: number;
   viewH: number;
-  map: any;
-  ow: any;
-  flags: any;
+  map: WorldData | null;
+  ow: WorldData | null;
+  flags: FlagDomain;
   talkedSig: Ref<Map<string, string>>;
   dialogueActive: Ref<boolean>;
   stepT: number;
@@ -131,10 +137,10 @@ export interface EcsGameLoopConfig {
   stepTRef: number;
   realTRef: number;
   playerEid: number;
-  playerDomain: any;
-  hud: any;
-  quests: any;
-  dialogue: any;
+  playerDomain: PlayerDomain;
+  hud: HudSystem;
+  quests: QuestSystem;
+  dialogue: DialogueSystem;
   dungeonBossDead: (id: number) => boolean;
   toast: (msg: string) => void;
   float: (x: number, y: number, text: string, color: number) => void;
@@ -254,7 +260,14 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
     // ===== 12. AI врагов =====
     if (config_map && peid >= 0) {
-      aiUpdateSystem(world, peid, config_map, dt, () => {}, () => {});
+      aiUpdateSystem(
+        world, peid, config_map, dt,
+        () => {}, () => {},
+        (dmg, sx, sy) => {
+          playerDomain?.takeDamage(dmg, sx, sy);
+          Player.moving[peid] = 0;
+        }
+      );
     }
 
     // ===== 13. Обновить снаряды (ECS) =====
@@ -338,7 +351,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // ===== 16. Двери, зоны, боссы =====
     updateDoors(world, peid, store, flags, toast, pushHud);
     updateZone(world, peid, config_map, store, toast);
-    checkDungeonBoss(world, peid, config_map, dungeonBossDead, bus);
+    if (config_map) checkDungeonBoss(world, peid, config_map, dungeonBossDead, bus);
 
     // ===== 17. Проверка здоровья и удаление мёртвых =====
     lifeCheckSystem(world);
