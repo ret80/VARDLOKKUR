@@ -169,9 +169,9 @@ export class QuestSystem implements IQuestProvider {
       case "eirik": return this.mainQuestId();
       case "raven": return this.mainQuestId();
       case "daughter": return f.bearGone ? "done" : f.bear ? "ret" : "q";
-      case "sigrid": return f.hornDone ? "done" : f.horn ? "ret" : "";
-      case "astrid": return f.meadDone ? "done" : f.mead ? "ret" : "";
-      case "harald": return f.oreDone ? "done" : f.ore ? "ret" : "";
+      case "sigrid": return f.hornDone ? "done" : f.horn ? "ret" : "q";
+      case "astrid": return f.meadDone ? "done" : f.mead ? "ret" : "q";
+      case "harald": return f.oreDone ? "done" : f.ore ? "ret" : "q";
       case "shaman": {
         const got = [f.moss, f.amber, f.flower].filter(Boolean).length;
         if (f.ghostBane) return "done";
