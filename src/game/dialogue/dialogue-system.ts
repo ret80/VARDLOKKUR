@@ -7,7 +7,7 @@
  * */
 import { EventBus } from "../event-bus";
 import { GameStore } from "../store";
-import { DialogueData } from "../engine";
+import type { DialogueData } from "../models";
 import { audio } from "../audio";
 import { resolveDialogue } from "../dialogues";
 

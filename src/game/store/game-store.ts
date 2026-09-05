@@ -10,8 +10,8 @@
  * ───────────────────────────────────────────────────────────────── */
 
 import { Vec, WorldData } from "../world";
-import { Screen } from "../engine";
 import { Graphics, Text } from "pixi.js";
+import type { Screen, EngineCallbacks, EngineServices, GameActions } from "../models";
 import { FlagDomain, GameFlags } from "./flag-domain";
 import { PlayerDomain } from "./player-domain";
 import { Player, Enemy } from "../entities";
@@ -78,29 +78,11 @@ export interface DropRt {
   g: Graphics;
 }
 
-/** Колбэки движка */
-export interface EngineCallbacks {
-  onHud: (data: any) => void;
-  onScreen: (s: Screen) => void;
-  onDialogue: (d: any) => void;
-  onToast: (msg: string) => void;
-  onStats: (data: any) => void;
-}
-
 /** Сервисы, предоставляемые движком */
-export interface EngineServices {
-  spawnEnemy: (kind: string, x: number, y: number) => void;
-  loadMap: (map: WorldData, spawn: Vec) => void;
-  setScreen: (s: Screen) => void;
-  fadeTo: (a: number) => void;
-  toast: (msg: string) => void;
-}
+// EngineServices, EngineCallbacks imported from models.ts
 
 /** Акции для изменения состояния */
-export interface GameActions {
-  type: string;
-  [key: string]: any;
-}
+// GameActions imported from models.ts
 
 /** Интерфейс для доступа к world-данным */
 export interface IWorldData {

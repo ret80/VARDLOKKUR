@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Engine, Screen, HudData, DialogueData, Stats, QuestView,
-} from "./game/engine";
+import { Engine } from "./game/engine";
+import type { Screen, HudData, DialogueData, Stats, QuestView } from "./game/models";
 
 let toastId = 0;
 type Toast = { id: number; msg: string };

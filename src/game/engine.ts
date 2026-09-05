@@ -1,6 +1,7 @@
 /* engine.ts – Оркестратор: создаёт EventBus, GameStore и системы */
 
-import { Application, Container, Graphics, RenderTexture, Sprite, Texture } from "pixi.js";
+import { Application, Container, Graphics, RenderTexture, Sprite, Texture, Text } from "pixi.js";
+import { addFloatText } from './ecs/ecs-systems/render-system';
 import {
   T, Tl, WorldData, Vec,
   generateOverworld, generateDungeon, solidTileAt, tileAt, zoneFor, DUNGEONS,
@@ -31,10 +32,13 @@ import { StateManager } from "./state/state-manager";
 import { EventBus } from "./event-bus";
 import { GameStore, type GameStoreConfig } from "./store";
 import { PlayerDomain } from "./store/player-domain";
+import type { GameFlags } from "./store/flag-domain";
+import type { EnemyKind } from "./generators/types";
 import { clamp, dist2 } from "./utils";
-import { QuestView } from "./types";
 import { Vec2 } from "planck-js";
-export type { QuestView } from "./types";
+
+// Типы из central models
+import type { Screen, VirtualInput, HudData, DialogueData, Stats, EngineCallbacks } from "./models";
 import { QuestSystem } from "./quests/quest-system";
 import { DialogueSystem } from "./dialogue/dialogue-system";
 import { HudSystem } from "./hud/hud-system";
@@ -45,6 +49,8 @@ import { initPrefabs } from './ecs/ecs-systems';
 import { createEcsGameLoop, type EcsGameLoop } from './ecs/ecs-game-loop';
 import { EcsMapLoader } from './ecs/ecs-map-loader';
 import { PlanckWorld, Cat, type PhysicsCallbacks } from './physics/planck-world';
+import { createEnemyInEcs } from './ecs/ecs-bridge';
+import { Enemy as EcsEnemy } from './ecs/ecs-components';
 
 // Импорты рендереров
 import {
@@ -54,33 +60,6 @@ import {
   PlayerRenderer, EnemyRenderer, NpcRenderer, DropRenderer, ProjectileRenderer,
   ChestRenderer, PedestalRenderer, ShrineRenderer, DoorRenderer, BarrierRenderer, AltarRenderer
 } from "./entities";
-
-export type Screen = "title" | "play" | "pause" | "death" | "victory" | "quests" | "inventory" | "map";
-
-/** Состояние виртуального джойстика. */
-export interface VirtualInput {
-  x: number; y: number;
-  atk: boolean; axe: boolean; bow: boolean; act: boolean;
-}
-
-export interface HudData {
-  hp: number; maxHp: number; arrows: number; runes: number;
-  hasSword: boolean; hasAxe: boolean; hasBow: boolean; hasHammer: boolean; hasKey: boolean; bear: boolean;
-  swordUp: boolean; axeUp: boolean; furyRune: boolean; secretKnown: boolean; nornsFavor: boolean;
-  hearts: number;
-  zone: string; objective: string;
-  time: string; kills: number; deaths: number; muted: boolean;
-  quests: QuestView[]; trackedId: string; _version: number;
-}
-export interface DialogueData { id: string; name: string; lines: string[] }
-export interface Stats { time: string; kills: number; deaths: number; runes: number }
-export interface EngineCallbacks {
-  onHud: (h: HudData) => void;
-  onScreen: (s: Screen) => void;
-  onDialogue: (d: DialogueData | null) => void;
-  onToast: (msg: string) => void;
-  onStats: (s: Stats) => void;
-}
 
 const ZOOM = 1.18;
 
@@ -128,7 +107,7 @@ export class Engine {
   private cam = { x: 0, y: 0 };
 
   // Локальные данные (для рендеринга и обновления)
-  private player: Player = { x: 0, y: 0, vx: 0, vy: 0, r: 5, hp: 12, maxHp: 12, dir: { x: 0, y: 1 }, moving: false, animT: 0, swingT: 0, hurtT: 0, slowT: 0 };
+  // Все данные игрока теперь через this.store.player и this.store.flags
   private playerG = new Graphics();
   private playerBody: any = null;
   private realT = 0;
@@ -145,21 +124,6 @@ export class Engine {
   // Состояние рендеринга
   private roofSnow = false;
 
-  // Флаги
-  private flags = {
-    hasSword: false, hasAxe: false, hasBow: false, hasHammer: false, hasKey: false,
-    swordUp: false, axeUp: false, furyRune: false, nornsFavor: false, hearts: 2,
-    arrows: 12, runes: 0, bear: false, bearGone: false,
-    horn: false, hornDone: false, mead: false, meadDone: false, ore: false, oreDone: false,
-    moss: false, amber: false, flower: false, shamanDone: false,
-    diary: false, refugeeDone: false, secretKnown: false,
-    bundle: false, merchantDone: false, relic: false, atoneDone: false, cullDone: false,
-    killsByKind: {} as Record<string, number>,
-    reaperDead: false, spiderDead: false, giantDead: false,
-    snakeStarted: false, snakeDead: false,
-    kills: 0, deaths: 0, shrineIdx: -1, shrineQuestDone: false, huntDone: false,
-    dew: 0, fogWaves: 0, ghostBane: false,
-  };
   private talkedSig = new Map<string, string>();
   private dialogueActive = false;
   private arrowA = -Math.PI / 2;
@@ -169,35 +133,16 @@ export class Engine {
   /** ECS callback для спавна стражей пьедестала */
   private guardSpawn(kind: string, x: number, y: number, pedestalIndex: number): void {
     if (!this.ecsWorld || !this.ecsMapLoader) return;
-    const { createEnemyInEcs } = require('./ecs/ecs-bridge');
     const g = new Graphics();
     g.position.set(x, y);
     const eid = createEnemyInEcs(
-      this.ecsWorld, kind, x, y, g, this.ecsMapLoader.planckWorld,
+      this.ecsWorld, kind as EnemyKind, x, y, g, this.ecsMapLoader.planckWorld,
       Cat.Enemy, Cat.Enemy | Cat.Player | Cat.Projectile | Cat.Ground
     );
     this.dynamic.addChild(g);
     // Set aggro and guardOf via Enemy component (SoA)
-    const { Enemy } = require('./ecs/ecs-components');
-    Enemy.aggro[eid] = 1;
-    Enemy.guardOf[eid] = pedestalIndex;
-  }
-
-  private getEnemyStats(kind: string): { r: number; hp: number; speed: number; dmg: number } {
-    const stats: Record<string, { r: number; hp: number; speed: number; dmg: number }> = {
-      draugr:  { r: 6, hp: 3, speed: 52, dmg: 1 },
-      varg:    { r: 6, hp: 3, speed: 68, dmg: 1 },
-      raven:   { r: 5, hp: 2, speed: 78, dmg: 1 },
-      shroom:  { r: 5, hp: 3, speed: 40, dmg: 1 },
-      crawler: { r: 6, hp: 2, speed: 56, dmg: 1 },
-      frost:   { r: 7, hp: 4, speed: 48, dmg: 1 },
-      reaper:  { r: 10, hp: 16, speed: 58, dmg: 1 },
-      spider:  { r: 11, hp: 12, speed: 44, dmg: 1 },
-      giant:   { r: 13, hp: 20, speed: 44, dmg: 2 },
-      snake:   { r: 16, hp: 14, speed: 0,  dmg: 1 },
-      ghost:   { r: 6, hp: 5, speed: 100, dmg: 1 },
-    };
-    return stats[kind] || { r: 5, hp: 1, speed: 50, dmg: 1 };
+    EcsEnemy.aggro[eid] = 1;
+    EcsEnemy.guardOf[eid] = pedestalIndex;
   }
 
   private _debugMode: boolean;
@@ -286,16 +231,36 @@ export class Engine {
 
   private buildGameStore(): GameStore {
     const eng = this;
+    // Начальные значения (передаются в GameStore)
+    const initialFlags: GameFlags = {
+      hasSword: false, hasAxe: false, hasBow: false, hasHammer: false, hasKey: false,
+      swordUp: false, axeUp: false, furyRune: false, nornsFavor: false, hearts: 2,
+      arrows: 12, runes: 0, bear: false, bearGone: false,
+      horn: false, hornDone: false, mead: false, meadDone: false, ore: false, oreDone: false,
+      moss: false, amber: false, flower: false, shamanDone: false,
+      diary: false, refugeeDone: false, secretKnown: false,
+      bundle: false, merchantDone: false, relic: false, atoneDone: false, cullDone: false,
+      killsByKind: {},
+      reaperDead: false, spiderDead: false, giantDead: false,
+      snakeStarted: false, snakeDead: false,
+      kills: 0, deaths: 0, shrineIdx: -1, shrineQuestDone: false, huntDone: false,
+      dew: 0, fogWaves: 0, ghostBane: false,
+    };
+    const initialPlayer: Player = {
+      x: 0, y: 0, vx: 0, vy: 0, r: 5, hp: 12, maxHp: 12,
+      dir: { x: 0, y: 1 }, moving: false, animT: 0, swingT: 0, hurtT: 0, slowT: 0,
+    };
+
     // Создаём PlayerDomain с колбэками на события
     eng.playerDomain = new PlayerDomain(
-      eng.player.hp,
-      eng.player.maxHp,
-      eng.player.x,
-      eng.player.y,
-      eng.player.vx,
-      eng.player.vy,
-      eng.player.dir,
-      eng.player.r,
+      initialPlayer.hp,
+      initialPlayer.maxHp,
+      initialPlayer.x,
+      initialPlayer.y,
+      initialPlayer.vx,
+      initialPlayer.vy,
+      initialPlayer.dir,
+      initialPlayer.r,
       {
         onDamaged: (dmg, sx, sy) => eng.bus.emit("player:damaged", { dmg, sx, sy }),
         onDied: () => eng.bus.emit("player:died", {}),
@@ -304,8 +269,8 @@ export class Engine {
       }
     );
     const config: GameStoreConfig = {
-      flags: eng.flags,
-      player: eng.player,
+      flags: initialFlags,
+      player: initialPlayer,
       playerDomain: eng.playerDomain,
       services: {
         spawnEnemy: (kind: string, x: number, y: number) => null as any,
@@ -364,7 +329,7 @@ export class Engine {
         viewH: this.viewH,
         map: this.map,
         ow: this.ow,
-        flags: this.flags,
+        flags: this.store.flags,
         talkedSig: this.talkedSig,
         dialogueActive: this.dialogueActive,
         stepT: this.stepT,
@@ -389,7 +354,7 @@ export class Engine {
   }
 
   private enterDungeon(e: { dungeonId: number }) {
-    if (this.flags.snakeStarted && !this.flags.snakeDead) return;
+    if (this.store.flags.snakeStarted && !this.store.flags.snakeDead) return;
     const dun = this.dungeons[e.dungeonId];
     if (!dun) return;
     audio.door();
@@ -451,21 +416,9 @@ export class Engine {
       }
     }
 
-    const f = this.flags;
-    f.hasSword = false; f.hasAxe = false; f.hasBow = false; f.hasHammer = false; f.hasKey = false;
-    f.swordUp = false; f.axeUp = false; f.furyRune = false; f.nornsFavor = false; f.hearts = 2;
-    f.arrows = 12; f.runes = 0; f.bear = false; f.bearGone = false;
-    f.horn = false; f.hornDone = false; f.mead = false; f.meadDone = false; f.ore = false; f.oreDone = false;
-    f.moss = false; f.amber = false; f.flower = false; f.shamanDone = false;
-    f.diary = false; f.refugeeDone = false; f.secretKnown = false;
-    f.bundle = false; f.merchantDone = false; f.relic = false; f.atoneDone = false; f.cullDone = false;
-    f.killsByKind = {};
-    f.reaperDead = false; f.spiderDead = false; f.giantDead = false;
-    f.snakeStarted = false; f.snakeDead = false;
-    f.ghostBane = false; f.dew = 0; f.fogWaves = 0;
-    f.kills = 0; f.deaths = 0; f.shrineIdx = -1; f.shrineQuestDone = false; f.huntDone = false;
+    this.store.flags.reset();
     this.talkedSig.clear();
-    this.player.hp = this.player.maxHp = 12;
+    this.store.player.hp = this.store.player.maxHp = 12;
     this.realT = 0;
     this.store.setZone("");
     audio.setFog(false);
@@ -527,7 +480,7 @@ export class Engine {
     this.map = map;
     this.store.setMap(map);
 
-    const p = this.player;
+    const p = this.store.player;
     p.x = spawn.x; p.y = spawn.y;
     this.playerDomain.setPosition(spawn.x, spawn.y);
     this.playerDomain.setVelocity(0, 0);
@@ -573,11 +526,11 @@ export class Engine {
       takenPedestals: this.store.takenPedestals,
       visitedShrines: this.store.visitedShrines,
       flags: {
-        secretKnown: this.flags.secretKnown,
-        shrineIdx: this.flags.shrineIdx,
-        runes: this.flags.runes,
-        snakeStarted: this.flags.snakeStarted,
-        hasKey: this.flags.hasKey,
+        secretKnown: this.store.flags.secretKnown,
+        shrineIdx: this.store.flags.shrineIdx,
+        runes: this.store.flags.runes,
+        snakeStarted: this.store.flags.snakeStarted,
+        hasKey: this.store.flags.hasKey,
       },
       map,
       spawn,
@@ -623,7 +576,7 @@ export class Engine {
         viewH: this.viewH,
         map,
         ow: this.ow,
-        flags: this.flags,
+        flags: this.store.flags,
         talkedSig: this.talkedSig,
         dialogueActive: this.dialogueActive,
         stepT: this.stepT,
@@ -673,10 +626,10 @@ export class Engine {
   }
 
   private useStoredHeart() {
-    const p = this.player;
+    const p = this.store.player;
     if (p.hp >= p.maxHp) { this.float(p.x, p.y, "Здоровье полное", 0x6e7f8d); return; }
-    if (this.flags.hearts <= 0) { this.float(p.x, p.y, "Сума пуста", 0x6e7f8d); return; }
-    this.flags.hearts--;
+    if (this.store.flags.hearts <= 0) { this.float(p.x, p.y, "Сума пуста", 0x6e7f8d); return; }
+    this.store.flags.hearts--;
     this.playerDomain.heal(4);
     audio.heal();
     this.fx.burst(p.x, p.y, 0x7ee2a8, 10, 50, 0.8, 2, -20);
@@ -715,7 +668,7 @@ export class Engine {
       if (ctx) {
         drawMinimap(ctx, this.mmBase, {
           map: this.map,
-          player: this.player,
+          player: this.store.player,
           shrines: [],
           secretKnown: false,
           stashSpot: { x: 0, y: 0 },
@@ -743,23 +696,23 @@ export class Engine {
   dungeonBossDead(id: number): boolean {
     // Map dungeonId to boss name and check flags directly (avoids ECS loop recursion)
     const boss = DUNGEONS[id]?.boss;
-    if (boss) return (this.flags as unknown as Record<string, boolean>)[`${boss}Dead`] === true;
+    if (boss) return (this.store.flags as unknown as Record<string, boolean>)[`${boss}Dead`] === true;
     return false;
   }
 
   private respawn() {
     let spawn = this.map?.spawn ?? { x: 0, y: 0 };
-    const f = this.flags;
+    const f = this.store.flags;
     if (f.shrineIdx >= 0 && this.ow) {
       const s = this.ow.shrines[f.shrineIdx];
       if (s) spawn = { x: s.x * T + 8, y: s.y * T + 8 };
     }
-    this.player.x = spawn.x; this.player.y = spawn.y;
+    this.store.player.x = spawn.x; this.store.player.y = spawn.y;
     this.playerDomain.setPosition(spawn.x, spawn.y);
     this.playerDomain.setVelocity(0, 0);
     this.playerDomain.fullHeal();
     this.playerDomain.resetTimers();
-    this.player.hp = this.playerDomain.fullHeal();
+    this.store.player.hp = this.playerDomain.fullHeal();
     this.state.playerDead = false;
     this.setScreen("play");
     this.fadeTo(1);
@@ -790,11 +743,7 @@ export class Engine {
   }
 
   private float(x: number, y: number, text: string, color: number) {
-    import('./ecs/ecs-systems/render-system').then(({ addFloatText }) => {
-      import("pixi.js").then(({ Text }) => {
-        addFloatText(this.floatLayer, { createText: (t: string, s: any) => new Text({ ...s, text: t }) }, x, y, text, color);
-      });
-    });
+    addFloatText(this.floatLayer, { createText: (t: string, s: any) => new Text({ ...s, text: t }) }, x, y, text, color);
   }
 
   /* ================= big map (public) ================= */
@@ -810,9 +759,9 @@ export class Engine {
       dungeonBossDead: this.dungeonBossDead.bind(this),
       dungeonEntries: this.ow?.dungeonEntries ?? [],
       treeAltar: this.ow?.treeAltar ?? { x: 0, y: 0 },
-      player: { x: this.player.x, y: this.player.y },
+      player: { x: this.store.player.x, y: this.store.player.y },
       target: this.quests.trackedTarget(),
-      secretKnown: this.flags.secretKnown,
+      secretKnown: this.store.flags.secretKnown,
       stashSpot: this.ow?.stashSpot ?? { x: 0, y: 0 },
       pedestals: (this.map.pedestals ?? []).map((p) => ({ x: p.x, y: p.y, taken: this.store.takenPedestals.has(`ped_${p.x}_${p.y}`) })),
       bossRoom: this.map.isDungeon ? this.map.bossRoom : { x: 0, y: 0, w: 0, h: 0 },

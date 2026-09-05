@@ -8,7 +8,7 @@
  * новый NPC = новый массив, без модификации существующего кода.
  * */
 
-import { DialogueData } from "./engine";
+import type { DialogueData } from "./models";
 
 /** Контекст, передаваемый в condition (опционально) */
 export interface DialogueContext {

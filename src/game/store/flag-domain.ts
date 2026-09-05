@@ -246,4 +246,55 @@ export class FlagDomain {
     this.flags.kills++;
     this.flags.killsByKind[kind] = (this.flags.killsByKind[kind] ?? 0) + 1;
   }
+
+  // ── Сброс к начальным значениям ──
+
+  reset(): void {
+    this.flags.hasSword = false;
+    this.flags.hasAxe = false;
+    this.flags.hasBow = false;
+    this.flags.hasHammer = false;
+    this.flags.hasKey = false;
+    this.flags.swordUp = false;
+    this.flags.axeUp = false;
+    this.flags.furyRune = false;
+    this.flags.nornsFavor = false;
+    this.flags.hearts = 2;
+    this.flags.arrows = 12;
+    this.flags.runes = 0;
+    this.flags.bear = false;
+    this.flags.bearGone = false;
+    this.flags.horn = false;
+    this.flags.hornDone = false;
+    this.flags.mead = false;
+    this.flags.meadDone = false;
+    this.flags.ore = false;
+    this.flags.oreDone = false;
+    this.flags.moss = false;
+    this.flags.amber = false;
+    this.flags.flower = false;
+    this.flags.shamanDone = false;
+    this.flags.diary = false;
+    this.flags.refugeeDone = false;
+    this.flags.secretKnown = false;
+    this.flags.bundle = false;
+    this.flags.merchantDone = false;
+    this.flags.relic = false;
+    this.flags.atoneDone = false;
+    this.flags.cullDone = false;
+    this.flags.killsByKind = {};
+    this.flags.reaperDead = false;
+    this.flags.spiderDead = false;
+    this.flags.giantDead = false;
+    this.flags.snakeStarted = false;
+    this.flags.snakeDead = false;
+    this.flags.ghostBane = false;
+    this.flags.dew = 0;
+    this.flags.fogWaves = 0;
+    this.flags.kills = 0;
+    this.flags.deaths = 0;
+    this.flags.shrineIdx = -1;
+    this.flags.shrineQuestDone = false;
+    this.flags.huntDone = false;
+  }
 }

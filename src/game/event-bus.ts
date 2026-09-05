@@ -1,9 +1,14 @@
 /* ============ EVENT BUS ============ */
 
+import type { EnemyKind, DropKind, ProjectileKind } from "./generators/types";
+import type { Screen } from "./models";
+import type { Vec } from "./world";
+import type { Graphics } from "pixi.js";
+
 type GameEvents = {
   // Бой
-  "enemy:killed":     { enemy: any; kind: string; x: number; y: number };
-  "enemy:hit":        { enemy: any; dmg: number; sx: number; sy: number };
+  "enemy:killed":     { enemy: number; kind: EnemyKind; x: number; y: number };
+  "enemy:hit":        { enemy: number; dmg: number; sx: number; sy: number };
   "player:damaged":   { dmg: number; sx: number; sy: number };
   "player:died":      {};
   "player:respawned": {};
@@ -16,8 +21,8 @@ type GameEvents = {
   "quest:completed":  { id: string };
 
   // Предметы
-  "drop:spawn":       { kind: any; x: number; y: number; life?: number };
-  "drop:collected":   { kind: any; x: number; y: number };
+  "drop:spawn":       { kind: DropKind; x: number; y: number; life?: number };
+  "drop:collected":   { kind: DropKind; x: number; y: number };
 
   // Диалоги
   "dialogue:start":   { id: string };
@@ -30,8 +35,8 @@ type GameEvents = {
   "fog:ghostDissipate": {};
 
   // Боссы
-  "boss:spawned":     { kind: any; id: number };
-  "boss:killed":      { kind: any; id: number };
+  "boss:spawned":     { kind: EnemyKind; id: number };
+  "boss:killed":      { kind: EnemyKind; id: number };
   "snake:death":      {};
 
   // Пьедесталы
@@ -39,11 +44,11 @@ type GameEvents = {
   "pedestal:unsealed":    { pedestalIndex: number };
 
   // Снаряды
-  "projectile:fire":  { kind: any; x: number; y: number; vx: number; vy: number; dmg: number };
-  "projectile:spawned": { g: any; x: number; y: number };
+  "projectile:fire":  { kind: ProjectileKind; x: number; y: number; vx: number; vy: number; dmg: number };
+  "projectile:spawned": { g: Graphics; x: number; y: number };
 
   // Дропы
-  "drop:spawned": { g: any; x: number; y: number };
+  "drop:spawned": { g: Graphics; x: number; y: number };
 
   // Бой (запросы от игрока)
   "combat:trySword":    {};
@@ -64,18 +69,18 @@ type GameEvents = {
   // UI
   "hud:dirty":        {};
   "hud:float":        { x: number; y: number; text: string; color: number };
-  "screen:change":    { screen: any };
+  "screen:change":    { screen: Screen };
   "toast":            { msg: string };
 
   // Движок
   "engine:enter-dungeon":  { dungeonId: number; name: string };
-  "engine:exit-dungeon":   { spawn: any };
+  "engine:exit-dungeon":   { spawn: Vec };
 
   // Босс (запрос от игрока/движка)
   "boss:start-dungeon": {};
 };
 
-type EventHandler<T = any> = (payload: T) => void;
+type EventHandler<T = Record<string, unknown>> = (payload: T) => void;
 
 export class EventBus {
   private handlers = new Map<string, EventHandler[]>();
@@ -83,8 +88,8 @@ export class EventBus {
   on<T extends keyof GameEvents>(event: T, fn: EventHandler<GameEvents[T]>): () => void {
     const eventName = event as string;
     if (!this.handlers.has(eventName)) this.handlers.set(eventName, []);
-    this.handlers.get(eventName)!.push(fn);
-    return () => this.off(eventName, fn);
+    this.handlers.get(eventName)!.push(fn as EventHandler);
+    return () => this.off(eventName, fn as EventHandler);
   }
 
   off(event: string, fn: EventHandler): void {

@@ -1,5 +1,5 @@
 /* ============ StateManager ============ */
-import type { Screen } from "../engine";
+import type { Screen } from "../models";
 
 export type ScreenChangedHandler = (screen: Screen) => void;
 export type ToastHandler = (msg: string) => void;
