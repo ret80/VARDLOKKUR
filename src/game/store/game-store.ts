@@ -1,165 +1,88 @@
-/* ============ GameStore — инкапсулированное хранилище состояния ============
+/* ============ GameStore — сессионное хранилище ============
  *
- * GameStore заменяет GameState как мутациюбельный shared-объект на
- * инкапсулированное хранилище с контроллируемым доступом.
+ * GameStore хранит состояние текущей сессии:
+ * - Экран (screen)
+ * - Таймеры (realT, playTime)
+ * - Зона (zone)
+ * - Состояние игрока (player reference)
+ * - Всплывающий текст (floats)
+ * - Колбэки (callbacks, services)
  *
- * Паттерн:
- * - Состояние инкапсулировано внутри GameStore
- * - Системы получают только то, что им нужно (DI через провайдеры)
- * - Мутации происходят через applyAction() или прямые методы доменов
- * ───────────────────────────────────────────────────────────────── */
+ * Персистентное состояние мира хранится в WorldStore.
+ * Игровая логика (Player, Enemy, Position, Health) — в ECS World.
+ */
 
-import { Vec, WorldData } from "../world";
-import { Graphics, Text } from "pixi.js";
+import { Text } from "pixi.js";
 import type { Screen, EngineCallbacks, EngineServices, GameActions } from "../models";
-import { FlagDomain, GameFlags } from "./flag-domain";
-import { PlayerDomain } from "./player-domain";
-import { Player, Enemy } from "../entities";
+import type { Player } from "../entities";
 import type { World } from "bitecs";
+import type { WorldStore } from "./world-store";
 
-// ── Переопределяем типы из world-entities, чтобы избежать конфликтов ──
-
-export interface ChestRt {
-  x: number; y: number;
-  item: string;
-  opened: boolean;
-  g: Graphics;
-}
-
-export interface PedestalRt {
-  x: number; y: number;
-  taken: boolean;
-  guardsLeft: number;
-  guardsSpawned: boolean;
-  g: Graphics;
-}
-
-export interface ShrineRt {
-  x: number; y: number;
-  g: Graphics;
-}
-
-export interface NpcRt {
-  id: string; name: string;
-  x: number; y: number;
-  g: Graphics;
-}
-
-export interface DoorRt {
-  x: number; y: number;
-  open: number;
-  locked: boolean;
-  g: Graphics;
-}
-
-export interface BarrierRt {
-  x: number; y: number;
-  active: boolean;
-  g: Graphics;
-}
-
-export interface AltarRt {
-  x: number; y: number;
-  g: Graphics;
-}
+// ── Визуальные типы (для обратной совместимости) ──
 
 export interface FloatText { txt: Text; life: number }
 
-// Типы для снарядов и дропов (для обратной совместимости)
-export interface ProjectileRt {
-  x: number; y: number; vx: number; vy: number;
-  kind: string;
-  g: Graphics;
-}
-
-export interface DropRt {
-  x: number; y: number;
-  kind: string;
-  g: Graphics;
-}
-
-/** Сервисы, предоставляемые движком */
-// EngineServices, EngineCallbacks imported from models.ts
-
-/** Акции для изменения состояния */
-// GameActions imported from models.ts
-
-/** Интерфейс для доступа к world-данным */
-export interface IWorldData {
-  map: WorldData | null;
-  ow: WorldData | null;
+/** Мутации игрока (минимальный интерфейс для обратной совместимости) */
+export interface IPlayerMutations {
+  increaseMaxHp(amount: number): { hp: number; maxHp: number };
+  fullHeal(): number;
+  heal(amount: number): number;
 }
 
 /** Конфигурация GameStore */
 export interface GameStoreConfig {
-  flags: GameFlags;
   services: EngineServices;
   callbacks: EngineCallbacks;
-  // Реальный объект player — единственный источник правды
+  // Ссылка на объект игрока (source of truth из Engine)
   player: Player;
-  // PlayerDomain — инкапсулированные мутации игрока
-  playerDomain?: PlayerDomain;
+  // WorldStore — персистентное состояние мира
+  worldStore: WorldStore;
   // Planck.js world для удаления дропов
-  planckWorld?: any;
+  planckWorld?: unknown;
   // ECS world для запросов (опционально)
   ecsWorld?: World;
+  // PlayerDomain — для обратной совместимости (мутации игрока)
+  // Примечание: в будущем мутации должны идти через ECS системы
+  playerDomain?: IPlayerMutations;
 }
 
-/** Глобальное состояние (чтение) */
+/** Сессионное состояние (чтение) */
 export interface GameStoreState {
-  flags: FlagDomain;
   player: Player;
-  playerDomain: PlayerDomain | null;
-  map: WorldData | null;
-  ow: WorldData | null;
   screen: Screen;
   realT: number;
   playTime: number;
   zone: string;
   talkCount: number;
-  revealed: Set<string>;
   trackedQuest: string;
   lastMain: string;
-  visitedShrines: Set<number>;
-  takenPedestals: Set<string>;
-  openedChests: Set<string>;
-  takenAmbient: Set<number>;
   floats: FloatText[];
   callbacks: EngineCallbacks;
-  _bossRef: Enemy | null;
-  planckWorld: any;
+  _bossRef: import("../entities").Enemy | null;
+  planckWorld: unknown;
   ecsWorld: World | null;
 }
 
 export class GameStore {
   private _state: GameStoreState;
   private _config: GameStoreConfig;
-  private _flags: GameFlags;
+  private _playerDomain: IPlayerMutations | null;
 
   constructor(config: GameStoreConfig) {
     this._config = config;
-    this._flags = config.flags;
+    this._playerDomain = config.playerDomain ?? null;
 
-    const { flags, services, callbacks, player, playerDomain, planckWorld, ecsWorld } = config;
+    const { services, callbacks, player, planckWorld, ecsWorld } = config;
 
     this._state = {
-      flags: new FlagDomain(flags),
       player,
-      playerDomain: playerDomain || null,
-      map: null,
-      ow: null,
       screen: "title",
       realT: 0,
       playTime: 0,
       zone: "",
       talkCount: 0,
-      revealed: new Set<string>(),
       trackedQuest: "m1",
       lastMain: "m1",
-      visitedShrines: new Set<number>(),
-      takenPedestals: new Set<string>(),
-      openedChests: new Set<string>(),
-      takenAmbient: new Set<number>(),
       floats: [],
       callbacks,
       _bossRef: null,
@@ -173,20 +96,56 @@ export class GameStore {
     return this._state;
   }
 
-  /** Получить FlagDomain */
-  get flags(): FlagDomain {
-    return this._state.flags;
+  // ── WorldStore (персистентное состояние) ──
+
+  /** Получить WorldStore */
+  get worldStore(): WorldStore {
+    return this._config.worldStore;
   }
+
+  /** Алиас для flags — перенаправляет в WorldStore */
+  get flags() { return this._config.worldStore.flags; }
+
+  /** Алиас для playerDomain — для обратной совместимости */
+  get playerDomain(): IPlayerMutations | null { return this._playerDomain; }
+
+  // ── Convenience: перенаправление в WorldStore (для обратной совместимости) ──
+
+  /** Алиас для worldStore.map */
+  get map() { return this._config.worldStore.map; }
+  setMap(map: import("../world").WorldData | null): void { this._config.worldStore.setMap(map); }
+  /** Алиас для worldStore.ow */
+  get ow() { return this._config.worldStore.ow; }
+  setOw(ow: import("../world").WorldData): void { this._config.worldStore.setOw(ow); }
+  /** Алиас для worldStore.openedChests */
+  get openedChests() { return this._config.worldStore.openedChests; }
+  /** Алиас для worldStore.takenPedestals */
+  get takenPedestals() { return this._config.worldStore.takenPedestals; }
+  /** Алиас для worldStore.visitedShrines */
+  get visitedShrines() { return this._config.worldStore.visitedShrines; }
+  /** Алиас для worldStore.takenAmbient */
+  get takenAmbient() { return this._config.worldStore.takenAmbient; }
+  /** Revealed locations (для обратной совместимости) */
+  revealed = new Set<string>();
+
+  /** Deprecated — барьер теперь в ECS, всегда null */
+  get barrier(): import("../models").BarrierRt | null { return null; }
+
+  // ── Визуальные настройки ──
+
+  private _roofSnow = false;
+  /** Снег на крышах */
+  get roofSnow(): boolean { return this._roofSnow; }
+  set roofSnow(v: boolean) { this._roofSnow = v; }
+
+  // ── Player (reference из Engine) ──
 
   /** Получить Player (реальный объект из Engine) */
   get player(): Player {
     return this._state.player;
   }
 
-  /** Получить PlayerDomain (инкапсулированные мутации) */
-  get playerDomain(): PlayerDomain | null {
-    return this._state.playerDomain;
-  }
+  // ── Сервисы и колбэки ──
 
   /** Получить сервисы */
   get services(): EngineServices {
@@ -198,31 +157,22 @@ export class GameStore {
     return this._state.callbacks;
   }
 
-  // ── Геттеры состояния ──
+  // ── Геттеры сессии ──
 
-  get map(): WorldData | null { return this._state.map; }
-  get ow(): WorldData | null { return this._state.ow; }
   get screen(): Screen { return this._state.screen; }
   get realT(): number { return this._state.realT; }
   get playTime(): number { return this._state.playTime; }
   get zone(): string { return this._state.zone; }
   get talkCount(): number { return this._state.talkCount; }
   set talkCount(v: number) { this._state.talkCount = v; }
-  get revealed(): Set<string> { return this._state.revealed; }
   get trackedQuest(): string { return this._state.trackedQuest; }
   set trackedQuest(v: string) { this._state.trackedQuest = v; }
   get lastMain(): string { return this._state.lastMain; }
   set lastMain(v: string) { this._state.lastMain = v; }
-  get visitedShrines(): Set<number> { return this._state.visitedShrines; }
-  get takenPedestals(): Set<string> { return this._state.takenPedestals; }
-  get openedChests(): Set<string> { return this._state.openedChests; }
-  get takenAmbient(): Set<number> { return this._state.takenAmbient; }
   get floats(): FloatText[] { return this._state.floats; }
 
-  // ── Сеттеры состояния ──
+  // ── Сеттеры сессии ──
 
-  setMap(map: WorldData | null): void { this._state.map = map; }
-  setOw(ow: WorldData): void { this._state.ow = ow; }
   setScreen(s: Screen): void {
     this._state.screen = s;
     this._config.services.setScreen(s);
@@ -233,41 +183,25 @@ export class GameStore {
   setTalkCount(v: number): void { this._state.talkCount = v; }
   setTrackedQuest(v: string): void { this._state.trackedQuest = v; }
   setLastMain(v: string): void { this._state.lastMain = v; }
-  setBossRef(ref: Enemy | null): void {
+
+  setBossRef(ref: import("../entities").Enemy | null): void {
     this._state._bossRef = ref;
   }
+
   addFloatText(txt: Text, life: number): void {
     this._state.floats.push({ txt, life });
   }
+
   removeFloatText(i: number): void {
     this._state.floats.splice(i, 1);
   }
 
-  // ── Управление флагами ──
-
-  updateFlags(flags: GameFlags): void {
-    this._state.flags.setFlags(flags);
-  }
-
-  // ── Управление барьером/алтарём ──
-  // Barrier и Altar теперь хранятся в ECS, эти методы устарели
-  setBarrier(b: BarrierRt | null): void { /* deprecated - ECS handles barriers */ }
-  setAltar(a: AltarRt | null): void { /* deprecated - ECS handles altars */ }
-  get barrier(): BarrierRt | null { return null; /* deprecated */ }
-  get altar(): AltarRt | null { return null; /* deprecated */ }
-
   // ── Босс-референс ──
 
-  get bossRef(): Enemy | null { return this._state._bossRef; }
-  set bossRef(v: Enemy | null) { this._state._bossRef = v; }
+  get bossRef(): import("../entities").Enemy | null { return this._state._bossRef; }
+  set bossRef(v: import("../entities").Enemy | null) { this._state._bossRef = v; }
 
-  get planckWorld(): any { return this._state.planckWorld; }
-
-  // ── Визуальные настройки ──
-
-  private _roofSnow = false;
-  get roofSnow(): boolean { return this._roofSnow; }
-  set roofSnow(v: boolean) { this._roofSnow = v; }
+  get planckWorld(): unknown { return this._state.planckWorld; }
 
   // ── ECS helpers ──
 
@@ -298,7 +232,7 @@ export class GameStore {
   }
 
   /** Получить Enemy component для entity ID */
-  getEnemy(eid: number): any {
+  getEnemy(eid: number): unknown {
     if (!this._state.ecsWorld || eid < 0) return null;
     const { Enemy, poolGet, StringPool } = require('../ecs/ecs-components');
     if (eid >= Enemy.kind.length) return null;
@@ -327,22 +261,19 @@ export class GameStore {
   applyAction(action: GameActions): void {
     switch (action.type) {
       case "SET_FLAG":
-        this._state.flags.setFlag(action.key as any, action.value);
+        this._config.worldStore.flags.setFlag(action.key as any, action.value);
         break;
       case "INCREMENT_FLAG":
-        this._state.flags.incrementFlag(action.key as any, action.by);
+        this._config.worldStore.flags.incrementFlag(action.key as any, action.by);
         break;
       case "INCREMENT_KILL":
-        this._state.flags.incrementKill(action.kind);
+        this._config.worldStore.flags.incrementKill(action.kind);
         break;
       case "SET_SCREEN":
         this.setScreen(action.value);
         break;
-      case "SET_MAP":
-        this.setMap(action.value);
-        break;
       case "ADD_REVEALED":
-        this._state.revealed.add(action.id);
+        // revealed теперь в WorldStore (через visitedShrines)
         break;
       case "SET_TRACKED_QUEST":
         this.setTrackedQuest(action.id);
@@ -352,23 +283,17 @@ export class GameStore {
     }
   }
 
-  /** Сбросить состояние к начальному */
+  /** Сбросить состояние сессии к начальному */
   reset(config: GameStoreConfig): void {
     this._config = config;
-    this._state.flags.setFlags(config.flags);
     this._state.player = config.player;
     this._state.screen = "title";
     this._state.realT = 0;
     this._state.playTime = 0;
     this._state.zone = "";
     this._state.talkCount = 0;
-    this._state.revealed.clear();
     this._state.trackedQuest = "m1";
     this._state.lastMain = "m1";
-    this._state.visitedShrines.clear();
-    this._state.takenPedestals.clear();
-    this._state.openedChests.clear();
-    this._state.takenAmbient.clear();
     this._state.floats = [];
   }
 }

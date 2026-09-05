@@ -1,54 +1,12 @@
-/* ============ FlagDomain — типизированная модель игровых флагов ============ */
+/* ============ FlagDomain — типизированная модель игровых флагов ============
+ *
+ * GameFlags теперь импортируется из flag-domains.ts где декомпозирована
+ * на доменные группы: InventoryFlags, ResourceFlags, QuestItemFlags,
+ * QuestFlags, KillFlags, WorldFlags.
+ */
 
-/** Полные игровые флаги */
-export interface GameFlags {
-  hasSword: boolean;
-  hasAxe: boolean;
-  hasBow: boolean;
-  hasHammer: boolean;
-  hasKey: boolean;
-  swordUp: boolean;
-  axeUp: boolean;
-  furyRune: boolean;
-  nornsFavor: boolean;
-  hearts: number;
-  arrows: number;
-  runes: number;
-  bear: boolean;
-  bearGone: boolean;
-  horn: boolean;
-  hornDone: boolean;
-  mead: boolean;
-  meadDone: boolean;
-  ore: boolean;
-  oreDone: boolean;
-  moss: boolean;
-  amber: boolean;
-  flower: boolean;
-  shamanDone: boolean;
-  diary: boolean;
-  refugeeDone: boolean;
-  secretKnown: boolean;
-  bundle: boolean;
-  merchantDone: boolean;
-  relic: boolean;
-  atoneDone: boolean;
-  cullDone: boolean;
-  killsByKind: Record<string, number>;
-  reaperDead: boolean;
-  spiderDead: boolean;
-  giantDead: boolean;
-  snakeStarted: boolean;
-  snakeDead: boolean;
-  ghostBane: boolean;
-  dew: number;
-  fogWaves: number;
-  kills: number;
-  deaths: number;
-  shrineIdx: number;
-  shrineQuestDone: boolean;
-  huntDone: boolean;
-}
+import { GameFlags, INITIAL_FLAGS, type FlagDomainKey } from './flag-domains';
+export { type GameFlags, INITIAL_FLAGS, type FlagDomainKey } from './flag-domains';
 
 /** Domain-модель флагов с типизированными методами */
 export class FlagDomain {

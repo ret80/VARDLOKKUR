@@ -30,9 +30,10 @@ import { StateManager } from "./state/state-manager";
 
 // Системы
 import { EventBus } from "./event-bus";
-import { GameStore, type GameStoreConfig } from "./store";
+import { GameStore, type GameStoreConfig, WorldStore } from "./store";
 import { PlayerDomain } from "./store/player-domain";
 import type { GameFlags } from "./store/flag-domain";
+import { INITIAL_FLAGS } from "./store/flag-domain";
 import type { EnemyKind } from "./generators/types";
 import { clamp, dist2 } from "./utils";
 import { Vec2 } from "planck-js";
@@ -224,25 +225,15 @@ export class Engine {
 
   private buildGameStore(): GameStore {
     const eng = this;
-    // Начальные значения (передаются в GameStore)
-    const initialFlags: GameFlags = {
-      hasSword: false, hasAxe: false, hasBow: false, hasHammer: false, hasKey: false,
-      swordUp: false, axeUp: false, furyRune: false, nornsFavor: false, hearts: 2,
-      arrows: 12, runes: 0, bear: false, bearGone: false,
-      horn: false, hornDone: false, mead: false, meadDone: false, ore: false, oreDone: false,
-      moss: false, amber: false, flower: false, shamanDone: false,
-      diary: false, refugeeDone: false, secretKnown: false,
-      bundle: false, merchantDone: false, relic: false, atoneDone: false, cullDone: false,
-      killsByKind: {},
-      reaperDead: false, spiderDead: false, giantDead: false,
-      snakeStarted: false, snakeDead: false,
-      kills: 0, deaths: 0, shrineIdx: -1, shrineQuestDone: false, huntDone: false,
-      dew: 0, fogWaves: 0, ghostBane: false,
-    };
+    // Начальные значения (передаются в WorldStore)
+    const initialFlags: GameFlags = { ...INITIAL_FLAGS };
     const initialPlayer: Player = {
       x: 0, y: 0, vx: 0, vy: 0, r: 5, hp: 12, maxHp: 12,
       dir: { x: 0, y: 1 }, moving: false, animT: 0, swingT: 0, hurtT: 0, slowT: 0,
     };
+
+    // Создаём WorldStore — персистентное состояние мира
+    const worldStore = new WorldStore({ flags: initialFlags });
 
     // Создаём PlayerDomain с колбэками на события
     eng.playerDomain = new PlayerDomain(
@@ -261,9 +252,10 @@ export class Engine {
         onHeartUsed: (amount) => eng.bus.emit("player:heartUsed", { amount }),
       }
     );
+
     const config: GameStoreConfig = {
-      flags: initialFlags,
       player: initialPlayer,
+      worldStore,
       playerDomain: eng.playerDomain,
       services: {
         spawnEnemy: (kind: string, x: number, y: number) => null as any,
