@@ -32,6 +32,7 @@
     "javascript-astar": "0.4.1"
   },
   "devDependencies": {
+    "@playwright/mcp": "^0.0.80",
     "@tailwindcss/vite": "^4.1.7",
     "@types/canvas-confetti": "^1.6.4",
     "@types/react": "^18.2.0",
@@ -40,6 +41,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^44.1.1",
     "electron-builder": "^26.15.3",
+    "playwright": "^1.63.0-alpha-2026-08-31",
     "tailwindcss": "^4.1.7",
     "typescript": "^5.7.0",
     "vite": "^6.3.5"
