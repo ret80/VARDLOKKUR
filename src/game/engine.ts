@@ -123,7 +123,6 @@ export class Engine {
   // Состояние рендеринга (roofSnow хранится в store.roofSnow)
   private talkedSig = new Map<string, string>();
   private dialogueActiveRef = { value: false };
-  private talkedSigRef = { value: new Map<string, string>() };
   private arrowA = -Math.PI / 2;
   public _arrowA = -Math.PI / 2;
   private starting = false;
@@ -324,7 +323,7 @@ export class Engine {
         map: this.map,
         ow: this.ow,
         flags: this.store.flags,
-        talkedSig: this.talkedSigRef,
+        talkedSig: { value: this.talkedSig },
         dialogueActive: this.dialogueActiveRef,
         stepT: this.stepT,
         realT: this.realT,

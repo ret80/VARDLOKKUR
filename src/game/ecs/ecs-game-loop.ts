@@ -436,7 +436,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       rdt,
       cam,
       gameWorld,
-      npcSig
+      npcSig,
+      talkedSig.value
     );
   }
 
