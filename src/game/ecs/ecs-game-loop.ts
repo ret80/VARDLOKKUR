@@ -483,6 +483,20 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // ===== 17. Проверка здоровья, очистка спрайтов/тел и удаление мёртвых =====
     lifeCheckSystem(world);
 
+    // Проверить смерть игрока (lifeCheckSystem помечает Dead, но не эмитит player:died)
+    if (peid >= 0 && !!Dead[peid] && !playerDomain?.isAlive()) {
+      bus.emit("player:died", {});
+      // Удалить спрайт и тело игрока
+      const spriteRef = SpriteRegistry[Sprite.ref[peid] - 1];
+      if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
+      spriteRef?.destroy();
+      const pbIdx = PhysicsBody.body[peid];
+      if (pbIdx > 0) {
+        const body = PhysicsBodyRegistry[pbIdx - 1];
+        if (body) _planckWorld.worldRef.destroyBody(body);
+      }
+    }
+
     // Уничтожить физ. тело и удалить мёртвых врагов из ECS.
     // Спрайт уже удалён в lifeCheckSystem.
     for (const eid of query(world, [Dead, Enemy])) {
