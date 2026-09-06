@@ -74,6 +74,9 @@ export function createPlayerPrefab(world: World): number {
 export function createEnemyPrefabs(world: World): Record<string, number> {
   const prefabs: Record<string, number> = {};
   for (const kind of Object.keys(ENEMY_STATS) as EnemyKind[]) {
+    // Призраки не создаются как префабы — они появляются только через fog-system
+    if (kind === 'ghost') continue;
+    
     const stats = ENEMY_STATS[kind];
     const eid = addEntity(world);
     addComponents(world, eid, Position, Radius, Velocity, Health, Enemy, EnemyAI, Direction, RenderLayer);
@@ -107,7 +110,7 @@ export function createEnemyPrefabs(world: World): Record<string, number> {
     Enemy.repathT[eid] = 0.5;
     Enemy.contactCd[eid] = 0;
     Enemy.guardOf[eid] = -1;
-    Enemy.fade[eid] = kind === 'ghost' ? 0 : 1;
+    Enemy.fade[eid] = 1;
     Enemy.dropDew[eid] = 0;
     // EnemyAI
     EnemyAI.path[eid] = 0;

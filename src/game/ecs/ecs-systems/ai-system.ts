@@ -49,7 +49,8 @@ export function aiUpdateSystem(
   dt: number,
   onEnemySpawned: (eid: number) => void,
   onEnemyDied: (eid: number) => void,
-  onPlayerDamaged?: (dmg: number, sx: number, sy: number) => void
+  onPlayerDamaged?: (dmg: number, sx: number, sy: number) => void,
+  fogActive?: boolean
 ): void {
   if (playerEid < 0 || !map) return;
 
@@ -132,7 +133,7 @@ export function aiUpdateSystem(
         updateFrost(world, enemyEid, playerEid, playerX, playerY, map, dt, inVillage);
         break;
       case 'ghost':
-        updateGhost(world, enemyEid, playerEid, playerX, playerY, map, dt);
+        updateGhost(world, enemyEid, playerEid, playerX, playerY, map, dt, fogActive ?? false);
         break;
       case 'reaper':
         updateReaper(world, enemyEid, playerEid, playerX, playerY, map, dt);
@@ -375,10 +376,10 @@ function updateFrost(
   }
 }
 
-/** Ghost — dissipate + shrine repulsion + orbital dive */
+/** Ghost — wander → orbit → freeze → lunge → cooldown */
 function updateGhost(
   world: World, eid: number, playerEid: number,
-  playerX: number, playerY: number, map: WorldData, dt: number
+  playerX: number, playerY: number, map: WorldData, dt: number, fogActive: boolean
 ): void {
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
@@ -386,7 +387,12 @@ function updateGhost(
   const d = Math.sqrt((px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2);
   const d2p = (px[eid] - playerX) ** 2 + (py[eid] - playerY) ** 2;
 
-  // Dissipate phase (when fog ghost fading out)
+  // --- Константы поведения призрака ---
+  const DETECTION_RANGE = 160; // радиус видимости
+  const ACTION_RANGE = 250;    // радиус действия
+  const ATTACK_RADIUS = Enemy.radius[eid] + 5 + 3; // радиус урона при атаке
+
+  // --- Фаза dissipate (исчезновение) ---
   if (Enemy.state[eid] === EnemyState.dissipate) {
     Enemy.fade[eid] = Math.max(0, Enemy.fade[eid] - dt / 2);
     vx[eid] = Math.sin(Enemy.t[eid] * 1.3 + Enemy.seed[eid]) * 12;
@@ -400,15 +406,10 @@ function updateGhost(
     return;
   }
 
-  // Fade in
+  // --- Появление (fade in) ---
   if (Enemy.fade[eid] < 0.85) Enemy.fade[eid] = Math.min(0.85, Enemy.fade[eid] + dt / 1.5);
 
-  let repX = 0, repY = 0;
-  // TODO: shrine repulsion - check distance to shrines
-
-  if (repX || repY) { vx[eid] = repX; vy[eid] = repY; return; }
-
-  // Leash mechanic (snake leash)
+  // --- Leash mechanic (привязка) ---
   const lmx = Enemy.leashX[eid];
   const lmy = Enemy.leashY[eid];
   if (lmx !== 0 || lmy !== 0) {
@@ -421,34 +422,146 @@ function updateGhost(
     }
   }
 
-  if (!!Enemy.aggro[eid]) {
-    if (Enemy.state[eid] === EnemyState.dive) {
+  // --- Машина состояний ---
+  switch (Enemy.state[eid]) {
+    // 0. ПОЯВЛЕНИЕ — призрак плавно проявляется при появлении тумана
+    case EnemyState.appear: {
       Enemy.stateT[eid] -= dt;
-      vx[eid] = Direction.x[eid] * Enemy.speed[eid] * 2.4;
-      vy[eid] = Direction.y[eid] * Enemy.speed[eid] * 2.4;
+      // Плавно проявляемся
+      Enemy.fade[eid] = Math.min(0.85, Enemy.fade[eid] + dt * 1.2);
+      vx[eid] = 0;
+      vy[eid] = 0;
+
+      // Появление завершено — переходим к дрейфу
       if (Enemy.stateT[eid] <= 0) {
-        Enemy.state[eid] = EnemyState.hover;
-        Enemy.stateT[eid] = 1.5 + Math.random() * 1.0;
+        Enemy.state[eid] = EnemyState.ghost_wander;
       }
-    } else {
+      break;
+    }
+
+    // 1. ДРЕЙФ — спокойное блуждание по экрану
+    case EnemyState.ghost_wander: {
+      // Если привязан к алтарю — кружит вокруг него на расстоянии
+      if (Enemy.leashX[eid] !== 0 || Enemy.leashY[eid] !== 0) {
+        const lx = Enemy.leashX[eid];
+        const ly = Enemy.leashY[eid];
+        const leashDist = Math.sqrt((px[eid] - lx) ** 2 + (py[eid] - ly) ** 2);
+        const orbitAngle = Math.atan2(py[eid] - ly, px[eid] - lx);
+        const orbitSpeed = 0.5;
+        const targetRadius = 80;
+        
+        // Двигаемся по орбите
+        const tangX = -Math.sin(orbitAngle);
+        const tangY = Math.cos(orbitAngle);
+        vx[eid] = tangX * Enemy.speed[eid] * 0.4;
+        vy[eid] = tangY * Enemy.speed[eid] * 0.4;
+        
+        // Корректировка радиуса
+        if (leashDist < targetRadius - 10) {
+          vx[eid] += ((px[eid] - lx) / leashDist) * 30;
+          vy[eid] += ((py[eid] - ly) / leashDist) * 30;
+        } else if (leashDist > targetRadius + 10) {
+          vx[eid] -= ((px[eid] - lx) / leashDist) * 30;
+          vy[eid] -= ((py[eid] - ly) / leashDist) * 30;
+        }
+      } else {
+        vx[eid] = Math.sin(Enemy.t[eid] * 1.1 + Enemy.seed[eid]) * 26;
+        vy[eid] = Math.cos(Enemy.t[eid] * 0.8 + Enemy.seed[eid]) * 20 - 6;
+      }
+
+      // Если игрок в радиусе видимости — переходим к кружению
+      if (d2p < DETECTION_RANGE * DETECTION_RANGE) {
+        Enemy.state[eid] = EnemyState.ghost_orbit;
+        Enemy.stateT[eid] = 2.0 + Math.random() * 1.0; // 2–3 секунды кружения
+      }
+      break;
+    }
+
+    // 2. КРУЖЕНИЕ — орбитальное поведение вокруг игрока
+    case EnemyState.ghost_orbit: {
       Enemy.stateT[eid] -= dt;
+
       const orbit = 30 + Math.sin(Enemy.t[eid] * 2 + Enemy.seed[eid]) * 8;
       const tang = Math.atan2(playerY - py[eid], playerX - px[eid]) + Math.PI / 2;
       const radial = d > orbit ? 1 : -0.6;
       vx[eid] = Math.cos(tang) * Enemy.speed[eid] * 0.9 + ((playerX - px[eid]) / (d || 1)) * Enemy.speed[eid] * 0.6 * radial;
       vy[eid] = Math.sin(tang) * Enemy.speed[eid] * 0.9 + ((playerY - py[eid]) / (d || 1)) * Enemy.speed[eid] * 0.6 * radial;
+
+      // Время кружения вышло — переходим к заморозке
       if (Enemy.stateT[eid] <= 0) {
-        Enemy.state[eid] = EnemyState.dive;
-        Enemy.stateT[eid] = 0.55;
+        Enemy.state[eid] = EnemyState.ghost_freeze;
+        Enemy.stateT[eid] = 0.5; // 0.5 секунды замерзает
+      }
+
+      // Игрок ушёл из радиуса видимости — возвращаемся к дрейфу
+      if (d2p > DETECTION_RANGE * DETECTION_RANGE) {
+        Enemy.state[eid] = EnemyState.ghost_wander;
+      }
+      break;
+    }
+
+    // 3. ЗАМОРОЗКА — призрак замирает, издаёт вой
+    case EnemyState.ghost_freeze: {
+      Enemy.stateT[eid] -= dt;
+      vx[eid] = 0;
+      vy[eid] = 0;
+
+      // Замер закончился — рывок
+      if (Enemy.stateT[eid] <= 0) {
+        Enemy.state[eid] = EnemyState.ghost_lunge;
+
+        // Направление на игрока
         const dd = Math.sqrt((playerX - px[eid]) ** 2 + (playerY - py[eid]) ** 2) || 1;
         Direction.x[eid] = (playerX - px[eid]) / dd;
         Direction.y[eid] = (playerY - py[eid]) / dd;
+
+        // Рывок на 2 текущих дистанции до игрока
+        Enemy.stateT[eid] = (d * 2) / (Enemy.speed[eid] * 2.4);
+
+        // Сбрасываем кулдаун контакта — урон будет нанесён один раз
+        Enemy.contactCd[eid] = 0;
       }
+      break;
     }
-  } else {
-    vx[eid] = Math.sin(Enemy.t[eid] * 1.1 + Enemy.seed[eid]) * 26;
-    vy[eid] = Math.cos(Enemy.t[eid] * 0.8 + Enemy.seed[eid]) * 20 - 6;
+
+    // 4. РЫВОК — проносимся мимо игрока
+    case EnemyState.ghost_lunge: {
+      Enemy.stateT[eid] -= dt;
+      vx[eid] = Direction.x[eid] * Enemy.speed[eid] * 2.4;
+      vy[eid] = Direction.y[eid] * Enemy.speed[eid] * 2.4;
+
+      if (Enemy.stateT[eid] <= 0) {
+        Enemy.state[eid] = EnemyState.ghost_cooldown;
+        Enemy.stateT[eid] = 0.3;
+      }
+      break;
+    }
+
+    // 5. ПОСЛЕ АТАКИ — определяем дальнейшее поведение
+    case EnemyState.ghost_cooldown: {
+      Enemy.stateT[eid] -= dt;
+      // Плавное замедление после рывка
+      vx[eid] *= 0.9;
+      vy[eid] *= 0.9;
+
+      if (Enemy.stateT[eid] <= 0) {
+        if (d > ACTION_RANGE) {
+          // Дистанция больше радиуса действия — дрейфуем
+          Enemy.state[eid] = EnemyState.ghost_wander;
+        } else if (d2p < DETECTION_RANGE * DETECTION_RANGE) {
+          // В радиусе видимости — снова кружим
+          Enemy.state[eid] = EnemyState.ghost_orbit;
+          Enemy.stateT[eid] = 2.0 + Math.random() * 1.0;
+        } else {
+          // Между радиусами — дрейф
+          Enemy.state[eid] = EnemyState.ghost_wander;
+        }
+      }
+      break;
+    }
   }
+
+  // --- Обновление направления ---
   if (vx[eid] !== 0) Direction.x[eid] = vx[eid] >= 0 ? 1 : -1;
 }
 

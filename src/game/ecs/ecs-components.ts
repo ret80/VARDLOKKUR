@@ -123,6 +123,7 @@ export const Enemy = {
   dropDew: new Uint8Array(10000),
   leashX: new Float32Array(10000),   // leash anchor x (0 = no leash)
   leashY: new Float32Array(10000),   // leash anchor y (0 = no leash)
+  fogOnly: new Uint8Array(10000),    // призрак активен только во время тумана
 } as const;
 
 /** Состояния врагов (enum для SoA) */
@@ -145,6 +146,12 @@ export const EnemyState = {
   stuck: 15,
   aim: 16,
   ring: 17,
+  // Ghost-specific states
+  ghost_wander: 18,
+  ghost_orbit: 19,
+  ghost_freeze: 20,
+  ghost_lunge: 21,
+  ghost_cooldown: 22,
 } as const;
 
 /** Обратное отображение: enum value → string */
@@ -152,6 +159,8 @@ const _enemyStateNames: string[] = [
   'idle', 'wander', 'chase', 'lunge', 'hover', 'dive',
   'charge', 'cool', 'open', 'closed', 'appear', 'dissipate',
   'enter', 'wind', 'swing', 'stuck', 'aim', 'ring',
+  // Ghost-specific states
+  'ghost_wander', 'ghost_orbit', 'ghost_freeze', 'ghost_lunge', 'ghost_cooldown',
 ];
 export function getEnemyStateName(idx: number): string {
   return _enemyStateNames[idx] ?? 'idle';

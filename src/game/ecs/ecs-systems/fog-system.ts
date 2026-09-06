@@ -214,8 +214,10 @@ function ensureGhosts(
     }
   }
   
-  const targetCx = leashed ? map.treeAltar.x * T + 8 : cx;
-  const targetCy = leashed ? map.treeAltar.y * T + 8 : cy;
+  const altarX = map.treeAltar.x * T + 8;
+  const altarY = map.treeAltar.y * T + 8;
+  const targetCx = leashed ? altarX : cx;
+  const targetCy = leashed ? altarY : cy;
   
   for (let i = alive; i < Math.min(4, n); i++) {
     const a = Math.random() * Math.PI * 2;
@@ -227,8 +229,14 @@ function ensureGhosts(
     
     const eid = spawnEnemyInEcs('ghost', x, y);
     Enemy.aggro[eid] = 1;
-    Enemy.state[eid] = EnemyState.hover;
-    Enemy.stateT[eid] = 0.5 + Math.random();
+    Enemy.state[eid] = EnemyState.appear;
+    Enemy.stateT[eid] = 1.5 + Math.random() * 0.5;
+    Enemy.fogOnly[eid] = 1;
+    // Привязка к алтарю
+    if (leashed) {
+      Enemy.leashX[eid] = altarX;
+      Enemy.leashY[eid] = altarY;
+    }
   }
 }
 
