@@ -53,11 +53,16 @@ export class PlayerLifecycle {
   /** Респавн игрока после смерти */
   respawn(): void {
     const { ow, flags, player } = this.store;
-    let spawn = this.store.map?.spawn ?? { x: 0, y: 0 };
+    let spawn: { x: number; y: number };
 
-    if (flags.shrineIdx >= 0 && ow) {
+    if (flags.shrineIdx >= 0 && ow && ow.shrines && ow.shrines[flags.shrineIdx]) {
       const s = ow.shrines[flags.shrineIdx];
-      if (s) spawn = { x: s.x * T + 8, y: s.y * T + 8 };
+      spawn = { x: s.x * T + 8, y: s.y * T + 8 };
+    } else if (ow) {
+      // Фолбэк — спавн в деревне (оверворлд)
+      spawn = ow.spawn ?? { x: 0, y: 0 };
+    } else {
+      spawn = this.store.map?.spawn ?? { x: 0, y: 0 };
     }
 
     const eid = this.playerDomain instanceof PlayerDomain 
