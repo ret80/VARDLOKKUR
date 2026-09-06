@@ -197,6 +197,7 @@ export function renderPlayer(
   time: number
 ): void {
   if (playerEid < 0) return;
+  if (!!Dead[playerEid]) return;
   
   const ref = getSpriteRef(playerEid);
   if (!ref) return;
