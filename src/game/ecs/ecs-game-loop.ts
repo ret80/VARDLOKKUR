@@ -283,6 +283,12 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     }
   });
 
+  // ── Обработка убийства врага-стража пьедестала ──
+
+  bus.on("enemy:killed", (e) => {
+    onEnemyKilledEcs(world, e.enemy, store, bus);
+  });
+
   /** Выполнить один кадр */
   function tick(rdt: number, timeScale: number): void {
     const dt = rdt * timeScale;
