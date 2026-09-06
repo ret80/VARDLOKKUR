@@ -243,15 +243,28 @@ function getPedestalIndex(world: World, pedestalEid: number): number {
 }
 
 /** Использовать святилище */
-function useShrineEcs(world: World, shrineEid: number, i: number, store: GameStore, bus: EventBus): void {
+function useShrineEcs(world: World, shrineEid: number, _i: number, store: GameStore, bus: EventBus): void {
   const m = store.map!;
-  // Святилища работают только в оверворлде
-  if (!m.isDungeon) {
-    store.flags.setFlag('shrineIdx', i);
+  // _i — это ECS entity ID, нужно найти индекс в map.shrines по позиции
+  let shrineIdx = -1;
+  if (m.shrines) {
+    const sx = Position.x[shrineEid];
+    const sy = Position.y[shrineEid];
+    for (let j = 0; j < m.shrines.length; j++) {
+      const s = m.shrines[j];
+      if (s.x * T + 8 === sx && s.y * T + 8 === sy) {
+        shrineIdx = j;
+        break;
+      }
+    }
   }
-  const firstVisit = !m.isDungeon && !store.visitedShrines.has(i);
+  // Святилища работают только в оверворлде
+  if (!m.isDungeon && shrineIdx >= 0) {
+    store.flags.setFlag('shrineIdx', shrineIdx);
+  }
+  const firstVisit = !m.isDungeon && !store.visitedShrines.has(shrineIdx);
   if (firstVisit) {
-    store.visitedShrines.add(i);
+    store.visitedShrines.add(shrineIdx);
     bus.emit('quest:reveal', { id: 's_shrines' });
   }
   // Пометить святилище как зажжённое — создаёт дырку в тумане

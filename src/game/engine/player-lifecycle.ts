@@ -1,7 +1,7 @@
 /* player-lifecycle.ts – Управление респавном и использованием сердца */
 
 import { T } from "../world";
-import { Position, Velocity, Player, Health } from "../ecs/ecs-components";
+import { Position, Velocity, Player, Health, Dead } from "../ecs/ecs-components";
 import type { GameStore } from "../store";
 import { PlayerDomain } from "../store/player-domain";
 import type { EventBus } from "../event-bus";
@@ -71,6 +71,7 @@ export class PlayerLifecycle {
 
     // Set position via ECS
     if (eid >= 0) {
+      Dead[eid] = 0;  // Сбросить флаг смерти — иначе renderPlayer пропускает игрока
       Position.x[eid] = spawn.x;
       Position.y[eid] = spawn.y;
       Velocity.x[eid] = 0;

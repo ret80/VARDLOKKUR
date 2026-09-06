@@ -20,6 +20,8 @@ import {
   createDropInEcs,
 } from './ecs-bridge';
 import { createBodyForEntity } from './ecs-systems';
+import { EventBus } from '../event-bus';
+import { Shrine } from './ecs-components';
 
 // ============================================================
 // Конфигурация Map Loader
@@ -45,6 +47,7 @@ export interface EcsMapLoaderConfig {
   viewH: number;
   savedDrops: { kind: string; x: number; y: number; life?: number; ambientIdx?: number }[];
   toast: (msg: string) => void;
+  bus?: EventBus;
 }
 
 // ============================================================
@@ -175,13 +178,18 @@ export class EcsMapLoader {
   }
 
   private spawnShrines(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
-    for (const s of map.shrines) {
+    for (let j = 0; j < map.shrines.length; j++) {
+      const s = map.shrines[j];
       const g = new Graphics();
       g.position.set(s.x * T + 8, s.y * T + 8);
       const eid = createShrineInEcs(world, s.x * T + 8, s.y * T + 8, g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
+      // Восстановить состояние lit из visitedShrines
+      if (this.config.visitedShrines.has(j)) {
+        Shrine.lit[eid] = 1;
+      }
     }
   }
 
