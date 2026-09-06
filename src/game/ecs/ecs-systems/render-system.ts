@@ -46,6 +46,7 @@ import {
   drawBarrier,
   drawAltar,
 } from '../ecs-render-helpers';
+import type { InteractableHit } from './interaction-system';
 
 // ============================================================
 // Утилиты рендеринга
@@ -443,6 +444,53 @@ export function updateFloatTexts(floatLayer: Container, dt: number): void {
 }
 
 // ============================================================
+// Подсказка взаимодействия (E)
+// ============================================================
+
+/** Persistent Graphics для подсказки взаимодействия */
+let _hintG: Graphics | null = null;
+
+/** Инициализировать подсказку — вызывается один раз */
+export function initInteractionHint(layer: Container): void {
+  if (_hintG) return;
+  _hintG = new Graphics();
+  _hintG.zIndex = 9999;
+  layer.addChild(_hintG);
+}
+
+/** Отрисовать подсказку взаимодействия над ближайшим интерактивным объектом */
+function renderInteractionHint(
+  hintLayer: Container,
+  nearestInteractable: InteractableHit | null | undefined,
+  cam: { x: number; y: number },
+  time: number
+): void {
+  if (!_hintG) return;
+  
+  if (!nearestInteractable) {
+    _hintG.visible = false;
+    return;
+  }
+  
+  _hintG.visible = true;
+  // Экраные координаты: gameWorld сдвинут на -cam.x/-cam.y, а hintLayer — нет
+  const hx = nearestInteractable.x - cam.x;
+  const hy = nearestInteractable.y - cam.y - 20 + Math.sin(time * 5) * 1.5;
+  
+  _hintG.clear();
+  // Тёмный фон
+  _hintG.rect(hx - 6, hy - 6, 12, 10).fill({ color: 0x0a0f16, alpha: 0.85 });
+  // Золотая рамка
+  _hintG.rect(hx - 6, hy - 6, 12, 10).stroke({ color: 0xc9a24b, width: 1, alpha: 0.8 });
+  // Буква "E" — пиксель-арт стиль
+  _hintG.poly([
+    hx - 2, hy - 3, hx + 2, hy - 3,
+    hx + 2, hy - 1, hx, hy - 1,
+    hx, hy + 2, hx - 2, hy + 2
+  ]).fill({ color: 0xe8dcc0 });
+}
+
+// ============================================================
 // Главный цикл рендеринга
 // ============================================================
 
@@ -457,8 +505,10 @@ export function renderSystem(
   cam: { x: number; y: number },
   gameWorld: Container | null,
   dynamic: { children: any[] } | null,
+  hintLayer: Container,
   getNpcSig?: (npcId: string) => string,
-  talkedSig?: Map<string, string>
+  talkedSig?: Map<string, string>,
+  nearestInteractable?: InteractableHit | null
 ): void {
   // Слежение камеры за игроком
   if (playerEid >= 0 && Position.x.length > playerEid) {
@@ -502,6 +552,9 @@ export function renderSystem(
   
   // Update float texts
   updateFloatTexts(floatLayer, dt);
+  
+  // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
+  renderInteractionHint(hintLayer, nearestInteractable, cam, time);
   
   // Render PixiJS app
   app.render();

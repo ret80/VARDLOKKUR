@@ -85,7 +85,7 @@ export function tryInteract(
   return false;
 }
 
-interface InteractableHit {
+export interface InteractableHit {
   kind: string;
   eid: number;
   ref: any;
@@ -330,6 +330,11 @@ function dungeonUnlocked(id: number, f: any): { ok: boolean; req: string } {
   if (id === 1) return { ok: f.hasItem('axe'), req: 'Путь преграждают корни — нужна Ледяная Секира' };
   const runes = f.getRunes();
   return { ok: runes >= 5, req: `Крепость запечатана — нужно ещё ${5 - runes} Рун` };
+}
+
+/** Получить ближайший интерактивный объект (для рендеринга подсказки) */
+export function getNearestInteractable(world: World, playerEid: number, store: GameStore): InteractableHit | null {
+  return findNearest(world, playerEid, store);
 }
 
 /** Обработка убийства врага-стража */

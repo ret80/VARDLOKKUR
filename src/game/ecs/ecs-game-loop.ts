@@ -48,14 +48,16 @@ import {
   createFogState,
   type FogState,
 } from './ecs-systems/fog-system';
-import { Graphics } from 'pixi.js';
+import { Graphics, Container } from 'pixi.js';
 import {
   tryInteract,
   onEnemyKilledEcs,
+  getNearestInteractable,
   type GuardSpawnCallback,
 } from './ecs-systems/interaction-system';
 import {
   renderSystem,
+  initInteractionHint,
 } from './ecs-systems/render-system';
 import {
   updatePlayerInput,
@@ -185,6 +187,12 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   let _playerEid = playerEidRef;
   let _planckWorld = planckWorld;
   let _fogState: FogState | null = null;
+
+  // hintLayer — подсказка взаимодействия, на app.stage (не разрушается при смене сцены)
+  const hintLayer = new Container();
+  hintLayer.zIndex = 9999;
+  app.stage.addChild(hintLayer);
+  initInteractionHint(hintLayer);
 
   // Локальные копии для updateConfig
   let config_map = map;
@@ -464,6 +472,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   /** Выполнить ECS рендеринг */
   function render(rdt: number): void {
+    const nearestInteractable = getNearestInteractable(world, _playerEid, store);
     renderSystem(
       world,
       _playerEid,
@@ -474,8 +483,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       cam,
       gameWorld,
       dynamic,
+      hintLayer,
       npcSig,
-      talkedSig.value
+      talkedSig.value,
+      nearestInteractable
     );
 
     // ===== Отрисовка тумана =====
