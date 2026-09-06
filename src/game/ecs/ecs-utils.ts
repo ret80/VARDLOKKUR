@@ -115,7 +115,7 @@ export function createEnemyEntity(
   dmg: number
 ): number {
   const eid = createLivingEntity(world, hp, 50);
-  addComponents(world, eid, Enemy, Velocity, EnemyAI);
+  addComponents(world, eid, Enemy, Velocity, EnemyAI, Direction);
   addComponent(world, eid, PhysicsBody);
   Position.x[eid] = x;
   Position.y[eid] = y;
@@ -129,6 +129,8 @@ export function createEnemyEntity(
   Enemy.radius[eid] = radius;
   Enemy.facingX[eid] = 1;
   Enemy.facingY[eid] = 0;
+  Direction.x[eid] = 1;
+  Direction.y[eid] = 0;
   Enemy.t[eid] = Math.random() * 10;
   Enemy.state[eid] = EnemyState.idle;
   Enemy.aggro[eid] = 0;

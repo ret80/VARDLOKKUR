@@ -338,9 +338,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       }
     }
 
-    // ===== 9. Направление из скорости =====
-    directionFromVelocitySystem(world);
-
     // ===== 10. Синхронизация в store.player (view-layer) =====
     if (peid >= 0) {
       store.player.x = Position.x[peid];
@@ -372,7 +369,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       );
     }
 
-    // ===== 13. Обновить снаряды (ECS) =====
+    // ===== 13. Направление из скорости (ПОСЛЕ AI, чтобы Direction от AI не перезаписался) =====
+    directionFromVelocitySystem(world);
+
+    // ===== 14. Обновить снаряды (ECS) =====
     updateProjectilesEcs(
       world,
       dt,

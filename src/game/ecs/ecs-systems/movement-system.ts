@@ -5,6 +5,7 @@ import {
   Position,
   Velocity,
   Direction,
+  Enemy,
   Player,
   Time,
 } from '../ecs-components';
@@ -25,7 +26,7 @@ export function movementSystem(world: World, dt: number): void {
   }
 }
 
-/** Обновить направление на основе скорости */
+/** Обновить направление на основе скорости + синхронизировать Enemy.facingX/Y */
 export function directionFromVelocitySystem(world: World): void {
   const { x: vx, y: vy } = Velocity;
   const { x: dx, y: dy } = Direction;
@@ -36,6 +37,9 @@ export function directionFromVelocitySystem(world: World): void {
       dx[eid] = vx[eid] / speed;
       dy[eid] = vy[eid] / speed;
     }
+    // Синхронизировать Enemy.facingX/Y с Direction (для рендера)
+    Enemy.facingX[eid] = dx[eid];
+    Enemy.facingY[eid] = dy[eid];
   }
 }
 

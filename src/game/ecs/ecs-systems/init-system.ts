@@ -76,7 +76,7 @@ export function createEnemyPrefabs(world: World): Record<string, number> {
   for (const kind of Object.keys(ENEMY_STATS) as EnemyKind[]) {
     const stats = ENEMY_STATS[kind];
     const eid = addEntity(world);
-    addComponents(world, eid, Position, Radius, Velocity, Health, Enemy, EnemyAI, RenderLayer);
+    addComponents(world, eid, Position, Radius, Velocity, Health, Enemy, EnemyAI, Direction, RenderLayer);
     Position.x[eid] = 0;
     Position.y[eid] = 0;
     Radius.value[eid] = stats.r;
@@ -90,6 +90,8 @@ export function createEnemyPrefabs(world: World): Record<string, number> {
     Enemy.radius[eid] = stats.r;
     Enemy.facingX[eid] = 1;
     Enemy.facingY[eid] = 0;
+    Direction.x[eid] = 1;
+    Direction.y[eid] = 0;
     Enemy.t[eid] = 0;
     Enemy.state[eid] = EnemyState.idle;
     Enemy.aggro[eid] = 0;
