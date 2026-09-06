@@ -72,7 +72,8 @@ import { hasComponent } from 'bitecs';
 import {
   Position, Velocity, PhysicsBody, Player, Direction, Health,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
-  Flashing, Enemy, Sprite, SpriteRegistry, Radius,
+  Flashing, Enemy, EnemyState, Sprite, SpriteRegistry, Radius,
+  Shrine,
 } from './ecs-components';
 import type { InputSystem } from '../input/input-system';
 import type { EventBus } from '../event-bus';
@@ -175,6 +176,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     dungeonBossDead, toast, float: addFloat, pushHud, startDialogue, npcSig,
     onStepAudio, stepTRef, realTRef, guardSpawn,
     dialogueActive, talkedSig,
+    viewW, viewH,
+    fx,
   } = config;
 
   let _stepT = stepTRef;
@@ -255,6 +258,28 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     if (eid >= 0) {
       // Добавить физику для снаряда
       createBodyForEntity(_planckWorld, world, eid, 4, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground);
+    }
+  });
+
+  // ── Переход призраков в состояние dissipate при окончании волны тумана ──
+
+  bus.on("fog:ghostDissipate", () => {
+    for (const eid of query(world, [Enemy])) {
+      if (poolGet(StringPool.enemyKinds, Enemy.kind[eid]) !== 'ghost') continue;
+      // Пропускаем привязанных призраков (у алтаря) — они не исчезают сами
+      if (Enemy.leashX[eid] !== 0 || Enemy.leashY[eid] !== 0) continue;
+      // Переходим в dissipate — призрак начнёт исчезать
+      Enemy.state[eid] = EnemyState.dissipate;
+    }
+  });
+
+  // ── Переход ВСЕХ призраков в dissipate при уходе от алтаря ──
+
+  bus.on("fog:altarLeave", () => {
+    for (const eid of query(world, [Enemy])) {
+      if (poolGet(StringPool.enemyKinds, Enemy.kind[eid]) !== 'ghost') continue;
+      // Переводим ВСЕХ призраков, включая привязанных
+      Enemy.state[eid] = EnemyState.dissipate;
     }
   });
 
@@ -446,6 +471,27 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       npcSig,
       talkedSig.value
     );
+
+    // ===== Отрисовка тумана =====
+    if (_fogState && _playerEid >= 0) {
+      const shrineSpots: Array<{x: number, y: number}> = [];
+      for (const eid of query(world, [Shrine])) {
+        if (Shrine.lit[eid]) {
+          shrineSpots.push({ x: Position.x[eid], y: Position.y[eid] });
+        }
+      }
+      fx.redrawFog(
+        rdt,
+        _fogState.fogRadius,
+        Position.x[_playerEid],
+        Position.y[_playerEid],
+        cam.x,
+        cam.y,
+        viewW,
+        viewH,
+        shrineSpots.length > 0 ? shrineSpots : undefined
+      );
+    }
   }
 
   return {

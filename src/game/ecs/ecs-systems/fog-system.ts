@@ -130,7 +130,11 @@ export function fogUpdateSystem(
     return;
   }
   
-  if (fogState.fogAmbient) endWave(fogState, true, bus, getRunes, f);
+  // Игрок ушёл от алтаря — призраки исчезают
+  if (fogState.fogAmbient) {
+    bus.emit('fog:altarLeave', {});
+    endWave(fogState, true, bus, getRunes, f);
+  }
   
   if (!fogState.fogActive) {
     fogState.fogTimer -= dt;

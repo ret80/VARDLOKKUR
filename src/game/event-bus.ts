@@ -33,6 +33,7 @@ type GameEvents = {
   "fog:waveEnd":      { dropDew: boolean };
   "fog:ghostSpawn":   { count: number; leashed: boolean };
   "fog:ghostDissipate": {};
+  "fog:altarLeave":   {};
 
   // Боссы
   "boss:spawned":     { kind: EnemyKind; id: number };
