@@ -5,6 +5,7 @@ import { Vec2, World, Body, Fixture, CircleShape, PolygonShape, BoxShape, Body a
 import type { Contact, Manifold } from "planck-js";
 import { WorldData, T, solidTileAt } from "../world";
 import { dist2 } from "../utils";
+import type { EnemyKind } from "../world";
 
 // ============================================================
 // Категории (битовые маски) — collision filtering
@@ -14,6 +15,8 @@ export const Cat: Record<string, number> = {
   None:       0x0000,
   Player:     0x0001,
   Enemy:      0x0002,
+  Ground:     0x0004,
+  Raven:      0x0008,
   Ghost:      0x0010,
   Projectile: 0x0020,
   Tile:       0x0040,
@@ -28,16 +31,49 @@ export const Cat: Record<string, number> = {
 // ============================================================
 
 export const CollidesWith: Record<string, number> = {
-  [Cat.Player]:     Cat.Tile | Cat.Enemy | Cat.Projectile | Cat.Door | Cat.Barrier | Cat.Drop | Cat.Ghost,
+  [Cat.Player]:     Cat.Tile | Cat.Enemy | Cat.Projectile | Cat.Door | Cat.Barrier | Cat.Drop,
   [Cat.Enemy]:      Cat.Tile | Cat.Player | Cat.Projectile | Cat.Door | Cat.Barrier,
-  [Cat.Ghost]:      Cat.Player, // призрак проходит сквозь всё, но коллидирует с игроком для урона
-  [Cat.Projectile]: Cat.Tile | Cat.Enemy | Cat.Player,
-  [Cat.Tile]:       Cat.Player | Cat.Enemy | Cat.Projectile | Cat.Drop,
+  // ⚠️ НЕ МЕНЯТЬ БЕЗ РАЗРЕШЕНИЯ — призрак не должен коллидировать с игроком
+  [Cat.Ghost]:      Cat.None, // призрак проходит сквозь всё
+  [Cat.Raven]:      Cat.None, // ворона не сталкивается ни с кем
+  [Cat.Projectile]: Cat.Tile | Cat.Enemy | Cat.Player | Cat.Raven,
+  [Cat.Tile]:       Cat.Player | Cat.Enemy | Cat.Projectile | Cat.Drop | Cat.Raven,
   [Cat.Door]:       Cat.Player | Cat.Enemy,
   [Cat.Barrier]:    Cat.Player | Cat.Enemy,
   [Cat.Drop]:       Cat.Player,
   [Cat.Boss]:       Cat.Tile | Cat.Player | Cat.Projectile | Cat.Door | Cat.Barrier,
 };
+
+// ============================================================
+// Вспомогательные функции для определения категорий врагов
+// ============================================================
+
+/** Битовая маска для "земли" — используется в явных масках коллизий */
+export const GROUND_MASK = Cat.Ground;
+
+/** Определить категорию врага по типу */
+export function getEnemyCategory(kind: EnemyKind): number {
+  switch (kind) {
+    case "raven":
+      return Cat.Raven;
+    case "reaper":
+      return Cat.Boss;
+    default:
+      return Cat.Enemy;
+  }
+}
+
+/** Определить маску коллизий для врага по типу */
+export function getEnemyMask(kind: EnemyKind): number {
+  const base = Cat.Tile | Cat.Player | Cat.Projectile | Cat.Door | Cat.Barrier | Cat.Ground;
+  switch (kind) {
+    case "raven":
+      // Ворона не сталкивается ни с кем
+      return Cat.None;
+    default:
+      return base;
+  }
+}
 
 // ============================================================
 // Настройка фильтра на fixture
@@ -107,6 +143,16 @@ export class PlanckWorld {
         this.pendingDestroy.push(projBody);
       }
 
+      // Projectile → Raven
+      if ((catA === Cat.Projectile && catB === Cat.Raven) || (catA === Cat.Raven && catB === Cat.Projectile)) {
+        const projBody = catA === Cat.Projectile ? bodyA : bodyB;
+        const ravenBody = catA === Cat.Raven ? bodyA : bodyB;
+        if (this.callbacks.onProjectileHitEnemy) {
+          this.callbacks.onProjectileHitEnemy(projBody, ravenBody, projBody.getUserData(), ravenBody.getUserData());
+        }
+        this.pendingDestroy.push(projBody);
+      }
+
       // Projectile → Player
       if ((catA === Cat.Projectile && catB === Cat.Player) || (catA === Cat.Player && catB === Cat.Projectile)) {
         const projBody = catA === Cat.Projectile ? bodyA : bodyB;
@@ -141,7 +187,7 @@ export class PlanckWorld {
         }
       }
 
-      // Enemy → Enemy
+      // Enemy → Enemy (включая Boss)
       if ((catA === Cat.Enemy && catB === Cat.Enemy) || (catA === Cat.Boss && catB === Cat.Enemy) ||
           (catA === Cat.Enemy && catB === Cat.Boss) || (catA === Cat.Boss && catB === Cat.Boss)) {
         const eA = catA === Cat.Enemy || catA === Cat.Boss ? bodyA : bodyB;
