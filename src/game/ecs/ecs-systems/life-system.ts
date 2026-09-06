@@ -14,7 +14,6 @@ import {
   Magnet,
   Position,
   Velocity,
-  Sprite,
 } from '../ecs-components';
 
 // ============================================================

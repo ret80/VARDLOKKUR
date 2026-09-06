@@ -1,6 +1,6 @@
 /* ecs-game-loop.ts — минимальный ECS game loop */
 
-import { type World, query } from 'bitecs';
+import { type World, query, removeEntity } from 'bitecs';
 import {
   syncPositionToBody,
   syncVelocityToBody,
@@ -75,7 +75,7 @@ import {
   Position, Velocity, PhysicsBody, Player, Direction, Health,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
   Flashing, Enemy, EnemyState, Sprite, SpriteRegistry, Radius,
-  Shrine,
+  Shrine, Dead,
 } from './ecs-components';
 import type { InputSystem } from '../input/input-system';
 import type { EventBus } from '../event-bus';
@@ -465,8 +465,32 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     updateZone(world, peid, config_map, store, toast, pushHud);
     if (config_map) checkDungeonBoss(world, peid, config_map, dungeonBossDead, bus);
 
-    // ===== 17. Проверка здоровья и удаление мёртвых =====
+    // ===== 17. Проверка здоровья, очистка спрайтов/тел и удаление мёртвых =====
     lifeCheckSystem(world);
+
+    // Уничтожить спрайт и физ. тело мёртвых врагов и сразу удалить из ECS
+    // (иначе остаются «призраки» на карте)
+    // Используем query по [Enemy] + проверка Dead[eid], потому что bitecs query кэшируется
+    // и динамически установленный Dead не найдётся в query([Dead, Enemy]).
+    const deadEnemies: number[] = [];
+    for (const eid of query(world, [Enemy])) {
+      if (Dead[eid]) deadEnemies.push(eid);
+    }
+    for (const eid of deadEnemies) {
+      // Спрайт
+      const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
+      if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
+      spriteRef?.destroy();
+      // Физ. тело
+      const pbIdx = PhysicsBody.body[eid];
+      if (pbIdx > 0) {
+        const body = PhysicsBodyRegistry[pbIdx - 1];
+        if (body) _planckWorld.worldRef.destroyBody(body);
+      }
+      // Удалить из ECS
+      removeEntity(world, eid);
+    }
+
     deathCleanupSystem(world);
   }
 
