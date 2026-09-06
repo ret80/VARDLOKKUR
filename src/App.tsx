@@ -199,12 +199,12 @@ export default function App() {
                 {hud.hasKey && <span className="text-[#c9a24b] text-[13px]">⚿</span>}
               </div>
             </div>
-            <button
-              className="nord-panel w-9 h-9 flex items-center justify-center pointer-events-auto cursor-pointer"
-              onClick={() => eng()?.openInventory()} title="Инвентарь (Tab)"
-            >
-              <BagIco />
-            </button>
+            <div className="nord-panel px-2 py-1 text-right">
+              <div className="font-display text-[11px] sm:text-[12px] tracking-[0.18em] text-[#8fd8e8] uppercase">{hud.zone}</div>
+              <div className="text-[10px] text-[#6e7f8d] tracking-widest flex justify-end gap-2">
+                <span>{hud.time}</span><span>⚔ {hud.kills}</span><span className="text-[#a06060]">† {hud.deaths}</span>
+              </div>
+            </div>
           </div>
 
           <div className="absolute top-2 right-2 sm:top-3 sm:right-3 flex flex-col items-end gap-1 z-20 pointer-events-none">
@@ -212,15 +212,17 @@ export default function App() {
               <canvas ref={mmRef} width={192} height={128} className="block" style={{ width: "min(24vw,128px)", ...px, border: "1px solid #23354433" }} />
               <span className="absolute inset-0 hidden group-hover:flex items-center justify-center bg-[#04060a99] font-display text-[10px] tracking-[0.25em] text-[#8fd8e8] uppercase">Карта</span>
             </button>
-            <div className="nord-panel px-2 py-1 text-right">
-              <div className="font-display text-[11px] sm:text-[12px] tracking-[0.18em] text-[#8fd8e8] uppercase">{hud.zone}</div>
-              <div className="text-[10px] text-[#6e7f8d] tracking-widest flex justify-end gap-2">
-                <span>{hud.time}</span><span>⚔ {hud.kills}</span><span className="text-[#a06060]">† {hud.deaths}</span>
-              </div>
+            <div className="flex gap-1">
+              <button
+                className="nord-panel w-9 h-9 flex items-center justify-center pointer-events-auto cursor-pointer"
+                onClick={() => eng()?.openInventory()} title="Инвентарь (Tab)"
+              >
+                <BagIco />
+              </button>
+              <button className="nord-panel w-9 h-9 flex items-center justify-center pointer-events-auto cursor-pointer" onClick={() => eng()?.openQuests()} title="Журнал квестов (Q)">
+                <BookIco />
+              </button>
             </div>
-            <button className="nord-panel w-9 h-9 flex items-center justify-center pointer-events-auto cursor-pointer" onClick={() => eng()?.openQuests()} title="Журнал квестов (Q)">
-              <BookIco />
-            </button>
           </div>
 
           {/* цель */}
