@@ -254,6 +254,8 @@ function useShrineEcs(world: World, shrineEid: number, i: number, store: GameSto
     store.visitedShrines.add(i);
     bus.emit('quest:reveal', { id: 's_shrines' });
   }
+  // Пометить святилище как зажжённое — создаёт дырку в тумане
+  Shrine.lit[shrineEid] = 1;
   // Full heal via PlayerDomain (delegates to ECS)
   store.playerDomain!.fullHeal();
   store.player.hp = store.player.maxHp;
