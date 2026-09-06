@@ -146,11 +146,11 @@ export function createEnemyEntity(
   Enemy.repathT[eid] = 0.5;
   Enemy.contactCd[eid] = 0;
   Enemy.guardOf[eid] = -1;
-  Enemy.fade[eid] = kind === 'ghost' ? 0 : 1;
+  Enemy.fade[eid] = 1;
   Enemy.dropDew[eid] = 0;
-  // EnemyAI
   EnemyAI.path[eid] = 0;
   EnemyAIRegistry[eid] = null;
+  
   return eid;
 }
 

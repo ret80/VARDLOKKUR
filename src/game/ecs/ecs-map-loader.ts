@@ -2,7 +2,7 @@
 
 import { type World } from 'bitecs';
 import { Graphics } from 'pixi.js';
-import { Cat } from '../physics/planck-world';
+import { Cat, getEnemyCategory, getEnemyMask } from '../physics/planck-world';
 import { T, WorldData, Vec, solidTileAt } from '../world';
 import { clamp } from '../utils';
 import type { PlanckWorld } from '../physics/planck-world';
@@ -132,7 +132,9 @@ export class EcsMapLoader {
     for (const s of map.spawns) {
       const g = new Graphics();
       g.position.set(s.x, s.y);
-      const eid = createEnemyInEcs(world, s.kind, s.x, s.y, g, planckWorld, Cat.Enemy, Cat.Enemy | Cat.Player | Cat.Projectile | Cat.Ground);
+      const category = getEnemyCategory(s.kind);
+      const mask = getEnemyMask(s.kind);
+      const eid = createEnemyInEcs(world, s.kind, s.x, s.y, g, planckWorld, category, mask);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);

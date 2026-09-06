@@ -5,16 +5,16 @@ import type { Enemy } from "./models";
 
 /** Характеристики врагов по типам */
 export const ENEMY_STATS: Record<EnemyKind, { r: number; hp: number; speed: number; dmg: number }> = {
-  draugr:  { r: 6, hp: 3, speed: 52, dmg: 1 },
+  draugr:  { r: 6, hp: 3, speed: 52, dmg: 2 },
   varg:    { r: 6, hp: 3, speed: 68, dmg: 1 },
   raven:   { r: 5, hp: 2, speed: 78, dmg: 1 },
   shroom:  { r: 5, hp: 3, speed: 40, dmg: 1 },
   crawler: { r: 6, hp: 2, speed: 56, dmg: 1 },
-  frost:   { r: 7, hp: 4, speed: 48, dmg: 1 },
-  reaper:  { r: 10, hp: 16, speed: 58, dmg: 1 },
-  spider:  { r: 11, hp: 12, speed: 44, dmg: 1 },
-  giant:   { r: 13, hp: 20, speed: 44, dmg: 2 },
-  snake:   { r: 16, hp: 14, speed: 0,  dmg: 1 },
+  frost:   { r: 7, hp: 4, speed: 48, dmg: 2 },
+  reaper:  { r: 10, hp: 16, speed: 58, dmg: 3 },
+  spider:  { r: 11, hp: 12, speed: 44, dmg: 3 },
+  giant:   { r: 13, hp: 20, speed: 44, dmg: 4 },
+  snake:   { r: 16, hp: 14, speed: 0,  dmg: 3 },
   ghost:   { r: 6, hp: 5, speed: 100, dmg: 1 },
 };
 

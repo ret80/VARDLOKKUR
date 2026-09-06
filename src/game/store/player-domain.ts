@@ -85,6 +85,11 @@ export class PlayerDomain implements IPlayerDomain, IPlayerMutations {
     this._eid = eid;
   }
 
+  /** Установить ECS-хелперы (для мутаций: takeDamage, heal, etc.) */
+  setHelpers(helpers: IEcsPlayerHelpers): void {
+    this._helpers = helpers;
+  }
+
   // ── Геттеры (IPlayerDomain — читают из ECS) ──
 
   get hp(): number {

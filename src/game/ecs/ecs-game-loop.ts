@@ -82,6 +82,7 @@ import type { EventBus } from '../event-bus';
 import type { GameStore } from '../store';
 import { createEnemyInEcs } from './ecs-bridge';
 import { PlanckWorld, Cat } from '../physics/planck-world';
+import { ENEMY_STATS } from '../entities';
 import type { Application } from 'pixi.js';
 import type { FxManager } from '../fx';
 import type { StateManager } from '../state/state-manager';
@@ -372,7 +373,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         () => {}, () => {},
         (dmg, sx, sy) => {
           playerDomain?.takeDamage(dmg, sx, sy);
+          store.player.hp = Health.current[peid];
           Player.moving[peid] = 0;
+          bus.emit("hud:dirty", {});
         },
         (duration: number) => {
           Player.slowT[peid] = duration;
@@ -410,7 +413,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         bus.emit('enemy:killed', { enemy: enemyEid, kind: poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]) as any, x: Position.x[enemyEid], y: Position.y[enemyEid] });
       },
       () => {
-        // onPlayerDamaged — уже обработан в damagePlayerEcs через playerDomain
+        store.player.hp = Health.current[_playerEid];
+        bus.emit("hud:dirty", {});
       },
       () => {
         config_flags.snakeDead = true;
@@ -458,6 +462,14 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         (g as any).userData = (g as any).userData || {};
         (g as any).userData.eid = eid;
         dynamic.addChild(g);
+        // Призрак — кинематическое тело (проходит сквозь стены)
+        const body = PhysicsBodyRegistry[PhysicsBody.body[eid] - 1];
+        if (body) {
+          _planckWorld.worldRef.destroyBody(body);
+          const ghostBody = _planckWorld.createGhostBody(x, y, ENEMY_STATS.ghost.r);
+          PhysicsBody.body[eid] = PhysicsBodyRegistry.length + 1;
+          PhysicsBodyRegistry.push(ghostBody);
+        }
         return eid;
       },
       () => config_flags.runes

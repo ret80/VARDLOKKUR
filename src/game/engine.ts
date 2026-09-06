@@ -31,7 +31,7 @@ import { StateManager } from "./state/state-manager";
 // Системы
 import { EventBus } from "./event-bus";
 import { GameStore, type GameStoreConfig, WorldStore } from "./store";
-import { PlayerDomain } from "./store/player-domain";
+import { PlayerDomain, type IEcsPlayerHelpers } from "./store/player-domain";
 import type { GameFlags } from "./store/flag-domain";
 import { INITIAL_FLAGS } from "./store/flag-domain";
 import type { EnemyKind } from "./generators/types";
@@ -50,9 +50,18 @@ import { createEcsWorld, getEcsWorld } from './ecs/ecs-world';
 import { initPrefabs } from './ecs/ecs-systems';
 import { createEcsGameLoop, type EcsGameLoop } from './ecs/ecs-game-loop';
 import { EcsMapLoader } from './ecs/ecs-map-loader';
-import { PlanckWorld, Cat, type PhysicsCallbacks } from './physics/planck-world';
+import { PlanckWorld, Cat, type PhysicsCallbacks, getEnemyCategory, getEnemyMask } from './physics/planck-world';
 import { createEnemyInEcs } from './ecs/ecs-bridge';
-import { Enemy as EcsEnemy, Shrine, Pedestal, Position } from './ecs/ecs-components';
+import {
+  Enemy as EcsEnemy,
+  Shrine,
+  Pedestal,
+  Position,
+  damageEntityEcs,
+  healEntityEcs,
+  fullHealEntityEcs,
+  increaseMaxHpEcs,
+} from './ecs/ecs-components';
 import { query } from 'bitecs';
 import { ViewportController } from './engine/viewport-controller';
 import { SceneManager } from './engine/scene-manager';
@@ -79,6 +88,7 @@ export class Engine {
   private bus = new EventBus();
   private store!: GameStore;
   private playerDomain!: PlayerDomain;
+  private playerHelpers!: IEcsPlayerHelpers;
 
   // Подсистемы
   private input = new InputSystem(this.bus);
@@ -132,9 +142,12 @@ export class Engine {
     if (!this.ecsWorld || !this.ecsMapLoader) return;
     const g = new Graphics();
     g.position.set(x, y);
+    const enemyKind = kind as EnemyKind;
+    const category = getEnemyCategory(enemyKind);
+    const mask = getEnemyMask(enemyKind);
     const eid = createEnemyInEcs(
-      this.ecsWorld, kind as EnemyKind, x, y, g, this.ecsMapLoader.planckWorld,
-      Cat.Enemy, Cat.Enemy | Cat.Player | Cat.Projectile | Cat.Ground
+      this.ecsWorld, enemyKind, x, y, g, this.ecsMapLoader.planckWorld,
+      category, mask
     );
     this.scene.dynamic.addChild(g);
     // Set aggro and guardOf via Enemy component (SoA)
@@ -234,8 +247,16 @@ export class Engine {
     // Создаём WorldStore — персистентное состояние мира
     const worldStore = new WorldStore({ flags: initialFlags });
 
+    // ECS-хелперы для мутаций игрока (takeDamage, heal, etc.)
+    eng.playerHelpers = {
+      damageEntityEcs,
+      healEntityEcs,
+      fullHealEntityEcs,
+      increaseMaxHpEcs,
+    };
+
     // Создаём PlayerDomain — read-only view над ECS (eid будет установлен при загрузке карты)
-    eng.playerDomain = new PlayerDomain(-1, undefined, {
+    eng.playerDomain = new PlayerDomain(-1, eng.playerHelpers, {
       onDamaged: (dmg, sx, sy) => eng.bus.emit("player:damaged", { dmg, sx, sy }),
       onDied: () => eng.bus.emit("player:died", {}),
       onHealed: (amount) => eng.bus.emit("player:healed", { amount }),
@@ -329,24 +350,7 @@ export class Engine {
         realT: this.realT,
         playerEid: -1,
         playerDomain: this.playerDomain,
-        playerHelpers: {
-          damageEntityEcs: (eid: number, dmg: number) => {
-            const { damageEntityEcs } = require('../ecs/ecs-components');
-            return damageEntityEcs(eid, dmg);
-          },
-          healEntityEcs: (eid: number, amount: number) => {
-            const { healEntityEcs } = require('../ecs/ecs-components');
-            return healEntityEcs(eid, amount);
-          },
-          fullHealEntityEcs: (eid: number) => {
-            const { fullHealEntityEcs } = require('../ecs/ecs-components');
-            return fullHealEntityEcs(eid);
-          },
-          increaseMaxHpEcs: (eid: number, amount: number) => {
-            const { increaseMaxHpEcs } = require('../ecs/ecs-components');
-            return increaseMaxHpEcs(eid, amount);
-          },
-        },
+        playerHelpers: this.playerHelpers,
         hud: this.hud,
         quests: this.quests,
         dialogue: this.dialogue,
