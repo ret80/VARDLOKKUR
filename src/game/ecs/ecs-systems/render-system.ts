@@ -418,13 +418,14 @@ export function addFloatText(
 ): void {
   const txt = factory.createText(text, {
     fontFamily: 'Arial',
-    fontSize: 12,
+    fontSize: 4,
     fill: color,
     fontWeight: 'bold',
   });
   txt.x = x;
   txt.y = y;
   txt.anchor.set(0.5, 0);
+  txt.alpha = 0.7;
   floatLayer.addChild(txt);
 }
 
