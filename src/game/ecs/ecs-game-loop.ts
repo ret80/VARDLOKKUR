@@ -454,7 +454,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
     // ===== 16. Двери, зоны, боссы =====
     updateDoors(world, peid, store, flags, toast, pushHud);
-    updateZone(world, peid, config_map, store, toast);
+    updateZone(world, peid, config_map, store, toast, pushHud);
     if (config_map) checkDungeonBoss(world, peid, config_map, dungeonBossDead, bus);
 
     // ===== 17. Проверка здоровья и удаление мёртвых =====

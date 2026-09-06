@@ -435,6 +435,10 @@ export class Engine {
     audio.setFog(false);
     try {
       this.loadMap(this.ow, this.ow.spawn);
+      // Вычисляем начальную зону по позиции спавна
+      const sx = Math.floor(this.ow.spawn.x / T);
+      const sy = Math.floor(this.ow.spawn.y / T);
+      this.store.setZone(zoneFor(this.ow, sx, sy));
       this.setScreen("play");
       this.fadeTo(1);
       // В debug-режиме пропускаем диалог с Эйриком

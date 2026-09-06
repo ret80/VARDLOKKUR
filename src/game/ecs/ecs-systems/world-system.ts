@@ -54,7 +54,8 @@ export function updateZone(
   playerEid: number,
   map: any, // WorldData
   store: GameStore,
-  toast: (msg: string) => void
+  toast: (msg: string) => void,
+  pushHud: (force?: boolean) => void
 ): void {
   if (playerEid < 0) return;
 
@@ -63,6 +64,7 @@ export function updateZone(
   if (zn !== store.zone) {
     if (store.zone !== "") toast(zn);
     store.setZone(zn);
+    pushHud(true);
   }
 }
 
