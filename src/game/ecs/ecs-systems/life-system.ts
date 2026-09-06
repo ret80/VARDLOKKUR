@@ -3,6 +3,7 @@
 import {
   query,
   removeEntity,
+  addComponents,
   type World,
 } from 'bitecs';
 import {
@@ -14,19 +15,29 @@ import {
   Magnet,
   Position,
   Velocity,
+  Sprite,
+  SpriteRegistry,
 } from '../ecs-components';
 
 // ============================================================
 // Система жизней
 // ============================================================
 
-/** Проверить здоровье и пометить мёртвых */
+/** Проверить здоровье, пометить мёртвых и очистить спрайт/тело */
 export function lifeCheckSystem(world: World): void {
   for (const eid of query(world, [Health])) {
     if (Health.current[eid] <= 0 && !Dead[eid]) {
       Dead[eid] = 1;
+      addComponents(world, eid, Dead);
       // bus.emit('entity:died', { eid });
     }
+  }
+
+  // Очистить спрайт мёртвых врагов (физ. тело удалится в game loop)
+  for (const eid of query(world, [Dead, Enemy])) {
+    const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
+    if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
+    spriteRef?.destroy();
   }
 }
 

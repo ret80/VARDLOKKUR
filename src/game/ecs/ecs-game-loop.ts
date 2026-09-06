@@ -468,19 +468,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // ===== 17. Проверка здоровья, очистка спрайтов/тел и удаление мёртвых =====
     lifeCheckSystem(world);
 
-    // Уничтожить спрайт и физ. тело мёртвых врагов и сразу удалить из ECS
-    // (иначе остаются «призраки» на карте)
-    // Используем query по [Enemy] + проверка Dead[eid], потому что bitecs query кэшируется
-    // и динамически установленный Dead не найдётся в query([Dead, Enemy]).
-    const deadEnemies: number[] = [];
-    for (const eid of query(world, [Enemy])) {
-      if (Dead[eid]) deadEnemies.push(eid);
-    }
-    for (const eid of deadEnemies) {
-      // Спрайт
-      const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
-      if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
-      spriteRef?.destroy();
+    // Уничтожить физ. тело и удалить мёртвых врагов из ECS.
+    // Спрайт уже удалён в lifeCheckSystem.
+    for (const eid of query(world, [Dead, Enemy])) {
       // Физ. тело
       const pbIdx = PhysicsBody.body[eid];
       if (pbIdx > 0) {
