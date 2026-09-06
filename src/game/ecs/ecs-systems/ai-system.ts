@@ -36,6 +36,7 @@ const DETECTION_RANGE = 120;
 const AGGRO_RANGE = 100;
 const PATH_REPATH_TIME = 0.5;
 const CONTACT_COOLDOWN = 0.5;
+const GHOST_SLOW_DURATION = 2.0; // призрак замедляет игрока на 2 секунды
 
 // ============================================================
 // Базовое обновление AI
@@ -50,6 +51,7 @@ export function aiUpdateSystem(
   onEnemySpawned: (eid: number) => void,
   onEnemyDied: (eid: number) => void,
   onPlayerDamaged?: (dmg: number, sx: number, sy: number) => void,
+  onPlayerSlowed?: (duration: number) => void,
   fogActive?: boolean
 ): void {
   if (playerEid < 0 || !map) return;
@@ -84,6 +86,9 @@ export function aiUpdateSystem(
       continue;
     }
 
+    // Compute enemy kind BEFORE contact damage
+    const ek = poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]);
+
     // Contact damage — наносим урон игроку при столкновении
     // Буфер +3: урон наносится ДО физического касания, иначе Planck не даёт телам сблизиться
     {
@@ -93,6 +98,8 @@ export function aiUpdateSystem(
         Enemy.contactCd[enemyEid] = 0.5;
         const dmg = Enemy.dmg[enemyEid];
         if (onPlayerDamaged) onPlayerDamaged(dmg, px[enemyEid], py[enemyEid]);
+        // Призрак замедляет игрока при контакте
+        if (ek === 'ghost' && onPlayerSlowed) onPlayerSlowed(GHOST_SLOW_DURATION);
         // Flash enemy on hit
         Enemy.flashT[enemyEid] = 0.12;
       }
@@ -102,7 +109,6 @@ export function aiUpdateSystem(
     const px_e = px[enemyEid];
     const py_e = py[enemyEid];
     const d2p = (px_e - playerX) ** 2 + (py_e - playerY) ** 2;
-    const ek = poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]);
     const isFlyer = ek === 'raven' || ek === 'ghost';
     const aggroR = ek === 'raven' ? 150 : ek === 'crawler' ? 42 : ek === 'ghost' ? 160 : 100;
 

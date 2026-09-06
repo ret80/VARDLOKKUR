@@ -374,6 +374,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
           playerDomain?.takeDamage(dmg, sx, sy);
           Player.moving[peid] = 0;
         },
+        (duration: number) => {
+          Player.slowT[peid] = duration;
+        },
       );
     }
 
