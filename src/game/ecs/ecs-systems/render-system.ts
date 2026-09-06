@@ -103,7 +103,7 @@ export const ENTITY_LAYER: Record<string, number> = {
   Altar: 40,
   Enemy: 40,
   Projectile: 40,
-  Player: 60,
+  Player: 40,
 };
 
 /** Половина высоты спрайта для единой точки отсчёта (центр → низ) */
