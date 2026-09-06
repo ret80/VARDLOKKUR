@@ -82,7 +82,7 @@ import type { EventBus } from '../event-bus';
 import type { GameStore } from '../store';
 import { createEnemyInEcs } from './ecs-bridge';
 import { PlanckWorld, Cat } from '../physics/planck-world';
-import type { Application, Container } from 'pixi.js';
+import type { Application } from 'pixi.js';
 import type { FxManager } from '../fx';
 import type { StateManager } from '../state/state-manager';
 import { audio } from '../audio';
@@ -217,7 +217,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         Health.current[enemyEid] -= dmg;
         Flashing[enemyEid] = 1;
         Enemy.flashT[enemyEid] = 0.12;
-        bus.emit("enemy:hit", { enemy: enemyEid, dmg });
+        bus.emit("enemy:hit", { enemy: enemyEid, dmg, sx: Position.x[enemyEid], sy: Position.y[enemyEid] });
         // Проверить смерть врага
         if (Health.current[enemyEid] <= 0) {
           bus.emit("enemy:killed", { enemy: enemyEid, kind: poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]) as any, x: Position.x[enemyEid], y: Position.y[enemyEid] });
@@ -236,11 +236,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     if (peid < 0) return;
     const eid = axeThrowSystem(world, peid, store.flags.hasAxe, store.flags.axeUp, (eid: number) => {
       // Спавн графики для топора
-      const g = new Graphics();
-      g.position.set(Position.x[eid], Position.y[eid]);
-      g.userData = g.userData || {};
-      (g as any).userData.eid = eid;
-      dynamic.addChild(g);
+        const g = new Graphics();
+        g.position.set(Position.x[eid], Position.y[eid]);
+        (g as any).userData = (g as any).userData || {};
+        (g as any).userData.eid = eid;
+        dynamic.addChild(g);
     });
     if (eid >= 0) {
       // Добавить физику для топора
@@ -258,7 +258,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       (eid: number) => {
         const g = new Graphics();
         g.position.set(e.x, e.y);
-        g.userData = g.userData || {};
+        (g as any).userData = (g as any).userData || {};
         (g as any).userData.eid = eid;
         dynamic.addChild(g);
       }
@@ -452,7 +452,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
           world, kind as any, x, y, g, _planckWorld,
           Cat.Ghost, Cat.Ghost | Cat.Player | Cat.Projectile
         );
-        g.userData = g.userData || {};
+        (g as any).userData = (g as any).userData || {};
         (g as any).userData.eid = eid;
         dynamic.addChild(g);
         return eid;
