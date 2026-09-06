@@ -62,17 +62,17 @@ export class MapLoaderService {
     groundSprite.zIndex = 0;
     this.scene.tileLayer.addChildAt(groundSprite, 0);
 
-    // Переносим дома, ёлки, камни, монументы в dynamic — сортируются по layer + y
+    // Переносим дома, ёлки, камни, монументы в dynamic — сортируются по layer + bottomY
     for (const ws of tileResult.wallSprites) {
       (ws as any).userData = (ws as any).userData || {};
       (ws as any).userData.layer = 40;
-      (ws as any).userData.y = ws.position.y;
+      (ws as any).userData.y = ws.position.y + ws.height / 2;
       this.scene.dynamic.addChild(ws);
     }
     for (const hs of tileResult.houseSprites) {
       (hs.spr as any).userData = (hs.spr as any).userData || {};
       (hs.spr as any).userData.layer = 40;
-      (hs.spr as any).userData.y = hs.spr.position.y;
+      (hs.spr as any).userData.y = hs.spr.position.y + hs.spr.height / 2;
       this.scene.dynamic.addChild(hs.spr);
     }
     this.wallCache = tileResult.wallCache;

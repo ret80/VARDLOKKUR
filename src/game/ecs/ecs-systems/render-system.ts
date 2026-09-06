@@ -103,10 +103,13 @@ export const ENTITY_LAYER: Record<string, number> = {
   Altar: 40,
   Enemy: 40,
   Projectile: 40,
-  Player: 40,
+  Player: 60,
 };
 
-/** Выполнить сортировку всех спрайтов в dynamic контейнере */
+/** Половина высоты спрайта для единой точки отсчёта (центр → низ) */
+const HALF_SPRITE_H = 8;
+
+/** Выполнить сортировка всех спрайтов в dynamic контейнере */
 export function renderSortSystem(
   world: World,
   dynamic: { children: any[] }
@@ -126,16 +129,16 @@ export function renderSortSystem(
       if (idx <= 0) continue;
 
       // Определяем слой сущности
-      let layer = ENTITY_LAYER.Player; // default — 40
+      let layer = ENTITY_LAYER.Player; // default — 60
 
       if (hasComponent(world, eid, Drop)) {
         layer = ENTITY_LAYER.Drop;
       }
 
-      // zIndex = layer + y — единая формула для всех
-      child.zIndex = layer + Math.round(py[eid]);
+      // bottomY = центр + половина высоты → единая точка отсчёта (center, bottom)
+      child.zIndex = layer + Math.round(py[eid] + HALF_SPRITE_H);
     }
-    // Не-ECS объекты (дома, ёлки, камни) — имеют userData.y и userData.layer
+    // Не-ECS объекты (дома, ёлки, камни) — имеют userData.layer и userData.y (уже bottom)
     else if (ud.y !== undefined) {
       const layer = ud.layer !== undefined ? ud.layer : ENTITY_LAYER.Wall;
       child.zIndex = layer + Math.round(ud.y);
