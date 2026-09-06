@@ -106,9 +106,6 @@ export const ENTITY_LAYER: Record<string, number> = {
   Player: 40,
 };
 
-/** Половина высоты спрайта для единой точки отсчёта (центр → низ) */
-const HALF_SPRITE_H = 8;
-
 /** Выполнить сортировка всех спрайтов в dynamic контейнере */
 export function renderSortSystem(
   world: World,
@@ -129,16 +126,16 @@ export function renderSortSystem(
       if (idx <= 0) continue;
 
       // Определяем слой сущности
-      let layer = ENTITY_LAYER.Player; // default — 60
+      let layer = ENTITY_LAYER.Player; // default — 40
 
       if (hasComponent(world, eid, Drop)) {
         layer = ENTITY_LAYER.Drop;
       }
 
-      // bottomY = центр + половина высоты → единая точка отсчёта (center, bottom)
-      child.zIndex = layer + Math.round(py[eid] + HALF_SPRITE_H);
+      // bottomY = py[eid] (py = Y + T/2, значит py = Y + 8 — центр тайла + половина тайла = низ тайла)
+      child.zIndex = layer + Math.round(py[eid]);
     }
-    // Не-ECS объекты (дома, ёлки, камни) — имеют userData.layer и userData.y (уже bottom)
+    // Не-ECS объекты (дома, ёлки, камни) — имеют userData.layer и userData.y (уже bottomY = Y + T/2)
     else if (ud.y !== undefined) {
       const layer = ud.layer !== undefined ? ud.layer : ENTITY_LAYER.Wall;
       child.zIndex = layer + Math.round(ud.y);

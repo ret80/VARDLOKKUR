@@ -2,42 +2,23 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Vite: Dev",
-      "type": "npm",
-      "script": "dev",
-      "isBackground": true,
-      "problemMatcher": {
-        "owner": "external",
-        "pattern": {
-          "regexp": "^.*$",
-          "file": 1,
-          "location": 2,
-          "message": 3
-        },
-        "background": {
-          "activeOnStart": true,
-          "beginsPattern": "^.*$",
-          "endsPattern": "^.*Local:.*http://localhost:3000.*$"
-        }
+      "label": "vite: dev",
+      "type": "shell",
+      "command": "npm run dev",
+      "group": {
+        "kind": "build",
+        "isDefault": true
       },
-      "options": {
-        "cwd": "${workspaceFolder}"
-      }
-    },
-    {
-      "label": "Remove Chrome Debug Dir",
-      "type": "shell",
-      "command": "rm -rf /tmp/vardlokkur-chrome-debug",
-      "problemMatcher": []
-    },
-    {
-      "label": "Launch Chrome Debug",
-      "type": "shell",
-      "command": "rm -rf /tmp/vardlokkur-chrome-debug && open -g -a 'Google Chrome' --args --remote-debugging-port=9222 --no-first-run --no-default-browser-check --user-data-dir=/tmp/vardlokkur-chrome-debug",
-      "problemMatcher": [],
       "presentation": {
-        "reveal": "never"
-      }
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "shared",
+        "showReuseMessage": false,
+        "closeCommand": "close"
+      },
+      "problemMatcher": [],
+      "isBackground": true
     }
   ]
 }

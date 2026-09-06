@@ -13,8 +13,10 @@ import {
   buildAllTileTextures,
   WallTextureCache,
   HouseTextureCache,
+  houseMetrics,
 } from "../tiles";
 import { buildMinimapBase } from "../map-display";
+import { T } from "../world";
 
 /** Результат ECS-загрузки карты */
 export interface LoadMapResult {
@@ -63,16 +65,22 @@ export class MapLoaderService {
     this.scene.tileLayer.addChildAt(groundSprite, 0);
 
     // Переносим дома, ёлки, камни, монументы в dynamic — сортируются по layer + bottomY
+    // sprite.height может быть 0 (Texture.from асинхронный), поэтому используем фиксированные высоты
+    const WALL_H = 44;
     for (const ws of tileResult.wallSprites) {
       (ws as any).userData = (ws as any).userData || {};
       (ws as any).userData.layer = 40;
-      (ws as any).userData.y = ws.position.y + ws.height / 2;
+      // ws.position.y = Y - 20, значит Y = ws.position.y + 20
+      // bottomY = Y + T/2 = ws.position.y + 20 + 8 = ws.position.y + 28
+      (ws as any).userData.y = ws.position.y + 28;
       this.scene.dynamic.addChild(ws);
     }
     for (const hs of tileResult.houseSprites) {
       (hs.spr as any).userData = (hs.spr as any).userData || {};
       (hs.spr as any).userData.layer = 40;
-      (hs.spr as any).userData.y = hs.spr.position.y + hs.spr.height / 2;
+      const m = houseMetrics(hs.hw, hs.hh);
+      // bottomY = y*T + hh*T (нижняя точка дома)
+      (hs.spr as any).userData.y = hs.spr.position.y + m.wallTop + m.wallH + m.foundH - 1;
       this.scene.dynamic.addChild(hs.spr);
     }
     this.wallCache = tileResult.wallCache;
