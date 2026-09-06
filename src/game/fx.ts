@@ -56,6 +56,7 @@ export class FxManager {
   private noiseCanvas: HTMLCanvasElement | null = null;
   private fogNoiseT = 0;
   private fogNoiseGen = new NoiseGenerator(0x51ab); // фикс. сид — текстура дыма
+  private fogAlpha = 0; // текущая прозрачность тумана (0 = невидим, 1 = полностью виден)
 
   /* ---------- Инициализация ---------- */
 
@@ -63,6 +64,7 @@ export class FxManager {
     this.app = app;
     this.viewW = w;
     this.viewH = h;
+    this.fogAlpha = 0;
   }
 
   /** Вызывается один раз после создания сцены в engine. */
@@ -188,6 +190,8 @@ export class FxManager {
     this.fogVignette.height = targetH;
     this.fogVignette.position.set(-this.viewW * 0.05, -this.viewH * 0.05);
     this.fogVignette.visible = false;
+    this.fogVignette.alpha = 1;
+    this.fogAlpha = 0;
   }
 
   public buildNoiseTexture() {
@@ -220,8 +224,15 @@ export class FxManager {
   public redrawFog(rdt: number, fogRadius: number, playerX: number, playerY: number, camX: number, camY: number, viewW: number, viewH: number, shrineSpots?: {x: number, y: number}[]) {
     if (!this.fogCanvas || !this.fogCtx || !this.fogVignette) return;
     const active = fogRadius < 2300;
-    this.fogVignette.visible = active;
-    if (!active) return;
+    
+    // Плавное появление/исчезновение через alpha
+    const targetAlpha = active ? 1 : 0;
+    const speed = active ? 2.5 : 2.0; // скорость появления/исчезновения
+    this.fogAlpha += (targetAlpha - this.fogAlpha) * Math.min(1, rdt * speed);
+    this.fogVignette.alpha = this.fogAlpha;
+    this.fogVignette.visible = this.fogAlpha > 0.001;
+    
+    if (this.fogAlpha < 0.001) return;
 
     this.fogNoiseT += rdt;
     const cw = this.fogCanvas.width, ch = this.fogCanvas.height;
