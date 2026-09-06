@@ -78,7 +78,7 @@ export function tryInteract(
       atoneEcs(store, bus);
       return true;
     case 'stairs':
-      enterDungeonOrExitEcs(store, bus);
+      enterDungeonOrExitEcs(store, bus, playerEid);
       return true;
   }
 
@@ -281,7 +281,7 @@ function atoneEcs(store: GameStore, bus: EventBus): void {
 }
 
 /** Войти в подземелье или выйти */
-function enterDungeonOrExitEcs(store: GameStore, bus: EventBus): void {
+function enterDungeonOrExitEcs(store: GameStore, bus: EventBus, playerEid: number): void {
   const m = store.map!;
   const f = store.flags;
   if (m.isDungeon) {
@@ -289,7 +289,7 @@ function enterDungeonOrExitEcs(store: GameStore, bus: EventBus): void {
     return;
   }
   if (f.snakeStarted && !f.snakeDead) return;
-  const entry = nearestDungeonEntry(store);
+  const entry = nearestDungeonEntry(store, playerEid);
   if (!entry) return;
   const gate = dungeonUnlocked(entry.id, f);
   if (!gate.ok) {
@@ -300,13 +300,12 @@ function enterDungeonOrExitEcs(store: GameStore, bus: EventBus): void {
   bus.emit('engine:enter-dungeon', { dungeonId: entry.id, name: entry.name });
 }
 
-function nearestDungeonEntry(store: GameStore): { id: number; name: string } | null {
+function nearestDungeonEntry(store: GameStore, playerEid: number): { id: number; name: string } | null {
+  if (playerEid < 0) return null;
   let best: { id: number; name: string } | null = null;
   let bd = 40 * 40;
   const ow = store.ow!;
   const { x: px, y: py } = Position;
-  const playerEid = getPlayerEid(store);
-  if (playerEid < 0) return null;
   const playerX = px[playerEid];
   const playerY = py[playerEid];
 
@@ -318,11 +317,6 @@ function nearestDungeonEntry(store: GameStore): { id: number; name: string } | n
     }
   }
   return best;
-}
-
-function getPlayerEid(store: GameStore): number {
-  // Получаем playerEid из store или возвращаем -1
-  return (store as any).playerEid ?? -1;
 }
 
 function dungeonUnlocked(id: number, f: any): { ok: boolean; req: string } {
