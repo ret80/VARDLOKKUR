@@ -47,6 +47,9 @@ export function deathCleanupSystem(world: World): void {
 export function stateTimerSystem(world: World, dt: number): void {
   // Player timers
   for (const eid of query(world, [Player])) {
+    if (Player.moving[eid]) {
+      Player.animT[eid] += dt;
+    }
     if (Player.hurtT[eid] > 0) Player.hurtT[eid] -= dt;
     if (Player.slowT[eid] > 0) Player.slowT[eid] -= dt;
     if (Player.swingT[eid] > 0) Player.swingT[eid] -= dt;
