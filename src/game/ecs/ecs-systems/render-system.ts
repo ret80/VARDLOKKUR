@@ -1,7 +1,7 @@
 /* render-system.ts — ECS система рендеринга на основе PixiJS */
 
 import { Application, Container, Graphics, Sprite, Text } from "pixi.js";
-import { query, type World } from 'bitecs';
+import { query, hasComponent, type World } from 'bitecs';
 import type { EnemyKind, DropKind, ProjectileKind } from '../../generators/types';
 import {
   Position,
@@ -85,6 +85,61 @@ export function renderSprites(world: World): void {
     
     ref.x = px[eid];
     ref.y = py[eid];
+  }
+}
+
+// ============================================================
+// Сортировка по глубине (z-index) на основе LAYER + y
+// ============================================================
+
+/** Слой отрисовки для каждого типа сущности */
+export const ENTITY_LAYER: Record<string, number> = {
+  Drop: 20,
+  Wall: 40,
+  House: 40,
+  NPC: 40,
+  Door: 40,
+  Barrier: 40,
+  Altar: 40,
+  Enemy: 40,
+  Projectile: 40,
+  Player: 40,
+};
+
+/** Выполнить сортировку всех спрайтов в dynamic контейнере */
+export function renderSortSystem(
+  world: World,
+  dynamic: { children: any[] }
+): void {
+  const { x: px, y: py } = Position;
+  const children = dynamic.children;
+
+  for (let i = 0; i < children.length; i++) {
+    const child = children[i];
+    const ud = (child as any).userData;
+    if (!child || !ud) continue;
+
+    // ECS-сущности (имеют userData.eid)
+    if (ud.eid !== undefined && ud.eid > 0) {
+      const eid = ud.eid;
+      const idx = SpriteComp.ref[eid];
+      if (idx <= 0) continue;
+
+      // Определяем слой сущности
+      let layer = ENTITY_LAYER.Player; // default — 40
+
+      if (hasComponent(world, eid, Drop)) {
+        layer = ENTITY_LAYER.Drop;
+      }
+
+      // zIndex = layer + y — единая формула для всех
+      child.zIndex = layer + Math.round(py[eid]);
+    }
+    // Не-ECS объекты (дома, ёлки, камни) — имеют userData.y и userData.layer
+    else if (ud.y !== undefined) {
+      const layer = ud.layer !== undefined ? ud.layer : ENTITY_LAYER.Wall;
+      child.zIndex = layer + Math.round(ud.y);
+    }
   }
 }
 
@@ -401,6 +456,7 @@ export function renderSystem(
   dt: number,
   cam: { x: number; y: number },
   gameWorld: Container | null,
+  dynamic: { children: any[] } | null,
   getNpcSig?: (npcId: string) => string,
   talkedSig?: Map<string, string>
 ): void {
@@ -419,6 +475,11 @@ export function renderSystem(
   
   // Update sprite positions
   renderSprites(world);
+  
+  // Сортировка по глубине (z-index) на основе RenderLayer + Y
+  if (dynamic) {
+    renderSortSystem(world, dynamic);
+  }
   
   // Update visibility
   renderVisibilitySystem(world, time);

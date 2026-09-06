@@ -14,7 +14,7 @@ export class SceneManager {
   constructor(private app: Application) {
     this.tileLayer.sortableChildren = true;
     this.world.sortableChildren = true;
-    // dynamic НЕ sortableChildren — z-order определяется порядком addChild
+    this.dynamic.sortableChildren = true;
   }
 
   /** Добавить все слои в stage приложения */
@@ -51,7 +51,8 @@ export class SceneManager {
   /** Очистить dynamic контейнер */
   clearDynamic(): void {
     for (const child of this.dynamic.children) {
-      child.destroy({ children: true, texture: true });
+      // Текстуры кэшируются (wallCache, houseCache) — не уничтожаем их здесь
+      child.destroy({ children: true });
     }
     this.dynamic.removeChildren();
   }

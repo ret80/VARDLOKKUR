@@ -61,8 +61,20 @@ export class MapLoaderService {
     groundSprite.position.set(0, 0);
     groundSprite.zIndex = 0;
     this.scene.tileLayer.addChildAt(groundSprite, 0);
-    tileResult.wallSprites.forEach(ws => this.scene.tileLayer.addChild(ws));
-    tileResult.houseSprites.forEach(hs => this.scene.tileLayer.addChild(hs.spr));
+
+    // Переносим дома, ёлки, камни, монументы в dynamic — сортируются по layer + y
+    for (const ws of tileResult.wallSprites) {
+      (ws as any).userData = (ws as any).userData || {};
+      (ws as any).userData.layer = 40;
+      (ws as any).userData.y = ws.position.y;
+      this.scene.dynamic.addChild(ws);
+    }
+    for (const hs of tileResult.houseSprites) {
+      (hs.spr as any).userData = (hs.spr as any).userData || {};
+      (hs.spr as any).userData.layer = 40;
+      (hs.spr as any).userData.y = hs.spr.position.y;
+      this.scene.dynamic.addChild(hs.spr);
+    }
     this.wallCache = tileResult.wallCache;
     this.houseCache = tileResult.houseCache;
 

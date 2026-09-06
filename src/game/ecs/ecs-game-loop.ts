@@ -227,6 +227,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       // Спавн графики для топора
       const g = new Graphics();
       g.position.set(Position.x[eid], Position.y[eid]);
+      g.userData = g.userData || {};
+      (g as any).userData.eid = eid;
       dynamic.addChild(g);
     });
     if (eid >= 0) {
@@ -245,6 +247,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       (eid: number) => {
         const g = new Graphics();
         g.position.set(e.x, e.y);
+        g.userData = g.userData || {};
+        (g as any).userData.eid = eid;
         dynamic.addChild(g);
       }
     );
@@ -409,6 +413,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
           world, kind as any, x, y, g, _planckWorld,
           Cat.Ghost, Cat.Ghost | Cat.Player | Cat.Projectile
         );
+        g.userData = g.userData || {};
+        (g as any).userData.eid = eid;
         dynamic.addChild(g);
         return eid;
       },
@@ -436,6 +442,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       rdt,
       cam,
       gameWorld,
+      dynamic,
       npcSig,
       talkedSig.value
     );

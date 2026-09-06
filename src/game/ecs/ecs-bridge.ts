@@ -278,6 +278,7 @@ function addBarrierComponents(world: World, eid: number, x: number, y: number, a
   Barrier.active[eid] = active ? 1 : 0;
   SpriteRegistry.push(spriteRef);
   Sprite.ref[eid] = SpriteRegistry.length;
+  RenderLayer.value[eid] = 30; // barrier — средний слой
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
@@ -288,6 +289,7 @@ function addAltarComponents(world: World, eid: number, x: number, y: number, spr
   Altar.runes[eid] = 0;
   SpriteRegistry.push(spriteRef);
   Sprite.ref[eid] = SpriteRegistry.length;
+  RenderLayer.value[eid] = 30; // altar — средний слой
   Position.x[eid] = x;
   Position.y[eid] = y;
 }

@@ -78,8 +78,9 @@ export class EcsMapLoader {
 
     // 3. Создать игрока
     this.playerEid = this.createPlayer(world, spawn, playerG, planckWorld);
+    (playerG as any).userData = (playerG as any).userData || {};
+    (playerG as any).userData.eid = this.playerEid;
     dynamicContainer.addChild(playerG);
-    playerG.zIndex = 100;
 
     // 4. Камера
     const cam = {
@@ -99,12 +100,6 @@ export class EcsMapLoader {
       this.spawnOverworldObjects(world, map, planckWorld, dynamicContainer);
     }
     this.spawnDrops(world, map, dynamicContainer);
-
-    // Переместить игрока в конец children — он должен рисоваться поверх всех сущностей
-    if (dynamicContainer.children.includes(playerG)) {
-      dynamicContainer.removeChild(playerG);
-      dynamicContainer.addChild(playerG);
-    }
 
     return { playerEid: this.playerEid, playerBody: null, cam };
   }
@@ -137,7 +132,9 @@ export class EcsMapLoader {
     for (const s of map.spawns) {
       const g = new Graphics();
       g.position.set(s.x, s.y);
-      createEnemyInEcs(world, s.kind, s.x, s.y, g, planckWorld, Cat.Enemy, Cat.Enemy | Cat.Player | Cat.Projectile | Cat.Ground);
+      const eid = createEnemyInEcs(world, s.kind, s.x, s.y, g, planckWorld, Cat.Enemy, Cat.Enemy | Cat.Player | Cat.Projectile | Cat.Ground);
+      g.userData = g.userData || {};
+      (g as any).userData.eid = eid;
       dc.addChild(g);
     }
   }
@@ -147,13 +144,17 @@ export class EcsMapLoader {
     for (const c of map.chests) {
       const g = new Graphics();
       g.position.set(c.x * T + 8, c.y * T + 8);
-      createChestInEcs(world, c.x * T + 8, c.y * T + 8, c.item, g);
+      const eid = createChestInEcs(world, c.x * T + 8, c.y * T + 8, c.item, g);
+      g.userData = g.userData || {};
+      (g as any).userData.eid = eid;
       dc.addChild(g);
     }
     if (!map.isDungeon && this.config.flags.secretKnown) {
       const g = new Graphics();
       g.position.set(map.stashSpot.x * T + 8, map.stashSpot.y * T + 8);
-      createChestInEcs(world, map.stashSpot.x * T + 8, map.stashSpot.y * T + 8, "heartPiece", g);
+      const eid = createChestInEcs(world, map.stashSpot.x * T + 8, map.stashSpot.y * T + 8, "heartPiece", g);
+      g.userData = g.userData || {};
+      (g as any).userData.eid = eid;
       dc.addChild(g);
     }
   }
@@ -164,7 +165,9 @@ export class EcsMapLoader {
       const id = "ped_" + pd.x + "_" + pd.y;
       const g = new Graphics();
       g.position.set(pd.x * T + 8, pd.y * T + 8);
-      createPedestalInEcs(world, id, pd.x * T + 8, pd.y * T + 8, takenPedestals.has(id) ? 0 : pd.guards.length, g);
+      const eid = createPedestalInEcs(world, id, pd.x * T + 8, pd.y * T + 8, takenPedestals.has(id) ? 0 : pd.guards.length, g);
+      g.userData = g.userData || {};
+      (g as any).userData.eid = eid;
       dc.addChild(g);
     }
   }
@@ -173,7 +176,9 @@ export class EcsMapLoader {
     for (const s of map.shrines) {
       const g = new Graphics();
       g.position.set(s.x * T + 8, s.y * T + 8);
-      createShrineInEcs(world, s.x * T + 8, s.y * T + 8, g);
+      const eid = createShrineInEcs(world, s.x * T + 8, s.y * T + 8, g);
+      g.userData = g.userData || {};
+      (g as any).userData.eid = eid;
       dc.addChild(g);
     }
   }
@@ -182,14 +187,18 @@ export class EcsMapLoader {
     for (const n of map.npcs) {
       const g = new Graphics();
       g.position.set(n.x * T + 8, n.y * T + 8);
-      createNpcInEcs(world, n.id, n.name, n.x * T + 8, n.y * T + 8, g);
+      const eid = createNpcInEcs(world, n.id, n.name, n.x * T + 8, n.y * T + 8, g);
+      g.userData = g.userData || {};
+      (g as any).userData.eid = eid;
       dc.addChild(g);
     }
     if (!map.isDungeon) {
       for (const s of map.souls) {
         const g = new Graphics();
         g.position.set(s.x * T + 8, s.y * T + 8);
-        createNpcInEcs(world, `soul${map.souls.indexOf(s)}`, "Потерянная душа", s.x * T + 8, s.y * T + 8, g);
+        const eid = createNpcInEcs(world, `soul${map.souls.indexOf(s)}`, "Потерянная душа", s.x * T + 8, s.y * T + 8, g);
+        g.userData = g.userData || {};
+        (g as any).userData.eid = eid;
         dc.addChild(g);
       }
     }
@@ -199,7 +208,9 @@ export class EcsMapLoader {
     for (const d of map.doors) {
       const g = new Graphics();
       g.position.set(d.x, d.y);
-      createDoorInEcs(world, d.x, d.y, true, g);
+      const eid = createDoorInEcs(world, d.x, d.y, true, g);
+      g.userData = g.userData || {};
+      (g as any).userData.eid = eid;
       dc.addChild(g);
       planckWorld.createKinematicBody(d.x, d.y, 18, 16, Cat.Door);
     }
@@ -212,13 +223,17 @@ export class EcsMapLoader {
     const active = flags.runes < 5 && !flags.snakeStarted;
     const barrierG = new Graphics();
     barrierG.position.set(bx, by);
-    createBarrierInEcs(world, bx, by, active, barrierG);
+    const barrierEid = createBarrierInEcs(world, bx, by, active, barrierG);
+    barrierG.userData = barrierG.userData || {};
+    (barrierG as any).userData.eid = barrierEid;
     dc.addChild(barrierG);
     if (active) this.barrierBody = planckWorld.createKinematicBody(bx, by, 40, 16, Cat.Barrier);
 
     const altarG = new Graphics();
     altarG.position.set(map.treeAltar.x * T + 8, map.treeAltar.y * T + 8);
-    createAltarInEcs(world, map.treeAltar.x * T + 8, map.treeAltar.y * T + 8, altarG);
+    const altarEid = createAltarInEcs(world, map.treeAltar.x * T + 8, map.treeAltar.y * T + 8, altarG);
+    altarG.userData = altarG.userData || {};
+    (altarG as any).userData.eid = altarEid;
     dc.addChild(altarG);
   }
 
@@ -226,14 +241,18 @@ export class EcsMapLoader {
     for (const sd of this.config.savedDrops) {
       const g = new Graphics();
       g.position.set(sd.x, sd.y);
-      createDropInEcs(world, sd.kind as DropKind, sd.x, sd.y, g);
+      const eid = createDropInEcs(world, sd.kind as DropKind, sd.x, sd.y, g);
+      g.userData = g.userData || {};
+      (g as any).userData.eid = eid;
       dc.addChild(g);
     }
     for (const ambient of map.ambient) {
       const g = new Graphics();
       g.position.set(ambient.x * T + 8, ambient.y * T + 8);
       const kind = ambient.kind === 'shard' ? 'shard' : 'bones';
-      createDropInEcs(world, kind as DropKind, ambient.x * T + 8, ambient.y * T + 8, g);
+      const eid = createDropInEcs(world, kind as DropKind, ambient.x * T + 8, ambient.y * T + 8, g);
+      g.userData = g.userData || {};
+      (g as any).userData.eid = eid;
       dc.addChild(g);
     }
   }
