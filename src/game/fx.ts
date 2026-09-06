@@ -225,9 +225,9 @@ export class FxManager {
     if (!this.fogCanvas || !this.fogCtx || !this.fogVignette) return;
     const active = fogRadius < 2300;
     
-    // Плавное появление/исчезновение через alpha
+    // Плавное появление/исчезновение через alpha — 1.5 секунды
     const targetAlpha = active ? 1 : 0;
-    const speed = active ? 2.5 : 2.0; // скорость появления/исчезновения
+    const speed = 1 / 1.5; // 0.667 → ~1.5s fade
     this.fogAlpha += (targetAlpha - this.fogAlpha) * Math.min(1, rdt * speed);
     this.fogVignette.alpha = this.fogAlpha;
     this.fogVignette.visible = this.fogAlpha > 0.001;
