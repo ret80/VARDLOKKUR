@@ -347,13 +347,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       }
     }
 
-    // ===== 10. Синхронизация store.player (только для legacy — minimap, fx) =====
-    // Все поля читаются из ECS через PlayerDomain.
-    // store.player.x/y остаётся для обратной совместимости (миникарта, fx).
-    if (peid >= 0) {
-      store.player.x = Position.x[peid];
-      store.player.y = Position.y[peid];
-    }
+    // ===== 10. Синхронизация store.player — больше не нужна, все поля читаются из ECS через PlayerDomain =====
 
     // ===== 11. Таймеры состояний =====
     stateTimerSystem(world, dt);

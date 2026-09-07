@@ -125,7 +125,7 @@ export class Engine {
   private mapLoader!: MapLoaderService;
 
   // Локальные данные (для рендеринга и обновления)
-  // Все данные игрока теперь через this.store.player и this.store.flags
+  // Все данные игрока теперь через this.playerDomain (ECS) и this.store.flags
   private playerG = new Graphics();
   private playerBody: any = null;
   private realT = 0;
@@ -598,7 +598,7 @@ export class Engine {
         }
         drawMinimap(ctx, this.mmBase, {
           map: this.map,
-          player: this.store.player,
+          player: { x: this.playerDomain.x, y: this.playerDomain.y },
           shrines,
           secretKnown: this.store.flags.secretKnown,
           stashSpot: this.ow?.stashSpot ?? { x: 0, y: 0 },

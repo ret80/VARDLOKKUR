@@ -28,7 +28,6 @@ export class HudSystem {
     bus.on("toast", (e) => this.store.callbacks.onToast(e.msg));
   }
 
-  private get player() { return this.store.player; }
   private get flags() { return this.store.flags; }
   private get map() { return this.store.map; }
   private get trackedQuest() { return this.store.trackedQuest; }

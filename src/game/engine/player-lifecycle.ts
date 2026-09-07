@@ -86,7 +86,7 @@ export class PlayerLifecycle {
       Player.slowT[eid] = 0;
     }
 
-    // Also sync to store.player for view-layer (legacy — minimap, etc.)
+    // Sync to store.player for legacy minimap (before ECS player created)
     player.x = spawn.x;
     player.y = spawn.y;
 
