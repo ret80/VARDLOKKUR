@@ -386,7 +386,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         const pbIdx = PhysicsBody.body[eid];
         if (pbIdx > 0) {
           const body = PhysicsBodyRegistry[pbIdx - 1];
-          if (body) _planckWorld.worldRef.destroyBody(body);
+          if (body) _planckWorld.destroyBody(body);
           PhysicsBody.body[eid] = 0;
           PhysicsBodyRegistry[pbIdx - 1] = null as any;
         }
@@ -454,7 +454,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         // Призрак — кинематическое тело (проходит сквозь стены)
         const body = PhysicsBodyRegistry[PhysicsBody.body[eid] - 1];
         if (body) {
-          _planckWorld.worldRef.destroyBody(body);
+          _planckWorld.destroyBody(body);
           const ghostBody = _planckWorld.createGhostBody(x, y, ENEMY_STATS.ghost.r);
           PhysicsBody.body[eid] = PhysicsBodyRegistry.length + 1;
           PhysicsBodyRegistry.push(ghostBody);
@@ -483,7 +483,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       if (pbIdx > 0) {
         const body = PhysicsBodyRegistry[pbIdx - 1];
         if (body) {
-          _planckWorld.worldRef.destroyBody(body);
+          _planckWorld.destroyBody(body);
           PhysicsBody.body[peid] = 0;
           PhysicsBodyRegistry[pbIdx - 1] = null as any;
         }
@@ -497,7 +497,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       if (pbIdx > 0) {
         const body = PhysicsBodyRegistry[pbIdx - 1];
         if (body) {
-          _planckWorld.worldRef.destroyBody(body);
+          _planckWorld.destroyBody(body);
           PhysicsBody.body[eid] = 0;
           PhysicsBodyRegistry[pbIdx - 1] = null as any;
         }

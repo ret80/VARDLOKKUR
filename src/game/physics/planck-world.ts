@@ -26,6 +26,7 @@ export const Cat: Record<string, number> = {
   Boss:       0x0400,
   Shrine:     0x0800,
   Altar:      0x1000,
+  Pedestal:   0x2000,
 };
 
 // ============================================================
@@ -46,6 +47,7 @@ export const CollidesWith: Record<string, number> = {
   [Cat.Boss]:       Cat.Tile | Cat.Player | Cat.Projectile | Cat.Door | Cat.Barrier,
   [Cat.Shrine]:     Cat.Player,
   [Cat.Altar]:      Cat.Player,
+  [Cat.Pedestal]:   Cat.Player,
 };
 
 // ============================================================
@@ -113,6 +115,7 @@ export class PlanckWorld {
   private entityMap = new Map<string, Body>();
   private callbacks: PhysicsCallbacks;
   private pendingDestroy: Body[] = [];
+  private destroyedBodies = new WeakSet<Body>();
 
   constructor(callbacks: PhysicsCallbacks = {}) {
     this.callbacks = callbacks;
@@ -314,6 +317,8 @@ export class PlanckWorld {
   }
 
   destroyBody(body: Body): void {
+    if (this.destroyedBodies.has(body)) return;
+    this.destroyedBodies.add(body);
     if (this.world.isLocked()) {
       this.pendingDestroy.push(body);
     } else {

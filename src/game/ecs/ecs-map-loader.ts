@@ -168,12 +168,16 @@ export class EcsMapLoader {
     const { takenPedestals } = this.config;
     for (const pd of map.pedestals) {
       const id = "ped_" + pd.x + "_" + pd.y;
+      const px = pd.x * T + 8;
+      const py = pd.y * T + 8;
       const g = new Graphics();
-      g.position.set(pd.x * T + 8, pd.y * T + 8);
-      const eid = createPedestalInEcs(world, id, pd.x * T + 8, pd.y * T + 8, takenPedestals.has(id) ? 0 : pd.guards.length, g);
+      g.position.set(px, py);
+      const eid = createPedestalInEcs(world, id, px, py, takenPedestals.has(id) ? 0 : pd.guards.length, g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
+      // Статическое тело для коллизии — через него нельзя пройти
+      this.planckWorld.createStaticBody(px, py, 6, Cat.Pedestal);
     }
   }
 
