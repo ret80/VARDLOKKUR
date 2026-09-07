@@ -398,8 +398,13 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
         if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
         spriteRef?.destroy();
-        const body = PhysicsBodyRegistry[PhysicsBody.body[eid] - 1];
-        if (body) _planckWorld.worldRef.destroyBody(body);
+        const pbIdx = PhysicsBody.body[eid];
+        if (pbIdx > 0) {
+          const body = PhysicsBodyRegistry[pbIdx - 1];
+          if (body) _planckWorld.worldRef.destroyBody(body);
+          PhysicsBody.body[eid] = 0;
+          PhysicsBodyRegistry[pbIdx - 1] = null as any;
+        }
       },
       addFloat,
       () => audio.clang(),
@@ -493,19 +498,24 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       const pbIdx = PhysicsBody.body[peid];
       if (pbIdx > 0) {
         const body = PhysicsBodyRegistry[pbIdx - 1];
-        if (body) _planckWorld.worldRef.destroyBody(body);
+        if (body) {
+          _planckWorld.worldRef.destroyBody(body);
+          PhysicsBody.body[peid] = 0;
+          PhysicsBodyRegistry[pbIdx - 1] = null as any;
+        }
       }
     }
 
     // Уничтожить физ. тело и удалить мёртвых врагов из ECS.
     // Спрайт уже удалён в lifeCheckSystem.
     for (const eid of query(world, [Dead, Enemy])) {
-      // Физ. тело — проверяем, что тело ещё не уничтожено (m_world === null после destroy)
       const pbIdx = PhysicsBody.body[eid];
       if (pbIdx > 0) {
         const body = PhysicsBodyRegistry[pbIdx - 1];
-        if (body && body.m_world) {
+        if (body) {
           _planckWorld.worldRef.destroyBody(body);
+          PhysicsBody.body[eid] = 0;
+          PhysicsBodyRegistry[pbIdx - 1] = null as any;
         }
       }
       // Удалить из ECS
