@@ -13,7 +13,7 @@ import type { Graphics, Text } from "pixi.js";
 
 // ── Экраны ──────────────────────────────────────────────────────────────
 
-export type Screen = "title" | "play" | "pause" | "death" | "victory" | "quests" | "inventory" | "map";
+export type Screen = "title" | "play" | "pause" | "death" | "victory" | "quests" | "inventory" | "map" | "settings";
 
 // ── HUD ─────────────────────────────────────────────────────────────────
 

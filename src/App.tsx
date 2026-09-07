@@ -7,6 +7,7 @@ import {
 import { QuestsScreen } from "./components/screens/QuestsScreen";
 import { InventoryScreen } from "./components/screens/InventoryScreen";
 import { WorldMapScreen } from "./components/screens/WorldMapScreen";
+import { SettingsScreen } from "./components/screens/SettingsScreen";
 import { HealthBar } from "./components/hud/HealthBar";
 
 const px = { imageRendering: "pixelated" as const };
@@ -75,6 +76,26 @@ export default function App() {
   const [summoning, setSummoning] = useState(false);
   const [bootErr, setBootErr] = useState<string | null>(null);
   const [coarse] = useState(() => window.matchMedia("(pointer: coarse)").matches);
+  const [musicVolume, setMusicVolume] = useState(() => {
+    try {
+      const raw = localStorage.getItem("vardlokkur_audio");
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (typeof p.musicVol === "number") return p.musicVol;
+      }
+    } catch {}
+    return 0.7;
+  });
+  const [soundVolume, setSoundVolume] = useState(() => {
+    try {
+      const raw = localStorage.getItem("vardlokkur_audio");
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (typeof p.soundVol === "number") return p.soundVol;
+      }
+    } catch {}
+    return 0.8;
+  });
   const mmRef = useRef<HTMLCanvasElement>(null);
   const padRef = useRef<HTMLDivElement>(null);
 
@@ -176,7 +197,7 @@ export default function App() {
   });
 
   const inGame = screen === "play" || screen === "pause" || screen === "death" ||
-    screen === "quests" || screen === "inventory" || screen === "map";
+    screen === "quests" || screen === "inventory" || screen === "map" || screen === "settings";
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-[#05080d] select-none">
@@ -279,6 +300,15 @@ export default function App() {
       )}
       {screen === "inventory" && hud && <InventoryScreen hud={hud} onClose={() => eng()?.closeOverlay()} />}
       {screen === "map" && hud && <WorldMapScreen zone={hud.zone} draw={drawBigMap} onClose={() => eng()?.closeOverlay()} />}
+      {screen === "settings" && (
+        <SettingsScreen
+          onClose={() => eng()?.handleSettings()}
+          onMusicVolume={(v) => { eng()?.setMusicVolume(v); setMusicVolume(v); }}
+          onSoundVolume={(v) => { eng()?.setSoundVolume(v); setSoundVolume(v); }}
+          musicVolume={musicVolume}
+          soundVolume={soundVolume}
+        />
+      )}
 
       {/* ======================= титул ======================= */}
       {screen === "title" && (
@@ -327,7 +357,7 @@ export default function App() {
             <div className="mt-6 flex flex-col gap-2.5 items-center">
               <button className="btn-rune btn-ice w-56" onClick={() => eng()?.togglePause()}>Продолжить</button>
               <button className="btn-rune w-56" onClick={() => setShowHelp(true)}>Помощь</button>
-              <button className="btn-rune w-56" onClick={() => eng()?.toggleMute()}>Звук: {hud?.muted ? "выкл" : "вкл"}</button>
+              <button className="btn-rune w-56" onClick={() => eng()?.openSettings()}>Настройки</button>
               <button className="btn-rune btn-blood w-56" onClick={() => eng()?.backToTitle()}>К титулу</button>
             </div>
             <div className="mt-5 text-[11px] text-[#4a5a68]"><span className="kbd">Esc</span> — вернуться в бой</div>

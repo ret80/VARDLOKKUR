@@ -4,6 +4,8 @@
 class AudioEngine {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
+  private musicGain: GainNode | null = null;
+  private soundGain: GainNode | null = null;
   private windGain: GainNode | null = null;
   private echoIn: GainNode | null = null;
   private musicTimer: number | null = null;
@@ -13,20 +15,57 @@ class AudioEngine {
   private intensity = 0;
   muted = false;
   started = false;
+  musicVol = 0.7;
+  soundVol = 0.8;
 
   static SCALE = [0, 3, 5, 7, 10, 12, 15, 17].map((s) => 110 * Math.pow(2, s / 12));
   static DRONE_BARS = [55, 55, 65.4, 49];
   static PHRASE_A = [0, -1, 2, -1, 3, -1, 4, -1, 3, -1, 2, -1, 1, -1, 0, -1];
   static PHRASE_B = [4, -1, 5, 4, 3, -1, 2, -1, 3, 4, 5, -1, 7, -1, 5, 4];
 
+  private static STORAGE_KEY = "vardlokkur_audio";
+
+  private static readSaved(): { musicVol: number; soundVol: number } {
+    try {
+      const raw = localStorage.getItem(AudioEngine.STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          musicVol: typeof parsed.musicVol === "number" ? parsed.musicVol : 0.7,
+          soundVol: typeof parsed.soundVol === "number" ? parsed.soundVol : 0.8,
+        };
+      }
+    } catch { /* corrupt — ignore */ }
+    return { musicVol: 0.7, soundVol: 0.8 };
+  }
+
+  private static save(musicVol: number, soundVol: number) {
+    try {
+      localStorage.setItem(AudioEngine.STORAGE_KEY, JSON.stringify({ musicVol, soundVol }));
+    } catch { /* quota — ignore */ }
+  }
+
   init() {
     if (this.ctx) { this.ctx.resume().catch(() => {}); return; }
+    const saved = AudioEngine.readSaved();
+    this.musicVol = saved.musicVol;
+    this.soundVol = saved.soundVol;
     try {
       const AC = window.AudioContext || (window as any).webkitAudioContext;
       this.ctx = new AC();
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.5;
       this.master.connect(this.ctx.destination);
+
+      // Ноды для разделения музыки и звуков
+      this.musicGain = this.ctx.createGain();
+      this.musicGain.gain.value = this.musicVol;
+      this.musicGain.connect(this.master);
+
+      this.soundGain = this.ctx.createGain();
+      this.soundGain.gain.value = this.soundVol;
+      this.soundGain.connect(this.master);
+
       this.startAmbient();
       this.started = true;
     } catch { /* беззвучный режим */ }
@@ -38,6 +77,22 @@ class AudioEngine {
       this.master.gain.setTargetAtTime(this.muted ? 0 : 0.5, this.ctx.currentTime, 0.05);
     }
     return this.muted;
+  }
+
+  setMusicVolume(v: number) {
+    this.musicVol = Math.max(0, Math.min(1, v));
+    AudioEngine.save(this.musicVol, this.soundVol);
+    if (this.musicGain && this.ctx) {
+      this.musicGain.gain.setTargetAtTime(this.musicVol, this.ctx.currentTime, 0.02);
+    }
+  }
+
+  setSoundVolume(v: number) {
+    this.soundVol = Math.max(0, Math.min(1, v));
+    AudioEngine.save(this.musicVol, this.soundVol);
+    if (this.soundGain && this.ctx) {
+      this.soundGain.gain.setTargetAtTime(this.soundVol, this.ctx.currentTime, 0.02);
+    }
   }
 
   private startAmbient() {
@@ -61,7 +116,7 @@ class AudioEngine {
     const lfo = ctx.createOscillator(); lfo.frequency.value = 0.07;
     const lfoG = ctx.createGain(); lfoG.gain.value = 120;
     lfo.connect(lfoG); lfoG.connect(bp.frequency);
-    wind.connect(bp); bp.connect(this.windGain); this.windGain.connect(this.master);
+    wind.connect(bp); bp.connect(this.windGain); this.windGain.connect(this.musicGain!);
     wind.start(); lfo.start();
 
     const droneGain = ctx.createGain(); droneGain.gain.value = 0.02;
@@ -72,7 +127,7 @@ class AudioEngine {
       const g = ctx.createGain(); g.gain.value = i === 2 ? 0.3 : 1;
       o.connect(g); g.connect(lp); o.start();
     });
-    lp.connect(droneGain); droneGain.connect(this.master);
+    lp.connect(droneGain); droneGain.connect(this.musicGain!);
 
     const horn = () => {
       this.tone(72 + Math.random() * 20, 2.4, "sawtooth", 0.04, -14, 0.5);
@@ -87,7 +142,7 @@ class AudioEngine {
     const echo = this.ctx.createDelay(1); echo.delayTime.value = 0.31;
     const fb = this.ctx.createGain(); fb.gain.value = 0.34;
     const wet = this.ctx.createGain(); wet.gain.value = 0.2;
-    this.echoIn.connect(echo); echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(this.master!);
+    this.echoIn.connect(echo); echo.connect(fb); fb.connect(echo); echo.connect(wet); wet.connect(this.musicGain!);
     this.nextNoteT = this.ctx.currentTime + 0.2;
     this.musicTimer = window.setInterval(() => this.scheduleMusic(), 110);
   }
@@ -122,7 +177,7 @@ class AudioEngine {
       g.gain.linearRampToValueAtTime(0.045, t + 0.4);
       g.gain.setValueAtTime(0.045, t + stepDur * 14);
       g.gain.linearRampToValueAtTime(0.0001, t + stepDur * 16);
-      o.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this.master!);
+      o.connect(lp); o2.connect(lp); lp.connect(g); g.connect(this.musicGain!);
       o.start(t); o2.start(t); o.stop(t + stepDur * 16.2); o2.stop(t + stepDur * 16.2);
     }
     const drumSteps = heavy ? [0, 4, 8, 12] : [0, 8];
@@ -133,7 +188,7 @@ class AudioEngine {
       const g = ctx.createGain();
       g.gain.setValueAtTime(heavy ? 0.15 : 0.1, t);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
-      o.connect(g); g.connect(this.master!);
+      o.connect(g); g.connect(this.musicGain!);
       o.start(t); o.stop(t + 0.32);
     }
     if (heavy && step % 2 === 1) this.noiseAt(t, 0.05, 0.02, 5200, "highpass");
@@ -162,7 +217,7 @@ class AudioEngine {
     g.gain.setValueAtTime(0.036, t + dur * 0.6);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(lp); o2.connect(lp); lp.connect(g);
-    g.connect(this.master!);
+    g.connect(this.musicGain!);
     if (this.echoIn) g.connect(this.echoIn);
     o.start(t); o2.start(t); vib.start(t);
     o.stop(t + dur + 0.1); o2.stop(t + dur + 0.1); vib.stop(t + dur + 0.1);
@@ -179,7 +234,7 @@ class AudioEngine {
     const g = this.ctx.createGain();
     g.gain.setValueAtTime(vol, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f); f.connect(g); g.connect(this.master);
+    src.connect(f); f.connect(g); g.connect(this.soundGain!);
     src.start(t);
   }
 
@@ -193,7 +248,7 @@ class AudioEngine {
     g.gain.setValueAtTime(0, t0);
     g.gain.linearRampToValueAtTime(vol, t0 + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-    o.connect(g); g.connect(this.master);
+    o.connect(g); g.connect(this.soundGain!);
     o.start(t0); o.stop(t0 + dur + 0.05);
   }
 

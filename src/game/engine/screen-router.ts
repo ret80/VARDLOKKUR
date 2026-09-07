@@ -53,6 +53,16 @@ export class ScreenRouter {
     this.onAudioUiClick();
   }
 
+  /** Переключить настройки */
+  handleSettings(): void {
+    if (this.state.screen === "settings") {
+      this.setScreen("play");
+    } else {
+      this.setScreen("settings");
+    }
+    this.onAudioUiClick();
+  }
+
   /** Переключить снег на крышах */
   handleSnow(): void {
     const roofSnow = !this.store.roofSnow;
@@ -84,6 +94,11 @@ export class ScreenRouter {
   /** Открыть большую карту (если в игре) */
   openMap(): void {
     if (this.state.screen === "play") this.setScreen("map");
+  }
+
+  /** Открыть настройки (из любого игрового экрана) */
+  openSettings(): void {
+    this.setScreen("settings");
   }
 
   /** Установить экран */

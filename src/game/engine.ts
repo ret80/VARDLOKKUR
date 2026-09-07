@@ -84,6 +84,10 @@ export class Engine {
   private app!: Application;
   private ready: Promise<void>;
 
+  // Голосовые объёмы (для UI)
+  get musicVol() { return audio.musicVol; }
+  get soundVol() { return audio.soundVol; }
+
   // EventBus и GameStore
   private bus = new EventBus();
   private store!: GameStore;
@@ -473,8 +477,13 @@ export class Engine {
   openQuests() { this.screenRouter.openQuests(); }
   openInventory() { this.screenRouter.openInventory(); }
   openMap() { this.screenRouter.openMap(); }
+  openSettings() { this.screenRouter.openSettings(); }
+  handleSettings() { this.screenRouter.handleSettings(); }
   closeOverlay() { this.screenRouter.closeOverlay(); }
   trackQuest(id: string) { this.screenRouter.trackQuest(id); }
+
+  setMusicVolume(v: number) { audio.setMusicVolume(v); }
+  setSoundVolume(v: number) { audio.setSoundVolume(v); }
 
   advanceDialogue() {
     this.dialogueActiveRef.value = false;
