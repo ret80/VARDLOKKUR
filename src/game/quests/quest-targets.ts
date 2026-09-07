@@ -3,6 +3,7 @@
 import { Vec, T, WorldData } from "../world";
 import { GameStore } from "../store";
 import { FlagDomain } from "../store/flag-domain";
+import { PlayerDomain } from "../store/player-domain";
 import { query } from "bitecs";
 
 /** Контекст для резолвера цели квеста. */
@@ -10,6 +11,7 @@ interface TargetContext {
   flags: FlagDomain;
   map: WorldData | null;
   store: GameStore;
+  playerDomain: PlayerDomain;
   visitedShrines: Set<number>;
   ow: WorldData | null;
 }
@@ -94,7 +96,7 @@ const RESOLVERS: Record<string, TargetResolver> = {
     if (!ctx.map) return null;
     if (ctx.map.isDungeon) return null;
     const pedestals = getUntakenPedestalsEcs(ctx);
-    return pedestals.length ? nearestOf(ctx.store.player, pedestals) : null;
+    return pedestals.length ? nearestOf(ctx.playerDomain, pedestals) : null;
   },
 
   m5(ctx) { return dungeonTarget(ctx.map, 2); },
@@ -153,7 +155,7 @@ const RESOLVERS: Record<string, TargetResolver> = {
     if (!ctx.flags.hasQuestItem("moss")) spots.push(px(ctx.map.mossSpot));
     if (!ctx.flags.hasQuestItem("amber")) spots.push(px(ctx.map.amberSpot));
     if (!ctx.flags.hasQuestItem("flower")) spots.push(px(ctx.map.flowerSpot));
-    return nearestOf(ctx.store.player, spots);
+    return nearestOf(ctx.playerDomain, spots);
   },
 
   s_diary(ctx) {
@@ -165,7 +167,7 @@ const RESOLVERS: Record<string, TargetResolver> = {
 
   s_cull(ctx) {
     const alive = getAliveEnemiesEcs(ctx).filter((e) => e.kind === "varg" || e.kind === "draugr");
-    return alive.length ? nearestOf(ctx.store.player, alive) : null;
+    return alive.length ? nearestOf(ctx.playerDomain, alive) : null;
   },
 
   s_bundle(ctx) {
@@ -188,12 +190,12 @@ const RESOLVERS: Record<string, TargetResolver> = {
     const unv = ctx.map.shrines
       .filter((_: any, i: number) => !ctx.visitedShrines.has(i))
       .map((s: any) => px(s));
-    return unv.length ? nearestOf(ctx.store.player, unv) : null;
+    return unv.length ? nearestOf(ctx.playerDomain, unv) : null;
   },
 
   s_hunt(ctx) {
     const alive = getAliveEnemiesEcs(ctx).filter((e) => e.kind !== "snake");
-    return alive.length ? nearestOf(ctx.store.player, alive) : null;
+    return alive.length ? nearestOf(ctx.playerDomain, alive) : null;
   },
 
   s_ghost(ctx) {

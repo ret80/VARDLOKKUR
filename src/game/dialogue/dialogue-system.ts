@@ -8,18 +8,21 @@
 import { EventBus } from "../event-bus";
 import { GameStore } from "../store";
 import type { DialogueData } from "../models";
+import { PlayerDomain } from "../store/player-domain";
 import { audio } from "../audio";
 import { resolveDialogue } from "../dialogues";
 
 export class DialogueSystem {
   private store: GameStore;
+  private playerDomain: PlayerDomain;
   private bus: EventBus;
   private active = false;
   private _lastId = "";
 
-  constructor(bus: EventBus, store: GameStore) {
+  constructor(bus: EventBus, store: GameStore, playerDomain: PlayerDomain) {
     this.bus = bus;
     this.store = store;
+    this.playerDomain = playerDomain;
     bus.on("dialogue:end", (e) => this.applyDialogueEffects(e.id));
   }
 
@@ -49,7 +52,6 @@ export class DialogueSystem {
     this.bus.emit("dialogue:end", { id: this._lastId });
   }
 
-  private get playerDomain() { return this.store.playerDomain; }
   private get playerEid() { return (this.store as any)._playerEid ?? -1; }
 
   // ── Thin dispatcher: делегирует поиск диалога declarative definitions ──
@@ -70,7 +72,7 @@ export class DialogueSystem {
 
   private effect_eirik(id: string) {
     const f = this.store.flags;
-    const p = this.store.player;
+    const p = this.playerDomain;
     if (!f.hasSword) {
       f.hasSword = true;
       audio.rune();
@@ -82,15 +84,13 @@ export class DialogueSystem {
 
   private effect_astrid(id: string) {
     const f = this.store.flags;
-    const p = this.store.player;
+    const p = this.playerDomain;
     if (f.mead && !f.meadDone) {
       f.mead = false; f.meadDone = true;
-      const r = this.playerDomain!.increaseMaxHp(2);
-      p.maxHp = r.maxHp; p.hp = r.hp;
+      this.playerDomain!.increaseMaxHp(2);
       audio.rune(); this.bus.emit("toast", { msg: "Зелье из дикого мёда: максимальное здоровье +2" });
     } else {
       this.playerDomain!.fullHeal();
-      p.hp = p.maxHp;
       audio.heal();
     }
     this.bus.emit("fx:burst", { x: p.x, y: p.y, color: 0x7ee2a8, n: 12, speed: 60, life: 0.8, size: 2, grav: -20 });
@@ -149,11 +149,10 @@ export class DialogueSystem {
 
   private effect_brand(id: string) {
     const f = this.store.flags;
-    const p = this.store.player;
+    const p = this.playerDomain;
     if (!f.cullDone && (f.killsByKind?.["varg"] ?? 0) >= 4 && (f.killsByKind?.["draugr"] ?? 0) >= 4) {
       f.cullDone = true;
-      const r = this.playerDomain!.increaseMaxHp(2);
-      p.maxHp = r.maxHp; p.hp = r.hp;
+      this.playerDomain!.increaseMaxHp(2);
       audio.rune(); this.bus.emit("toast", { msg: "Бранд кивает: максимальное здоровье +2" });
       this.bus.emit("hud:dirty", {});
     }
@@ -161,11 +160,10 @@ export class DialogueSystem {
 
   private effect_daughter(id: string) {
     const f = this.store.flags;
-    const p = this.store.player;
+    const p = this.playerDomain;
     if (f.bear && !f.bearGone) {
       f.bear = false; f.bearGone = true;
-      const r = this.playerDomain!.increaseMaxHp(2);
-      p.maxHp = r.maxHp; p.hp = r.hp;
+      this.playerDomain!.increaseMaxHp(2);
       audio.rune();
       this.bus.emit("toast", { msg: "Кровавая Слеза: максимальное здоровье +2" });
       this.bus.emit("fx:burst", { x: p.x, y: p.y, color: 0xc03050, n: 16, speed: 80, life: 1.0, size: 2, grav: -10 });

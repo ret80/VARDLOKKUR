@@ -3,6 +3,7 @@
 import { Vec } from "../world";
 import { GameStore } from "../store";
 import { FlagDomain } from "../store/flag-domain";
+import { PlayerDomain } from "../store/player-domain";
 import { findQuestDef } from "./quest-definitions";
 import { resolveQuestTarget } from "./quest-targets";
 
@@ -24,10 +25,12 @@ export interface IQuestTracker {
 export class QuestTracker implements IQuestTracker {
   private store: GameStore;
   private flags: FlagDomain;
+  private playerDomain: PlayerDomain;
 
-  constructor(store: GameStore, flags: FlagDomain) {
+  constructor(store: GameStore, flags: FlagDomain, playerDomain: PlayerDomain) {
     this.store = store;
     this.flags = flags;
+    this.playerDomain = playerDomain;
   }
 
   /* ---- public ---- */
@@ -40,6 +43,7 @@ export class QuestTracker implements IQuestTracker {
       flags: this.flags,
       map: this.store.map,
       store: this.store,
+      playerDomain: this.playerDomain,
       visitedShrines: this.store.visitedShrines,
       ow: this.store.ow,
     });

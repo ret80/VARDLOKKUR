@@ -135,6 +135,22 @@ export class PlayerDomain implements IPlayerDomain, IPlayerMutations {
     return this._eid >= 0 ? Player.slowT[this._eid] : 0;
   }
 
+  get animT(): number {
+    return this._eid >= 0 ? Player.animT[this._eid] : 0;
+  }
+
+  get moving(): boolean {
+    return this._eid >= 0 ? !!Player.moving[this._eid] : false;
+  }
+
+  get vx(): number {
+    return this._eid >= 0 ? Velocity.x[this._eid] : 0;
+  }
+
+  get vy(): number {
+    return this._eid >= 0 ? Velocity.y[this._eid] : 0;
+  }
+
   get r(): number {
     return 10; // player radius
   }

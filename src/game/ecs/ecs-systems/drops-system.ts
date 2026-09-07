@@ -128,12 +128,11 @@ export function dropsUpdateSystem(
         const dropKind = poolGet(StringPool.dropKinds, Drop.kind[eid]) as DropKind;
         const handler = dropRegistry?.get(dropKind);
         if (handler) {
-          const player = store.player;
-          handler.handle({
-            player: { hp: player.hp, maxHp: player.maxHp },
-            flags: store.flags,
-            bus,
-          });
+        handler.handle({
+          player: { hp: playerDomain.hp, maxHp: playerDomain.maxHp },
+          flags: store.flags,
+          bus,
+        });
         }
         removeEntity(world, eid);
         onDropRemove(eid);

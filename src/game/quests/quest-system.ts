@@ -2,6 +2,7 @@
 
 import { EventBus } from "../event-bus";
 import { GameStore } from "../store";
+import { PlayerDomain } from "../store/player-domain";
 import { audio } from "../audio";
 import { IQuestProvider, QuestView } from "./quest-provider";
 import { ALL_QUESTS, findQuestDef } from "./quest-definitions";
@@ -9,13 +10,15 @@ import { QuestTracker, IQuestTracker } from "./quest-tracker";
 
 export class QuestSystem implements IQuestProvider {
   private store: GameStore;
+  private playerDomain: PlayerDomain;
   private bus: EventBus;
   private tracker: IQuestTracker;
 
-  constructor(bus: EventBus, store: GameStore) {
+  constructor(bus: EventBus, store: GameStore, playerDomain: PlayerDomain) {
     this.bus = bus;
     this.store = store;
-    this.tracker = new QuestTracker(store, store.flags);
+    this.playerDomain = playerDomain;
+    this.tracker = new QuestTracker(store, store.flags, playerDomain);
 
     bus.on("enemy:killed", (e) => this.onEnemyKilled(e));
     bus.on("drop:collected", (e) => this.onDropCollected(e));

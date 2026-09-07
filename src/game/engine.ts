@@ -302,8 +302,8 @@ export class Engine {
   private instantiateSystems(store: GameStore) {
     // ECS world уже создан, Planck world будет создан в EcsMapLoader
     
-    this.quests      = new QuestSystem(this.bus, store);
-    this.dialogue    = new DialogueSystem(this.bus, store);
+    this.quests      = new QuestSystem(this.bus, store, this.playerDomain);
+    this.dialogue    = new DialogueSystem(this.bus, store, this.playerDomain);
     this.hud         = new HudSystem(this.bus, store, this.quests, this.playerDomain);
     this.screenRouter = new ScreenRouter(
       this.state, this.bus, store, this.quests,
@@ -671,7 +671,7 @@ export class Engine {
       dungeonBossDead: this.dungeonBossDead.bind(this),
       dungeonEntries: this.ow?.dungeonEntries ?? [],
       treeAltar: this.ow?.treeAltar ?? { x: 0, y: 0 },
-      player: { x: this.store.player.x, y: this.store.player.y },
+      player: { x: this.playerDomain.x, y: this.playerDomain.y },
       target: this.quests.trackedTarget(),
       secretKnown: this.store.flags.secretKnown,
       stashSpot: this.ow?.stashSpot ?? { x: 0, y: 0 },

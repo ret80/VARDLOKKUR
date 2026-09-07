@@ -347,20 +347,12 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       }
     }
 
-    // ===== 10. Синхронизация в store.player (view-layer) =====
+    // ===== 10. Синхронизация store.player (только для legacy — minimap, fx) =====
+    // Все поля читаются из ECS через PlayerDomain.
+    // store.player.x/y остаётся для обратной совместимости (миникарта, fx).
     if (peid >= 0) {
       store.player.x = Position.x[peid];
       store.player.y = Position.y[peid];
-      store.player.vx = Velocity.x[peid];
-      store.player.vy = Velocity.y[peid];
-      store.player.moving = !!Player.moving[peid];
-      store.player.slowT = Player.slowT[peid];
-      store.player.animT = Player.animT[peid];
-      store.player.swingT = Player.swingT[peid];
-      store.player.hurtT = Player.hurtT[peid];
-      store.player.dir.x = Direction.x[peid];
-      store.player.dir.y = Direction.y[peid];
-      // HP читается напрямую из ECS Health component через PlayerDomain
     }
 
     // ===== 11. Таймеры состояний =====

@@ -33,7 +33,7 @@ export class PlayerLifecycle {
 
   /** Использовать сохранённое сердце для восстановления HP */
   useStoredHeart(): void {
-    const p = this.store.player;
+    const p = this.playerDomain;
     if (p.hp >= p.maxHp) {
       this.cbs.float(p.x, p.y, "Здоровье полное", 0x6e7f8d);
       return;
@@ -86,10 +86,9 @@ export class PlayerLifecycle {
       Player.slowT[eid] = 0;
     }
 
-    // Also sync to store.player for view-layer
+    // Also sync to store.player for view-layer (legacy — minimap, etc.)
     player.x = spawn.x;
     player.y = spawn.y;
-    player.hp = player.maxHp;
 
     this.cbs.resetDeath?.();
     this.store.setScreen("play");
