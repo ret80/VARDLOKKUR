@@ -34,11 +34,11 @@ export class GhostRenderer extends BaseEnemyRenderer {
     const eye = aggr ? EYE_AGGR : EYE_CALM;
 
     // Определяем направление (по аналогии с PlayerRenderer)
-    // Если dir отсутствует, по умолчанию считаем, что призрак смотрит "вперёд" (на игрока)
-    const dir = (e as any).dir || { x: 0, y: 1 };
-    const isLeft = dir.x < -0.3;
-    const isRight = dir.x > 0.3;
-    const isBack = dir.y < -0.3;
+    // facing — направление взгляда врага из Enemy.facingX/Y
+    const facing = e.facing;
+    const isLeft = facing.x < -0.3;
+    const isRight = facing.x > 0.3;
+    const isBack = facing.y < -0.3;
     const isForward = !isLeft && !isRight && !isBack;
 
     // --- ОТРИСОВКА ТЕЛА ПО НАПРАВЛЕНИЯМ ---
