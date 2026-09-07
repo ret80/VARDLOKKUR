@@ -179,9 +179,7 @@ function openChestEcs(world: World, chestEid: number, _chest: any, store: GameSt
       bus.emit('toast', { msg: '+10 стрел' });
       break;
     case 'heartPiece': {
-      const r = store.playerDomain!.increaseMaxHp(2);
-      store.player.maxHp = r.maxHp;
-      store.player.hp = r.hp;
+      store.playerDomain!.increaseMaxHp(2);
       bus.emit('toast', { msg: 'Осколок жизни: максимальное здоровье +2' });
       audio.rune();
       break;
@@ -271,7 +269,6 @@ function useShrineEcs(world: World, shrineEid: number, _i: number, store: GameSt
   Shrine.lit[shrineEid] = 1;
   // Full heal via PlayerDomain (delegates to ECS)
   store.playerDomain!.fullHeal();
-  store.player.hp = store.player.maxHp;
   audio.chime();
   audio.heal();
   bus.emit('toast', { msg: 'Святилище запомнило тебя. Раны затянулись' });
@@ -285,9 +282,7 @@ function atoneEcs(store: GameStore, bus: EventBus): void {
   f.setFlag('relic', false);
   f.setFlag('atoneDone', true);
   f.setFlag('nornsFavor', true);
-  const r = store.playerDomain!.increaseMaxHp(2);
-  store.player.maxHp = r.maxHp;
-  store.player.hp = r.hp;
+  store.playerDomain!.increaseMaxHp(2);
   audio.rune();
   bus.emit('toast', { msg: 'Норны приняли дар: пьедесталы Рун видны на карте' });
   bus.emit('hud:dirty', {});

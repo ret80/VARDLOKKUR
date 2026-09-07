@@ -304,7 +304,7 @@ export class Engine {
     
     this.quests      = new QuestSystem(this.bus, store);
     this.dialogue    = new DialogueSystem(this.bus, store);
-    this.hud         = new HudSystem(this.bus, store, this.quests);
+    this.hud         = new HudSystem(this.bus, store, this.quests, this.playerDomain);
     this.screenRouter = new ScreenRouter(
       this.state, this.bus, store, this.quests,
       (s) => this.cbs.onScreen(s),

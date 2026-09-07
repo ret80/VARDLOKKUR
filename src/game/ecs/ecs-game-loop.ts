@@ -373,7 +373,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         () => {}, () => {},
         (dmg, sx, sy) => {
           playerDomain?.takeDamage(dmg, sx, sy);
-          store.player.hp = Health.current[peid];
           Player.moving[peid] = 0;
           bus.emit("hud:dirty", {});
         },
@@ -418,7 +417,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         bus.emit('enemy:killed', { enemy: enemyEid, kind: poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]) as any, x: Position.x[enemyEid], y: Position.y[enemyEid] });
       },
       () => {
-        store.player.hp = Health.current[_playerEid];
         bus.emit("hud:dirty", {});
       },
       () => {

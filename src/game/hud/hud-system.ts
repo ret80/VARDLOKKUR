@@ -3,10 +3,12 @@ import { EventBus } from "../event-bus";
 import { GameStore } from "../store";
 import type { HudData, Stats, QuestView } from "../models";
 import { IQuestProvider } from "../quests/quest-provider";
+import { PlayerDomain } from "../store/player-domain";
 import { audio } from "../audio";
 
 export class HudSystem {
   private store: GameStore;
+  private playerDomain: PlayerDomain;
   private bus: EventBus;
   private quests: IQuestProvider;
   private _lastMmKey = "";
@@ -17,9 +19,10 @@ export class HudSystem {
   get mmTimer() { return this._mmTimer; } set mmTimer(v: number) { this._mmTimer = v; }
   get lastMmKey() { return this._lastMmKey; } set lastMmKey(v: string) { this._lastMmKey = v; }
 
-  constructor(bus: EventBus, store: GameStore, quests: IQuestProvider) {
+  constructor(bus: EventBus, store: GameStore, quests: IQuestProvider, playerDomain: PlayerDomain) {
     this.bus = bus;
     this.store = store;
+    this.playerDomain = playerDomain;
     this.quests = quests;
     bus.on("hud:dirty", () => this.pushHud(true));
     bus.on("toast", (e) => this.store.callbacks.onToast(e.msg));
@@ -52,7 +55,7 @@ export class HudSystem {
     this._lastQuestsHash = hash;
     this._version++;
     this.store.callbacks.onHud({
-      hp: Math.max(0, this.player.hp), maxHp: this.player.maxHp,
+      hp: Math.max(0, this.playerDomain.hp), maxHp: this.playerDomain.maxHp,
       arrows: this.flags.getArrows(), runes: this.flags.getRunes(),
       hasSword: this.flags.hasItem("sword"), hasAxe: this.flags.hasItem("axe"), hasBow: this.flags.hasItem("bow"),
       hasHammer: this.flags.hasItem("hammer"), hasKey: this.flags.hasItem("key"), bear: this.flags.hasQuestItem("bear"),
