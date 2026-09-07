@@ -24,6 +24,8 @@ export const Cat: Record<string, number> = {
   Barrier:    0x0100,
   Drop:       0x0200,
   Boss:       0x0400,
+  Shrine:     0x0800,
+  Altar:      0x1000,
 };
 
 // ============================================================
@@ -31,7 +33,7 @@ export const Cat: Record<string, number> = {
 // ============================================================
 
 export const CollidesWith: Record<string, number> = {
-  [Cat.Player]:     Cat.Tile | Cat.Enemy | Cat.Projectile | Cat.Door | Cat.Barrier | Cat.Drop,
+  [Cat.Player]:     Cat.Tile | Cat.Enemy | Cat.Projectile | Cat.Door | Cat.Barrier | Cat.Drop | Cat.Shrine | Cat.Altar,
   [Cat.Enemy]:      Cat.Tile | Cat.Player | Cat.Projectile | Cat.Door | Cat.Barrier,
   // ⚠️ НЕ МЕНЯТЬ БЕЗ РАЗРЕШЕНИЯ — призрак не должен коллидировать с игроком
   [Cat.Ghost]:      Cat.None, // призрак проходит сквозь всё
@@ -42,6 +44,8 @@ export const CollidesWith: Record<string, number> = {
   [Cat.Barrier]:    Cat.Player | Cat.Enemy,
   [Cat.Drop]:       Cat.Player,
   [Cat.Boss]:       Cat.Tile | Cat.Player | Cat.Projectile | Cat.Door | Cat.Barrier,
+  [Cat.Shrine]:     Cat.Player,
+  [Cat.Altar]:      Cat.Player,
 };
 
 // ============================================================
@@ -258,6 +262,15 @@ export class PlanckWorld {
   createKinematicBody(x: number, y: number, w: number, h: number, category: number): Body {
     const body = this.world.createKinematicBody({ position: Vec2(x, y), fixedRotation: true });
     body.createFixture(PolygonShape(boxVertices(w / 2, h / 2)), 0);
+    applyFilter(body.getFixtureList()!, category);
+    body.setUserData({ category });
+    return body;
+  }
+
+  /** Создать static body для неподвижных объектов (святилища, алтари) */
+  createStaticBody(x: number, y: number, radius: number, category: number): Body {
+    const body = this.world.createBody({ type: BodyConst.STATIC, position: Vec2(x, y) });
+    body.createFixture(CircleShape(radius), 0);
     applyFilter(body.getFixtureList()!, category);
     body.setUserData({ category });
     return body;

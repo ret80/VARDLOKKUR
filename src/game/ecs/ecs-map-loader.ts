@@ -180,9 +180,11 @@ export class EcsMapLoader {
   private spawnShrines(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
     for (let j = 0; j < map.shrines.length; j++) {
       const s = map.shrines[j];
+      const sx = s.x * T + 8;
+      const sy = s.y * T + 8;
       const g = new Graphics();
-      g.position.set(s.x * T + 8, s.y * T + 8);
-      const eid = createShrineInEcs(world, s.x * T + 8, s.y * T + 8, g);
+      g.position.set(sx, sy);
+      const eid = createShrineInEcs(world, sx, sy, g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
@@ -190,6 +192,8 @@ export class EcsMapLoader {
       if (this.config.visitedShrines.has(j)) {
         Shrine.lit[eid] = 1;
       }
+      // Статическое тело для коллизии — через него нельзя пройти
+      this.planckWorld.createStaticBody(sx, sy, 6, Cat.Shrine);
     }
   }
 
@@ -240,11 +244,15 @@ export class EcsMapLoader {
     if (active) this.barrierBody = planckWorld.createKinematicBody(bx, by, 40, 16, Cat.Barrier);
 
     const altarG = new Graphics();
-    altarG.position.set(map.treeAltar.x * T + 8, map.treeAltar.y * T + 8);
-    const altarEid = createAltarInEcs(world, map.treeAltar.x * T + 8, map.treeAltar.y * T + 8, altarG);
+    const ax = map.treeAltar.x * T + 8;
+    const ay = map.treeAltar.y * T + 8;
+    altarG.position.set(ax, ay);
+    const altarEid = createAltarInEcs(world, ax, ay, altarG);
     (altarG as any).userData = (altarG as any).userData || {};
     (altarG as any).userData.eid = altarEid;
     dc.addChild(altarG);
+    // Статическое тело для коллизии — через алтарь нельзя пройти
+    this.planckWorld.createStaticBody(ax, ay, 8, Cat.Altar);
   }
 
   private spawnDrops(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
