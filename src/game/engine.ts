@@ -69,13 +69,18 @@ import { ScreenRouter } from './engine/screen-router';
 import { PlayerLifecycle } from './engine/player-lifecycle';
 import { MapLoaderService } from './engine/map-loader-service';
 
-// Импорты рендереров
+// Импорты рендереров (только классы, функции удалены в ходе рефакторинга SOLID/ECS)
 import {
   IPlayerData, IEnemyData, INpcData, IDropData, IProjectileData,
   IChestData, IPedestalData, IShrineData, IDoorData, IBarrierData, IAltarData,
   IPlayerExtra,
-  PlayerRenderer, EnemyRenderer, NpcRenderer, DropRenderer, ProjectileRenderer,
-  ChestRenderer, PedestalRenderer, ShrineRenderer, DoorRenderer, BarrierRenderer, AltarRenderer
+  PlayerRenderer,
+  ChestRenderer,
+  PedestalRenderer,
+  ShrineRenderer,
+  DoorRenderer,
+  BarrierRenderer,
+  AltarRenderer,
 } from "./entities";
 
 export class Engine {
@@ -650,7 +655,7 @@ export class Engine {
   }
 
   private float(x: number, y: number, text: string, color: number) {
-    addFloatText(this.scene.floatLayer, { createText: (t: string, s: any) => new Text({ ...s, text: t }) }, x, y, text, color);
+    addFloatText(this.scene.floatLayer, text, x, y, color);
   }
 
   /* ================= big map (public) ================= */

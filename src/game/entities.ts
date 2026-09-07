@@ -19,10 +19,17 @@ export type {
 // Балансные данные
 export { ENEMY_STATS, makeEnemy } from "./balance";
 
-// Рендереры
+// Рендереры (только классы, функции удалены в ходе рефакторинга SOLID/ECS)
 export {
-  renderPlayer, renderEnemy, renderNpc, renderDrop, renderProjectile,
-  renderChest, renderPedestal, renderShrine, renderDoor, renderBarrier, renderAltar,
-  PlayerRenderer, EnemyRenderer, NpcRenderer, DropRenderer, ProjectileRenderer,
-  ChestRenderer, PedestalRenderer, ShrineRenderer, DoorRenderer, BarrierRenderer, AltarRenderer,
+  PlayerRenderer,
+  ChestRenderer,
+  PedestalRenderer,
+  ShrineRenderer,
+  DoorRenderer,
+  BarrierRenderer,
+  AltarRenderer,
+  enemyRegistry,
+  npcRegistry,
+  dropRegistry,
+  projectileRegistry,
 } from "./renderers";

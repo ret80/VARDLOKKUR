@@ -1,6 +1,6 @@
-/* render-system.ts — ECS система рендеринга на основе PixiJS */
+/* render-system.ts — ECS система рендеринга на основе PixiJS (SOLID: DIP) */
 
-import { Application, Container, Graphics, Sprite, Text } from "pixi.js";
+import { Application, Container, Graphics, Text } from "pixi.js";
 import { query, hasComponent, type World } from 'bitecs';
 import type { EnemyKind, DropKind, ProjectileKind } from '../../generators/types';
 import {
@@ -28,25 +28,26 @@ import {
   Time,
   Taken,
   SpriteRegistry,
-  EnemyState,
-  getEnemyStateName,
   poolGet,
   StringPool,
+  EnemyState,
+  getEnemyStateName,
 } from '../ecs-components';
 import {
-  drawPlayer,
-  drawEnemy,
-  drawNpc,
-  drawDrop,
-  drawProjectile,
-  drawChest,
-  drawPedestal,
-  drawShrine,
-  drawDoor,
-  drawBarrier,
-  drawAltar,
-} from '../ecs-render-helpers';
+  enemyRegistry,
+  npcRegistry,
+  dropRegistry,
+  projectileRegistry,
+  PlayerRenderer,
+  ChestRenderer,
+  PedestalRenderer,
+  ShrineRenderer,
+  DoorRenderer,
+  BarrierRenderer,
+  AltarRenderer,
+} from '../../renderers';
 import type { InteractableHit } from './interaction-system';
+import type { RenderContext } from '../../renderers';
 
 // ============================================================
 // Утилиты рендеринга
@@ -56,12 +57,6 @@ import type { InteractableHit } from './interaction-system';
 function getSpriteRef(eid: number): any {
   const idx = SpriteComp.ref[eid];
   return idx > 0 ? SpriteRegistry[idx - 1] : undefined;
-}
-
-/** Добавить объект в Sprite registry, вернуть индекс (1-based) */
-export function registerSprite(sprite: any): number {
-  SpriteRegistry.push(sprite);
-  return SpriteRegistry.length;
 }
 
 /** Обновить позицию спрайта из Position компонента */
@@ -187,107 +182,269 @@ export function renderFlashSystem(world: World, time: number): void {
 }
 
 // ============================================================
-// Рендеринг сущностей — вызов renderer функций каждый кадр
+// Мапперы ECS → data для рендереров
 // ============================================================
 
-/** Рендеринг игрока */
-export function renderPlayer(
+/** Маппер ECS Player → PlayerRenderData */
+function eidToPlayerRenderData(eid: number) {
+  const d = Direction;
+  return {
+    data: {
+      x: 0, y: 0,
+      dir: { x: d.x[eid], y: d.y[eid] },
+      moving: !!Player.moving[eid],
+      animT: Player.animT[eid],
+      swingT: Player.swingT[eid],
+      hurtT: Player.hurtT[eid],
+      slowT: Player.slowT[eid],
+      r: 5,
+    },
+    extra: {
+      hasSword: !!Player.hasSword[eid],
+      runes: Player.runes[eid],
+      swingDir: { x: Player.swingDirX[eid], y: Player.swingDirY[eid] },
+      aiming: !!Player.aiming[eid],
+    },
+  };
+}
+
+/** Маппер ECS Enemy → IEnemyData */
+function eidToEnemyData(eid: number) {
+  const health = Health;
+  const radius = Radius;
+  return {
+    x: 0, y: 0,
+    kind: poolGet(StringPool.enemyKinds, Enemy.kind[eid]) as EnemyKind,
+    r: radius.value[eid],
+    hp: health.current[eid],
+    maxHp: health.max[eid],
+    facing: { x: Enemy.facingX[eid], y: Enemy.facingY[eid] },
+    t: Enemy.t[eid],
+    state: getEnemyStateName(Enemy.state[eid]),
+    aggro: !!Enemy.aggro[eid],
+    dead: false,
+    hidden: !!Enemy.hidden[eid],
+    lungeT: Enemy.lungeT[eid],
+    freezeT: Enemy.freezeT[eid],
+    flashT: Enemy.flashT[eid],
+    seed: Enemy.seed[eid],
+    fade: Enemy.fade[eid],
+    leash: null,
+    dropDew: !!Enemy.dropDew[eid],
+  };
+}
+
+/** Маппер ECS Drop → IDropData */
+function eidToDropData(eid: number) {
+  return {
+    x: 0, y: 0,
+    kind: poolGet(StringPool.dropKinds, Drop.kind[eid]) as DropKind,
+    t: Drop.t[eid],
+    taken: !!Taken[eid],
+    magnet: !!Drop.magnet[eid],
+  };
+}
+
+/** Маппер ECS Projectile → IProjectileData */
+function eidToProjectileData(eid: number) {
+  return {
+    x: 0, y: 0,
+    kind: poolGet(StringPool.projectileKinds, Projectile.kind[eid]) as ProjectileKind,
+    r: 3,
+    spin: Projectile.spin[eid],
+    vx: 0, vy: 0,
+  };
+}
+
+/** Маппер ECS NPC → INpcData */
+function eidToNpcData(eid: number) {
+  return {
+    x: 0, y: 0,
+    id: poolGet(StringPool.npcIds, NPC.id[eid]),
+    name: poolGet(StringPool.npcNames, NPC.name[eid]),
+  };
+}
+
+/** Маппер ECS Chest → IChestData */
+function eidToChestData(eid: number) {
+  return {
+    x: 0, y: 0,
+    opened: !!Chest.opened[eid],
+  };
+}
+
+/** Маппер ECS Pedestal → IPedestalData */
+function eidToPedestalData(eid: number) {
+  return {
+    x: 0, y: 0,
+    taken: !!Pedestal.taken[eid],
+    guardsLeft: Pedestal.guardsLeft[eid],
+  };
+}
+
+/** Маппер ECS Shrine → IShrineData */
+function eidToShrineData(eid: number) {
+  return {
+    x: 0, y: 0,
+    lit: !!Shrine.lit[eid],
+  };
+}
+
+/** Маппер ECS Door → IDoorData */
+function eidToDoorData(eid: number) {
+  return {
+    x: 0, y: 0,
+    open: Door.open[eid],
+    locked: !!Door.locked[eid],
+  };
+}
+
+/** Маппер ECS Barrier → IBarrierData */
+function eidToBarrierData(eid: number) {
+  return {
+    x: 0, y: 0,
+    active: !!Barrier.active[eid],
+  };
+}
+
+/** Маппер ECS Altar → IAltarData */
+function eidToAltarData(eid: number) {
+  return {
+    x: 0, y: 0,
+    runes: Altar.runes[eid],
+  };
+}
+
+// ============================================================
+// Options для RenderSystem.render()
+// ============================================================
+
+export interface RenderSystemOptions {
+  time: number;
+  dt: number;
+  app: Application;
+  floatLayer: Container;
+  cam: { x: number; y: number };
+  gameWorld: Container | null;
+  dynamic: { children: any[] } | null;
+  hintLayer: Container;
+  playerEid: number;
+  getNpcSig?: (npcId: string) => string;
+  talkedSig?: Map<string, string>;
+  nearestInteractable?: InteractableHit | null;
+}
+
+// ============================================================
+// Главный класс RenderSystem (ECS-оркестратор)
+// ============================================================
+
+/** Выполнить полный рендеринг */
+export function renderSystem(
   world: World,
-  playerEid: number,
-  time: number
+  opts: RenderSystemOptions
 ): void {
+  const { time, dt, floatLayer, cam, gameWorld, dynamic, hintLayer, playerEid } = opts;
+
+  // Слежение камеры за игроком
+  if (playerEid >= 0 && Position.x.length > playerEid) {
+    const halfW = opts.app.renderer.width / 2;
+    const halfH = opts.app.renderer.height / 2;
+    cam.x = Position.x[playerEid] - halfW;
+    cam.y = Position.y[playerEid] - halfH;
+  }
+  
+  // Применяем камеру к world контейнеру — он содержит tileLayer + dynamic
+  if (gameWorld) {
+    gameWorld.position.set(-Math.round(cam.x), -Math.round(cam.y));
+  }
+  
+  // Update sprite positions
+  renderSprites(world);
+  
+  // Сортировка по глубине (z-index) на основе RenderLayer + Y
+  if (dynamic) {
+    renderSortSystem(world, dynamic);
+  }
+  
+  // Update visibility
+  renderVisibilitySystem(world, time);
+  
+  // Update flash effects
+  renderFlashSystem(world, time);
+
+  // --- Диспетчеризация через реестры ---
+  const ctx: RenderContext = { time };
+
+  // Игрок
+  renderPlayerEcs(world, playerEid, ctx);
+  
+  // Враги
+  renderByRegistry(
+    world,
+    [SpriteComp, Enemy],
+    StringPool.enemyKinds,
+    enemyRegistry,
+    eidToEnemyData,
+    time
+  );
+  
+  // Снаряды
+  renderByRegistry(
+    world,
+    [SpriteComp, Projectile],
+    StringPool.projectileKinds,
+    projectileRegistry,
+    eidToProjectileData,
+    time
+  );
+  
+  // Дропы
+  renderByRegistry(
+    world,
+    [SpriteComp, Drop],
+    StringPool.dropKinds,
+    dropRegistry,
+    eidToDropData,
+    time
+  );
+  
+  // NPC
+  renderNpcsEcs(world, ctx, opts.getNpcSig, opts.talkedSig);
+  
+  // Объекты окружения
+  renderChestsEcs(world, ctx);
+  renderPedestalsEcs(world, ctx);
+  renderShrinesEcs(world, ctx);
+  renderDoorsEcs(world, ctx);
+  renderBarrierEcs(world, ctx);
+  renderAltarEcs(world, ctx);
+  
+  // Обновить плавающий текст
+  updateFloatTexts(floatLayer, dt);
+  
+  // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
+  renderInteractionHint(hintLayer, opts.nearestInteractable, cam, time);
+  
+  // Render PixiJS app
+  opts.app.render();
+}
+
+/** Рендеринг игрока (ECS) */
+function renderPlayerEcs(world: World, playerEid: number, ctx: RenderContext): void {
   if (playerEid < 0) return;
   if (!!Dead[playerEid]) return;
   
   const ref = getSpriteRef(playerEid);
   if (!ref) return;
   
-  const d = Direction;
-  const moving = !!Player.moving[playerEid];
-  
-  drawPlayer(
-    ref as Graphics,
-    d.x[playerEid], d.y[playerEid],
-    moving, Player.animT[playerEid], Player.swingT[playerEid],
-    Player.hurtT[playerEid], Player.slowT[playerEid],
-    !!Player.hasSword[playerEid], Player.runes[playerEid],
-    Player.swingDirX[playerEid], Player.swingDirY[playerEid],
-    !!Player.aiming[playerEid],
-    time
-  );
+  const renderer = new PlayerRenderer();
+  renderer.render(ref as Graphics, eidToPlayerRenderData(playerEid), ctx);
 }
 
-/** Рендеринг врагов */
-export function renderEnemies(world: World, time: number): void {
-  const dead = Dead;
-  const health = Health;
-  const radius = Radius;
-
-  for (const eid of query(world, [SpriteComp, Enemy])) {
-    if (dead[eid]) continue;
-    
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    
-    const hp = health.current[eid];
-    const maxHp = health.max[eid];
-    const r = radius.value[eid];
-    
-    drawEnemy(
-      ref as Graphics,
-      poolGet(StringPool.enemyKinds, Enemy.kind[eid]) as EnemyKind,
-      Enemy.facingX[eid], Enemy.facingY[eid],
-      Enemy.t[eid], getEnemyStateName(Enemy.state[eid]),
-      !!Enemy.aggro[eid], !!Enemy.hidden[eid], !!Enemy.hidden[eid],
-      Enemy.lungeT[eid], Enemy.freezeT[eid], Enemy.flashT[eid],
-      Enemy.seed[eid], Enemy.fade[eid],
-      hp, maxHp,
-      r,
-      !!Enemy.dropDew[eid],
-      time
-    );
-  }
-}
-
-/** Рендеринг снарядов */
-export function renderProjectiles(world: World, time: number): void {
-  for (const eid of query(world, [SpriteComp, Projectile])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    
-    drawProjectile(
-      ref as Graphics,
-      poolGet(StringPool.projectileKinds, Projectile.kind[eid]) as ProjectileKind,
-      0, 0, // vx, vy — направление не критично для статического рисования
-      Projectile.spin[eid],
-      time
-    );
-  }
-}
-
-/** Рендеринг дропов */
-export function renderDrops(world: World, time: number): void {
-  const taken = Taken;
-
-  for (const eid of query(world, [SpriteComp, Drop])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    
-    drawDrop(
-      ref as Graphics,
-      poolGet(StringPool.dropKinds, Drop.kind[eid]) as DropKind,
-      Drop.t[eid],
-      !!taken[eid],
-      false, // magnet — не влияет на визуал
-      time
-    );
-  }
-}
-
-/** Рендеринг NPC */
-export function renderNPCs(
+/** Рендеринг NPC (ECS) */
+function renderNpcsEcs(
   world: World,
-  time: number,
+  ctx: RenderContext,
   getNpcSig?: (npcId: string) => string,
   talkedSig?: Map<string, string>
 ): void {
@@ -297,18 +454,19 @@ export function renderNPCs(
     
     const npcId = poolGet(StringPool.npcIds, NPC.id[eid]);
     const mark = npcHasMark(npcId, getNpcSig, talkedSig);
+    const data = eidToNpcData(eid);
     
-    drawNpc(
-      ref as Graphics,
-      npcId,
-      poolGet(StringPool.npcNames, NPC.name[eid]),
-      time,
-      mark
-    );
+    // Передаём mark через контекст
+    const npcCtx = { ...ctx, mark } as any;
+    // Fallback на GenericNpcRenderer для NPC, которых нет в реестре
+    const renderer = npcRegistry.get(npcId as any) ?? npcRegistry.get("default" as any);
+    if (renderer) {
+      renderer.render(ref as Graphics, data, npcCtx);
+    }
   }
 }
 
-/** Проверить, есть ли у NPC маркер (как в старом render-system.ts) */
+/** Проверить, есть ли у NPC маркер */
 function npcHasMark(
   npcId: string,
   getNpcSig?: (npcId: string) => string,
@@ -319,88 +477,98 @@ function npcHasMark(
   return talkedSig?.get(npcId) !== sig;
 }
 
-/** Рендеринг сундуков */
-export function renderChests(world: World, time: number): void {
+/** Рендеринг сундуков (ECS) */
+function renderChestsEcs(world: World, ctx: RenderContext): void {
   for (const eid of query(world, [SpriteComp, Chest])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
     
-    drawChest(
-      ref as Graphics,
-      !!Chest.opened[eid],
-      time
-    );
+    const renderer = new ChestRenderer();
+    renderer.render(ref as Graphics, eidToChestData(eid), ctx);
   }
 }
 
-/** Рендеринг пьедесталов */
-export function renderPedestals(world: World, time: number): void {
+/** Рендеринг пьедесталов (ECS) */
+function renderPedestalsEcs(world: World, ctx: RenderContext): void {
   for (const eid of query(world, [SpriteComp, Pedestal])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
     
-    drawPedestal(
-      ref as Graphics,
-      !!Pedestal.taken[eid],
-      Pedestal.guardsLeft[eid],
-      time
-    );
+    const renderer = new PedestalRenderer();
+    renderer.render(ref as Graphics, eidToPedestalData(eid), ctx);
   }
 }
 
-/** Рендеринг святилищ */
-export function renderShrines(world: World, time: number): void {
+/** Рендеринг святилищ (ECS) */
+function renderShrinesEcs(world: World, ctx: RenderContext): void {
   for (const eid of query(world, [SpriteComp, Shrine])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
     
-    drawShrine(
-      ref as Graphics,
-      !!Shrine.lit[eid],
-      time
-    );
+    const renderer = new ShrineRenderer();
+    renderer.render(ref as Graphics, eidToShrineData(eid), ctx);
   }
 }
 
-/** Рендеринг дверей */
-export function renderDoors(world: World, time: number): void {
+/** Рендеринг дверей (ECS) */
+function renderDoorsEcs(world: World, ctx: RenderContext): void {
   for (const eid of query(world, [SpriteComp, Door])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
     
-    drawDoor(
-      ref as Graphics,
-      Door.open[eid],
-      !!Door.locked[eid]
-    );
+    const renderer = new DoorRenderer();
+    renderer.render(ref as Graphics, eidToDoorData(eid), ctx);
   }
 }
 
-/** Рендеринг барьера */
-export function renderBarrier(world: World, time: number): void {
+/** Рендеринг барьера (ECS) */
+function renderBarrierEcs(world: World, ctx: RenderContext): void {
   for (const eid of query(world, [SpriteComp, Barrier])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
     
-    drawBarrier(
-      ref as Graphics,
-      !!Barrier.active[eid],
-      time
-    );
+    const renderer = new BarrierRenderer();
+    renderer.render(ref as Graphics, eidToBarrierData(eid), ctx);
   }
 }
 
-/** Рендеринг алтаря */
-export function renderAltar(world: World, time: number): void {
+/** Рендеринг алтаря (ECS) */
+function renderAltarEcs(world: World, ctx: RenderContext): void {
   for (const eid of query(world, [SpriteComp, Altar])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
     
-    drawAltar(
-      ref as Graphics,
-      Altar.runes[eid],
-      time
-    );
+    const renderer = new AltarRenderer();
+    renderer.render(ref as Graphics, eidToAltarData(eid), ctx);
+  }
+}
+
+/** Универсальная диспетчеризация через реестр */
+function renderByRegistry<TKey extends string, TData>(
+  world: World,
+  mask: any[],
+  pool: string[],
+  reg: { get: (key: TKey) => any | undefined },
+  mapper: (eid: number) => TData,
+  time: number
+): void {
+  for (const eid of query(world, mask)) {
+    const ref = getSpriteRef(eid);
+    if (!ref) continue;
+    
+    // Для врагов проверяем dead
+    if (mask.includes(Enemy) && Dead[eid]) continue;
+    // Для дропов проверяем taken
+    if (mask.includes(Drop) && Taken[eid]) continue;
+    
+    const kindArr = mask.includes(Enemy) ? Enemy.kind :
+                    mask.includes(Drop) ? Drop.kind :
+                    mask.includes(Projectile) ? Projectile.kind : null;
+    const key = kindArr ? (poolGet(pool, kindArr[eid]) as TKey) : (null as any);
+    const r = reg.get(key);
+    if (!r) continue;
+    
+    r.render(ref as Graphics, mapper(eid), { time });
   }
 }
 
@@ -411,17 +579,19 @@ export function renderAltar(world: World, time: number): void {
 /** Добавить плавающий текст */
 export function addFloatText(
   floatLayer: Container,
-  factory: { createText: (text: string, style: any) => Text },
+  text: string,
   x: number,
   y: number,
-  text: string,
   color: number
 ): void {
-  const txt = factory.createText(text, {
-    fontFamily: 'Arial',
-    fontSize: 4,
-    fill: color,
-    fontWeight: 'bold',
+  const txt = new Text({
+    text,
+    style: {
+      fontFamily: 'Arial',
+      fontSize: 4,
+      fill: color,
+      fontWeight: 'bold',
+    },
   });
   txt.x = x;
   txt.y = y;
@@ -490,74 +660,4 @@ function renderInteractionHint(
     hx + 2, hy - 1, hx, hy - 1,
     hx, hy + 2, hx - 2, hy + 2
   ]).fill({ color: 0xe8dcc0 });
-}
-
-// ============================================================
-// Главный цикл рендеринга
-// ============================================================
-
-/** Выполнить полный рендеринг */
-export function renderSystem(
-  world: World,
-  playerEid: number,
-  time: number,
-  app: Application,
-  floatLayer: Container,
-  dt: number,
-  cam: { x: number; y: number },
-  gameWorld: Container | null,
-  dynamic: { children: any[] } | null,
-  hintLayer: Container,
-  getNpcSig?: (npcId: string) => string,
-  talkedSig?: Map<string, string>,
-  nearestInteractable?: InteractableHit | null
-): void {
-  // Слежение камеры за игроком
-  if (playerEid >= 0 && Position.x.length > playerEid) {
-    const halfW = app.renderer.width / 2;
-    const halfH = app.renderer.height / 2;
-    cam.x = Position.x[playerEid] - halfW;
-    cam.y = Position.y[playerEid] - halfH;
-  }
-  
-  // Применяем камеру к world контейнеру — он содержит tileLayer + dynamic
-  if (gameWorld) {
-    gameWorld.position.set(-Math.round(cam.x), -Math.round(cam.y));
-  }
-  
-  // Update sprite positions
-  renderSprites(world);
-  
-  // Сортировка по глубине (z-index) на основе RenderLayer + Y
-  if (dynamic) {
-    renderSortSystem(world, dynamic);
-  }
-  
-  // Update visibility
-  renderVisibilitySystem(world, time);
-  
-  // Update flash effects
-  renderFlashSystem(world, time);
-  
-  // Render entity types — вызывают renderer функции из entities.ts
-  renderPlayer(world, playerEid, time);
-  renderEnemies(world, time);
-  renderProjectiles(world, time);
-  renderDrops(world, time);
-  renderNPCs(world, time, getNpcSig, talkedSig);
-  renderChests(world, time);
-  renderPedestals(world, time);
-  renderShrines(world, time);
-  renderDoors(world, time);
-  renderBarrier(world, time);
-  renderAltar(world, time);
-  
-  // Update float texts
-  updateFloatTexts(floatLayer, dt);
-  
-  // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
-  renderInteractionHint(hintLayer, nearestInteractable, cam, time);
-  
-  // Render PixiJS app
-  app.render();
 }

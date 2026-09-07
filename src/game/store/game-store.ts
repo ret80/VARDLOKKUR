@@ -5,22 +5,16 @@
  * - Таймеры (realT, playTime)
  * - Зона (zone)
  * - Состояние игрока (player reference)
- * - Всплывающий текст (floats)
  * - Колбэки (callbacks, services)
  *
  * Персистентное состояние мира хранится в WorldStore.
  * Игровая логика (Player, Enemy, Position, Health) — в ECS World.
  */
 
-import { Text } from "pixi.js";
 import type { Screen, EngineCallbacks, EngineServices, GameActions } from "../models";
 import type { Player } from "../entities";
 import type { World } from "bitecs";
 import type { WorldStore } from "./world-store";
-
-// ── Визуальные типы (для обратной совместимости) ──
-
-export interface FloatText { txt: Text; life: number }
 
 /** Мутации игрока (минимальный интерфейс для обратной совместимости) */
 export interface IPlayerMutations {
@@ -56,7 +50,6 @@ export interface GameStoreState {
   talkCount: number;
   trackedQuest: string;
   lastMain: string;
-  floats: FloatText[];
   callbacks: EngineCallbacks;
   _bossRef: import("../entities").Enemy | null;
   planckWorld: unknown;
@@ -83,7 +76,6 @@ export class GameStore {
       talkCount: 0,
       trackedQuest: "m1",
       lastMain: "m1",
-      floats: [],
       callbacks,
       _bossRef: null,
       planckWorld: planckWorld || null,
@@ -169,7 +161,6 @@ export class GameStore {
   set trackedQuest(v: string) { this._state.trackedQuest = v; }
   get lastMain(): string { return this._state.lastMain; }
   set lastMain(v: string) { this._state.lastMain = v; }
-  get floats(): FloatText[] { return this._state.floats; }
 
   // ── Сеттеры сессии ──
 
@@ -186,14 +177,6 @@ export class GameStore {
 
   setBossRef(ref: import("../entities").Enemy | null): void {
     this._state._bossRef = ref;
-  }
-
-  addFloatText(txt: Text, life: number): void {
-    this._state.floats.push({ txt, life });
-  }
-
-  removeFloatText(i: number): void {
-    this._state.floats.splice(i, 1);
   }
 
   // ── Босс-референс ──
@@ -294,6 +277,5 @@ export class GameStore {
     this._state.talkCount = 0;
     this._state.trackedQuest = "m1";
     this._state.lastMain = "m1";
-    this._state.floats = [];
   }
 }

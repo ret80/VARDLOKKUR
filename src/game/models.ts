@@ -9,7 +9,7 @@
 
 import type { World } from "bitecs";
 import type { Body } from "planck-js";
-import type { Graphics, Text } from "pixi.js";
+import type { Graphics } from "pixi.js";
 
 // ── Экраны ──────────────────────────────────────────────────────────────
 
@@ -81,8 +81,6 @@ export interface IWorldData {
 }
 
 // ── UI-элементы ─────────────────────────────────────────────────────────
-
-export interface FloatText { txt: Text; life: number }
 
 export interface ChestRt {
   x: number; y: number;
@@ -187,7 +185,6 @@ export interface GameStoreState {
   takenPedestals: Set<string>;
   openedChests: Set<string>;
   takenAmbient: Set<number>;
-  floats: FloatText[];
   callbacks: EngineCallbacks;
   _bossRef: any;
   planckWorld: any;

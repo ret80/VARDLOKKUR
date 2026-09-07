@@ -500,11 +500,13 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // Уничтожить физ. тело и удалить мёртвых врагов из ECS.
     // Спрайт уже удалён в lifeCheckSystem.
     for (const eid of query(world, [Dead, Enemy])) {
-      // Физ. тело
+      // Физ. тело — проверяем, что тело ещё не уничтожено (m_world === null после destroy)
       const pbIdx = PhysicsBody.body[eid];
       if (pbIdx > 0) {
         const body = PhysicsBodyRegistry[pbIdx - 1];
-        if (body) _planckWorld.worldRef.destroyBody(body);
+        if (body && body.m_world) {
+          _planckWorld.worldRef.destroyBody(body);
+        }
       }
       // Удалить из ECS
       removeEntity(world, eid);
@@ -516,21 +518,20 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   /** Выполнить ECS рендеринг */
   function render(rdt: number): void {
     const nearestInteractable = getNearestInteractable(world, _playerEid, store);
-    renderSystem(
-      world,
-      _playerEid,
-      _realT,
+    renderSystem(world, {
+      time: _realT,
+      dt: rdt,
       app,
       floatLayer,
-      rdt,
       cam,
       gameWorld,
       dynamic,
       hintLayer,
-      npcSig,
-      talkedSig.value,
-      nearestInteractable
-    );
+      playerEid: _playerEid,
+      getNpcSig: npcSig,
+      talkedSig: talkedSig.value,
+      nearestInteractable,
+    });
 
     // ===== Отрисовка тумана =====
     if (_fogState && _playerEid >= 0) {

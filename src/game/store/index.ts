@@ -31,7 +31,7 @@ export type { EngineCallbacks, EngineServices, GameActions } from "../models";
 
 // Re-export shared types from models for convenience
 export type {
-  FloatText, Screen,
+  Screen,
   ChestRt, PedestalRt, ShrineRt, NpcRt, DoorRt, BarrierRt, AltarRt,
   ProjectileRt, DropRt,
 } from "../models";
