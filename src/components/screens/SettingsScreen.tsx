@@ -1,11 +1,8 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 
 interface SettingsScreenProps {
   onClose: () => void;
-  onMusicVolume: (v: number) => void;
-  onSoundVolume: (v: number) => void;
-  musicVolume: number;
-  soundVolume: number;
+  eng: () => any;
 }
 
 /** Стиль для кастомного range-ползунка в Nordic-теме */
@@ -18,18 +15,6 @@ const sliderStyle: React.CSSProperties = {
   background: "#1e3a4a",
   outline: "none",
   cursor: "pointer",
-};
-
-const thumbStyle: React.CSSProperties = {
-  WebkitAppearance: "none",
-  appearance: "none",
-  width: 18,
-  height: 18,
-  borderRadius: 3,
-  background: "#8fd8e8",
-  border: "2px solid #1e3a4a",
-  cursor: "pointer",
-  boxShadow: "0 0 8px rgba(143,216,232,0.4)",
 };
 
 function VolumeSlider({
@@ -69,23 +54,38 @@ function VolumeSlider({
   );
 }
 
-export function SettingsScreen({
-  onClose,
-  onMusicVolume,
-  onSoundVolume,
-  musicVolume,
-  soundVolume,
-}: SettingsScreenProps) {
+export function SettingsScreen({ onClose, eng }: SettingsScreenProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [musicVolume, setMusicVolume] = useState(0.7);
+  const [soundVolume, setSoundVolume] = useState(0.8);
 
-  // Закрытие по Escape
+  // При монтировании — считываем актуальные значения из engine
+  const syncFromEngine = useCallback(() => {
+    const e = eng();
+    if (e) {
+      setMusicVolume(e.musicVol ?? 0.7);
+      setSoundVolume(e.soundVol ?? 0.8);
+    }
+  }, [eng]);
+
   useEffect(() => {
+    syncFromEngine();
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [syncFromEngine, onClose]);
+
+  const handleMusicVolume = useCallback((v: number) => {
+    setMusicVolume(v);
+    eng()?.setMusicVolume(v);
+  }, [eng]);
+
+  const handleSoundVolume = useCallback((v: number) => {
+    setSoundVolume(v);
+    eng()?.setSoundVolume(v);
+  }, [eng]);
 
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#04060acc] anim-fade-in p-4">
@@ -108,12 +108,12 @@ export function SettingsScreen({
           <VolumeSlider
             label="᛫ Громкость музыки"
             value={musicVolume}
-            onChange={onMusicVolume}
+            onChange={handleMusicVolume}
           />
           <VolumeSlider
             label="᛫ Громкость звуков"
             value={soundVolume}
-            onChange={onSoundVolume}
+            onChange={handleSoundVolume}
           />
         </div>
 

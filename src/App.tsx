@@ -76,26 +76,6 @@ export default function App() {
   const [summoning, setSummoning] = useState(false);
   const [bootErr, setBootErr] = useState<string | null>(null);
   const [coarse] = useState(() => window.matchMedia("(pointer: coarse)").matches);
-  const [musicVolume, setMusicVolume] = useState(() => {
-    try {
-      const raw = localStorage.getItem("vardlokkur_audio");
-      if (raw) {
-        const p = JSON.parse(raw);
-        if (typeof p.musicVol === "number") return p.musicVol;
-      }
-    } catch {}
-    return 0.7;
-  });
-  const [soundVolume, setSoundVolume] = useState(() => {
-    try {
-      const raw = localStorage.getItem("vardlokkur_audio");
-      if (raw) {
-        const p = JSON.parse(raw);
-        if (typeof p.soundVol === "number") return p.soundVol;
-      }
-    } catch {}
-    return 0.8;
-  });
   const mmRef = useRef<HTMLCanvasElement>(null);
   const padRef = useRef<HTMLDivElement>(null);
 
@@ -303,10 +283,7 @@ export default function App() {
       {screen === "settings" && (
         <SettingsScreen
           onClose={() => eng()?.handleSettings()}
-          onMusicVolume={(v) => { eng()?.setMusicVolume(v); setMusicVolume(v); }}
-          onSoundVolume={(v) => { eng()?.setSoundVolume(v); setSoundVolume(v); }}
-          musicVolume={musicVolume}
-          soundVolume={soundVolume}
+          eng={eng}
         />
       )}
 
