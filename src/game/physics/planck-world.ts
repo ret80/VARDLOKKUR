@@ -116,6 +116,8 @@ export class PlanckWorld {
   private callbacks: PhysicsCallbacks;
   private pendingDestroy: Body[] = [];
   private destroyedBodies = new WeakSet<Body>();
+  /** Набор тел, удалённых в текущем шаге — чтобы не синхронизировать их fixtures */
+  private destroyedThisStep: Body[] = [];
 
   constructor(callbacks: PhysicsCallbacks = {}) {
     this.callbacks = callbacks;
@@ -319,10 +321,19 @@ export class PlanckWorld {
   destroyBody(body: Body): void {
     if (this.destroyedBodies.has(body)) return;
     this.destroyedBodies.add(body);
+    // Помечаем как уничтоженное в текущем шаге — это предотвратит
+    // synchronizeFixtures для этого тела на следующем step()
+    this.destroyedThisStep.push(body);
     if (this.world.isLocked()) {
       this.pendingDestroy.push(body);
     } else {
-      this.world.destroyBody(body);
+      try {
+        this.world.destroyBody(body);
+      } catch {
+        // Тело уже было удалено (например, через pendingDestroy в том же кадре)
+        // Очищаем WeakSet, чтобы не блокировать будущие попытки
+        this.destroyedBodies.delete(body);
+      }
     }
   }
 
@@ -331,12 +342,56 @@ export class PlanckWorld {
   // ============================================================
 
   step(dt: number): void {
-    if (this.pendingDestroy.length > 0 && !this.world.isLocked()) {
+    // Если мир заблокирован (мы внутри step), отменяем отложенное уничтожение —
+    // оно будет обработано в следующем кадре. Иначе получим double-destroy.
+    if (this.world.isLocked()) return;
+
+    // ── Предварительная обработка pendingDestroy ──
+    // Уничтожаем тела, которые были помечены ДО начала этого шага.
+    // Это необходимо делать до world.step(), чтобы их fixtures не пытались
+    // синхронизироваться при итерации по списку тел (Box2D не удаляет
+    // тело из m_bodyList при уничтожении внутри шага, что вызывает краш
+    // в DynamicTree.moveProxy).
+    if (this.pendingDestroy.length > 0) {
       for (const b of this.pendingDestroy) {
+        if (this.destroyedBodies.has(b)) continue;
+        // Снимаем fixtures с дерева ДО уничтожения тела — иначе
+        // synchronizeFixtures на world.step() попытается moveProxy
+        // для proxy, которого уже нет в дереве.
+        let fixture = b.getFixtureList();
+        while (fixture) {
+          const tree = (b.getWorld() as any)?.m_broadPhase?.m_tree;
+          if (tree && fixture.m_proxy) {
+            try { tree.removeProxy(fixture.m_proxy); } catch {}
+            fixture.m_proxy = null;
+          }
+          fixture = fixture.m_next;
+        }
         try { this.world.destroyBody(b); } catch {}
       }
       this.pendingDestroy.length = 0;
     }
+
+    // ── Detach fixtures destroyed-тел от broadphase-дерева ──
+    // Когда destroyBody() вызывается внутри world.step() (через begin-contact),
+    // тело удаляется из мира, но остаётся в m_bodyList. При итерации
+    // synchronizeFixtures пытается moveProxy для fixtures, которых уже нет в дереве.
+    // Здесь мы вручную снимаем все fixtures уничтоженных тел с дерева.
+    this.destroyedThisStep.forEach((body) => {
+      if (!this.destroyedBodies.has(body)) return;
+      let fixture = body.getFixtureList();
+      while (fixture) {
+        const tree = (body.getWorld() as any)?.m_broadPhase?.m_tree;
+        if (tree && fixture.m_proxy) {
+          try { tree.removeProxy(fixture.m_proxy); } catch {}
+          // Обнуляем — иначе synchronizeFixtures на следующем кадре
+          // попытается moveProxy для уже удалённого из дерева proxy
+          fixture.m_proxy = null;
+        }
+        fixture = fixture.m_next;
+      }
+    });
+    this.destroyedThisStep.length = 0;
 
     // Sub-stepping для точных коллизий
     const subSteps = 4;
@@ -406,11 +461,14 @@ export class PlanckWorld {
 
   clear(): void {
     for (const b of this.tileBodies) {
-      try { this.world.destroyBody(b); } catch {}
+      if (!this.destroyedBodies.has(b)) {
+        try { this.world.destroyBody(b); } catch {}
+      }
     }
     this.tileBodies.length = 0;
     this.entityMap.clear();
     this.pendingDestroy.length = 0;
+    this.destroyedBodies = new WeakSet<Body>();
   }
 }
 

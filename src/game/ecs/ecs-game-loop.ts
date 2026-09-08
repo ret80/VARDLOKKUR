@@ -383,6 +383,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
         if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
         spriteRef?.destroy();
+        Sprite.ref[eid] = 0;
         const pbIdx = PhysicsBody.body[eid];
         if (pbIdx > 0) {
           const body = PhysicsBodyRegistry[pbIdx - 1];
@@ -424,6 +425,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
         if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
         spriteRef?.destroy();
+        Sprite.ref[eid] = 0;
       },
       playerDomain,
       getDropRegistry()
@@ -483,6 +485,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       if (pbIdx > 0) {
         const body = PhysicsBodyRegistry[pbIdx - 1];
         if (body) {
+          // Безопасное удаление: тело могло быть уже удалено в step()/pendingDestroy
           _planckWorld.destroyBody(body);
           PhysicsBody.body[peid] = 0;
           PhysicsBodyRegistry[pbIdx - 1] = null as any;
@@ -497,6 +500,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       if (pbIdx > 0) {
         const body = PhysicsBodyRegistry[pbIdx - 1];
         if (body) {
+          // Безопасное удаление: destroyBody проверяет destroyedBodies и
+          // обрабатывает случай, когда тело уже удалено в step()/pendingDestroy
           _planckWorld.destroyBody(body);
           PhysicsBody.body[eid] = 0;
           PhysicsBodyRegistry[pbIdx - 1] = null as any;
@@ -554,7 +559,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     render,
     get realT() { return _realT; },
     set realT(v: number) { _realT = v; },
-    setPlayerEid: (eid: number) => { _playerEid = eid; },
+    setPlayerEid: (eid: number) => { console.log('[setPlayerEid]', eid); _playerEid = eid; },
     getPlayerEid: () => _playerEid,
     isDungeonBossDead: (id: number) => dungeonBossDead(id),
     getDropsForTransition: () => {

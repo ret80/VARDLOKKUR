@@ -18,6 +18,7 @@ import {
   Direction,
   RenderLayer,
   Player,
+  Dead,
   Enemy,
   Projectile,
   Drop,
@@ -81,6 +82,7 @@ export function createLivingEntity(world: World, hp: number, layer: number = 0):
 /** Создать игрока */
 export function createPlayerEntity(world: World, x: number, y: number): number {
   const eid = createLivingEntity(world, 12, 100);
+  Dead[eid] = 0;  // Гарантируем что Dead=0 — важно после респавна
   addComponents(world, eid, Player, Direction, Velocity);
   addComponent(world, eid, PhysicsBody);
   Position.x[eid] = x;

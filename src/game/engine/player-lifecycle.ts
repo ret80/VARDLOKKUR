@@ -69,9 +69,12 @@ export class PlayerLifecycle {
       ? (this.playerDomain as any)._eid ?? -1 
       : -1;
 
+    console.log('[respawn] START eid=', eid, 'spawn=', spawn);
+
     // Set position via ECS
     if (eid >= 0) {
       Dead[eid] = 0;  // Сбросить флаг смерти — иначе renderPlayer пропускает игрока
+      console.log('[respawn] reset Dead[eid]=0, reset pos/vel');
       Position.x[eid] = spawn.x;
       Position.y[eid] = spawn.y;
       Velocity.x[eid] = 0;
@@ -91,9 +94,11 @@ export class PlayerLifecycle {
     player.y = spawn.y;
 
     this.cbs.resetDeath?.();
+    console.log('[respawn] calling loadMap...');
+    this.cbs.loadMap(ow, spawn);
+    console.log('[respawn] loadMap done, playerDomain._eid=', (this.playerDomain as any)._eid);
     this.store.setScreen("play");
     this.cbs.fadeTo(1);
-    this.cbs.loadMap(ow, spawn);
     this.hud.pushHud(true);
     this.bus.emit("player:respawned", {});
   }

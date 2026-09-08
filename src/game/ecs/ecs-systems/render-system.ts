@@ -56,7 +56,15 @@ import type { RenderContext } from '../../renderers';
 /** Получить PixiJS объект из Sprite registry */
 function getSpriteRef(eid: number): any {
   const idx = SpriteComp.ref[eid];
-  return idx > 0 ? SpriteRegistry[idx - 1] : undefined;
+  if (idx <= 0 || idx > SpriteRegistry.length) {
+    return undefined;
+  }
+  const s = SpriteRegistry[idx - 1];
+  // Спрайт мог быть уничтожен (смерть врага) — возвращаем undefined
+  if (!s) return undefined;
+  // Спрайт мог быть уничтожен в PixiJS — проверяем флаг destroyed
+  if ((s as any).destroyed) return undefined;
+  return s;
 }
 
 /** Обновить позицию спрайта из Position компонента */
@@ -78,6 +86,8 @@ export function renderSprites(world: World): void {
   for (const eid of query(world, [Position, SpriteComp])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
+    // Спрайт мог быть уничтожен (смерть врага) — проверяем destroyed флаг PixiJS
+    if ((ref as any).destroyed) continue;
     
     ref.x = px[eid];
     ref.y = py[eid];
@@ -142,6 +152,7 @@ export function renderSortSystem(
 /** Обновить видимость спрайтов (Dead, Hidden, hurt-мигание) */
 export function renderVisibilitySystem(
   world: World,
+  playerEid: number,
   time: number
 ): void {
   const dead = Dead;
@@ -152,7 +163,10 @@ export function renderVisibilitySystem(
     const ref = getSpriteRef(eid);
     if (!ref) continue;
     
-    if (dead[eid]) {
+    // Dead проверяем только для игрока — остальные сущности удаляются
+    // через removeEntity при смерти, и их eid может переиспользоваться,
+    // что приведёт к ложному скрытию (например, святилища не зажигаются).
+    if (eid === playerEid && dead[eid]) {
       ref.alpha = 0;
     } else if (hidden[eid]) {
       ref.alpha = 0.25;
@@ -344,6 +358,11 @@ export function renderSystem(
   opts: RenderSystemOptions
 ): void {
   const { time, dt, floatLayer, cam, gameWorld, dynamic, hintLayer, playerEid } = opts;
+  
+  // Лог: состояние игрока при рендере (раз в 1 сек)
+  if (playerEid >= 0 && time % 1 < dt) {
+    console.log('[render] playerEid=', playerEid, 'Dead=', !!Dead[playerEid], 'ref=', SpriteComp.ref[playerEid]);
+  }
 
   // Слежение камеры за игроком
   if (playerEid >= 0 && Position.x.length > playerEid) {
@@ -367,7 +386,7 @@ export function renderSystem(
   }
   
   // Update visibility
-  renderVisibilitySystem(world, time);
+  renderVisibilitySystem(world, playerEid, time);
   
   // Update flash effects
   renderFlashSystem(world, time);
@@ -425,17 +444,40 @@ export function renderSystem(
   // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
   renderInteractionHint(hintLayer, opts.nearestInteractable, cam, time);
   
+  // Очистка уничтоженных спрайтов из dynamic контейнера
+  // (они могли остаться если parent.removeChild не сработал)
+  if (dynamic) {
+    const dyn = dynamic as any;
+    const children = dyn.children;
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      if (child && child.destroyed) {
+        dyn.removeChild(child);
+        try { child.destroy(); } catch {}
+      }
+    }
+  }
+  
   // Render PixiJS app
   opts.app.render();
 }
 
 /** Рендеринг игрока (ECS) */
 function renderPlayerEcs(world: World, playerEid: number, ctx: RenderContext): void {
-  if (playerEid < 0) return;
-  if (!!Dead[playerEid]) return;
+  if (playerEid < 0) {
+    console.log('[renderPlayer] SKIP: playerEid < 0');
+    return;
+  }
+  if (!!Dead[playerEid]) {
+    console.log('[renderPlayer] SKIP: Dead=', !!Dead[playerEid], 'playerEid=', playerEid);
+    return;
+  }
   
   const ref = getSpriteRef(playerEid);
-  if (!ref) return;
+  if (!ref) {
+    console.log('[renderPlayer] SKIP: ref is null, playerEid=', playerEid, 'ref=', SpriteComp.ref[playerEid]);
+    return;
+  }
   
   const renderer = new PlayerRenderer();
   renderer.render(ref as Graphics, eidToPlayerRenderData(playerEid), ctx);

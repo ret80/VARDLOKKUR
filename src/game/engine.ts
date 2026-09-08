@@ -524,7 +524,14 @@ export class Engine {
 
     const result = this.mapLoader.loadMapEcs(
       map, spawn, this.playerDomain, this.playerG, savedDrops,
-      (msg) => this.toast(msg)
+      (msg) => this.toast(msg),
+      (eid) => {
+        // Вызывается ПОСЛЕ создания игрока — SpriteRegistry уже заполнен
+        if (this.ecsGameLoop) {
+          this.ecsGameLoop.setPlayerEid(eid);
+          this.playerDomain.setEid(eid);
+        }
+      }
     );
     this.ecsMapLoader = this.mapLoader.ecsMapLoader;
     this.ecsPlayerBody = result.playerBody;
@@ -533,8 +540,6 @@ export class Engine {
     // Обновляем game loop с новыми данными (без пересоздания)
     if (this.ecsGameLoop) {
       this.ecsGameLoop.setPlanckWorld(this.ecsMapLoader!.planckWorld);
-      this.ecsGameLoop.setPlayerEid(result.playerEid);
-      this.playerDomain.setEid(result.playerEid);
       this.ecsGameLoop.updateConfig({
         map,
         flags: this.store.flags,

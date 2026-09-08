@@ -54,7 +54,8 @@ export class MapLoaderService {
     playerDomain: PlayerDomain,
     playerG: any,
     savedDrops: Array<{ kind: string; x: number; y: number; life: number; ambientIdx?: number }>,
-    toast: (msg: string) => void
+    toast: (msg: string) => void,
+    onPlayerCreated?: (eid: number) => void
   ): LoadMapResult {
     // Строим текстуры — ground как фон, стены/дома в tileLayer
     const tileResult = buildAllTileTextures(map, this.store.roofSnow);
@@ -109,7 +110,7 @@ export class MapLoaderService {
       toast,
     });
 
-    const result = this.ecsMapLoader.loadMap(playerG, playerDomain);
+    const result = this.ecsMapLoader.loadMap(playerG, playerDomain, onPlayerCreated);
     this._mmBase = buildMinimapBase(map);
     return result;
   }

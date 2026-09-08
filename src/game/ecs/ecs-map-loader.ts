@@ -1,6 +1,6 @@
 /* ecs-map-loader.ts — загрузка сущностей карты в ECS */
 
-import { type World } from 'bitecs';
+import { type World, query, removeEntity, addComponent } from 'bitecs';
 import { Graphics } from 'pixi.js';
 import { Cat, getEnemyCategory, getEnemyMask } from '../physics/planck-world';
 import { T, WorldData, Vec, solidTileAt } from '../world';
@@ -8,7 +8,6 @@ import { clamp } from '../utils';
 import type { PlanckWorld } from '../physics/planck-world';
 import type { DropKind } from '../generators/types';
 import {
-  createPlayerInEcs,
   createEnemyInEcs,
   createNpcInEcs,
   createChestInEcs,
@@ -20,8 +19,16 @@ import {
   createDropInEcs,
 } from './ecs-bridge';
 import { createBodyForEntity } from './ecs-systems';
+import { createPlayerEntity } from './ecs-utils';
 import { EventBus } from '../event-bus';
-import { Shrine } from './ecs-components';
+import {
+  Shrine,
+  Sprite,
+  SpriteRegistry,
+  PhysicsBodyRegistry,
+  EnemyAI,
+  EnemyAIRegistry,
+} from './ecs-components';
 
 // ============================================================
 // Конфигурация Map Loader
@@ -69,12 +76,17 @@ export class EcsMapLoader {
   /** Загрузить карту в ECS */
   loadMap(
     playerG: Graphics,
-    playerDomain: any
+    playerDomain: any,
+    onPlayerCreated?: (eid: number) => void
   ): { playerEid: number; playerBody: any; cam: { x: number; y: number } } {
     const { world, planckWorld, dynamicContainer, map, spawn, viewW, viewH, flags } = this.config;
 
-    // 1. Очистить старый мир
-    this.clearWorld(world);
+    // 1. Сохранить playerG перед очисткой — он мог быть удалён из dynamicContainer при смерти игрока
+    // и будет уничтожен clearWorld из-за !s.parent
+    const savedPlayerG = playerG;
+
+    // 1-1. Очистить старый мир
+    this.clearWorld(world, savedPlayerG);
 
     // 2. Создать тайловые коллайдеры
     this.createTileBodies(map, planckWorld);
@@ -85,7 +97,10 @@ export class EcsMapLoader {
     (playerG as any).userData.eid = this.playerEid;
     dynamicContainer.addChild(playerG);
 
-    // 4. Камера
+    // 4. Вызвать callback после создания игрока — SpriteRegistry уже заполнен
+    if (onPlayerCreated) onPlayerCreated(this.playerEid);
+
+    // 5. Камера
     const cam = {
       x: clamp(spawn.x - viewW / 2, 0, Math.max(0, map.W * T - viewW)),
       y: clamp(spawn.y - viewH / 2, 0, Math.max(0, map.H * T - viewH)),
@@ -107,8 +122,38 @@ export class EcsMapLoader {
     return { playerEid: this.playerEid, playerBody: null, cam };
   }
 
-  private clearWorld(_world: World): void {
-    // TODO: оптимизация
+  private clearWorld(world: World, preservePlayerSprite?: Graphics): void {
+    // Удалить ВСЕ сущности из ECS мира — иначе при перезагрузке карты
+    // старые живые враги (компонент Enemy) остаются в мире и дублируются
+    // новыми врагами из map.spawns
+
+    // 1. Собрать все ID (не удалять во время итерации — iterator может сломаться)
+    const eids: number[] = [];
+    for (const eid of query(world, [])) {
+      eids.push(eid);
+    }
+    // 2. Удалить все сущности из ECS
+    for (const eid of eids) {
+      removeEntity(world, eid);
+    }
+
+    // 3. Очистить Registry — освободить память и убрать рассинхронизацию
+    // Не уничтожать спрайт игрока — он мог быть удалён из display list при смерти
+    // и будет ложно уничтожен из-за !s.parent
+    for (let i = 0; i < SpriteRegistry.length; i++) {
+      const s = SpriteRegistry[i];
+      if (s === preservePlayerSprite) continue;  // Не уничтожать спрайт игрока
+      if (s && !s.parent) {
+        try { s.destroy(); } catch {}
+      }
+    }
+    SpriteRegistry.length = 0;
+    // Восстановить спрайт игрока в реестре
+    if (preservePlayerSprite) {
+      SpriteRegistry.push(preservePlayerSprite);
+    }
+    PhysicsBodyRegistry.length = 0;
+    EnemyAIRegistry.length = 0;
   }
 
   private createTileBodies(map: WorldData, planckWorld: PlanckWorld): void {
@@ -126,7 +171,13 @@ export class EcsMapLoader {
   private createPlayer(
     world: World, spawn: Vec, playerG: Graphics, planckWorld: PlanckWorld
   ): number {
-    const eid = createPlayerInEcs(world, spawn.x, spawn.y, playerG);
+    // Создаём ECS сущность игрока (без Sprite — playerG уже восстановлен в clearWorld)
+    const eid = createPlayerEntity(world, spawn.x, spawn.y);
+    // Добавляем компонент Sprite и связываем с уже существующим playerG
+    addComponent(world, eid, Sprite);
+    // playerG уже в SpriteRegistry[0] после clearWorld — устанавливаем индекс
+    Sprite.ref[eid] = 1;
+    // Создаём физическое тело
     createBodyForEntity(planckWorld, world, eid, 5, Cat.Player, Cat.Player | Cat.Ground | Cat.Enemy | Cat.Projectile);
     return eid;
   }

@@ -4,6 +4,7 @@ import {
   query,
   removeEntity,
   addComponents,
+  hasComponent,
   type World,
 } from 'bitecs';
 import {
@@ -29,21 +30,30 @@ export function lifeCheckSystem(world: World): void {
     if (Health.current[eid] <= 0 && !Dead[eid]) {
       Dead[eid] = 1;
       addComponents(world, eid, Dead);
+      // Лог: игрок умер
+      if (hasComponent(world, eid, Player)) {
+        console.log('[lifeCheck] PLAYER DIED! eid=', eid, 'hp=', Health.current[eid]);
+      }
       // bus.emit('entity:died', { eid });
     }
   }
 
   // Очистить спрайт мёртвых врагов (физ. тело удалится в game loop)
   for (const eid of query(world, [Dead, Enemy])) {
-    const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
+    const spriteIdx = Sprite.ref[eid];
+    const spriteRef = SpriteRegistry[spriteIdx - 1];
     if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
     spriteRef?.destroy();
+    // Сбросить ссылку — иначе renderSprites попытается обратиться к уничтоженному спрайту
+    Sprite.ref[eid] = 0;
   }
 }
 
-/** Удалить мёртвые сущности */
+/** Удалить мёртвые сущности (кроме игрока — его Dead сбрасывается при респавне) */
 export function deathCleanupSystem(world: World): void {
   for (const eid of query(world, [Dead])) {
+    // Не удалять игрока — его Dead сбрасывается в respawn(), а спрайт удаляется в game loop
+    if (hasComponent(world, eid, Player)) continue;
     // bus.emit('entity:dead', { eid });
     removeEntity(world, eid);
   }
