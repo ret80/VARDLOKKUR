@@ -1,7 +1,6 @@
 /* player-lifecycle.ts – Управление респавном и использованием сердца */
 
 import { T } from "../world";
-import { Position, Velocity, Player, Health, Dead } from "../ecs/ecs-components";
 import type { GameStore } from "../store";
 import { PlayerDomain } from "../store/player-domain";
 import type { EventBus } from "../event-bus";
@@ -65,33 +64,11 @@ export class PlayerLifecycle {
       spawn = this.store.map?.spawn ?? { x: 0, y: 0 };
     }
 
-    const eid = this.playerDomain instanceof PlayerDomain 
-      ? (this.playerDomain as any)._eid ?? -1 
-      : -1;
-
-    console.log('[respawn] START eid=', eid, 'spawn=', spawn, 'ow=', ow ? 'present' : 'null', 'shrines=', ow?.shrines?.length ?? -1);
-
-    // Set position via ECS
-    if (eid >= 0) {
-      Dead[eid] = 0;  // Сбросить флаг смерти — иначе renderPlayer пропускает игрока
-      console.log('[respawn] reset Dead[eid]=0, reset pos/vel');
-      Position.x[eid] = spawn.x;
-      Position.y[eid] = spawn.y;
-      Velocity.x[eid] = 0;
-      Velocity.y[eid] = 0;
-    }
-
-    // Full heal via ECS
-    if (eid >= 0) {
-      Health.current[eid] = Health.max[eid];
-      Player.swingT[eid] = 0;
-      Player.hurtT[eid] = 0;
-      Player.slowT[eid] = 0;
-    }
-
     // Sync to store.player for legacy minimap (before ECS player created)
     player.x = spawn.x;
     player.y = spawn.y;
+
+    console.log('[respawn] spawn=', spawn, 'ow=', ow ? 'present' : 'null', 'shrines=', ow?.shrines?.length ?? -1);
 
     this.cbs.resetDeath?.();
     console.log('[respawn] calling loadMap(ow, spawn)...');
