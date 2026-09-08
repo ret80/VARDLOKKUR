@@ -137,7 +137,9 @@ export const Barrier = {
 } as const;
 
 // --- Altar ---
-export const Altar = {} as const;
+export const Altar = {
+  runes: new Float32Array(10000),
+} as const;
 
 // --- Dead ---
 export const Dead = new Uint8Array(10000);
