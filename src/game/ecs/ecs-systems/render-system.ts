@@ -83,7 +83,12 @@ export function updateSpritePosition(world: World, eid: number): void {
 export function renderSprites(world: World): void {
   const { x: px, y: py } = Position;
 
-  for (const eid of query(world, [Position, SpriteComp])) {
+  const matched = [...query(world, [Position, SpriteComp])];
+  if (matched.length > 0) {
+    console.log('[renderSprites] query found', matched.length, 'entities with [Position, Sprite]');
+  }
+
+  for (const eid of matched) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
     // Спрайт мог быть уничтожен (смерть врага) — проверяем destroyed флаг PixiJS

@@ -527,9 +527,11 @@ export class Engine {
       (msg) => this.toast(msg),
       (eid) => {
         // Вызывается ПОСЛЕ создания игрока — SpriteRegistry уже заполнен
+        console.log('[loadMapEcs] onPlayerCreated called with eid=', eid, 'ecsGameLoop=', !!this.ecsGameLoop);
         if (this.ecsGameLoop) {
           this.ecsGameLoop.setPlayerEid(eid);
           this.playerDomain.setEid(eid);
+          console.log('[loadMapEcs] setPlayerEid and playerDomain.setEid done, playerDomain._eid=', (this.playerDomain as any)._eid);
         }
       }
     );
@@ -577,7 +579,13 @@ export class Engine {
     } else {
       audio.setIntensity(0);
       if (this.state.screen === "death") {
-        if (this.state.tickDeathTimer(rdt) <= 0 && this.state.screen === "death") this.respawn();
+        const remaining = this.state.tickDeathTimer(rdt);
+        if (remaining <= 0 && this.state.screen === "death") {
+          console.log('[ENGINE] death timer expired, calling respawn()');
+          this.respawn();
+        } else if (remaining > 0) {
+          console.log('[ENGINE] death timer:', remaining.toFixed(2), 's remaining');
+        }
       }
     }
 

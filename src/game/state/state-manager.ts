@@ -54,6 +54,7 @@ export class StateManager {
 
   onPlayerDied(): void {
     if (this.playerDead) return;
+    console.log('[State] onPlayerDied! setting screen=death, deathT=1.8');
     this.playerDead = true;
     this.setScreen("death");
     this.deathT = 1.8;

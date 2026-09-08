@@ -252,7 +252,7 @@ function addPedestalComponents(world: World, eid: number, id: string, x: number,
 }
 
 function addShrineComponents(world: World, eid: number, x: number, y: number, spriteRef: Graphics): void {
-  addComponents(world, eid, Shrine);
+  addComponents(world, eid, Shrine, Position);
   addComponent(world, eid, Sprite);
   Shrine.lit[eid] = 0;
   SpriteRegistry.push(spriteRef);

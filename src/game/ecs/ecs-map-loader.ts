@@ -100,6 +100,7 @@ export class EcsMapLoader {
     dynamicContainer.addChild(playerG);
 
     // 4. Вызвать callback после создания игрока — SpriteRegistry уже заполнен
+    console.log('[loadMap] playerEid=', this.playerEid, 'onPlayerCreated=', !!onPlayerCreated);
     if (onPlayerCreated) onPlayerCreated(this.playerEid);
 
     // 5. Камера
@@ -125,6 +126,8 @@ export class EcsMapLoader {
   }
 
   private clearWorld(world: World, preservePlayerSprite?: Graphics): void {
+    const registryBefore = SpriteRegistry.length;
+
     // Удалить ВСЕ сущности из ECS мира
     const eids: number[] = [];
     for (const eid of query(world, [])) {
@@ -140,19 +143,32 @@ export class EcsMapLoader {
     resetAllComponents();
 
     // Очистить SpriteRegistry — но не уничтожать playerG
+    // Используем strict equality + identity check для надёжной защиты playerSprite
+    const playerG = preservePlayerSprite;
+    let playerFound = false;
     for (const s of [...SpriteRegistry]) {
-      if (s !== preservePlayerSprite) {
+      if (s === playerG) {
+        playerFound = true;
+      } else {
         s.destroy({ texture: true });
       }
     }
     SpriteRegistry.length = 0;
-    if (preservePlayerSprite) {
-      SpriteRegistry.push(preservePlayerSprite);
+
+    // Гарантируем, что спрайт игрока всегда под индексом 0 после очистки
+    if (playerG) {
+      if (!playerFound) {
+        // playerG не найден в реестре — возможно, он был удалён из dynamic.children
+        // при смерти игрока. Добавляем его обратно.
+      }
+      SpriteRegistry.push(playerG);
     }
 
     // Очистить другие реестры
     EnemyAIRegistry.length = 0;
     PhysicsBodyRegistry.length = 0;
+
+    console.log('[clearWorld] cleared', eids.length, 'entities, sprites:', registryBefore, '->', SpriteRegistry.length);
   }
 
   private createTileBodies(map: WorldData, planckWorld: PlanckWorld): void {
@@ -195,6 +211,7 @@ export class EcsMapLoader {
   }
 
   private spawnChests(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+    console.log('[spawnChests] START map.chests.length=', map.chests.length);
     const { openedChests } = this.config;
     for (const c of map.chests) {
       const g = new Graphics();
@@ -239,6 +256,7 @@ export class EcsMapLoader {
   }
 
   private spawnShrines(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+    console.log('[spawnShrines] map.shrines.length=', map.shrines.length);
     for (let j = 0; j < map.shrines.length; j++) {
       const s = map.shrines[j];
       const sx = s.x * T + 8;
@@ -259,6 +277,7 @@ export class EcsMapLoader {
   }
 
   private spawnNpcs(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+    console.log('[spawnNpcs] START map.npcs.length=', map.npcs.length, 'map.souls.length=', map.souls?.length ?? 0);
     for (const n of map.npcs) {
       const g = new Graphics();
       g.position.set(n.x * T + 8, n.y * T + 8);

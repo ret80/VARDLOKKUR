@@ -69,7 +69,7 @@ export class PlayerLifecycle {
       ? (this.playerDomain as any)._eid ?? -1 
       : -1;
 
-    console.log('[respawn] START eid=', eid, 'spawn=', spawn);
+    console.log('[respawn] START eid=', eid, 'spawn=', spawn, 'ow=', ow ? 'present' : 'null', 'shrines=', ow?.shrines?.length ?? -1);
 
     // Set position via ECS
     if (eid >= 0) {
@@ -94,7 +94,7 @@ export class PlayerLifecycle {
     player.y = spawn.y;
 
     this.cbs.resetDeath?.();
-    console.log('[respawn] calling loadMap...');
+    console.log('[respawn] calling loadMap(ow, spawn)...');
     this.cbs.loadMap(ow, spawn);
     console.log('[respawn] loadMap done, playerDomain._eid=', (this.playerDomain as any)._eid);
     this.store.setScreen("play");
