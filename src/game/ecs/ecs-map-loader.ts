@@ -28,6 +28,8 @@ import {
   PhysicsBodyRegistry,
   EnemyAI,
   EnemyAIRegistry,
+  Chest,
+  resetAllComponents,
 } from './ecs-components';
 
 // ============================================================
@@ -123,37 +125,34 @@ export class EcsMapLoader {
   }
 
   private clearWorld(world: World, preservePlayerSprite?: Graphics): void {
-    // Удалить ВСЕ сущности из ECS мира — иначе при перезагрузке карты
-    // старые живые враги (компонент Enemy) остаются в мире и дублируются
-    // новыми врагами из map.spawns
-
-    // 1. Собрать все ID (не удалять во время итерации — iterator может сломаться)
+    // Удалить ВСЕ сущности из ECS мира
     const eids: number[] = [];
     for (const eid of query(world, [])) {
       eids.push(eid);
     }
-    // 2. Удалить все сущности из ECS
     for (const eid of eids) {
       removeEntity(world, eid);
     }
 
-    // 3. Очистить Registry — освободить память и убрать рассинхронизацию
-    // Не уничтожать спрайт игрока — он мог быть удалён из display list при смерти
-    // и будет ложно уничтожен из-за !s.parent
-    for (let i = 0; i < SpriteRegistry.length; i++) {
-      const s = SpriteRegistry[i];
-      if (s === preservePlayerSprite) continue;  // Не уничтожать спрайт игрока
-      if (s && !s.parent) {
-        try { s.destroy(); } catch {}
+    // Сбросить все SoA массивы компонентов — иначе при повторном создании сущностей
+    // старые данные (Enemy.kind[0] = "crawler") останутся и могут быть прочитаны
+    // для новых сущностей (например, сундука с тем же ID=0)
+    resetAllComponents();
+
+    // Очистить SpriteRegistry — но не уничтожать playerG
+    for (const s of [...SpriteRegistry]) {
+      if (s !== preservePlayerSprite) {
+        s.destroy({ texture: true });
       }
     }
     SpriteRegistry.length = 0;
-    // Восстановить спрайт игрока в реестре
     if (preservePlayerSprite) {
       SpriteRegistry.push(preservePlayerSprite);
     }
-    PhysicsBodyRegistry.length = 0;
+
+    // Очистить другие реестры
     EnemyAIRegistry.length = 0;
+    PhysicsBodyRegistry.length = 0;
   }
 
   private createTileBodies(map: WorldData, planckWorld: PlanckWorld): void {
@@ -204,6 +203,10 @@ export class EcsMapLoader {
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
+      // Восстановить состояние opened из store.openedChests
+      if (openedChests.has(`${c.x}_${c.y}`)) {
+        Chest.opened[eid] = 1;
+      }
     }
     if (!map.isDungeon && this.config.flags.secretKnown) {
       const g = new Graphics();
@@ -212,6 +215,9 @@ export class EcsMapLoader {
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
+      if (openedChests.has(`${map.stashSpot.x}_${map.stashSpot.y}`)) {
+        Chest.opened[eid] = 1;
+      }
     }
   }
 

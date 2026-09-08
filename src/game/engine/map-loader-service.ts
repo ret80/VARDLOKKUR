@@ -1,6 +1,6 @@
 /* map-loader-service.ts – Загрузка карт: тайлы, ECS-сущности, миникарта */
 
-import { Sprite } from "pixi.js";
+import { Sprite, Graphics } from "pixi.js";
 import { PlanckWorld } from "../physics/planck-world";
 import type { WorldData, Vec } from "../world";
 import type { GameStore } from "../store";
@@ -40,9 +40,11 @@ export class MapLoaderService {
   get mmBase(): ImageData | null { return this._mmBase; }
 
   /** Очистить tileLayer и dynamic контейнеры перед загрузкой новой карты */
-  clearTiles(): void {
+  clearTiles(preservePlayerG?: Graphics): void {
+    // Сохраняем playerG перед очисткой dynamic — он может быть уничтожен clearDynamic()
+    // без этого playerG.destroy() вызовется и playerG.position станет null
     this.scene.clearTiles();
-    this.scene.clearDynamic();
+    this.scene.clearDynamic(preservePlayerG);
   }
 
   /** ECS загрузка карты: тайлы + сущности + миникарта */
@@ -55,8 +57,8 @@ export class MapLoaderService {
     toast: (msg: string) => void,
     onPlayerCreated?: (eid: number) => void
   ): LoadMapResult {
-    // Очищаем старые тайлы перед построением новых
-    this.clearTiles();
+    // Очищаем старые тайлы перед построением новых, сохраняем playerG
+    this.clearTiles(playerG);
 
     // Строим текстуры — ground как фон, стены/дома в tileLayer
     const tileResult = buildAllTileTextures(map, this.store.roofSnow);

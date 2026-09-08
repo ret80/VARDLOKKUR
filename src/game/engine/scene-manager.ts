@@ -48,9 +48,11 @@ export class SceneManager {
     this.tileLayer.removeChildren();
   }
 
-  /** Очистить dynamic контейнер */
-  clearDynamic(): void {
+  /** Очистить dynamic контейнер, не уничтожая playerG */
+  clearDynamic(preservePlayerG?: Graphics): void {
     for (const child of this.dynamic.children) {
+      // Не уничтожать спрайт игрока — он пересоздаётся при загрузке карты
+      if (preservePlayerG && child === preservePlayerG) continue;
       // Текстуры кэшируются (wallCache, houseCache) — не уничтожаем их здесь
       child.destroy({ children: true });
     }
