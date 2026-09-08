@@ -39,12 +39,10 @@ export class MapLoaderService {
 
   get mmBase(): ImageData | null { return this._mmBase; }
 
-  /** Очистить tileLayer и уничтожить все спрайты тайлов */
+  /** Очистить tileLayer и dynamic контейнеры перед загрузкой новой карты */
   clearTiles(): void {
-    for (const child of [...this.scene.tileLayer.children]) {
-      if (child instanceof Sprite) child.destroy({ texture: true });
-    }
-    this.scene.tileLayer.removeChildren();
+    this.scene.clearTiles();
+    this.scene.clearDynamic();
   }
 
   /** ECS загрузка карты: тайлы + сущности + миникарта */
@@ -57,6 +55,9 @@ export class MapLoaderService {
     toast: (msg: string) => void,
     onPlayerCreated?: (eid: number) => void
   ): LoadMapResult {
+    // Очищаем старые тайлы перед построением новых
+    this.clearTiles();
+
     // Строим текстуры — ground как фон, стены/дома в tileLayer
     const tileResult = buildAllTileTextures(map, this.store.roofSnow);
 
