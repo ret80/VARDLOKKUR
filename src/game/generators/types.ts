@@ -57,6 +57,7 @@ export interface WorldData {
   villageA: Vec; villageB: Vec;
    bossRoom: { x: number; y: number; w: number; h: number }; bossSpot: Vec; entryStairs: Vec;
    ruinedHouses: HouseDef[];
+  noBarrier?: boolean;
 }
 
 export const idx = (w: { W: number }, x: number, y: number) => y * w.W + x;

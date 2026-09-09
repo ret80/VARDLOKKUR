@@ -250,6 +250,7 @@ function eidToEnemyData(eid: number) {
     fade: Enemy.fade[eid],
     leash: null,
     dropDew: !!Enemy.dropDew[eid],
+    nearLitShrine: !!Enemy.nearLitShrine[eid],
   };
 }
 

@@ -16,7 +16,7 @@ export class GhostRenderer extends BaseEnemyRenderer {
     // (ease-in-out alternate математически идентичен синусоиде)
     const floatY = Math.sin(time * Math.PI + e.seed) * 2;
 
-    const aggr = e.aggro && e.state !== "dissipate";
+    const aggr = e.aggro && e.state !== "dissipate" && !e.nearLitShrine;
     
     // 2. Плавная синусоидальная анимация колыхания бахромы (sway)
     // Частоты рассчитаны как 2 * PI / период_из_SVG

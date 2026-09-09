@@ -80,6 +80,7 @@ export const Enemy = {
   leashX: new Float32Array(10000),
   leashY: new Float32Array(10000),
   fogOnly: new Uint8Array(10000),
+  nearLitShrine: new Uint8Array(10000),
 } as const;
 
 // --- Projectile ---
@@ -284,7 +285,7 @@ export function resetAllComponents(): void {
   const u8Arrays: any[] = [
     Player.moving, Player.hasSword, Player.aiming,
     Enemy.state, Enemy.aggro, Enemy.hidden, Enemy.dropDew, Enemy.leashX,
-    Enemy.leashY, Enemy.fogOnly,
+    Enemy.leashY, Enemy.fogOnly, Enemy.nearLitShrine,
     Dead,
     Projectile.returning,
     Drop.magnet,

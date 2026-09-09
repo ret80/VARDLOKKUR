@@ -312,16 +312,19 @@ export class EcsMapLoader {
 
   private spawnOverworldObjects(world: World, map: WorldData, planckWorld: PlanckWorld, dc: { addChild(g: Graphics): void }): void {
     const { flags } = this.config;
-    const bx = map.treeAltar.x * T + 8;
-    const by = (map.treeAltar.y + 5) * T + 8;
-    const active = flags.runes < 5 && !flags.snakeStarted;
-    const barrierG = new Graphics();
-    barrierG.position.set(bx, by);
-    const barrierEid = createBarrierInEcs(world, bx, by, active, barrierG);
-    (barrierG as any).userData = (barrierG as any).userData || {};
-    (barrierG as any).userData.eid = barrierEid;
-    dc.addChild(barrierG);
-    if (active) this.barrierBody = planckWorld.createKinematicBody(bx, by, 40, 16, Cat.Barrier);
+    // Создаём barrier только если noBarrier не установлен
+    if (!map.noBarrier) {
+      const bx = map.treeAltar.x * T + 8;
+      const by = (map.treeAltar.y + 5) * T + 8;
+      const active = flags.runes < 5 && !flags.snakeStarted;
+      const barrierG = new Graphics();
+      barrierG.position.set(bx, by);
+      const barrierEid = createBarrierInEcs(world, bx, by, active, barrierG);
+      (barrierG as any).userData = (barrierG as any).userData || {};
+      (barrierG as any).userData.eid = barrierEid;
+      dc.addChild(barrierG);
+      if (active) this.barrierBody = planckWorld.createKinematicBody(bx, by, 40, 16, Cat.Barrier);
+    }
 
     const altarG = new Graphics();
     const ax = map.treeAltar.x * T + 8;

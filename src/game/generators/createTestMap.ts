@@ -19,6 +19,11 @@ export function createTestMap(
     tiles[i] = Tl.SNOW;
   }
 
+  // Педестал: 4 клетки влево от игрока (grid 6, 10)
+
+  // Алтарь: центр по X (10), вверху карты ниже леса (y=2)
+  tiles[idx({ W: size }, 10, 2)] = Tl.ALTAR;
+
   // Периметр: TREE (непроходимый)
   for (let x = 0; x < size; x++) {
     for (let y = 0; y < size; y++) {
@@ -35,7 +40,8 @@ export function createTestMap(
   // Строим простейший navmesh (все проходимые клетки связаны)
   const nav = createDummyNavMesh(size);
 
-  return {
+  // Debug test: add shrine, NPC, chest, enemy near spawn
+  const testMap: WorldData = {
     W: size,
     H: size,
     tiles,
@@ -46,11 +52,22 @@ export function createTestMap(
     bossReward: null,
     spawn,
     zones: [{ x: 0, y: 0, w: size, h: size, name: "Тестовая Карта" }],
-    shrines: [],
-    npcs: [],
-    chests: [],
-    pedestals: [],
-    spawns: [],
+    shrines: [
+      { x: 10, y: 9 },  // shrine one cell above player
+    ],
+    npcs: [
+      { id: "test_npc_1", name: "Тестовый NPC", x: 12, y: 9 },
+    ],
+    chests: [
+      { x: 12, y: 10, item: "test_item" },
+    ],
+    pedestals: [
+      { x: 6, y: 10, guards: ["crawler", "draugr"] },
+    ],
+    spawns: [
+      { x: 8, y: 8, kind: "crawler" },
+      { x: 14, y: 14, kind: "crawler" },
+    ],
     doors: [],
     souls: [],
     ambient: [],
@@ -69,7 +86,8 @@ export function createTestMap(
     oldAltar: { x: 0, y: 0 },
     stashSpot: { x: 0, y: 0 },
     ruinedVillage: { x: 0, y: 0 },
-    treeAltar: { x: 0, y: 0 },
+    treeAltar: { x: 10, y: 2 },  // алтарь в центре по X, вверху карты ниже леса
+    noBarrier: true,
     arena: { x: 0, y: 0, r: 0 },
     snakeSpot: { x: 0, y: 0 },
     villageA: { x: 0, y: 0 },
@@ -79,6 +97,7 @@ export function createTestMap(
     entryStairs: { x: 0, y: 0 },
     ruinedHouses: [],
   };
+  return testMap;
 }
 
 /** Простейший navmesh — все проходимые клетки связаны */

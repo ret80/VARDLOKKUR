@@ -69,6 +69,7 @@ export function eidToEnemyData(eid: number, _world: World): IEnemyData {
       ? { x: Enemy.leashX[eid], y: Enemy.leashY[eid] }
       : null,
     dropDew: !!Enemy.dropDew[eid],
+    nearLitShrine: !!Enemy.nearLitShrine[eid],
   };
 }
 

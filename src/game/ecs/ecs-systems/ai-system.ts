@@ -23,6 +23,7 @@ import {
   poolGet,
   StringPool,
   EnemyAIRegistry,
+  Shrine,
 } from '../ecs-components';
 import { dist2 } from '../../utils';
 import type { EnemyKind } from '../../generators/types';
@@ -37,6 +38,7 @@ const AGGRO_RANGE = 100;
 const PATH_REPATH_TIME = 0.5;
 const CONTACT_COOLDOWN = 0.5;
 const GHOST_SLOW_DURATION = 2.0; // призрак замедляет игрока на 2 секунды
+const SHRINE_PROTECT_RADIUS = 80; // радиус защиты святилища (в пикселях)
 
 // ============================================================
 // Базовое обновление AI
@@ -95,13 +97,29 @@ export function aiUpdateSystem(
       const d2 = (px[enemyEid] - playerX) ** 2 + (py[enemyEid] - playerY) ** 2;
       const minDist = Enemy.radius[enemyEid] + 5 + 3;
       if (d2 < minDist * minDist && Enemy.contactCd[enemyEid] <= 0) {
-        Enemy.contactCd[enemyEid] = 0.5;
-        const dmg = Enemy.dmg[enemyEid];
-        if (onPlayerDamaged) onPlayerDamaged(dmg, px[enemyEid], py[enemyEid]);
-        // Призрак замедляет игрока при контакте
-        if (ek === 'ghost' && onPlayerSlowed) onPlayerSlowed(GHOST_SLOW_DURATION);
-        // Flash enemy on hit
-        Enemy.flashT[enemyEid] = 0.12;
+        // Призрак не наносит урон, если игрок рядом со зажжённым святилищем
+        if (ek === 'ghost') {
+          const nearLitShrine = isPlayerNearLitShrine(world, playerX, playerY, SHRINE_PROTECT_RADIUS);
+          if (nearLitShrine) {
+            Enemy.contactCd[enemyEid] = 0.5;
+            Enemy.flashT[enemyEid] = 0.12;
+            // Не наносим урон и не замедляем
+          } else {
+            Enemy.contactCd[enemyEid] = 0.5;
+            const dmg = Enemy.dmg[enemyEid];
+            if (onPlayerDamaged) onPlayerDamaged(dmg, px[enemyEid], py[enemyEid]);
+            if (onPlayerSlowed) onPlayerSlowed(GHOST_SLOW_DURATION);
+            Enemy.flashT[enemyEid] = 0.12;
+          }
+        } else {
+          Enemy.contactCd[enemyEid] = 0.5;
+          const dmg = Enemy.dmg[enemyEid];
+          if (onPlayerDamaged) onPlayerDamaged(dmg, px[enemyEid], py[enemyEid]);
+          // Призрак замедляет игрока при контакте
+          if (ek === 'ghost' && onPlayerSlowed) onPlayerSlowed(GHOST_SLOW_DURATION);
+          // Flash enemy on hit
+          Enemy.flashT[enemyEid] = 0.12;
+        }
       }
     }
 
@@ -382,6 +400,21 @@ function updateFrost(
   }
 }
 
+/** Проверить, находится ли игрок рядом со зажжённым святилищем */
+function isPlayerNearLitShrine(world: World, playerX: number, playerY: number, shrineCheckRadius: number): boolean {
+  for (const shrineEid of query(world, [Shrine, Position])) {
+    if (Shrine.lit[shrineEid]) {
+      const sx = Position.x[shrineEid];
+      const sy = Position.y[shrineEid];
+      const d2 = (playerX - sx) ** 2 + (playerY - sy) ** 2;
+      if (d2 < shrineCheckRadius * shrineCheckRadius) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Ghost — wander → orbit → freeze → lunge → cooldown */
 function updateGhost(
   world: World, eid: number, playerEid: number,
@@ -397,6 +430,12 @@ function updateGhost(
   const DETECTION_RANGE = 160; // радиус видимости
   const ACTION_RANGE = 250;    // радиус действия
   const ATTACK_RADIUS = Enemy.radius[eid] + 5 + 3; // радиус урона при атаке
+
+  // --- Проверка: игрок рядом со зажжённым святилищем ---
+  const nearLitShrine = isPlayerNearLitShrine(world, playerX, playerY, SHRINE_PROTECT_RADIUS);
+  
+  // Обновляем флаг nearLitShrine для рендеринга
+  Enemy.nearLitShrine[eid] = nearLitShrine ? 1 : 0;
 
   // --- Фаза dissipate (исчезновение) ---
   if (Enemy.state[eid] === EnemyState.dissipate) {
@@ -475,10 +514,14 @@ function updateGhost(
         vy[eid] = Math.cos(Enemy.t[eid] * 0.8 + Enemy.seed[eid]) * 20 - 6;
       }
 
-      // Если игрок в радиусе видимости — переходим к кружению
-      if (d2p < DETECTION_RANGE * DETECTION_RANGE) {
+      // Если игрок в радиусе видимости И НЕ у зажжённого святилища — переходим к кружению
+      if (d2p < DETECTION_RANGE * DETECTION_RANGE && !nearLitShrine) {
         Enemy.state[eid] = EnemyState.ghost_orbit;
         Enemy.stateT[eid] = 2.0 + Math.random() * 1.0; // 2–3 секунды кружения
+      }
+      // Если игрок у зажжённого святилища — теряем его и остаёмся дрейфовать
+      if (nearLitShrine && d2p < DETECTION_RANGE * DETECTION_RANGE) {
+        Enemy.state[eid] = EnemyState.ghost_wander;
       }
       break;
     }
@@ -492,6 +535,12 @@ function updateGhost(
       const radial = d > orbit ? 1 : -0.6;
       vx[eid] = Math.cos(tang) * Enemy.speed[eid] * 0.9 + ((playerX - px[eid]) / (d || 1)) * Enemy.speed[eid] * 0.6 * radial;
       vy[eid] = Math.sin(tang) * Enemy.speed[eid] * 0.9 + ((playerY - py[eid]) / (d || 1)) * Enemy.speed[eid] * 0.6 * radial;
+
+      // Если игрок у зажжённого святилища — теряем его и переходим к дрейфу
+      if (nearLitShrine) {
+        Enemy.state[eid] = EnemyState.ghost_wander;
+        break;
+      }
 
       // Время кружения вышло — переходим к заморозке
       if (Enemy.stateT[eid] <= 0) {
@@ -511,6 +560,12 @@ function updateGhost(
       Enemy.stateT[eid] -= dt;
       vx[eid] = 0;
       vy[eid] = 0;
+
+      // Если игрок у зажжённого святилища — теряем его и переходим к дрейфу
+      if (nearLitShrine) {
+        Enemy.state[eid] = EnemyState.ghost_wander;
+        break;
+      }
 
       // Замер закончился — рывок
       if (Enemy.stateT[eid] <= 0) {
@@ -551,7 +606,10 @@ function updateGhost(
       vy[eid] *= 0.9;
 
       if (Enemy.stateT[eid] <= 0) {
-        if (d > ACTION_RANGE) {
+        // Если игрок у зажжённого святилища — дрейфуем
+        if (nearLitShrine) {
+          Enemy.state[eid] = EnemyState.ghost_wander;
+        } else if (d > ACTION_RANGE) {
           // Дистанция больше радиуса действия — дрейфуем
           Enemy.state[eid] = EnemyState.ghost_wander;
         } else if (d2p < DETECTION_RANGE * DETECTION_RANGE) {

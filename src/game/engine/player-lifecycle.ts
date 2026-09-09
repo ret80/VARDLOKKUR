@@ -21,6 +21,55 @@ export interface PlayerLifecycleCallbacks {
   resetDeath?: () => void;
 }
 
+/** Проверить, свободна ли клетка для спавна */
+function isSpawnFree(ow: any, tx: number, ty: number): boolean {
+  if (!ow || !ow.tiles) return false;
+  const tile = ow.tiles[ty * ow.W + tx];
+  // Считаем клетку свободной, если она не является твёрдой
+  // и не занята святилищем, NPC, сундуком, педесталом или врагом
+  const isSolid = [0, 1, 6, 7, 12, 13, 15, 17, 20, 21].includes(tile); // WATER, TREE, ROCK, PALISADE, HOUSE, COLUMN, CAVEWALL, DWALL, ALTAR
+  if (isSolid) return false;
+
+  // Проверить, не занята ли клетка другой сущностью
+  for (const s of ow.shrines || []) {
+    if (s.x === tx && s.y === ty) return false;
+  }
+  for (const n of ow.npcs || []) {
+    if (n.x === tx && n.y === ty) return false;
+  }
+  for (const c of ow.chests || []) {
+    if (c.x === tx && c.y === ty) return false;
+  }
+  for (const p of ow.pedestals || []) {
+    if (p.x === tx && p.y === ty) return false;
+  }
+  for (const sp of ow.spawns || []) {
+    if (sp.x === tx * 16 + 8 && sp.y === ty * 16 + 8) return false;
+  }
+  return true;
+}
+
+/** Найти случайную свободную соседнюю клетку вокруг позиции */
+function findFreeNeighbor(ow: any, cx: number, cy: number): { x: number; y: number } {
+  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
+  // Перемешать направления для случайности
+  for (let i = dirs.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+  }
+
+  for (const [dx, dy] of dirs) {
+    const nx = cx + dx;
+    const ny = cy + dy;
+    if (isSpawnFree(ow, nx, ny)) {
+      return { x: nx * T + 8, y: ny * T + 8 };
+    }
+  }
+
+  // Фолбэк — если нет свободных соседних клеток, используем центр
+  return { x: cx * T + 8, y: cy * T + 8 };
+}
+
 export class PlayerLifecycle {
   constructor(
     private store: GameStore,
@@ -56,7 +105,8 @@ export class PlayerLifecycle {
 
     if (flags.shrineIdx >= 0 && ow && ow.shrines && ow.shrines[flags.shrineIdx]) {
       const s = ow.shrines[flags.shrineIdx];
-      spawn = { x: s.x * T + 8, y: s.y * T + 8 };
+      // Игрок появляется на случайной свободной соседней клетке со святилищем
+      spawn = findFreeNeighbor(ow, s.x, s.y);
     } else if (ow) {
       // Фолбэк — спавн в деревне (оверворлд)
       spawn = ow.spawn ?? { x: 0, y: 0 };

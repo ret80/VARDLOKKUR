@@ -34,7 +34,7 @@ export const Cat: Record<string, number> = {
 // ============================================================
 
 export const CollidesWith: Record<string, number> = {
-  [Cat.Player]:     Cat.Tile | Cat.Enemy | Cat.Projectile | Cat.Door | Cat.Barrier | Cat.Drop | Cat.Shrine | Cat.Altar,
+  [Cat.Player]:     Cat.Tile | Cat.Enemy | Cat.Projectile | Cat.Door | Cat.Barrier | Cat.Drop | Cat.Shrine | Cat.Altar | Cat.Pedestal,
   [Cat.Enemy]:      Cat.Tile | Cat.Player | Cat.Projectile | Cat.Door | Cat.Barrier,
   // ⚠️ НЕ МЕНЯТЬ БЕЗ РАЗРЕШЕНИЯ — призрак не должен коллидировать с игроком
   [Cat.Ghost]:      Cat.None, // призрак проходит сквозь всё

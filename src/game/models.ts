@@ -222,6 +222,7 @@ export interface IEnemyData {
   fade: number;
   leash: Vec | null;
   dropDew: boolean;
+  nearLitShrine: boolean;
 }
 
 export interface INpcData {
