@@ -11,4 +11,12 @@ export default defineConfig({
     strictPort: true,
     hmr: true,
   },
+  build: {
+    rollupOptions: {
+      external: ['http', 'ws', 'buffer', 'url', 'path'],
+    },
+  },
+  optimizeDeps: {
+    exclude: ['@dnd-kit/core', '@dnd-kit/sortable', '@dnd-kit/utilities'],
+  },
 });

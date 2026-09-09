@@ -118,6 +118,7 @@ export function fogUpdateSystem(
   }
   
   if (nearAltar) {
+    console.log('[fog] NEAR ALTAR: fogActive=', fogState.fogActive, 'fogAmbient=', fogState.fogAmbient, 'px=', px, 'py=', py);
     if (!fogState.fogActive) {
       fogState.fogActive = true;
       fogState.fogAmbient = true;
@@ -132,6 +133,7 @@ export function fogUpdateSystem(
   
   // Игрок ушёл от алтаря — призраки исчезают
   if (fogState.fogAmbient) {
+    console.log('[fog] ALTAR LEAVE: fogAmbient=true, emitting fog:altarLeave');
     bus.emit('fog:altarLeave', {});
     endWave(fogState, true, bus, getRunes, f);
   }
@@ -179,6 +181,7 @@ function zoneFor(map: any, tx: number, ty: number): string {
 }
 
 function endWave(state: FogState, dropDew: boolean, bus: any, getRunes: () => number, flags: any) {
+  console.log('[fog] endWave: resetting fogActive, fogAmbient, fogSpawned');
   state.fogActive = false;
   state.fogWarned = false;
   state.fogAmbient = false;
@@ -208,16 +211,25 @@ function ensureGhosts(
   const T = 16;
   // Count alive ghosts
   let alive = 0;
+  let totalEnemy = 0;
   for (const eid of query(world, [Enemy])) {
-    if (poolGet(StringPool.enemyKinds, Enemy.kind[eid]) === 'ghost' && Enemy.state[eid] !== EnemyState.dissipate) {
-      alive++;
+    totalEnemy++;
+    const kind = poolGet(StringPool.enemyKinds, Enemy.kind[eid]);
+    const state = Enemy.state[eid];
+    if (kind === 'ghost') {
+      console.log('[fog] ensureGhosts: ghost eid=', eid, 'state=', state, 'dissipate=', EnemyState.dissipate);
+      if (state !== EnemyState.dissipate) {
+        alive++;
+      }
     }
   }
+  console.log('[fog] ensureGhosts: n=', n, 'leashed=', leashed, 'alive=', alive, 'totalEnemy=', totalEnemy);
   
   const altarX = map.treeAltar.x * T + 8;
   const altarY = map.treeAltar.y * T + 8;
   const targetCx = leashed ? altarX : cx;
   const targetCy = leashed ? altarY : cy;
+  console.log('[fog] ensureGhosts: targetCx=', targetCx, 'targetCy=', targetCy, 'limit=', Math.min(4, n));
   
   for (let i = alive; i < Math.min(4, n); i++) {
     const a = Math.random() * Math.PI * 2;

@@ -9,6 +9,7 @@ import { InventoryScreen } from "./components/screens/InventoryScreen";
 import { WorldMapScreen } from "./components/screens/WorldMapScreen";
 import { SettingsScreen } from "./components/screens/SettingsScreen";
 import { HealthBar } from "./components/hud/HealthBar";
+import { DebugPanel } from "./components/DebugPanel";
 
 const px = { imageRendering: "pixelated" as const };
 
@@ -71,7 +72,7 @@ function HelpOverlay({ onClose }: { onClose: () => void }) {
 
 export default function App() {
   const hostRef = useRef<HTMLDivElement>(null);
-  const { engineRef, eng, screen, hud, dialogue, stats, toasts, debugMode } = useEngine(hostRef);
+  const { engineRef, eng, screen, hud, dialogue, stats, toasts, debugMode, testMapMode } = useEngine(hostRef);
   const [showHelp, setShowHelp] = useState(false);
   const [summoning, setSummoning] = useState(false);
   const [bootErr, setBootErr] = useState<string | null>(null);
@@ -112,6 +113,15 @@ export default function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debugMode, screen]);
+
+  // Автозапуск в test_map режиме — тоже пропускаем меню
+  useEffect(() => {
+    if (testMapMode && engineRef.current && screen === "title") {
+      console.log("[App] TEST MAP MODE: auto-starting game...");
+      startSaga();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testMapMode, screen]);
 
   /* диалог: печатная машинка */
   const [lineIdx, setLineIdx] = useState(0);
@@ -301,6 +311,9 @@ export default function App() {
             {debugMode && (
               <div className="mt-1 font-display text-[11px] tracking-[0.3em] text-[#e06060] uppercase animate-pulse">⚠ DEBUG MODE ⚠</div>
             )}
+            {testMapMode && !debugMode && (
+              <div className="mt-1 font-display text-[11px] tracking-[0.3em] text-[#8fd8e8] uppercase animate-pulse">🗺 TEST MAP</div>
+            )}
             <div className="mt-2 font-display text-[clamp(13px,2.4vw,20px)] tracking-[0.4em] text-[#8fd8e8] uppercase anim-pulse-ice">Эхо Ветвей Иггдрасиля</div>
             <div className="mt-8 flex flex-col sm:flex-row items-center gap-3.5">
               <button className="btn-rune text-[17px]" onClick={startSaga} disabled={summoning}>
@@ -393,6 +406,9 @@ export default function App() {
           <div key={t.id} className="anim-toast nord-panel px-4 py-1.5 font-display text-[13px] tracking-[0.1em] text-[#e8dcc0] uppercase text-center">{t.msg}</div>
         ))}
       </div>
+
+      {/* Debug Panel — только в debug-режиме */}
+      {debugMode && <DebugPanel />}
     </div>
   );
 }

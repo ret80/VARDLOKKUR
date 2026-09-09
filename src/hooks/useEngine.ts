@@ -21,6 +21,8 @@ export function useEngine(hostRef: RefObject<HTMLElement>) {
 
   // Debug mode: ?debug в URL
   const debugMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("debug") !== null;
+  // Test map mode: ?test_map в URL
+  const testMapMode = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("test_map") !== null;
 
   const pushToast = useCallback((msg: string) => {
     const id = ++toastId.current;
@@ -36,15 +38,15 @@ export function useEngine(hostRef: RefObject<HTMLElement>) {
       onDialogue: setDialogue,
       onToast: pushToast,
       onStats: setStats,
-    }, debugMode);
+    }, debugMode, testMapMode);
     engineRef.current = eng;
     return () => {
       eng.destroy();
       engineRef.current = null;
     };
-  }, [hostRef, pushToast, debugMode]);
+  }, [hostRef, pushToast, debugMode, testMapMode]);
 
   const eng = useCallback(() => engineRef.current, []);
 
-  return { engineRef, eng, screen, hud, dialogue, stats, toasts, debugMode };
+  return { engineRef, eng, screen, hud, dialogue, stats, toasts, debugMode, testMapMode };
 }

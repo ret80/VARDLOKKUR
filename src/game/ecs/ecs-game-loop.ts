@@ -576,6 +576,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       return drops;
     },
     setPlanckWorld: (pw: PlanckWorld) => { _planckWorld = pw; },
+    getFogState: () => _fogState,
     updateConfig: (cfg: Partial<EcsGameLoopConfig>) => {
       if (cfg.planckWorld !== undefined) _planckWorld = cfg.planckWorld;
       if (cfg.map !== undefined) config_map = cfg.map;

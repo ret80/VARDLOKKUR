@@ -358,7 +358,7 @@ export class PlanckWorld {
         // Снимаем fixtures с дерева ДО уничтожения тела — иначе
         // synchronizeFixtures на world.step() попытается moveProxy
         // для proxy, которого уже нет в дереве.
-        let fixture = b.getFixtureList();
+        let fixture: any = b.getFixtureList();
         while (fixture) {
           const tree = (b.getWorld() as any)?.m_broadPhase?.m_tree;
           if (tree && fixture.m_proxy) {
@@ -379,7 +379,7 @@ export class PlanckWorld {
     // Здесь мы вручную снимаем все fixtures уничтоженных тел с дерева.
     this.destroyedThisStep.forEach((body) => {
       if (!this.destroyedBodies.has(body)) return;
-      let fixture = body.getFixtureList();
+      let fixture: any = body.getFixtureList();
       while (fixture) {
         const tree = (body.getWorld() as any)?.m_broadPhase?.m_tree;
         if (tree && fixture.m_proxy) {

@@ -59,7 +59,7 @@ export function createTestMap(
       { id: "test_npc_1", name: "Тестовый NPC", x: 12, y: 9 },
     ],
     chests: [
-      { x: 12, y: 10, item: "test_item" },
+      { x: 12, y: 10, item: "key" },
     ],
     pedestals: [
       { x: 6, y: 10, guards: ["crawler", "draugr"] },

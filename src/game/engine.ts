@@ -68,6 +68,22 @@ import { SceneManager } from './engine/scene-manager';
 import { ScreenRouter } from './engine/screen-router';
 import { PlayerLifecycle } from './engine/player-lifecycle';
 import { MapLoaderService } from './engine/map-loader-service';
+// DebugServer импортируется динамически (Node.js API — http, ws)
+import {
+  getPlayerState as getDebugPlayerState,
+  getEnemiesState as getDebugEnemiesState,
+  getDropsState as getDebugDropsState,
+  getProjectilesState as getDebugProjectilesState,
+  getNpcsState as getDebugNpcsState,
+  getWorldDump as getDebugWorldDump,
+  profileQueries as getProfileQueries,
+  inspectEntity as getInspectEntity,
+  removeEnemy as debugRemoveEnemy,
+  removeAllEnemies as debugRemoveAllEnemies,
+  removeAllGhosts as debugRemoveAllGhosts,
+  removeProjectile as debugRemoveProjectile,
+  removeDrop as debugRemoveDrop,
+} from './debug/debug-api';
 
 // Импорты рендереров (только классы, функции удалены в ходе рефакторинга SOLID/ECS)
 import {
@@ -124,6 +140,9 @@ export class Engine {
   private playerLifecycle!: PlayerLifecycle;
   private mapLoader!: MapLoaderService;
 
+  // Debug server (динамический импорт — Node.js API)
+  private debugServer: any = null;
+
   // Локальные данные (для рендеринга и обновления)
   // Все данные игрока теперь через this.playerDomain (ECS) и this.store.flags
   private playerG = new Graphics();
@@ -165,11 +184,13 @@ export class Engine {
   }
 
   private _debugMode: boolean;
+  private _testMapMode: boolean;
 
-  constructor(container: HTMLElement, cbs: EngineCallbacks, debugMode: boolean = false) {
+  constructor(container: HTMLElement, cbs: EngineCallbacks, debugMode: boolean = false, testMapMode: boolean = false) {
     this.container = container;
     this.cbs = cbs;
     this._debugMode = debugMode;
+    this._testMapMode = testMapMode;
     this.ready = this.init(container);
   }
 
@@ -375,6 +396,216 @@ export class Engine {
         guardSpawn: (kind: string, x: number, y: number, idx: number) => this.guardSpawn(kind, x, y, idx),
       });
     }
+
+    // Инициализация debug-сервера (только в debug-режиме)
+    if (this._debugMode) {
+      console.log('[Engine] Debug mode: debug server will be initialized after world creation');
+    }
+  }
+
+  /** Зарегистрировать callbacks для debug-сервера */
+  private registerDebugCallbacks(): void {
+    if (!this._debugMode) return;
+    if ((globalThis as any).__debugServerRegistered) return;
+    (globalThis as any).__debugServerRegistered = true;
+
+    const globals = (globalThis as any).__debugServerGlobals;
+    if (!globals) {
+      console.warn('[Engine] Debug globals not found — server may not be running');
+      return;
+    }
+
+    console.log('[Engine] Registering debug callbacks...');
+
+    globals.registerGetters({
+      getPlayerState: () => {
+        if (!this.ecsWorld || this.ecsPlayerEid < 0) return null;
+        return getDebugPlayerState(this.ecsWorld, this.ecsPlayerEid);
+      },
+      getEnemiesState: () => {
+        if (!this.ecsWorld) return [];
+        return getDebugEnemiesState(this.ecsWorld);
+      },
+      getDropsState: () => {
+        if (!this.ecsWorld) return [];
+        return getDebugDropsState(this.ecsWorld);
+      },
+      getProjectilesState: () => {
+        if (!this.ecsWorld) return [];
+        return getDebugProjectilesState(this.ecsWorld);
+      },
+      getNpcsState: () => {
+        if (!this.ecsWorld) return [];
+        return getDebugNpcsState(this.ecsWorld);
+      },
+      getFogState: () => {
+        if (this.ecsGameLoop) {
+          const fs = (this.ecsGameLoop as any).getFogState();
+          if (fs) return {
+            fogActive: fs.fogActive,
+            fogAmbient: fs.fogAmbient,
+            fogLeft: fs.fogLeft,
+            fogTimer: fs.fogTimer,
+            fogRadius: fs.fogRadius,
+            fogSpawned: fs.fogSpawned,
+            fogWarned: fs.fogWarned,
+          };
+        }
+        return { fogActive: false, fogAmbient: false, fogLeft: 0, fogTimer: 60, fogRadius: 2600 };
+      },
+      getFlags: () => this.store.flags,
+      getMap: () => this.map,
+      getTime: () => ({
+        elapsed: this.ecsGameLoop?.realT ?? 0,
+        timeScale: this.state.timeScale,
+        paused: this.state.timeScale <= 0.01,
+      }),
+      getWorldDump: () => {
+        if (!this.ecsWorld) return { entities: [], stats: {} };
+        return getDebugWorldDump(this.ecsWorld);
+      },
+      profileQueries: () => {
+        if (!this.ecsWorld) return { queries: [], totalTime: '0ms' };
+        return getProfileQueries(this.ecsWorld);
+      },
+      inspectEntity: (eid: number) => {
+        if (!this.ecsWorld) return null;
+        return getInspectEntity(this.ecsWorld, eid);
+      },
+    });
+
+    globals.registerSetters({
+      teleportPlayer: (x: number, y: number) => {
+        if (!this.ecsWorld || this.ecsPlayerEid < 0) return false;
+        const { Position, Velocity } = require('./ecs/ecs-components');
+        Position.x[this.ecsPlayerEid] = x;
+        Position.y[this.ecsPlayerEid] = y;
+        Velocity.x[this.ecsPlayerEid] = 0;
+        Velocity.y[this.ecsPlayerEid] = 0;
+        return true;
+      },
+      setPlayerHp: (hp: number) => {
+        if (!this.ecsWorld || this.ecsPlayerEid < 0) return false;
+        const { Health } = require('./ecs/ecs-components');
+        Health.current[this.ecsPlayerEid] = Math.max(0, hp);
+        return true;
+      },
+      killPlayer: () => {
+        if (!this.ecsWorld || this.ecsPlayerEid < 0) return false;
+        const { Health } = require('./ecs/ecs-components');
+        Health.current[this.ecsPlayerEid] = 0;
+        return true;
+      },
+      respawnPlayer: () => {
+        this.playerLifecycle.respawn();
+      },
+      spawnEnemy: (kind: string, x: number, y: number) => {
+        if (!this.ecsWorld || !this.ecsMapLoader) return -1;
+        const { Graphics } = require('pixi.js');
+        const g = new Graphics();
+        g.position.set(x, y);
+        const { getEnemyCategory, getEnemyMask } = require('./physics/planck-world');
+        const category = getEnemyCategory(kind as any);
+        const mask = getEnemyMask(kind as any);
+        const { createEnemyInEcs } = require('./ecs/ecs-bridge');
+        const eid = createEnemyInEcs(
+          this.ecsWorld!, kind as any, x, y, g, this.ecsMapLoader.planckWorld,
+          category, mask
+        );
+        this.scene.dynamic.addChild(g);
+        const { Enemy } = require('./ecs/ecs-components');
+        Enemy.aggro[eid] = 1;
+        return eid;
+      },
+      removeEnemy: (eid: number) => {
+        if (!this.ecsWorld || eid < 0) return false;
+        return debugRemoveEnemy(this.ecsWorld!, eid, (sprite: any) => {
+          if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
+        });
+      },
+      removeAllEnemies: () => {
+        if (!this.ecsWorld) return 0;
+        return debugRemoveAllEnemies(this.ecsWorld!, (sprite: any) => {
+          if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
+        });
+      },
+      removeAllGhosts: () => {
+        if (!this.ecsWorld) return 0;
+        return debugRemoveAllGhosts(this.ecsWorld!, (sprite: any) => {
+          if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
+        });
+      },
+      removeProjectile: (eid: number) => {
+        if (!this.ecsWorld || eid < 0) return false;
+        return debugRemoveProjectile(this.ecsWorld!, eid);
+      },
+      removeDrop: (eid: number) => {
+        if (!this.ecsWorld || eid < 0) return false;
+        return debugRemoveDrop(this.ecsWorld!, eid);
+      },
+      setTimeScale: (scale: number) => {
+        this.state.tsTarget = scale;
+      },
+      setFlag: (key: string, value: any) => {
+        (this.store.flags as any)[key] = value;
+      },
+      addRunes: (count: number) => {
+        this.store.flags.runes += count;
+      },
+      addArrows: (count: number) => {
+        this.store.flags.arrows += count;
+      },
+      addHearts: (count: number) => {
+        this.store.flags.hearts += count;
+      },
+      freePlayer: () => {
+        if (this.ecsWorld && this.ecsPlayerEid >= 0) {
+          const { Player } = require('./ecs/ecs-components');
+          Player.slowT[this.ecsPlayerEid] = 0;
+        }
+      },
+      fullHealPlayer: () => {
+        if (!this.ecsWorld || this.ecsPlayerEid < 0) return;
+        const { Health, Player } = require('./ecs/ecs-components');
+        Health.current[this.ecsPlayerEid] = Player.maxHp[this.ecsPlayerEid];
+      },
+      clearDrops: () => {
+        if (!this.ecsWorld) return 0;
+        const { query, hasComponent, removeEntity, Drop, Position, Sprite, SpriteRegistry } = require('./ecs/ecs-components');
+        let count = 0;
+        for (const eid of query(this.ecsWorld, [Drop])) {
+          const spriteIdx = Sprite.ref[eid];
+          if (spriteIdx > 0) {
+            const sprite = SpriteRegistry[spriteIdx - 1];
+            if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
+            sprite?.destroy({ children: true });
+            SpriteRegistry.splice(spriteIdx - 1, 1);
+          }
+          removeEntity(this.ecsWorld!, eid);
+          count++;
+        }
+        return count;
+      },
+      clearProjectiles: () => {
+        if (!this.ecsWorld) return 0;
+        const { query, hasComponent, removeEntity, Projectile, Position, Sprite, SpriteRegistry } = require('./ecs/ecs-components');
+        let count = 0;
+        for (const eid of query(this.ecsWorld, [Projectile])) {
+          const spriteIdx = Sprite.ref[eid];
+          if (spriteIdx > 0) {
+            const sprite = SpriteRegistry[spriteIdx - 1];
+            if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
+            sprite?.destroy({ children: true });
+            SpriteRegistry.splice(spriteIdx - 1, 1);
+          }
+          removeEntity(this.ecsWorld!, eid);
+          count++;
+        }
+        return count;
+      },
+    });
+
+    console.log('[Engine] ✓ Debug callbacks registered');
   }
 
   private enterDungeon(e: { dungeonId: number }) {
@@ -410,8 +641,9 @@ export class Engine {
     audio.uiClick();
 
     // Debug mode: загружаем тестовую карту без генерации мира
-    if (this._debugMode) {
-      console.log("[Engine] DEBUG MODE: loading test map");
+    if (this._debugMode || this._testMapMode) {
+      const mode = this._debugMode ? "DEBUG" : "TEST_MAP";
+      console.log(`[${mode}] MODE: loading test map`);
       try {
         const { createTestMap } = await import("./generators/createTestMap");
         const testMap = createTestMap(21, { x: 10 * 16 + 8, y: 10 * 16 + 8 });
@@ -445,6 +677,9 @@ export class Engine {
     this.store.player.hp = this.store.player.maxHp = 12;
     this.realT = 0;
     this.store.setZone("");
+
+    // Register debug callbacks after world is created
+    this.registerDebugCallbacks();
     audio.setFog(false);
     try {
       this.loadMap(this.ow, this.ow.spawn);
@@ -714,6 +949,7 @@ export class Engine {
   destroy() {
     this.input.unregister();
     this.mapLoader?.destroy();
+    this.debugServer?.stop();
     if (this.app) this.app.destroy(true);
     this.fx.destroy();
     this.bus.clear();

@@ -82,7 +82,7 @@ export class HudSystem {
     this._mmTimer -= 0.016;
     if (this._mmTimer > 0) return;
     this._mmTimer = 0.15;
-    const txi = Math.floor(this.player.x / 16), tyi = Math.floor(this.player.y / 16);
+    const txi = Math.floor(this.playerDomain.x / 16), tyi = Math.floor(this.playerDomain.y / 16);
     const blink = Math.floor(this.realT * 3) % 2;
     const key = txi + "_" + tyi + "_" + blink + "_" + (map.dungeonId ?? -1) + "_" + this.trackedQuest;
     if (key !== this._lastMmKey) {
