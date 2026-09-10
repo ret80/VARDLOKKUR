@@ -21,6 +21,7 @@ import {
 import { createBodyForEntity } from './ecs-systems';
 import { createPlayerEntity } from './ecs-utils';
 import { EventBus } from '../event-bus';
+import { logger } from '../debug/logger';
 import {
   Shrine,
   Sprite,
@@ -100,7 +101,7 @@ export class EcsMapLoader {
     dynamicContainer.addChild(playerG);
 
     // 4. Вызвать callback после создания игрока — SpriteRegistry уже заполнен
-    console.log('[loadMap] playerEid=', this.playerEid, 'onPlayerCreated=', !!onPlayerCreated);
+    logger.debug('map-loader', `playerEid=${this.playerEid} onPlayerCreated=${!!onPlayerCreated}`);
     if (onPlayerCreated) onPlayerCreated(this.playerEid);
 
     // 5. Камера
@@ -168,7 +169,7 @@ export class EcsMapLoader {
     EnemyAIRegistry.length = 0;
     PhysicsBodyRegistry.length = 0;
 
-    console.log('[clearWorld] cleared', eids.length, 'entities, sprites:', registryBefore, '->', SpriteRegistry.length);
+    logger.debug('map-loader', `cleared ${eids.length} entities, sprites: ${registryBefore} -> ${SpriteRegistry.length}`);
   }
 
   private createTileBodies(map: WorldData, planckWorld: PlanckWorld): void {
@@ -211,7 +212,7 @@ export class EcsMapLoader {
   }
 
   private spawnChests(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
-    console.log('[spawnChests] START map.chests.length=', map.chests.length);
+    logger.debug('map-loader', `spawnChests chests=${map.chests.length}`);
     const { openedChests } = this.config;
     for (const c of map.chests) {
       const g = new Graphics();
@@ -256,7 +257,7 @@ export class EcsMapLoader {
   }
 
   private spawnShrines(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
-    console.log('[spawnShrines] map.shrines.length=', map.shrines.length);
+    logger.debug('map-loader', `spawnShrines shrines=${map.shrines.length}`);
     for (let j = 0; j < map.shrines.length; j++) {
       const s = map.shrines[j];
       const sx = s.x * T + 8;
@@ -277,7 +278,7 @@ export class EcsMapLoader {
   }
 
   private spawnNpcs(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
-    console.log('[spawnNpcs] START map.npcs.length=', map.npcs.length, 'map.souls.length=', map.souls?.length ?? 0);
+    logger.debug('map-loader', `spawnNpcs npcs=${map.npcs.length} souls=${map.souls?.length ?? 0}`);
     for (const n of map.npcs) {
       const g = new Graphics();
       g.position.set(n.x * T + 8, n.y * T + 8);

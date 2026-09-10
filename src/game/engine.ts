@@ -57,12 +57,23 @@ import {
   Shrine,
   Pedestal,
   Position,
+  Velocity,
+  Health,
+  Player as EcsPlayer,
+  Dead,
+  Projectile as EcsProjectile,
+  Drop,
+  Sprite as EcsSprite,
+  SpriteRegistry,
+  PhysicsBody,
+  PhysicsBodyRegistry,
   damageEntityEcs,
   healEntityEcs,
   fullHealEntityEcs,
   increaseMaxHpEcs,
 } from './ecs/ecs-components';
-import { query } from 'bitecs';
+import { updateSpritePosition } from './ecs/ecs-systems/render-system';
+import { query, removeEntity } from 'bitecs';
 import { ViewportController } from './engine/viewport-controller';
 import { SceneManager } from './engine/scene-manager';
 import { ScreenRouter } from './engine/screen-router';
@@ -84,6 +95,7 @@ import {
   removeProjectile as debugRemoveProjectile,
   removeDrop as debugRemoveDrop,
 } from './debug/debug-api';
+import { logger } from './debug/logger';
 
 // Импорты рендереров (только классы, функции удалены в ходе рефакторинга SOLID/ECS)
 import {
@@ -399,7 +411,7 @@ export class Engine {
 
     // Инициализация debug-сервера (только в debug-режиме)
     if (this._debugMode) {
-      console.log('[Engine] Debug mode: debug server will be initialized after world creation');
+      logger.info('engine', 'Debug mode: debug server will be initialized after world creation');
     }
   }
 
@@ -409,13 +421,16 @@ export class Engine {
     if ((globalThis as any).__debugServerRegistered) return;
     (globalThis as any).__debugServerRegistered = true;
 
-    const globals = (globalThis as any).__debugServerGlobals;
+    // Wait for window.__debugServerGlobals (injected by Vite plugin)
+    // The injected script creates this global BEFORE the engine initializes
+    const globals = (window as any).__debugServerGlobals;
     if (!globals) {
-      console.warn('[Engine] Debug globals not found — server may not be running');
+      logger.warn('engine', 'Debug globals not found — debug server client not injected');
+      logger.warn('engine', 'Make sure vite-plugin-debug-server is in vite.config.js');
       return;
     }
 
-    console.log('[Engine] Registering debug callbacks...');
+    logger.info('engine', 'Registering debug callbacks...');
 
     globals.registerGetters({
       getPlayerState: () => {
@@ -453,8 +468,26 @@ export class Engine {
         }
         return { fogActive: false, fogAmbient: false, fogLeft: 0, fogTimer: 60, fogRadius: 2600 };
       },
-      getFlags: () => this.store.flags,
-      getMap: () => this.map,
+      getFlags: () => {
+        const flat: Record<string, any> = {};
+        const raw = this.store.flags;
+        if (raw && typeof raw === 'object') {
+          for (const [k, v] of Object.entries(raw)) {
+            if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string' || v == null) {
+              flat[k] = v;
+            }
+          }
+        }
+        return flat;
+      },
+      getMap: () => {
+        if (!this.map) return null;
+        return {
+          dungeonName: this.map.dungeonName,
+          isDungeon: this.map.isDungeon,
+          treeAltar: this.map.treeAltar,
+        };
+      },
       getTime: () => ({
         elapsed: this.ecsGameLoop?.realT ?? 0,
         timeScale: this.state.timeScale,
@@ -476,24 +509,49 @@ export class Engine {
 
     globals.registerSetters({
       teleportPlayer: (x: number, y: number) => {
-        if (!this.ecsWorld || this.ecsPlayerEid < 0) return false;
-        const { Position, Velocity } = require('./ecs/ecs-components');
-        Position.x[this.ecsPlayerEid] = x;
-        Position.y[this.ecsPlayerEid] = y;
-        Velocity.x[this.ecsPlayerEid] = 0;
-        Velocity.y[this.ecsPlayerEid] = 0;
+        const eid = this.ecsGameLoop?.getPlayerEid() ?? -1;
+        logger.debug('engine', `teleportPlayer called x=${x} y=${y} eid=${eid}`);
+        if (!this.ecsWorld || eid < 0) return false;
+        // Validate — NaN from parseFloat('') or undefined would break everything
+        if (typeof x !== 'number' || typeof y !== 'number' || isNaN(x) || isNaN(y)) {
+          logger.warn('engine', `teleportPlayer: invalid coords x=${x} y=${y}`);
+          return false;
+        }
+        Position.x[eid] = x;
+        Position.y[eid] = y;
+        Velocity.x[eid] = 0;
+        Velocity.y[eid] = 0;
+        // Move physics body to match — otherwise syncBodyToPosition overwrites Position back
+        const pbIdx = PhysicsBody.body[eid];
+        if (pbIdx > 0) {
+          const body = PhysicsBodyRegistry[pbIdx - 1];
+          if (body) {
+            body.setTransform(Vec2(x, y), 0);
+            body.setLinearVelocity(Vec2(0, 0));
+            body.setAwake(true);
+            logger.debug('engine', `physics body moved to ${x},${y} pbIdx=${pbIdx}`);
+          } else {
+            logger.warn('engine', `body at pbIdx ${pbIdx} is null`);
+          }
+        } else {
+          logger.warn('engine', `no physics body for player eid=${eid} pbIdx=${pbIdx}`);
+        }
+        // Обновляем визуальную позицию игрока
+        this.playerG.position.set(x, y);
+        logger.debug('engine', `playerG.position = ${this.playerG.position.x},${this.playerG.position.y}`);
         return true;
       },
       setPlayerHp: (hp: number) => {
-        if (!this.ecsWorld || this.ecsPlayerEid < 0) return false;
-        const { Health } = require('./ecs/ecs-components');
-        Health.current[this.ecsPlayerEid] = Math.max(0, hp);
+        const eid = this.ecsGameLoop?.getPlayerEid() ?? -1;
+        if (!this.ecsWorld || eid < 0) return false;
+        if (typeof hp !== 'number' || isNaN(hp)) return false;
+        Health.current[eid] = Math.max(0, hp);
         return true;
       },
       killPlayer: () => {
-        if (!this.ecsWorld || this.ecsPlayerEid < 0) return false;
-        const { Health } = require('./ecs/ecs-components');
-        Health.current[this.ecsPlayerEid] = 0;
+        const eid = this.ecsGameLoop?.getPlayerEid() ?? -1;
+        if (!this.ecsWorld || eid < 0) return false;
+        Health.current[eid] = 0;
         return true;
       },
       respawnPlayer: () => {
@@ -501,20 +559,16 @@ export class Engine {
       },
       spawnEnemy: (kind: string, x: number, y: number) => {
         if (!this.ecsWorld || !this.ecsMapLoader) return -1;
-        const { Graphics } = require('pixi.js');
         const g = new Graphics();
         g.position.set(x, y);
-        const { getEnemyCategory, getEnemyMask } = require('./physics/planck-world');
         const category = getEnemyCategory(kind as any);
         const mask = getEnemyMask(kind as any);
-        const { createEnemyInEcs } = require('./ecs/ecs-bridge');
         const eid = createEnemyInEcs(
           this.ecsWorld!, kind as any, x, y, g, this.ecsMapLoader.planckWorld,
           category, mask
         );
         this.scene.dynamic.addChild(g);
-        const { Enemy } = require('./ecs/ecs-components');
-        Enemy.aggro[eid] = 1;
+        EcsEnemy.aggro[eid] = 1;
         return eid;
       },
       removeEnemy: (eid: number) => {
@@ -559,22 +613,21 @@ export class Engine {
         this.store.flags.hearts += count;
       },
       freePlayer: () => {
-        if (this.ecsWorld && this.ecsPlayerEid >= 0) {
-          const { Player } = require('./ecs/ecs-components');
-          Player.slowT[this.ecsPlayerEid] = 0;
+        const eid = this.ecsGameLoop?.getPlayerEid() ?? -1;
+        if (this.ecsWorld && eid >= 0) {
+          EcsPlayer.slowT[eid] = 0;
         }
       },
       fullHealPlayer: () => {
-        if (!this.ecsWorld || this.ecsPlayerEid < 0) return;
-        const { Health, Player } = require('./ecs/ecs-components');
-        Health.current[this.ecsPlayerEid] = Player.maxHp[this.ecsPlayerEid];
+        const eid = this.ecsGameLoop?.getPlayerEid() ?? -1;
+        if (!this.ecsWorld || eid < 0) return;
+        Health.current[eid] = Health.max[eid];
       },
       clearDrops: () => {
         if (!this.ecsWorld) return 0;
-        const { query, hasComponent, removeEntity, Drop, Position, Sprite, SpriteRegistry } = require('./ecs/ecs-components');
         let count = 0;
         for (const eid of query(this.ecsWorld, [Drop])) {
-          const spriteIdx = Sprite.ref[eid];
+          const spriteIdx = EcsSprite.ref[eid];
           if (spriteIdx > 0) {
             const sprite = SpriteRegistry[spriteIdx - 1];
             if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
@@ -588,10 +641,9 @@ export class Engine {
       },
       clearProjectiles: () => {
         if (!this.ecsWorld) return 0;
-        const { query, hasComponent, removeEntity, Projectile, Position, Sprite, SpriteRegistry } = require('./ecs/ecs-components');
         let count = 0;
-        for (const eid of query(this.ecsWorld, [Projectile])) {
-          const spriteIdx = Sprite.ref[eid];
+        for (const eid of query(this.ecsWorld, [EcsProjectile])) {
+          const spriteIdx = EcsSprite.ref[eid];
           if (spriteIdx > 0) {
             const sprite = SpriteRegistry[spriteIdx - 1];
             if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
@@ -605,7 +657,7 @@ export class Engine {
       },
     });
 
-    console.log('[Engine] ✓ Debug callbacks registered');
+    logger.info('engine', 'Debug callbacks registered');
   }
 
   private enterDungeon(e: { dungeonId: number }) {
@@ -632,7 +684,7 @@ export class Engine {
     this.starting = true;
     try { await this.ready; } catch (e) {
       this.starting = false;
-      console.error("Движок не запустился:", e);
+      logger.error('engine', `Движок не запустился: ${e}`);
       this.toast("Движок не смог запуститься");
       throw e;
     }
@@ -643,7 +695,7 @@ export class Engine {
     // Debug mode: загружаем тестовую карту без генерации мира
     if (this._debugMode || this._testMapMode) {
       const mode = this._debugMode ? "DEBUG" : "TEST_MAP";
-      console.log(`[${mode}] MODE: loading test map`);
+      logger.info('engine', `${mode} MODE: loading test map`);
       try {
         const { createTestMap } = await import("./generators/createTestMap");
         const testMap = createTestMap(21, { x: 10 * 16 + 8, y: 10 * 16 + 8 });
@@ -651,7 +703,7 @@ export class Engine {
         this.store.setOw(this.ow);
       } catch (e) {
         this.starting = false;
-        console.error("Сбой загрузки тестовой карты:", e);
+        logger.error('engine', `Сбой загрузки тестовой карты: ${e}`);
         this.toast("Не удалось загрузить тестовую карту");
         throw e;
       }
@@ -666,7 +718,7 @@ export class Engine {
         this.store.setOw(this.ow);
       } catch (e) {
         this.starting = false;
-        console.error("Сбой генерации мира:", e);
+        logger.error('engine', `Сбой генерации мира: ${e}`);
         this.toast("Ниды не сложились... Попробуйте ещё раз");
         throw e;
       }
@@ -696,7 +748,7 @@ export class Engine {
       this.pushHud(true);
     } catch (e) {
       this.starting = false;
-      console.error("Сбой загрузки мира:", e);
+      logger.error('engine', `Сбой загрузки мира: ${e}`);
       this.setScreen("title");
       throw e;
     }
@@ -762,11 +814,11 @@ export class Engine {
       (msg) => this.toast(msg),
       (eid) => {
         // Вызывается ПОСЛЕ создания игрока — SpriteRegistry уже заполнен
-        console.log('[loadMapEcs] onPlayerCreated called with eid=', eid, 'ecsGameLoop=', !!this.ecsGameLoop);
+        logger.debug('engine', `onPlayerCreated eid=${eid} ecsGameLoop=${!!this.ecsGameLoop}`);
         if (this.ecsGameLoop) {
           this.ecsGameLoop.setPlayerEid(eid);
           this.playerDomain.setEid(eid);
-          console.log('[loadMapEcs] setPlayerEid and playerDomain.setEid done, playerDomain._eid=', (this.playerDomain as any)._eid);
+          logger.debug('engine', `setPlayerEid done, playerDomain._eid=${(this.playerDomain as any)._eid}`);
         }
       }
     );
@@ -816,10 +868,8 @@ export class Engine {
       if (this.state.screen === "death") {
         const remaining = this.state.tickDeathTimer(rdt);
         if (remaining <= 0 && this.state.screen === "death") {
-          console.log('[ENGINE] death timer expired, calling respawn()');
+          logger.info('engine', 'death timer expired, calling respawn()');
           this.respawn();
-        } else if (remaining > 0) {
-          console.log('[ENGINE] death timer:', remaining.toFixed(2), 's remaining');
         }
       }
     }

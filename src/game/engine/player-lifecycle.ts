@@ -5,6 +5,7 @@ import type { GameStore } from "../store";
 import { PlayerDomain } from "../store/player-domain";
 import type { EventBus } from "../event-bus";
 import type { HudSystem } from "../hud/hud-system";
+import { logger } from "../debug/logger";
 
 export interface PlayerLifecycleCallbacks {
   /** Плавно перейти к непрозрачности */
@@ -118,12 +119,12 @@ export class PlayerLifecycle {
     player.x = spawn.x;
     player.y = spawn.y;
 
-    console.log('[respawn] spawn=', spawn, 'ow=', ow ? 'present' : 'null', 'shrines=', ow?.shrines?.length ?? -1);
+    logger.debug('respawn', `spawn=${JSON.stringify(spawn)} ow=${ow ? 'present' : 'null'} shrines=${ow?.shrines?.length ?? -1}`);
 
     this.cbs.resetDeath?.();
-    console.log('[respawn] calling loadMap(ow, spawn)...');
+    logger.debug('respawn', 'calling loadMap(ow, spawn)...');
     this.cbs.loadMap(ow, spawn);
-    console.log('[respawn] loadMap done, playerDomain._eid=', (this.playerDomain as any)._eid);
+    logger.debug('respawn', `loadMap done, playerDomain._eid=${(this.playerDomain as any)._eid}`);
     this.store.setScreen("play");
     this.cbs.fadeTo(1);
     this.hud.pushHud(true);

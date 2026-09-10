@@ -1,6 +1,7 @@
 /* DebugPanel.tsx — React overlay для отладки игры */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { logger } from '../game/debug/logger';
 
 // ============================================================
 // Типы
@@ -170,7 +171,7 @@ function useDebugWebSocket() {
       });
       return await res.json();
     } catch (e) {
-      console.error('REST error:', e);
+      logger.error('debug-panel', `REST error: ${e}`);
       return null;
     }
   }, []);
@@ -303,13 +304,15 @@ function WorldTab({ state, sendCommand, restRequest }: { state: DebugGameState |
 function PlayerTab({ state, sendCommand }: { state: DebugGameState | null; sendCommand: (t: string, a?: any) => void }) {
   const player = state?.player;
   const flags = state?.flags;
+  const [teleportMode, setTeleportMode] = useState<'tiles' | 'pixels'>('tiles');
 
   return (
     <div className="space-y-3">
       <Card title="Player">
         {player ? (
           <>
-            <KeyValue label="Position" value={`${player.x.toFixed(0)}, ${player.y.toFixed(0)}`} />
+            <KeyValue label="Position (px)" value={`${player.x.toFixed(0)}, ${player.y.toFixed(0)}`} />
+            <KeyValue label="Position (tiles)" value={`${(player.x / 16).toFixed(1)}, ${(player.y / 16).toFixed(1)}`} />
             <KeyValue label="HP" value={`${player.hp} / ${player.maxHp}`} />
             <KeyValue label="Runes" value={player.runes} />
             <KeyValue label="Arrows (flags)" value={flags?.arrows ?? 0} />
@@ -326,48 +329,85 @@ function PlayerTab({ state, sendCommand }: { state: DebugGameState | null; sendC
       </Card>
 
       <Card title="Actions">
-        <div className="grid grid-cols-2 gap-1.5">
-          <input
-            type="number"
-            id="teleport-x"
-            placeholder="X"
-            className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 font-mono"
-          />
-          <input
-            type="number"
-            id="teleport-y"
-            placeholder="Y"
-            className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 font-mono"
-          />
-          <button
-            onClick={() => {
-              const x = (document.getElementById('teleport-x') as HTMLInputElement)?.value;
-              const y = (document.getElementById('teleport-y') as HTMLInputElement)?.value;
-              if (x && y) sendCommand('teleport', { x: parseFloat(x), y: parseFloat(y) });
-            }}
-            className="btn-rune text-[11px] col-span-2"
-          >
-            Teleport
-          </button>
-          <input
-            type="number"
-            id="set-hp"
-            placeholder="HP"
-            className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 font-mono"
-          />
-          <button
-            onClick={() => {
-              const hp = (document.getElementById('set-hp') as HTMLInputElement)?.value;
-              if (hp) sendCommand('set-hp', { hp: parseFloat(hp) });
-            }}
-            className="btn-rune text-[11px]"
-          >
-            Set HP
-          </button>
-          <button onClick={() => sendCommand('kill-player')} className="btn-rune btn-blood text-[11px]">Kill</button>
-          <button onClick={() => sendCommand('respawn')} className="btn-rune btn-ice text-[11px]">Respawn</button>
-          <button onClick={() => sendCommand('full-heal-player')} className="btn-rune text-[11px]">Full Heal</button>
-          <button onClick={() => sendCommand('free-player')} className="btn-rune text-[11px]">Free Player</button>
+        <div className="space-y-2">
+          <div className="flex gap-2 items-center">
+            <span className="text-[10px] text-[#4a5a68]">Mode:</span>
+            <button
+              onClick={() => setTeleportMode('tiles')}
+              className={`px-2 py-0.5 text-[10px] font-mono transition-colors ${
+                teleportMode === 'tiles'
+                  ? 'bg-[#1a3a4a] text-[#8fd8e8] border border-[#8fd8e844]'
+                  : 'bg-[#0a1520] text-[#4a5a68] hover:text-[#8fa0ae]'
+              }`}
+            >
+              TILES
+            </button>
+            <button
+              onClick={() => setTeleportMode('pixels')}
+              className={`px-2 py-0.5 text-[10px] font-mono transition-colors ${
+                teleportMode === 'pixels'
+                  ? 'bg-[#1a3a4a] text-[#8fd8e8] border border-[#8fd8e844]'
+                  : 'bg-[#0a1520] text-[#4a5a68] hover:text-[#8fa0ae]'
+              }`}
+            >
+              PIXELS
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <input
+              type="number"
+              id="teleport-x"
+              placeholder={teleportMode === 'tiles' ? 'X (tiles)' : 'X (px)'}
+              className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 font-mono"
+            />
+            <input
+              type="number"
+              id="teleport-y"
+              placeholder={teleportMode === 'tiles' ? 'Y (tiles)' : 'Y (px)'}
+              className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 font-mono"
+            />
+            <button
+              onClick={() => {
+                const x = (document.getElementById('teleport-x') as HTMLInputElement)?.value;
+                const y = (document.getElementById('teleport-y') as HTMLInputElement)?.value;
+                if (x && y) {
+                  let fx = parseFloat(x);
+                  let fy = parseFloat(y);
+                  if (teleportMode === 'tiles') {
+                    fx *= 16;
+                    fy *= 16;
+                  }
+                  sendCommand('teleport', { x: fx, y: fy });
+                }
+              }}
+              className="btn-rune text-[11px] col-span-2"
+            >
+              Teleport
+            </button>
+          </div>
+          <div className="flex gap-2 items-center">
+            <input
+              type="number"
+              id="set-hp"
+              placeholder="HP"
+              className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 w-20 font-mono"
+            />
+            <button
+              onClick={() => {
+                const hp = (document.getElementById('set-hp') as HTMLInputElement)?.value;
+                if (hp) sendCommand('set-hp', { hp: parseFloat(hp) });
+              }}
+              className="btn-rune text-[11px]"
+            >
+              Set HP
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <button onClick={() => sendCommand('kill-player')} className="btn-rune btn-blood text-[11px]">Kill</button>
+            <button onClick={() => sendCommand('respawn')} className="btn-rune btn-ice text-[11px]">Respawn</button>
+            <button onClick={() => sendCommand('full-heal-player')} className="btn-rune text-[11px]">Full Heal</button>
+            <button onClick={() => sendCommand('free-player')} className="btn-rune text-[11px]">Free Player</button>
+          </div>
         </div>
       </Card>
 

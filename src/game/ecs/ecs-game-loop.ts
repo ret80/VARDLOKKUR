@@ -1,6 +1,6 @@
 /* ecs-game-loop.ts — минимальный ECS game loop */
 
-import { type World, query, removeEntity } from 'bitecs';
+import { type World, query, removeEntity, addComponent } from 'bitecs';
 import {
   syncPositionToBody,
   syncVelocityToBody,
@@ -46,6 +46,8 @@ import {
 import {
   fogUpdateSystem,
   createFogState,
+  ensureGhosts,
+  spawnFogGhost,
   type FogState,
 } from './ecs-systems/fog-system';
 import { Graphics, Container } from 'pixi.js';
@@ -91,8 +93,11 @@ import type { WorldData } from '../world';
 import type { FlagDomain } from '../store/flag-domain';
 import type { PlayerDomain, IEcsPlayerHelpers } from '../store/player-domain';
 import type { HudSystem } from '../hud/hud-system';
+import { logger } from '../debug/logger';
 import type { QuestSystem } from '../quests/quest-system';
 import type { DialogueSystem } from '../dialogue/dialogue-system';
+import { dist2 } from '../utils';
+import { T } from '../world';
 
 // ============================================================
 // Утилиты
@@ -289,6 +294,32 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       if (poolGet(StringPool.enemyKinds, Enemy.kind[eid]) !== 'ghost') continue;
       // Переводим ВСЕХ призраков, включая привязанных
       Enemy.state[eid] = EnemyState.dissipate;
+    }
+  });
+
+  // ── При респавне — пересоздать призраков если игрок рядом с алтарём ──
+
+  // Обёртка для ensureGhosts — создаёт призрака через spawnFogGhost (только ECS, без графики и физики)
+  function spawnGhost(kind: string, x: number, y: number): number {
+    const eid = spawnFogGhost(world, x, y, _playerEid);
+    // Добавить Sprite компонент для рендеринга
+    addComponent(world, eid, Sprite);
+    return eid;
+  }
+
+  bus.on("player:respawned", () => {
+    if (!config_map || _playerEid < 0 || !_fogState) return;
+    const px = Position.x[_playerEid];
+    const py = Position.y[_playerEid];
+    const ax = config_map.treeAltar.x * T + 8;
+    const ay = config_map.treeAltar.y * T + 8;
+    const nearAltar = dist2(px, py, ax, ay) < 240 * 240;
+    if (nearAltar) {
+      _fogState.fogActive = true;
+      _fogState.fogAmbient = true;
+      _fogState.fogSpawned = false;
+      _fogState.fogLeft = 0;
+      ensureGhosts(world, 2, true, config_map, px, py, spawnGhost);
     }
   });
 
@@ -559,7 +590,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     render,
     get realT() { return _realT; },
     set realT(v: number) { _realT = v; },
-    setPlayerEid: (eid: number) => { console.log('[setPlayerEid]', eid); _playerEid = eid; },
+    setPlayerEid: (eid: number) => { logger.debug('game-loop', `setPlayerEid=${eid}`); _playerEid = eid; },
     getPlayerEid: () => _playerEid,
     isDungeonBossDead: (id: number) => dungeonBossDead(id),
     getDropsForTransition: () => {

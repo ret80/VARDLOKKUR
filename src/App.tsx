@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { logger } from "./game/debug/logger";
 import { useEngine } from "./hooks/useEngine";
 import { KnotFrame } from "./components/icons";
 import {
@@ -100,7 +101,7 @@ export default function App() {
       .then(() => { window.clearTimeout(watchdog); setSummoning(false); })
       .catch((err) => {
         window.clearTimeout(watchdog);
-        console.error("Сбой запуска саги:", err);
+        logger.error('app', `Сбой запуска саги: ${err}`);
         fail("Не удалось начать сагу: " + (err?.message ?? String(err)));
       });
   };
@@ -108,7 +109,7 @@ export default function App() {
   // Автозапуск в debug-режиме — пропускаем меню
   useEffect(() => {
     if (debugMode && engineRef.current && screen === "title") {
-      console.log("[App] DEBUG MODE: auto-starting game...");
+      logger.info('app', 'DEBUG MODE: auto-starting game...');
       startSaga();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -117,7 +118,7 @@ export default function App() {
   // Автозапуск в test_map режиме — тоже пропускаем меню
   useEffect(() => {
     if (testMapMode && engineRef.current && screen === "title") {
-      console.log("[App] TEST MAP MODE: auto-starting game...");
+      logger.info('app', 'TEST MAP MODE: auto-starting game...');
       startSaga();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -48,6 +48,7 @@ import {
 } from '../../renderers';
 import type { InteractableHit } from './interaction-system';
 import type { RenderContext } from '../../renderers';
+import { logger } from '../../debug/logger';
 
 // ============================================================
 // Утилиты рендеринга
@@ -85,7 +86,7 @@ export function renderSprites(world: World): void {
 
   const matched = [...query(world, [Position, SpriteComp])];
   if (matched.length > 0) {
-    console.log('[renderSprites] query found', matched.length, 'entities with [Position, Sprite]');
+    // console.log('[renderSprites] query found', matched.length, 'entities with [Position, Sprite]');
   }
 
   for (const eid of matched) {
@@ -94,8 +95,15 @@ export function renderSprites(world: World): void {
     // Спрайт мог быть уничтожен (смерть врага) — проверяем destroyed флаг PixiJS
     if ((ref as any).destroyed) continue;
     
+    const oldX = ref.x;
+    const oldY = ref.y;
     ref.x = px[eid];
     ref.y = py[eid];
+    
+    // Лог для игрока — только при изменении позиции
+    if (eid === 12 && (oldX !== px[eid] || oldY !== py[eid])) {
+      logger.debug('render', `player pos ${oldX},${oldY} -> ${px[eid]},${py[eid]}`);
+    }
   }
 }
 
@@ -365,9 +373,9 @@ export function renderSystem(
 ): void {
   const { time, dt, floatLayer, cam, gameWorld, dynamic, hintLayer, playerEid } = opts;
   
-  // Лог: состояние игрока при рендере (раз в 1 сек)
-  if (playerEid >= 0 && time % 1 < dt) {
-    console.log('[render] playerEid=', playerEid, 'Dead=', !!Dead[playerEid], 'ref=', SpriteComp.ref[playerEid]);
+  // Лог: состояние игрока при рендере (раз в 5 сек)
+  if (playerEid >= 0 && time % 5 < dt) {
+    logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]} ref=${SpriteComp.ref[playerEid]}`);
   }
 
   // Слежение камеры за игроком
@@ -471,17 +479,17 @@ export function renderSystem(
 /** Рендеринг игрока (ECS) */
 function renderPlayerEcs(world: World, playerEid: number, ctx: RenderContext): void {
   if (playerEid < 0) {
-    console.log('[renderPlayer] SKIP: playerEid < 0');
+    logger.debug('render', `SKIP: playerEid < 0`);
     return;
   }
   if (!!Dead[playerEid]) {
-    console.log('[renderPlayer] SKIP: Dead=', !!Dead[playerEid], 'playerEid=', playerEid);
+    logger.debug('render', `SKIP: Dead playerEid=${playerEid}`);
     return;
   }
   
   const ref = getSpriteRef(playerEid);
   if (!ref) {
-    console.log('[renderPlayer] SKIP: ref is null, playerEid=', playerEid, 'ref=', SpriteComp.ref[playerEid]);
+    logger.debug('render', `SKIP: ref is null playerEid=${playerEid}`);
     return;
   }
   

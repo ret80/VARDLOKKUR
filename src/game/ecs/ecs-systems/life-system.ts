@@ -19,6 +19,7 @@ import {
   Sprite,
   SpriteRegistry,
 } from '../ecs-components';
+import { logger } from '../../debug/logger';
 
 // ============================================================
 // Система жизней
@@ -32,7 +33,7 @@ export function lifeCheckSystem(world: World): void {
       addComponents(world, eid, Dead);
       // Лог: игрок умер
       if (hasComponent(world, eid, Player)) {
-        console.log('[lifeCheck] PLAYER DIED! eid=', eid, 'hp=', Health.current[eid]);
+        logger.info('life', `PLAYER DIED! eid=${eid} hp=${Health.current[eid]}`);
       }
       // bus.emit('entity:died', { eid });
     }

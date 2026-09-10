@@ -15,6 +15,7 @@ import type { Screen, EngineCallbacks, EngineServices, GameActions } from "../mo
 import type { Player } from "../entities";
 import type { World } from "bitecs";
 import type { WorldStore } from "./world-store";
+import { logger } from "../debug/logger";
 
 /** Мутации игрока (минимальный интерфейс для обратной совместимости) */
 export interface IPlayerMutations {
@@ -262,7 +263,7 @@ export class GameStore {
         this.setTrackedQuest(action.id);
         break;
       default:
-        console.warn("[GameStore] Unknown action:", action.type);
+        logger.warn('store', `Unknown action: ${action.type}`);
     }
   }
 

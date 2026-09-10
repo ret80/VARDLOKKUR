@@ -1,114 +1,102 @@
 #!/usr/bin/env node
-/* debug-server.js — standalone WebSocket + REST сервер для отладки */
+/* debug-server.cjs — Сервер-ретранслятор для отладки игры
+
+Архитектура:
+- Запускается отдельно на порту 3100
+- Браузерная игра подключается как game client и пушит состояние
+- DebugPanel подключается как panel client и получает состояние
+- Команды от DebugPanel ретранслируются сервером к игре
+
+Поток состояния:
+  Игра ──{type: 'state', data: {...}}──→ Сервер ──→ DebugPanel
+
+Поток команд:
+  DebugPanel ──{type: 'teleport', x: 100, y: 200}──→ Сервер ──→ Игра
+*/
 
 const http = require('http');
 const { WebSocketServer } = require('ws');
 
 const PORT = 3100;
-let clients = new Set();
-let gameState = null;
-let updateInterval = null;
+const MAX_LOG_BYTES = 10 * 1024 * 1024; // 10 MB
+const MAX_LOG_ENTRIES = 50000;
 
-function updateGameState() {
-  const globals = globalThis.__debugServerGlobals;
-  if (!globals || !globals.getters) return;
-  
-  const g = globals.getters;
-  gameState = {
-    player: g.getPlayerState?.(),
-    enemies: g.getEnemiesState?.(),
-    drops: g.getDropsState?.(),
-    projectiles: g.getProjectilesState?.(),
-    npcs: g.getNpcsState?.(),
-    fog: g.getFogState?.(),
-    flags: g.getFlags?.(),
-    map: g.getMap?.(),
-    time: g.getTime?.(),
-  };
+// Храним состояние, полученное от игры
+let gameState = null;
+
+// Клиенты
+let gameClient = null; // Один game client (браузер)
+const panelClients = new Set(); // Множество panel clients (DebugPanel)
+
+// ============================================================
+// Серверный буфер логов (кольцевой, 10 MB)
+// ============================================================
+const logBuffer = [];
+let logBufferBytes = 0;
+
+function trimLogs() {
+  while (logBuffer.length > MAX_LOG_ENTRIES || logBufferBytes > MAX_LOG_BYTES) {
+    const removed = logBuffer.shift();
+    logBufferBytes -= removed._bytes;
+  }
 }
 
-function handleCommand(ws, cmd) {
-  const { type, ...args } = cmd;
-  let result = null;
-  let error = null;
+function pushLog(level, module, message) {
+  const entry = {
+    time: Date.now(),
+    level,
+    module,
+    message,
+  };
+  // Estimate bytes
+  entry._bytes = Buffer.byteLength(JSON.stringify(entry));
+  logBuffer.push(entry);
+  logBufferBytes += entry._bytes;
+  trimLogs();
+}
 
-  const globals = globalThis.__debugServerGlobals;
-  if (!globals) {
-    error = 'Debug globals not initialized';
-    ws.send(JSON.stringify({ type: 'response', command: type, result, error }));
-    return;
+function getLogs(filters) {
+  let result = logBuffer;
+  if (filters) {
+    if (filters.level) {
+      const lvlOrder = ['debug', 'info', 'warn', 'error'];
+      const minLevel = lvlOrder.indexOf(filters.level);
+      result = result.filter(e => lvlOrder.indexOf(e.level) >= minLevel);
+    }
+    if (filters.module) {
+      result = result.filter(e => e.module === filters.module);
+    }
+    if (filters.search) {
+      const search = filters.search.toLowerCase();
+      result = result.filter(e => e.message.toLowerCase().includes(search));
+    }
+    if (filters.before) {
+      result = result.filter(e => e.time < parseInt(filters.before));
+    }
   }
+  if (filters && filters.limit && result.length > filters.limit) {
+    result = result.slice(-filters.limit);
+  }
+  // Remove internal _bytes field
+  return result.map(({ _bytes, ...rest }) => rest);
+}
 
-  const g = globals.getters || {};
-  const s = globals.setters || {};
+function log(msg) {
+  const ts = new Date().toISOString().slice(11, 19);
+  console.log(`[${ts}] ${msg}`);
+}
 
+// Принять логи от игры (WebSocket)
+function handleGameLog(msg) {
   try {
-    switch (type) {
-      // Запросы
-      case 'get-state': updateGameState(); result = gameState; break;
-      case 'get-player': result = gameState?.player; break;
-      case 'get-enemies': result = gameState?.enemies; break;
-      case 'get-drops': result = g?.getDropsState?.(); break;
-      case 'get-projectiles': result = g?.getProjectilesState?.(); break;
-      case 'get-npcs': result = g?.getNpcsState?.(); break;
-      case 'get-fog-state': result = gameState?.fog; break;
-      case 'get-flags': result = gameState?.flags; break;
-      case 'get-time': result = gameState?.time; break;
-      case 'world-dump': result = g?.getWorldDump?.(); break;
-      case 'profile-queries': result = g?.profileQueries?.(); break;
-      case 'inspect-entity': result = g?.inspectEntity?.(args.eid); break;
-
-      // Управление игроком
-      case 'teleport': result = g?.teleportPlayer?.(args.x, args.y); break;
-      case 'set-hp': result = g?.setPlayerHp?.(args.hp); break;
-      case 'kill-player': result = g?.killPlayer?.(); break;
-      case 'respawn': g?.respawnPlayer?.(); result = true; break;
-      case 'free-player': g?.freePlayer?.(); result = true; break;
-      case 'full-heal-player': g?.fullHealPlayer?.(); result = true; break;
-
-      // Управление врагами
-      case 'spawn-enemy': result = g?.spawnEnemy?.(args.kind, args.x, args.y); break;
-      case 'remove-enemy': result = g?.removeEnemy?.(args.eid); break;
-      case 'remove-all-enemies': result = g?.removeAllEnemies?.(); break;
-      case 'remove-all-ghosts': result = g?.removeAllGhosts?.(); break;
-
-      // Управление снарядами
-      case 'remove-projectile': result = g?.removeProjectile?.(args.eid); break;
-      case 'clear-projectiles': result = g?.clearProjectiles?.(); break;
-
-      // Управление дропами
-      case 'remove-drop': result = g?.removeDrop?.(args.eid); break;
-      case 'clear-drops': result = g?.clearDrops?.(); break;
-
-      // Управление временем
-      case 'set-timescale': g?.setTimeScale?.(args.scale); result = true; break;
-      case 'freeze': g?.setTimeScale?.(0); result = true; break;
-      case 'unfreeze': g?.setTimeScale?.(1); result = true; break;
-
-      // Управление ресурсами
-      case 'add-runes': g?.addRunes?.(args.count || 1); result = true; break;
-      case 'add-arrows': g?.addArrows?.(args.count || 12); result = true; break;
-      case 'add-hearts': g?.addHearts?.(args.count || 1); result = true; break;
-
-      // Управление флагами
-      case 'set-flag': s?.setFlag?.(args.key, args.value); result = true; break;
-
-      default: error = `Unknown command: ${type}`;
+    const data = JSON.parse(msg.toString());
+    if (data.type === 'log') {
+      pushLog(data.level || 'info', data.module || 'game', data.message || '');
     }
   } catch (e) {
-    error = e.message || 'Command execution failed';
+    // Ignore
   }
-
-  ws.send(JSON.stringify({ type: 'response', command: type, result, error }));
 }
-
-// Инициализируем globals
-globalThis.__debugServerGlobals = {
-  getters: {},
-  setters: {},
-  registerGetters(g) { globalThis.__debugServerGlobals.getters = g; },
-  registerSetters(s) { globalThis.__debugServerGlobals.setters = s; },
-};
 
 const server = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -122,61 +110,105 @@ const server = http.createServer((req, res) => {
   }
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
-  const globals = globalThis.__debugServerGlobals;
-  const g = globals.getters || {};
-  const s = globals.setters || {};
 
-  // GET endpoints
-  if (req.method === 'GET') {
-    if (url.pathname === '/debug/state') {
-      updateGameState();
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify(gameState));
-    }
-    if (url.pathname === '/debug/health') {
-      return res.writeHead(200, { 'Content-Type': 'application/json' })
-        .end(JSON.stringify({ status: 'ok', clients: clients.size }));
-    }
-    if (url.pathname === '/debug/world-dump') {
-      return res.writeHead(200, { 'Content-Type': 'application/json' })
-        .end(JSON.stringify(g.getWorldDump?.()));
-    }
-    if (url.pathname === '/debug/profile') {
-      return res.writeHead(200, { 'Content-Type': 'application/json' })
-        .end(JSON.stringify(g.profileQueries?.()));
-    }
-    if (url.pathname === '/debug/inspect') {
-      const eid = parseInt(url.searchParams.get('eid') || '0');
-      return res.writeHead(200, { 'Content-Type': 'application/json' })
-        .end(JSON.stringify(g.inspectEntity?.(eid)));
-    }
+  // GET /debug/state — получить текущее состояние
+  if (req.method === 'GET' && url.pathname === '/debug/state') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(gameState));
   }
 
-  // POST endpoints
-  if (req.method === 'POST') {
-    let body = '';
-    req.on('data', (chunk) => { body += chunk.toString(); });
-    req.on('end', () => {
-      let result = null;
-      try {
-        const data = body ? JSON.parse(body) : {};
-        if (url.pathname === '/debug/teleport') result = s.teleportPlayer?.(data.x, data.y);
-        if (url.pathname === '/debug/spawn-enemy') result = s.spawnEnemy?.(data.kind, data.x, data.y);
-        if (url.pathname === '/debug/set-flag') { s.setFlag?.(data.key, data.value); result = true; }
-        if (url.pathname === '/debug/kill-player') result = s.killPlayer?.();
-        if (url.pathname === '/debug/respawn') { s.respawnPlayer?.(); result = true; }
-        if (url.pathname === '/debug/set-hp') result = s.setPlayerHp?.(data.hp);
-        if (url.pathname === '/debug/remove-enemy') result = s.removeEnemy?.(data.eid);
-        if (url.pathname === '/debug/clear-enemies') result = s.removeAllEnemies?.();
-        if (url.pathname === '/debug/time-scale') { s.setTimeScale?.(data.scale); result = true; }
-        if (url.pathname === '/debug/add-runes') { s.addRunes?.(data.count || 1); result = true; }
-        if (url.pathname === '/debug/add-arrows') { s.addArrows?.(data.count || 12); result = true; }
-        if (url.pathname === '/debug/add-hearts') { s.addHearts?.(data.count || 1); result = true; }
-      } catch {}
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ result, success: true }));
-    });
-    return;
+  // GET /debug/health — проверка работоспособности
+  if (req.method === 'GET' && url.pathname === '/debug/health') {
+    return res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({
+        status: 'ok',
+        gameConnected: !!gameClient,
+        panelConnected: panelClients.size > 0,
+      }));
+  }
+
+  // GET /debug/clients — список подключённых клиентов
+  if (req.method === 'GET' && url.pathname === '/debug/clients') {
+    return res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({
+        gameConnected: !!gameClient,
+        panelClients: panelClients.size,
+      }));
+  }
+
+  // GET /debug/hello — проверка что сервер запущен
+  if (req.method === 'GET' && url.pathname === '/debug/hello') {
+    return res.writeHead(200, { 'Content-Type': 'text/plain' })
+      .end('привет мир');
+  }
+
+  // GET /debug/world-dump — полный дамп мира
+  if (req.method === 'GET' && url.pathname === '/debug/world-dump') {
+    const state = gameState;
+    return res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({
+        entities: state?.enemies?.map(e => ({
+          eid: e.eid,
+          kind: e.kind,
+          x: e.x,
+          y: e.y,
+          hp: e.hp,
+          maxHp: e.maxHp,
+          state: e.state,
+          stateName: e.stateName,
+        })) || [],
+        stats: {
+          totalEntities: (state?.enemies?.length || 0) + 1,
+          aliveEntities: (state?.enemies?.filter(e => e.hp > 0).length || 0) + 1,
+          componentCounts: {
+            Player: 1,
+            Enemy: state?.enemies?.length || 0,
+          },
+        },
+      }));
+  }
+
+  // GET /debug/profile — профилирование запросов
+  if (req.method === 'GET' && url.pathname === '/debug/profile') {
+    return res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ queries: [], totalTime: '0ms' }));
+  }
+
+  // GET /debug/inspect?eid=N — инспекция сущности
+  if (req.method === 'GET' && url.pathname === '/debug/inspect') {
+    const eid = parseInt(url.searchParams.get('eid') || '0');
+    const state = gameState;
+    const entity = state?.enemies?.find(e => e.eid === eid) || null;
+    return res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify(entity));
+  }
+
+  // GET /debug/logs — получить логи с фильтрами
+  if (req.method === 'GET' && url.pathname === '/debug/logs') {
+    const filters = {
+      level: url.searchParams.get('level') || undefined,
+      module: url.searchParams.get('module') || undefined,
+      search: url.searchParams.get('search') || undefined,
+      before: url.searchParams.get('before') || undefined,
+      limit: url.searchParams.get('limit') || undefined,
+    };
+    const logs = getLogs(filters);
+    return res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ logs, stats: { count: logBuffer.length, bytes: logBufferBytes } }));
+  }
+
+  // GET /debug/logs-stats — статистика логов
+  if (req.method === 'GET' && url.pathname === '/debug/logs-stats') {
+    return res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ count: logBuffer.length, bytes: logBufferBytes }));
+  }
+
+  // POST /debug/logs-clear — очистить логи
+  if (req.method === 'POST' && url.pathname === '/debug/logs-clear') {
+    logBuffer.length = 0;
+    logBufferBytes = 0;
+    return res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ success: true }));
   }
 
   res.writeHead(404);
@@ -184,48 +216,123 @@ const server = http.createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ server });
-wss.on('connection', (ws) => {
-  clients.add(ws);
-  console.log(`[debug-server] ✓ Client connected (${clients.size} total)`);
 
-  updateGameState();
-  ws.send(JSON.stringify({ type: 'state', data: gameState }));
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url, `http://localhost:${PORT}`);
+  const role = url.searchParams.get('role');
+  const isGameClient = role === 'game';
+  const ip = req.socket.remoteAddress || 'unknown';
+
+  log(`New connection: role=${role || 'panel'} from ${ip}`);
+
+  if (isGameClient) {
+    if (gameClient && gameClient !== ws) {
+      log('Closing old game client');
+      gameClient.close();
+    }
+    gameClient = ws;
+    log(`Game client connected (${panelClients.size} panels)`);
+  } else {
+    panelClients.add(ws);
+    log(`Panel client connected (${panelClients.size} total)`);
+    
+    if (gameState) {
+      ws.send(JSON.stringify({ type: 'state', data: gameState }));
+    }
+  }
 
   ws.on('message', (message) => {
     try {
-      const cmd = JSON.parse(message.toString());
-      handleCommand(ws, cmd);
-    } catch {
-      ws.send(JSON.stringify({ type: 'error', error: 'Invalid JSON' }));
+      const data = JSON.parse(message.toString());
+
+      if (isGameClient) {
+        if (data.type === 'state') {
+          gameState = data.data;
+          // Отправляем состояние всем panel clients
+          const msg = JSON.stringify({ type: 'state', data: gameState });
+          for (const client of panelClients) {
+            if (client.readyState === 1) {
+              try {
+                client.send(msg);
+              } catch (e2) {
+                // Ignore send errors to individual clients
+              }
+            }
+          }
+          // Log first message with data preview
+          if (!ws._msgCount) ws._msgCount = 0;
+          ws._msgCount++;
+          if (ws._msgCount === 1) {
+            log(`Game client connected. First state: player=${!!gameState?.player} enemies=${(gameState?.enemies || []).length}`);
+          }
+          if (ws._msgCount % 50 === 0) {
+            log(`Game client sent ${ws._msgCount} state updates`);
+          }
+        } else if (data.type === 'log') {
+          // Принять логи от игры
+          pushLog(data.level || 'info', data.module || 'game', data.message || '');
+        }
+      } else {
+        if (data.type === 'get-state') {
+          ws.send(JSON.stringify({ type: 'state', data: gameState }));
+        } else if (data.type && data.type !== 'response') {
+          if (gameClient && gameClient.readyState === 1) {
+            // Формат: {type: 'command', teleport: {x, y}} — game-client.js ожидает
+            const cmdData = { type: 'command' };
+            // data.type содержит имя команды (teleport, set-hp и т.д.) — переносим её в тело
+            const { type: cmdName, ...cmdArgs } = data;
+            cmdData[cmdName] = cmdArgs;
+            gameClient.send(JSON.stringify(cmdData));
+            ws.send(JSON.stringify({
+              type: 'response',
+              command: cmdName,
+              result: { sent: true },
+              error: null,
+            }));
+          } else {
+            ws.send(JSON.stringify({
+              type: 'response',
+              command: data.type,
+              result: null,
+              error: 'Game client not connected',
+            }));
+          }
+        }
+      }
+    } catch (e) {
+      log(`Error: ${e.message}`);
+      try {
+        ws.send(JSON.stringify({ type: 'error', error: 'Invalid message' }));
+      } catch (e2) {
+        // Ignore
+      }
     }
   });
 
-  ws.on('close', () => {
-    clients.delete(ws);
-    console.log(`[debug-server] Client disconnected (${clients.size} total)`);
+  ws.on('close', (code, reason) => {
+    log(`WS close: role=${isGameClient ? 'game' : 'panel'} code=${code} reason="${reason.toString()}"`);
+    if (isGameClient) {
+      if (gameClient === ws) gameClient = null;
+      log('Game client disconnected');
+    } else {
+      panelClients.delete(ws);
+      log(`Panel client disconnected (${panelClients.size} total)`);
+    }
+  });
+
+  ws.on('error', (err) => {
+    log(`WebSocket error: ${err.message}`);
   });
 });
 
-server.listen(PORT, () => {
-  console.log(`[debug-server] ✓ REST API  http://localhost:${PORT}/debug/state`);
-  console.log(`[debug-server] ✓ WebSocket ws://localhost:${PORT}`);
-  console.log(`[debug-server] ✓ Debug server ready`);
+server.listen(PORT, '0.0.0.0', () => {
+  log(`Running on http://localhost:${PORT}`);
 });
-
-// Периодическая отправка состояния
-updateInterval = setInterval(() => {
-  updateGameState();
-  const msg = JSON.stringify({ type: 'state', data: gameState });
-  for (const client of clients) {
-    if (client.readyState === 1) client.send(msg);
-  }
-}, 100);
 
 // Graceful shutdown
 process.on('SIGINT', () => {
-  if (updateInterval) clearInterval(updateInterval);
   wss.close();
   server.close();
-  console.log('[debug-server] Stopped');
+  log('Stopped');
   process.exit(0);
 });

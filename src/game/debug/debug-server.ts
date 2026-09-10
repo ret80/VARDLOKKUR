@@ -3,6 +3,8 @@
 import { createServer as createHttpServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'http';
+import type { LoggerFilters } from './logger';
+import { logger } from './logger';
 
 // ============================================================
 // Типы команд
@@ -48,6 +50,9 @@ export class DebugServer {
   private getWorldDump: () => any = () => ({ entities: [], stats: {} });
   private profileQueriesFn: () => any = () => ({ queries: [], totalTime: '0ms' });
   private inspectEntityFn: (eid: number) => any = () => null;
+  
+  // Logger reference
+  private logger: { getLogs: (filters?: LoggerFilters) => any[]; getStats: () => { count: number; bytes: number }; clear: () => void } | null = null;
   
   // Callbacks для управления
   private teleportPlayer: (x: number, y: number) => boolean = () => false;
@@ -101,6 +106,11 @@ export class DebugServer {
     if (getters.getWorldDump) this.getWorldDump = getters.getWorldDump;
     if (getters.profileQueries) this.profileQueriesFn = getters.profileQueries;
     if (getters.inspectEntity) this.inspectEntityFn = getters.inspectEntity;
+  }
+
+  /** Установить логгер */
+  setLogger(logger: { getLogs: (filters?: LoggerFilters) => any[]; getStats: () => { count: number; bytes: number }; clear: () => void }): void {
+    this.logger = logger;
   }
 
   /** Установить колбэки для управления */
@@ -179,6 +189,36 @@ export class DebugServer {
         const eid = parseInt(url.searchParams.get('eid') || '0');
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(this.inspectEntityFn(eid)));
+      } else if (req.url === '/debug/logs' && req.method === 'GET') {
+        const url = new URL(req.url!, `http://localhost:${this.port}`);
+        const filters: LoggerFilters = {
+          level: url.searchParams.get('level') as LoggerFilters['level'],
+          module: url.searchParams.get('module') || undefined,
+          search: url.searchParams.get('search') || undefined,
+          before: url.searchParams.get('before') ? parseInt(url.searchParams.get('before')!) : undefined,
+          limit: url.searchParams.get('limit') ? parseInt(url.searchParams.get('limit')!) : undefined,
+        };
+        let logsResult: any[] = [];
+        let stats: { count: number; bytes: number } | null = null;
+        if (this.logger) {
+          logsResult = this.logger.getLogs(filters);
+          stats = this.logger.getStats();
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ logs: logsResult, stats }));
+      } else if (req.url === '/debug/logs-stats' && req.method === 'GET') {
+        let stats: { count: number; bytes: number } | null = null;
+        if (this.logger) {
+          stats = this.logger.getStats();
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(stats || { count: 0, bytes: 0 }));
+      } else if (req.url === '/debug/logs-clear' && req.method === 'POST') {
+        if (this.logger) {
+          this.logger.clear();
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
       } else if (req.url === '/debug/teleport' && req.method === 'POST') {
         this.handleJsonBody(req, (body: any) => {
           const result = this.teleportPlayer(body.x, body.y);
@@ -247,7 +287,7 @@ export class DebugServer {
         });
       } else {
         res.writeHead(404, { 'Content-Type': 'text/plain' });
-        res.end('Not Found\n\nAvailable endpoints:\nGET /debug/state\nGET /debug/health\nGET /debug/world-dump\nGET /debug/profile\nGET /debug/inspect?eid=0\nPOST /debug/teleport\nPOST /debug/spawn-enemy\nPOST /debug/set-flag\nPOST /debug/kill-player\nPOST /debug/respawn\nPOST /debug/set-hp\nPOST /debug/remove-enemy\nPOST /debug/clear-enemies\nPOST /debug/time-scale\nPOST /debug/add-runes\nPOST /debug/add-arrows\nPOST /debug/add-hearts');
+        res.end('Not Found\n\nAvailable endpoints:\nGET /debug/state\nGET /debug/health\nGET /debug/world-dump\nGET /debug/profile\nGET /debug/inspect?eid=0\nGET /debug/logs?level=info&module=fog&search=player&limit=100\nGET /debug/logs-stats\nPOST /debug/logs-clear\nPOST /debug/teleport\nPOST /debug/spawn-enemy\nPOST /debug/set-flag\nPOST /debug/kill-player\nPOST /debug/respawn\nPOST /debug/set-hp\nPOST /debug/remove-enemy\nPOST /debug/clear-enemies\nPOST /debug/time-scale\nPOST /debug/add-runes\nPOST /debug/add-arrows\nPOST /debug/add-hearts');
       }
     });
 
@@ -255,7 +295,7 @@ export class DebugServer {
 
     this.wss.on('connection', (ws: WebSocket) => {
       this.clients.add(ws);
-      console.log(`[debug-server] Client connected (${this.clients.size} total)`);
+      logger.info('debug-server', `Client connected (${this.clients.size} total)`);
 
       // Отправить начальное состояние
       this.updateGameState();
@@ -275,19 +315,19 @@ export class DebugServer {
 
       ws.on('close', () => {
         this.clients.delete(ws);
-        console.log(`[debug-server] Client disconnected (${this.clients.size} total)`);
+        logger.info('debug-server', `Client disconnected (${this.clients.size} total)`);
       });
 
       ws.on('error', (err: Error) => {
-        console.error('[debug-server] WebSocket error:', err.message);
+        logger.error('debug-server', `WebSocket error: ${err.message}`);
         this.clients.delete(ws);
       });
     });
 
     this.httpServer.listen(this.port, () => {
-      console.log(`[debug-server] Running on http://localhost:${this.port}`);
-      console.log(`[debug-server] WebSocket ws://localhost:${this.port}`);
-      console.log(`[debug-server] REST API http://localhost:${this.port}/debug/state`);
+      logger.info('debug-server', `Running on http://localhost:${this.port}`);
+      logger.info('debug-server', `WebSocket ws://localhost:${this.port}`);
+      logger.info('debug-server', `REST API http://localhost:${this.port}/debug/state`);
     });
 
     // Периодическая отправка состояния
@@ -309,7 +349,7 @@ export class DebugServer {
       this.httpServer = null;
     }
     this.clients.clear();
-    console.log('[debug-server] Stopped');
+    logger.info('debug-server', 'Stopped');
   }
 
   /** Периодическая отправка состояния */
@@ -390,6 +430,26 @@ export class DebugServer {
 
         case 'profile-queries':
           result = this.profileQueriesFn();
+          break;
+
+        case 'get-logs':
+          const logFilters: LoggerFilters = {
+            level: args.level,
+            module: args.module,
+            search: args.search,
+            before: args.before,
+            limit: args.limit,
+          };
+          result = this.logger ? this.logger.getLogs(logFilters) : [];
+          break;
+
+        case 'logs-stats':
+          result = this.logger ? this.logger.getStats() : { count: 0, bytes: 0 };
+          break;
+
+        case 'logs-clear':
+          if (this.logger) this.logger.clear();
+          result = true;
           break;
 
         case 'inspect-entity':

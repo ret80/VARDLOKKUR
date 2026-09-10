@@ -10,6 +10,7 @@ import { FlagDomain } from "./store/flag-domain";
 import { IPlayerMutations } from "./store/player-domain";
 import { DropKind } from "./world";
 import { audio } from "./audio";
+import { logger } from "./debug/logger";
 
 /** Минимальный интерфейс игрока для обработчиков дропов */
 export interface IPlayerDropAccess {
@@ -328,7 +329,7 @@ export class DropHandlerRegistry {
   collect(kind: DropKind, ctx: DropContext): boolean {
     const handler = this.handlers.get(kind);
     if (!handler) {
-      console.warn(`[DropHandlerRegistry] No handler for drop kind: ${kind}`);
+      logger.warn('drop', `No handler for drop kind: ${kind}`);
       return false;
     }
     return handler.handle(ctx);

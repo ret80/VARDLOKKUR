@@ -1,5 +1,6 @@
 /* ============ StateManager ============ */
 import type { Screen } from "../models";
+import { logger } from "../debug/logger";
 
 export type ScreenChangedHandler = (screen: Screen) => void;
 export type ToastHandler = (msg: string) => void;
@@ -54,7 +55,7 @@ export class StateManager {
 
   onPlayerDied(): void {
     if (this.playerDead) return;
-    console.log('[State] onPlayerDied! setting screen=death, deathT=1.8');
+    logger.info('state', 'onPlayerDied! setting screen=death, deathT=1.8');
     this.playerDead = true;
     this.setScreen("death");
     this.deathT = 1.8;
