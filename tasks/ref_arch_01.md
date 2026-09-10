@@ -227,3 +227,111 @@
 | `CLONEABLE_FIELDS` содержит все поля компонентов | ✅ 85+ полей, сгруппированных по компонентам |
 | `cloneComponentFields` работает для всех типов | ✅ Float32Array, Uint8Array, Int32Array, Uint32Array |
 | TypeScript компиляция без ошибок | ✅ `tsc --noEmit` проходит |
+
+---
+
+### ✅ Отчёт о выполнении — Этап 3
+
+**Дата:** 2026-09-11  
+**Статус:** Выполнен  
+**Компиляция:** TypeScript компиляция проходит без ошибок (`tsc --noEmit`)
+
+#### Выполненные задачи
+
+| # | Задача | Файлы | Статус |
+|---|--------|-------|--------|
+| 1 | Добавить `destroy()` в `PlanckWorld` — полное уничтожение всех физических тел | `planck-world.ts` | ✅ |
+| 2 | Создать `teardownWorld()` — уничтожение спрайтов и физ. тел ECS-сущностей | `ecs-bridge.ts` | ✅ |
+| 3 | Вызвать `teardownWorld()` в `EcsMapLoader.loadMap()` ПЕРЕД `clearWorld()` | `ecs-map-loader.ts` | ✅ |
+| 4 | В `MapLoaderService`: хранить и уничтожать предыдущий `PlanckWorld` | `map-loader-service.ts` | ✅ |
+| 5 | Сбросить `barrierBody` в `EcsMapLoader` при загрузке новой карты | `ecs-map-loader.ts` | ✅ |
+
+#### Детали изменений
+
+**`planck-world.ts`**
+
+**Добавлено:**
+- `export function destroy(): void` — полное уничтожение мира Planck.js
+  - Уничтожает все tile bodies через `this.world.destroyBody()`
+  - Уничтожает все динамические тела через linked list (`getBodyList() → m_next`)
+  - Очищает все внутренние коллекции (`entityMap`, `pendingDestroy`, `destroyedBodies`, `destroyedThisStep`)
+  - Использует try-catch для безопасной работы с заблокированным миром
+
+**`ecs-bridge.ts`**
+
+**Добавлено:**
+- `export function teardownWorld(world, pw, preservePlayerG?): void` — корректное уничтожение ресурсов
+  - Проходит по всем сущностям с компонентом `PhysicsBody`:
+    - Уничтожает PixiJS спрайт (если не `preservePlayerG`)
+    - Уничтожает Planck.js физическое тело через `pw.destroyBody()`
+    - Обнуляет `Sprite.ref[eid]` и `PhysicsBody.body[eid]`
+  - Проходит по всем сущностям с компонентом `Sprite` (NPC, сундуки, пьедесталы без физики):
+    - Уничтожает спрайт, обнуляет `Sprite.ref[eid]`
+  - Вызывает `pw.clear()` для очистки tile bodies
+  - Вызывается ПЕРЕД `clearWorld()` — когда компоненты ещё валидны
+
+**`ecs-map-loader.ts`**
+
+**Изменено:**
+- В `loadMap()` добавлен вызов `teardownWorld(world, planckWorld, savedPlayerG)` перед `clearWorld()`
+- Добавлен сброс `this.barrierBody = null` — новое тело создастся при `spawnOverworldObjects`
+- Добавлен импорт `teardownWorld` из `ecs-bridge`
+
+**`map-loader-service.ts`**
+
+**Изменено:**
+- Добавлено приватное поле `_prevPlanckWorld: PlanckWorld | null`
+- В `loadMapEcs()`: перед созданием нового `PlanckWorld` уничтожается предыдущий через `_prevPlanckWorld.destroy()`
+- Новый `PlanckWorld` сохраняется в `_prevPlanckWorld` для уничтожения при следующей загрузке карты
+
+#### Архитектура жизненного цикла карты
+
+```
+Загрузка новой карты / Респавн
+        │
+        ▼
+┌──────────────────────────────┐
+│ 1. teardownWorld(world, pw)  │  ← уничтожает спрайты + физ. тела
+│    (ecs-bridge.ts)           │     ПЕРЕД удалением сущностей из ECS
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│ 2. clearWorld(world)         │  ← удаляет сущности из ECS
+│    (ecs-map-loader.ts)       │     сбрасывает SoA массивы
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│ 3. destroy() prev Planck     │  ← уничтожает все тела
+│    World (map-loader-svc.ts) │     старого физического мира
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│ 4. Новый PlanckWorld         │  ← создаётся чистый физический мир
+│    + spawn всех сущностей    │     тайлы, игрок, враги, пьедесталы...
+└──────────────────────────────┘
+```
+
+#### Решённые проблемы
+
+| Проблема | Решение |
+|----------|---------|
+| **Утечка Planck.js тел** — старый `PlanckWorld` abandonился без очистки | `destroy()` уничтожает все тела через `world.destroyBody()` |
+| **Утечка PixiJS спрайтов** — `clearWorld()` не уничтожал спрайты статических объектов | `teardownWorld()` проходит по всем сущностям и вызывает `sprite.destroy()` |
+| **Призрачные пьедесталы** — после респавна пьедесталы не создавались | `teardownWorld()` → `clearWorld()` → `spawnPedestals()` — полный цикл пересоздания |
+| **Кэширование `barrierBody`** — старое тело барьера не сбрасывалось | `this.barrierBody = null` в начале `loadMap()` |
+| **Системы кэшировали старые eids** — `query()` работает с новым миром | `resetAllComponents()` очищает SoA, `query()` возвращает свежие eids |
+
+#### Проверка критериев успешности
+
+| Критерий | Результат |
+|----------|-----------|
+| `teardownWorld()` уничтожает спрайты и физ. тела | ✅ `sprite.destroy()` + `pw.destroyBody()` |
+| `PlanckWorld.destroy()` уничтожает все тела | ✅ tileBodies + dynamic bodies через linked list |
+| `MapLoaderService` уничтожает старый `PlanckWorld` | ✅ `_prevPlanckWorld.destroy()` перед новым |
+| `barrierBody` сбрасывается при загрузке карты | ✅ `this.barrierBody = null` |
+| Пьедесталы пересоздаются корректно | ✅ `spawnPedestals()` создаёт новые в новом мире |
+| Системы не кэшируют старые eids | ✅ `query()` работает с новым миром каждый тик |
+| TypeScript компиляция без ошибок | ✅ `tsc --noEmit` проходит |

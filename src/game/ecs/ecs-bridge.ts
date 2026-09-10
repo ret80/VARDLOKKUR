@@ -4,12 +4,13 @@
    Этот модуль координирует: вызов Фабрики → навешивание Sprite → навешивание PhysicsBody.
 */
 
-import { type World } from 'bitecs';
+import { type World, query } from 'bitecs';
 import {
   Position,
   Sprite,
   SpriteRegistry,
   PhysicsBodyRegistry,
+  PhysicsBody,
 } from './ecs-components';
 import { type EntityFactory } from './entity-factory';
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
@@ -18,6 +19,70 @@ import type { PlanckWorld } from '../physics/planck-world';
 import type { Cat } from '../physics/planck-world';
 import { createBodyForEntity } from './ecs-systems';
 import { ENEMY_STATS } from '../entities';
+
+// ============================================================
+// Teardown — корректное уничтожение ресурсов при смене карты
+// ============================================================
+
+/**
+ * Уничтожить все спрайты и физические тела в мире.
+ * Вызывается ПЕРЕД clearWorld() — чтобы компоненты ещё были валидными.
+ *
+ * @param world    — ECS мир, сущности которого нужно очистить
+ * @param pw       — PlanckWorld для уничтожения физических тел
+ * @param preservePlayerG — спрайт игрока, который НЕ нужно уничтожать
+ */
+export function teardownWorld(
+  world: World,
+  pw: PlanckWorld,
+  preservePlayerG?: Graphics
+): void {
+  // 1. Уничтожить спрайты и физические тела всех сущностей
+  for (const eid of query(world, [PhysicsBody])) {
+    // Уничтожить спрайт
+    const spriteIdx = Sprite.ref[eid];
+    if (spriteIdx > 0 && spriteIdx <= SpriteRegistry.length) {
+      const spriteRef = SpriteRegistry[spriteIdx - 1];
+      if (spriteRef && spriteRef !== preservePlayerG) {
+        if (spriteRef.parent) {
+          spriteRef.parent.removeChild(spriteRef);
+        }
+        spriteRef.destroy({ texture: true });
+      }
+    }
+    Sprite.ref[eid] = 0;
+
+    // Уничтожить физическое тело
+    const pbIdx = PhysicsBody.body[eid];
+    if (pbIdx > 0 && pbIdx <= PhysicsBodyRegistry.length) {
+      const body = PhysicsBodyRegistry[pbIdx - 1];
+      if (body) {
+        pw.destroyBody(body);
+        PhysicsBody.body[eid] = 0;
+        PhysicsBodyRegistry[pbIdx - 1] = null as any;
+      }
+    }
+    PhysicsBody.body[eid] = 0;
+  }
+
+  // 2. Уничтожить спрайты сущностей БЕЗ физического тела (NPC, сундуки, пьедесталы и т.д.)
+  for (const eid of query(world, [Sprite])) {
+    const spriteIdx = Sprite.ref[eid];
+    if (spriteIdx > 0 && spriteIdx <= SpriteRegistry.length) {
+      const spriteRef = SpriteRegistry[spriteIdx - 1];
+      if (spriteRef && spriteRef !== preservePlayerG) {
+        if (spriteRef.parent) {
+          spriteRef.parent.removeChild(spriteRef);
+        }
+        spriteRef.destroy({ texture: true });
+      }
+    }
+    Sprite.ref[eid] = 0;
+  }
+
+  // 3. Очистить PlanckWorld (tile bodies)
+  try { pw.clear(); } catch {}
+}
 
 // ============================================================
 // ECS Entity Bridge — создаёт ECS сущности из данных карты

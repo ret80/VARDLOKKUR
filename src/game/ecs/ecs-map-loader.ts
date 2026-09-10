@@ -18,6 +18,7 @@ import {
   createAltarInEcs,
   createDropInEcs,
   createPlayerInEcs,
+  teardownWorld,
 } from './ecs-bridge';
 import type { EntityFactory } from './entity-factory';
 import { EventBus } from '../event-bus';
@@ -90,8 +91,15 @@ export class EcsMapLoader {
     // и будет уничтожен clearWorld из-за !s.parent
     const savedPlayerG = playerG;
 
-    // 1-1. Очистить старый мир
+    // 1-0. TEARDOWN: корректно уничтожить спрайты и физические тела старого мира
+    // Вызывается ПЕРЕД clearWorld() — компоненты ещё валидны
+    teardownWorld(world, planckWorld, savedPlayerG);
+
+    // 1-1. Очистить старый мир (ECS сущности + SoA массивы)
     this.clearWorld(world, savedPlayerG);
+
+    // 1-2. Сбросить ссылку на barrierBody — новое тело создастся при spawnOverworldObjects
+    this.barrierBody = null;
 
     // 2. Создать тайловые коллайдеры
     this.createTileBodies(map, planckWorld);

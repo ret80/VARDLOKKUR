@@ -30,6 +30,8 @@ export class MapLoaderService {
   houseCache = new HouseTextureCache();
   ecsMapLoader: EcsMapLoader | null = null;
   private _mmBase: ImageData | null = null;
+  /** Предыдущий PlanckWorld — уничтожается при загрузке новой карты */
+  private _prevPlanckWorld: PlanckWorld | null = null;
   /** Фабрика чистых ECS-сущностей (без графики/физики) */
   entityFactory: EntityFactory;
 
@@ -65,6 +67,12 @@ export class MapLoaderService {
     toast: (msg: string) => void,
     onPlayerCreated?: (eid: number) => void
   ): LoadMapResult {
+    // 0. Уничтожить предыдущий PlanckWorld — избежать утечки физических тел
+    if (this._prevPlanckWorld) {
+      this._prevPlanckWorld.destroy();
+      this._prevPlanckWorld = null;
+    }
+
     // Очищаем старые тайлы перед построением новых, сохраняем playerG
     this.clearTiles(playerG);
 
@@ -99,9 +107,10 @@ export class MapLoaderService {
     this.houseCache = tileResult.houseCache;
 
     // Создаём ECS Map Loader (используется общий ECS-мир движка)
+    const newPlanckWorld = new PlanckWorld();
     this.ecsMapLoader = new EcsMapLoader({
       world: this.ecsWorld,
-      planckWorld: new PlanckWorld(),
+      planckWorld: newPlanckWorld,
       dynamicContainer: this.scene.dynamic,
       openedChests: this.store.openedChests,
       takenPedestals: this.store.takenPedestals,
@@ -121,6 +130,8 @@ export class MapLoaderService {
       toast,
       entityFactory: this.entityFactory,
     });
+    // Сохраняем для уничтожения при следующей загрузке карты
+    this._prevPlanckWorld = newPlanckWorld;
 
     const result = this.ecsMapLoader.loadMap(playerG, playerDomain, onPlayerCreated);
     this._mmBase = buildMinimapBase(map);

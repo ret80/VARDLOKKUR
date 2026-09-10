@@ -459,6 +459,7 @@ export class PlanckWorld {
     return this.world;
   }
 
+  /** Очистить все тела (tile bodies + dynamic bodies через world.destroyBody) */
   clear(): void {
     for (const b of this.tileBodies) {
       if (!this.destroyedBodies.has(b)) {
@@ -469,6 +470,37 @@ export class PlanckWorld {
     this.entityMap.clear();
     this.pendingDestroy.length = 0;
     this.destroyedBodies = new WeakSet<Body>();
+  }
+
+  /** Полное уничтожение мира — вызывает world.destroyBody() для всех тел */
+  destroy(): void {
+    // Уничтожаем все tile bodies
+    for (const b of this.tileBodies) {
+      if (!this.destroyedBodies.has(b)) {
+        try { this.world.destroyBody(b); } catch {}
+      }
+    }
+    this.tileBodies.length = 0;
+
+    // Уничтожаем все динамические тела через linked list (getBodyList → m_next)
+    // Это необходимо, т.к. Planck.js не имеет forEachBody в публичном API
+    try {
+      let body: Body | null = this.world.getBodyList();
+      while (body) {
+        const next = (body as any).m_next as Body | null;
+        if (!(this.destroyedBodies as WeakSet<Body>).has(body)) {
+          try { this.world.destroyBody(body); } catch {}
+        }
+        body = next;
+      }
+    } catch {
+      // Мир мог быть уже заблокирован или повреждён — игнорируем
+    }
+
+    this.entityMap.clear();
+    this.pendingDestroy.length = 0;
+    this.destroyedBodies = new WeakSet<Body>();
+    this.destroyedThisStep.length = 0;
   }
 }
 
