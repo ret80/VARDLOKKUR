@@ -68,10 +68,13 @@ interface PrefabRegistry {
   altar: number | null;
 }
 
+/** Тип SoA-массива компонента */
+type ArrayComponent = Int32Array | Uint32Array | Uint8Array | Float32Array;
+
 /** Описание поля компонента для декларативного клонирования */
 export interface CloneableField {
-  /** Ссылка на объект-компонент (например, Position, Health, Enemy и т.д.) */
-  comp: Record<string, any>;
+  /** Ссылка на объект-компонент (Record<string, ArrayComponent>) или скалярный массив (ArrayComponent) */
+  comp: Record<string, ArrayComponent> | ArrayComponent;
   /** Имя поля внутри компонента; пустая строка для скалярных массивов (Dead) */
   field: string;
 }
@@ -350,7 +353,7 @@ export class EntityFactory {
     { comp: Player, field: 'swingDirY' },
     { comp: Player, field: 'aiming' },
     { comp: Player, field: 'maxHp' },
-    // Enemy
+    // Enemy — все поля, включая leashX/leashY (Float32Array)
     { comp: Enemy, field: 'kind' },
     { comp: Enemy, field: 'radius' },
     { comp: Enemy, field: 'facingX' },
@@ -432,10 +435,13 @@ export class EntityFactory {
     for (const f of EntityFactory.CLONEABLE_FIELDS) {
       if (f.field === '') {
         // Скалярный массив (например, Dead)
-        (f.comp as any)[dstEid] = (f.comp as any)[srcEid];
+        const arr = f.comp as ArrayComponent;
+        arr[dstEid] = arr[srcEid];
       } else {
         // Структурированный компонент (например, Position.x)
-        (f.comp as any)[f.field][dstEid] = (f.comp as any)[f.field][srcEid];
+        const rec = f.comp as Record<string, ArrayComponent>;
+        const arr = rec[f.field];
+        arr[dstEid] = arr[srcEid];
       }
     }
   }
@@ -830,6 +836,37 @@ export class EntityFactory {
   // ============================================================
   // Создание статических объектов
   // ============================================================
+
+  /**
+   * Создать пьедестал — явный метод с полным сбросом состояния.
+   * Гарантирует что Pedestal.id обнуляется при пересоздании сущности,
+   * чтобы логика активации не ломалась из-за сохранения старого состояния.
+   * 
+   * @param id — уникальный ID пьедестала (например, "ped_10_20")
+   * @param x  — позиция X
+   * @param y  — позиция Y
+   * @param guardsLeft — количество стражей (0 = уже взят)
+   */
+  createPedestal(id: string, x: number, y: number, guardsLeft: number): number {
+    const eid = addEntity(this.gameWorld);
+    addComponents(this.gameWorld, eid, Position, Radius, Pedestal, RenderLayer);
+
+    // Позиция
+    Position.x[eid] = x;
+    Position.y[eid] = y;
+
+    // Радиус и слой
+    Radius.value[eid] = 6;
+    RenderLayer.value[eid] = 10;
+
+    // Полностью сбрасываем все поля Pedestal
+    Pedestal.id[eid] = poolAdd(StringPool.pedestalIds, id);
+    Pedestal.taken[eid] = 0;
+    Pedestal.guardsLeft[eid] = guardsLeft;
+    Pedestal.guardsSpawned[eid] = 0;
+
+    return eid;
+  }
 
   /**
    * Создать базовую сущность (для статических объектов: сундуки, пьедесталы, святилища и т.д.).

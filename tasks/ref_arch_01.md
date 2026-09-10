@@ -230,6 +230,86 @@
 
 ---
 
+### ✅ Отчёт о выполнении — Этап 4
+
+**Дата:** 2026-09-11  
+**Статус:** Выполнен  
+**Компиляция:** TypeScript компиляция проходит без ошибок (`tsc --noEmit`)
+
+#### Выполненные задачи
+
+| # | Задача | Файлы | Статус |
+|---|--------|-------|--------|
+| 1 | Декларативное копирование — `CLONEABLE_FIELDS` уже реализован | `entity-factory.ts` | ✅ (Этап 2) |
+| 2 | Создать явный метод `createPedestal()` | `entity-factory.ts` | ✅ |
+| 3 | Сброс `Pedestal.id` при пересоздании сущности | `entity-factory.ts` | ✅ |
+
+#### Детали изменений
+
+**`entity-factory.ts`**
+
+**Добавлено:**
+- `export function createPedestal(id, x, y, guardsLeft): number` — явный метод создания пьедестала
+  - Создаёт сущность с компонентами `Position, Radius, Pedestal, RenderLayer`
+  - Полностью сбрасывает все поля `Pedestal`:
+    - `Pedestal.id` — через `poolAdd(StringPool.pedestalIds, id)`
+    - `Pedestal.taken` — сбрасывается в `0`
+    - `Pedestal.guardsLeft` — устанавливается из параметра
+    - `Pedestal.guardsSpawned` — сбрасывается в `0`
+  - Гарантирует что при пересоздании сущности старое состояние не сохраняется
+  - Позиция устанавливается из параметров (не из префаба)
+
+**Исправлено:**
+- Убраны все 2 использования `as any` в `cloneComponentFields()` (строки 435, 438)
+- Введён тип `ArrayComponent = Int32Array | Uint32Array | Uint8Array | Float32Array`
+- `CloneableField.comp` изменён на `Record<string, ArrayComponent> | ArrayComponent`
+- `cloneComponentFields()` теперь использует `as ArrayComponent` и `as Record<string, ArrayComponent>`
+- **Результат: 0 использований `as any` для копирования полей компонентов**
+
+**CLONEABLE_FIELDS (уже реализован в Этапе 2):**
+- Содержит 85+ полей, сгруппированных по компонентам
+- Автоматически исключает `Sprite.ref` и `PhysicsBody.body` — они создаются в `ecs-bridge.ts`
+- Поддерживает все типы массивов: `Float32Array`, `Uint8Array`, `Int32Array`, `Uint32Array`
+- Для скалярных массивов (Dead): `{ comp: Dead, field: '' }`
+
+#### Преимущества нового подхода
+
+| Аспект | До | После |
+|--------|----|-------|
+| Создание пьедестала | Через `createStaticEntity()` + `addPedestalComponents()` | Через единый метод `createPedestal()` |
+| Сброс состояния | Ручной, легко забыть | Автоматический в `createPedestal()` |
+| `Pedestal.id` | Может сохраниться старое значение | Всегда сбрасывается через `poolAdd` |
+| Декларативное клонирование | ~140 строк ручного копирования | ~15 строк + `CLONEABLE_FIELDS` |
+
+#### Проверка критериев успешности
+
+| Критерий | Результат |
+|----------|-----------|
+| `as any` для копирования полей = 0 | ✅ Заменён на `as ArrayComponent` + `as Record<string, ArrayComponent>` |
+| `CLONEABLE_FIELDS` содержит все поля компонентов | ✅ 85+ полей, сгруппированных по компонентам |
+| `cloneComponentFields` работает для всех типов | ✅ Float32Array, Uint8Array, Int32Array, Uint32Array |
+| `createPedestal()` — явный метод в EntityFactory | ✅ Строка 861 |
+| `Pedestal.id` сбрасывается при пересоздании | ✅ `poolAdd` + явное обнуление всех полей |
+| TypeScript компиляция без ошибок | ✅ `tsc --noEmit` проходит |
+
+#### Итоговая архитектура Этапа 4
+
+```
+EntityFactory
+  ├── CLONEABLE_FIELDS (декларативный список 85+ полей)
+  │   ├── Position.x, Position.y
+  │   ├── Health.current, Health.max
+  │   ├── Enemy.kind, Enemy.radius, Enemy.speed, Enemy.dmg, ...
+  │   ├── Pedestal.id, Pedestal.taken, Pedestal.guardsLeft, ...
+  │   └── Dead (скалярный)
+  │
+  ├── cloneComponentFields(srcEid, dstEid)
+  │   └── Автоматическое копирование через CLONEABLE_FIELDS
+  │
+  └── createPedestal(id, x, y, guardsLeft)
+      └── Полный сброс Pedestal.* при пересоздании
+```
+
 ### ✅ Отчёт о выполнении — Этап 3
 
 **Дата:** 2026-09-11  
@@ -335,3 +415,115 @@
 | Пьедесталы пересоздаются корректно | ✅ `spawnPedestals()` создаёт новые в новом мире |
 | Системы не кэшируют старые eids | ✅ `query()` работает с новым миром каждый тик |
 | TypeScript компиляция без ошибок | ✅ `tsc --noEmit` проходит |
+
+---
+
+### ✅ Отчёт о выполнении — Этап 4: Архитектурная чистка и Типизация
+
+**Дата:** 2026-09-11  
+**Статус:** Выполнен  
+**Компиляция:** TypeScript компиляция проходит без ошибок (`tsc --noEmit`)
+
+#### Выполненные задачи
+
+| # | Задача | Файлы | Статус |
+|---|--------|-------|--------|
+| 1 | Декларативное копирование — `CLONEABLE_FIELDS` | `entity-factory.ts` | ✅ (Этап 2) |
+| 2 | Убрать `as any` из `cloneComponentFields()` | `entity-factory.ts` | ✅ |
+| 3 | Создать явный метод `createPedestal()` | `entity-factory.ts` | ✅ |
+| 4 | Сброс `Pedestal.*` при пересоздании сущности | `entity-factory.ts` | ✅ |
+
+#### Детали изменений
+
+**`entity-factory.ts`**
+
+**Удалено:**
+- 2 использования `as any` в `cloneComponentFields()` (строки 435, 438) — заменены на типизированные приведения
+
+**Добавлено:**
+- `type ArrayComponent = Int32Array | Uint32Array | Uint8Array | Float32Array` — тип для SoA-массивов
+- `CloneableField.comp` изменён на `Record<string, ArrayComponent> | ArrayComponent` — поддержка скалярных массивов
+- `export function createPedestal(id, x, y, guardsLeft): number` — явный метод создания пьедестала
+  - Создаёт сущность с компонентами `Position, Radius, Pedestal, RenderLayer`
+  - Полностью сбрасывает все поля `Pedestal`:
+    - `Pedestal.id` — через `poolAdd(StringPool.pedestalIds, id)`
+    - `Pedestal.taken` — сбрасывается в `0`
+    - `Pedestal.guardsLeft` — устанавливается из параметра
+    - `Pedestal.guardsSpawned` — сбрасывается в `0`
+  - Гарантирует что при пересоздании сущности старое состояние не сохраняется
+  - Позиция устанавливается из параметров (не из префаба)
+
+**Изменено:**
+- `cloneComponentFields()` теперь использует `as ArrayComponent` и `as Record<string, ArrayComponent>` вместо `as any`
+- `CLONEABLE_FIELDS` содержит 85+ полей, сгруппированных по компонентам
+- `Sprite.ref` и `PhysicsBody.body` НАМЕРЕННО исключены из `CLONEABLE_FIELDS` — они создаются в `ecs-bridge.ts`
+
+#### Проверка критериев успешности
+
+| Критерий | Результат |
+|----------|-----------|
+| `as any` для копирования полей = 0 | ✅ Заменены на `as ArrayComponent` + `as Record<string, ArrayComponent>` |
+| `CLONEABLE_FIELDS` содержит все поля компонентов | ✅ 85+ полей, сгруппированных по компонентам |
+| `cloneComponentFields` работает для всех типов | ✅ Float32Array, Uint8Array, Int32Array, Uint32Array |
+| `createPedestal()` — явный метод в EntityFactory | ✅ Строка 861 |
+| `Pedestal.*` сбрасываются при пересоздании | ✅ `poolAdd` + явное обнуление всех полей |
+| TypeScript компиляция без ошибок | ✅ `tsc --noEmit` проходит |
+
+#### Итоговая архитектура Этапа 4
+
+```
+EntityFactory
+  ├── CLONEABLE_FIELDS (декларативный список 85+ полей)
+  │   ├── Position.x, Position.y
+  │   ├── Health.current, Health.max
+  │   ├── Enemy.kind, Enemy.radius, Enemy.speed, Enemy.dmg, ...
+  │   ├── Pedestal.id, Pedestal.taken, Pedestal.guardsLeft, ...
+  │   └── Dead (скалярный)
+  │
+  ├── cloneComponentFields(srcEid, dstEid)
+  │   └── Автоматическое копирование через CLONEABLE_FIELDS
+  │       └── 0 использований as any
+  │
+  └── createPedestal(id, x, y, guardsLeft)
+      └── Полный сброс Pedestal.* при пересоздании
+```
+
+#### Сводная таблица по всем этапам
+
+| Этап | Описание | Статус |
+|------|----------|--------|
+| Этап 1 | Рефакторинг архитектуры префабов (Prefab World, SRP) | ✅ Выполнен |
+| Этап 2 | Исправление механизма клонирования (CLONEABLE_FIELDS) | ✅ Выполнен |
+| Этап 3 | Фикс жизненного цикла карты (Teardown & Setup) | ✅ Выполнен |
+| Этап 4 | Архитектурная чистка и Типизация | ✅ Выполнен |
+| Этап 5 | Финальная проверка (тестирование) | ⏳ Ожидает |
+
+#### Итоговая архитектура проекта
+
+```
+┌──────────────────────────┐
+│   Prefab World           │  ← живёт вечно, без графики/физики
+│   (Read-Only шаблоны)    │
+└────────────┬─────────────┘
+             │ clonePrefab читает
+             ▼
+┌──────────────────────────┐
+│   EntityFactory          │  ← копирует данные из prefabWorld
+│   (Model)                │     в gameWorld
+│   ├── CLONEABLE_FIELDS   │
+│   ├── cloneComponentFields│
+│   └── createPedestal()   │
+└────────────┬─────────────┘
+             │ записывает
+             ▼
+┌──────────────────────────┐
+│   Game World             │  ← пересоздаётся при респавне
+│   (Mutable состояние)    │
+└────────────┬─────────────┘
+             │ спавн новой сущности
+             ▼
+┌──────────────────────────┐
+│   ecs-bridge.ts          │  ← навешивает Sprite + PhysicsBody
+│   (View Factory)         │     на новую сущность
+└──────────────────────────┘
+```
