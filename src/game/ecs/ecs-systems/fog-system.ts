@@ -1,6 +1,6 @@
 /* fog-system.ts — система тумана на основе ECS */
 
-import { query, addEntity, addComponents, removeEntity, type World } from 'bitecs';
+import { query, removeEntity, type World } from 'bitecs';
 import {
   Position,
   Velocity,
@@ -251,50 +251,4 @@ export function ensureGhosts(
       Enemy.leashY[eid] = altarY;
     }
   }
-}
-
-/** Спавн призрака тумана */
-export function spawnFogGhost(
-  world: World,
-  x: number,
-  y: number,
-  targetEid: number
-): number {
-  const eid = addEntity(world);
-  addComponents(world, eid, Position, Velocity, Health, Radius, Enemy, EnemyAI, Time, RenderLayer);
-
-  Position.x[eid] = x;
-  Position.y[eid] = y;
-  Velocity.x[eid] = 0;
-  Velocity.y[eid] = 0;
-  Health.current[eid] = FOG_GHOST_HP;
-  Health.max[eid] = FOG_GHOST_HP;
-  Radius.value[eid] = 6;
-  Time.value[eid] = 0;
-  RenderLayer.value[eid] = 50;
-
-  Enemy.kind[eid] = poolAdd(StringPool.enemyKinds, 'ghost');
-  Enemy.radius[eid] = 6;
-  Enemy.facingX[eid] = 1;
-  Enemy.facingY[eid] = 0;
-  Enemy.t[eid] = 0;
-  Enemy.state[eid] = EnemyState.appear;
-  Enemy.aggro[eid] = 1;
-  Enemy.hidden[eid] = 0;
-  Enemy.lungeT[eid] = 0;
-  Enemy.freezeT[eid] = 0;
-  Enemy.flashT[eid] = 0;
-  Enemy.seed[eid] = Math.random() * 100;
-  Enemy.speed[eid] = FOG_GHOST_SPEED;
-  Enemy.dmg[eid] = 1;
-  Enemy.stateT[eid] = 0;
-  Enemy.pathI[eid] = 0;
-  Enemy.repathT[eid] = 0.5;
-  Enemy.contactCd[eid] = 0;
-  Enemy.guardOf[eid] = -1;
-  Enemy.fade[eid] = 0;
-  Enemy.dropDew[eid] = 0;
-  EnemyAI.path[eid] = 0;
-
-  return eid;
 }

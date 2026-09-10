@@ -54,14 +54,6 @@ export {
   Removing,
 } from './ecs-relations';
 export {
-  // Entity creation
-  createEntity,
-  createMovableEntity,
-  createLivingEntity,
-  createPlayerEntity,
-  createEnemyEntity,
-  createProjectileEntity,
-  createDropEntity,
   // Utilities
   isAlive,
   distBetween,

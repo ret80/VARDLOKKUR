@@ -78,3 +78,82 @@
   - Файл `tasks/ecs-factory-plan.md` заполнен.
   - Проект успешно компилируется, линтер (`eslint`) не выдает ошибок.
 
+---
+
+## ✅ Выполнение всех фаз
+
+### Выполнение Фазы 1-3
+Фазы 1-3 были выполнены ранее. Ключевые результаты:
+- Создан `EntityFactory` в `src/game/ecs/entity-factory.ts`
+- Рефакторинг `combat-system.ts` — все создания снарядов через `factory.createProjectile()`
+- `ecs-bridge.ts` координирует вызовы фабрики и навешивание графики/физики
+
+### Выполнение Фазы 4: Интеграция с префабами
+**Дата выполнения**: 2026-09-11
+
+**Изменения**:
+1. **`src/game/ecs/entity-factory.ts`**:
+   - Добавлен метод `clonePrefab(prefabEid, x, y)` — клонирует все SoA-поля компонентов из префаба
+   - Добавлен метод `cloneEnemyFromPrefab()` — создаёт врага из префаба с перезаписью позиции и статистики
+   - Добавлен метод `cloneProjectileFromPrefab()` — создаёт снаряд из префаба с перезаписью velocity и параметров
+   - Обновлены `createProjectile()` и `createEnemy()` для использования клонирования
+   - Обновлены `createAxe()` и `createArrow()` для использования `cloneProjectileFromPrefab()`
+   - Обновлён `createEnemyWithStats()` для использования `cloneEnemyFromPrefab()`
+
+2. **Архитектурное решение**:
+   - Префабы из `init-system.ts` экспортируются через `PREFABS` и используются фабрикой
+   - Fallback на ручное создание если префаб не инициализирован
+   - Клонирование копирует все компоненты: Player, Enemy, Projectile, Drop, NPC, Chest, Pedestal, Shrine, Door, Barrier, Altar, EnemyAI, Sprite, PhysicsBody
+
+### Выполнение Фазы 5: Очистка и валидация
+**Дата выполнения**: 2026-09-11
+
+**Изменения**:
+1. **Удалено дублирование `addEntity/addComponents`**:
+   - `fog-system.ts`: удалена функция `spawnFogGhost()`, теперь используется `entityFactory.createFogGhost()`
+   - `ecs-utils.ts`: удалены функции `createEntity()`, `createMovableEntity()`, `createLivingEntity()`, `createPlayerEntity()`, `createEnemyEntity()`, `createProjectileEntity()`, `createDropEntity()`
+   - `drops-system.ts`: `spawnDrop()` теперь принимает `factory: EntityFactory` и использует `factory.createDrop()`
+
+2. **Добавлен метод `createFogGhost()` в `EntityFactory`**:
+   - Создаёт призрака тумана с правильными компонентами
+   - Используется в `ecs-game-loop.ts` через обёртку `spawnGhost()`
+
+3. **Итоговое распределение `addEntity/addComponents`**:
+   - ✅ `entity-factory.ts` — создание всех сущностей (5 вызовов)
+   - ✅ `init-system.ts` — создание префабов (11 вызовов)
+   - ❌ Больше нигде в проекте
+
+4. **TypeScript компиляция**:
+   - ✅ `tsc --noEmit` проходит успешно (1 существующая ошибка в `debug/logger.ts` не связана с изменениями)
+
+### Пример использования EntityFactory
+
+```typescript
+// Инициализация фабрики
+const factory = createEntityFactory(world);
+
+// Создание игрока
+const playerEid = factory.createPlayer(x, y);
+
+// Создание врага (автоматически клонирует префаб)
+const enemyEid = factory.createEnemy('goblin', x, y, hp, radius, speed, dmg);
+
+// Создание снаряда (автоматически клонирует префаб)
+const projectileEid = factory.createProjectile('axe', x, y, vx, vy, dmg, lifetime);
+
+// Создание призрака тумана
+const ghostEid = factory.createFogGhost(x, y);
+
+// Создание дропа
+const dropEid = factory.createDrop('heart', x, y);
+```
+
+### Архитектурные принципы
+1. **Чистая логика**: `EntityFactory` не знает о PixiJS и Planck
+2. **Единая точка создания**: все `addEntity/addComponents` только в фабрике и init-system
+3. **Префабы для оптимизации**: клонирование копировает все поля автоматически
+4. **Разделение ответственности**: 
+   - Фабрика создаёт чистые ECS-сущности
+   - `ecs-bridge.ts` навешивает графику и физику
+   - Системы (`*-system.ts`) работают только с логикой
+

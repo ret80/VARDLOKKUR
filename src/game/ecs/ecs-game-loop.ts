@@ -47,7 +47,6 @@ import {
   fogUpdateSystem,
   createFogState,
   ensureGhosts,
-  spawnFogGhost,
   type FogState,
 } from './ecs-systems/fog-system';
 import { Graphics, Container } from 'pixi.js';
@@ -307,9 +306,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   // ── При респавне — пересоздать призраков если игрок рядом с алтарём ──
 
-  // Обёртка для ensureGhosts — создаёт призрака через spawnFogGhost (только ECS, без графики и физики)
+  // Обёртка для ensureGhosts — создаёт призрака через entityFactory (только ECS, без графики и физики)
   function spawnGhost(kind: string, x: number, y: number): number {
-    const eid = spawnFogGhost(world, x, y, _playerEid);
+    const eid = entityFactory.createFogGhost(x, y);
     // Добавить Sprite компонент для рендеринга
     addComponent(world, eid, Sprite);
     return eid;

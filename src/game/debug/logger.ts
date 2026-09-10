@@ -101,8 +101,8 @@ class LogBuffer {
         const search = filters.search.toLowerCase();
         result = result.filter((e) => e.message.toLowerCase().includes(search));
       }
-      if (filters.before) {
-        result = result.filter((e) => e.time < filters.before);
+      if (filters.before !== undefined) {
+        result = result.filter((e) => e.time < filters.before!);
       }
     }
 

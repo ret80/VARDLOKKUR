@@ -1,9 +1,8 @@
 /* drops-system.ts — система дропов на основе ECS */
 
-import { query, addEntity, addComponents, removeEntity, type World } from 'bitecs';
+import { query, removeEntity, type World } from 'bitecs';
 import {
   Position,
-  Velocity,
   Radius,
   Drop,
   Time,
@@ -14,12 +13,12 @@ import {
   Dead,
   PhysicsBody,
   poolGet,
-  poolAdd,
   StringPool,
 } from '../ecs-components';
 import type { DropKind } from '../../generators/types';
 import { Graphics } from 'pixi.js';
 import { DropHandlerRegistry } from '../../drop-handlers';
+import type { EntityFactory } from '../entity-factory';
 
 // ============================================================
 // ECS Drop Runtime Component
@@ -44,27 +43,15 @@ export interface DropRt {
 
 /** Создать дроп */
 export function spawnDrop(
-  world: World,
+  factory: EntityFactory,
   kind: DropKind,
   x: number,
   y: number,
   magnet: boolean = false,
   life?: number
 ): number {
-  const eid = addEntity(world);
-  addComponents(world, eid, Position, Radius, Drop, Time, RenderLayer, Magnet);
-
-  Position.x[eid] = x;
-  Position.y[eid] = y;
-  Radius.value[eid] = 3;
-  Drop.kind[eid] = poolAdd(StringPool.dropKinds, kind);
-  Drop.t[eid] = Math.random() * 5;
-  Drop.magnet[eid] = magnet ? 1 : 0;
-  Drop.life[eid] = life ?? 0;
-  Time.value[eid] = 0;
-  RenderLayer.value[eid] = 40;
+  const eid = factory.createDrop(kind, x, y, magnet, life ?? 0);
   Magnet[eid] = magnet ? 1 : 0;
-
   return eid;
 }
 
