@@ -343,7 +343,24 @@ export class EntityFactory {
     dmg: number,
     lifetime: number
   ): number {
-    return this.cloneProjectileFromPrefab(kind, x, y, vx, vy, dmg, lifetime);
+    const eid = addEntity(this.world);
+    addComponents(this.world, eid, Position, Velocity, Projectile, Time, RenderLayer, Radius);
+
+    Position.x[eid] = x;
+    Position.y[eid] = y;
+    Velocity.x[eid] = vx;
+    Velocity.y[eid] = vy;
+    Projectile.kind[eid] = poolAdd(StringPool.projectileKinds, kind);
+    Projectile.dmg[eid] = dmg;
+    Projectile.life[eid] = lifetime;
+    Projectile.dist[eid] = 0;
+    Projectile.returning[eid] = 0;
+    Projectile.spin[eid] = 0;
+    Time.value[eid] = 0;
+    RenderLayer.value[eid] = 60;
+    Radius.value[eid] = kind === 'fire' ? 5 : 4;
+
+    return eid;
   }
 
   /**
@@ -403,7 +420,56 @@ export class EntityFactory {
     speed: number,
     dmg: number
   ): number {
-    return this.cloneEnemyFromPrefab(kind, x, y, hp, radius, speed, dmg);
+    const eid = addEntity(this.world);
+    addComponents(this.world, eid, Position, Health, Radius, RenderLayer, Enemy, Velocity, EnemyAI, Direction);
+
+    // Position
+    Position.x[eid] = x;
+    Position.y[eid] = y;
+
+    // Health
+    Health.current[eid] = hp;
+    Health.max[eid] = hp;
+
+    // Radius
+    Radius.value[eid] = radius;
+    RenderLayer.value[eid] = 50;
+
+    // Velocity
+    Velocity.x[eid] = 0;
+    Velocity.y[eid] = 0;
+
+    // Direction
+    Direction.x[eid] = 1;
+    Direction.y[eid] = 0;
+
+    // Enemy fields
+    Enemy.kind[eid] = poolAdd(StringPool.enemyKinds, kind);
+    Enemy.radius[eid] = radius;
+    Enemy.facingX[eid] = 1;
+    Enemy.facingY[eid] = 0;
+    Enemy.t[eid] = Math.random() * 10;
+    Enemy.state[eid] = EnemyState.idle;
+    Enemy.aggro[eid] = 0;
+    Enemy.hidden[eid] = kind === 'crawler' ? 1 : 0;
+    Enemy.lungeT[eid] = 0;
+    Enemy.freezeT[eid] = 0;
+    Enemy.flashT[eid] = 0;
+    Enemy.seed[eid] = Math.random() * 100;
+    Enemy.speed[eid] = speed;
+    Enemy.dmg[eid] = dmg;
+    Enemy.stateT[eid] = 0;
+    Enemy.pathI[eid] = 0;
+    Enemy.repathT[eid] = 0.5;
+    Enemy.contactCd[eid] = 0;
+    Enemy.guardOf[eid] = -1;
+    Enemy.fade[eid] = 1;
+    Enemy.dropDew[eid] = 0;
+
+    // EnemyAI fields
+    EnemyAI.path[eid] = 0;
+
+    return eid;
   }
 
   /**
