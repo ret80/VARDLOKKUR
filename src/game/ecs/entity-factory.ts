@@ -68,6 +68,14 @@ interface PrefabRegistry {
   altar: number | null;
 }
 
+/** Описание поля компонента для декларативного клонирования */
+export interface CloneableField {
+  /** Ссылка на объект-компонент (например, Position, Health, Enemy и т.д.) */
+  comp: Record<string, any>;
+  /** Имя поля внутри компонента; пустая строка для скалярных массивов (Dead) */
+  field: string;
+}
+
 export class EntityFactory {
   /** Игровой мир — сюда создаются сущности для текущей карты */
   private gameWorld: World;
@@ -307,207 +315,153 @@ export class EntityFactory {
   // ============================================================
 
   /**
-   * Список всех SoA-массивов компонентов в порядке объявления (для клонирования).
-   * Этот массив должен синхронизироваться с ecs-components.ts.
+   * Декларативный список всех SoA-полей, которые безопасно клонировать.
+   * Sprite.ref и PhysicsBody.body НАМЕРЕННО исключены — они создаются в ecs-bridge.ts.
+   * При добавлении нового компонента нужно добавить его поля сюда.
    */
-  private static readonly COMPONENT_ARRAYS = [
+  private static readonly CLONEABLE_FIELDS: CloneableField[] = [
     // Position
-    'Position.x', 'Position.y',
+    { comp: Position, field: 'x' },
+    { comp: Position, field: 'y' },
     // Velocity
-    'Velocity.x', 'Velocity.y',
+    { comp: Velocity, field: 'x' },
+    { comp: Velocity, field: 'y' },
     // Health
-    'Health.current', 'Health.max',
+    { comp: Health, field: 'current' },
+    { comp: Health, field: 'max' },
     // Radius
-    'Radius.value',
+    { comp: Radius, field: 'value' },
     // Time
-    'Time.value',
+    { comp: Time, field: 'value' },
     // Direction
-    'Direction.x', 'Direction.y',
+    { comp: Direction, field: 'x' },
+    { comp: Direction, field: 'y' },
     // RenderLayer
-    'RenderLayer.value',
+    { comp: RenderLayer, field: 'value' },
     // Player
-    'Player.moving', 'Player.animT', 'Player.swingT', 'Player.hurtT', 'Player.slowT',
-    'Player.hasSword', 'Player.runes', 'Player.swingDirX', 'Player.swingDirY',
-    'Player.aiming', 'Player.maxHp',
+    { comp: Player, field: 'moving' },
+    { comp: Player, field: 'animT' },
+    { comp: Player, field: 'swingT' },
+    { comp: Player, field: 'hurtT' },
+    { comp: Player, field: 'slowT' },
+    { comp: Player, field: 'hasSword' },
+    { comp: Player, field: 'runes' },
+    { comp: Player, field: 'swingDirX' },
+    { comp: Player, field: 'swingDirY' },
+    { comp: Player, field: 'aiming' },
+    { comp: Player, field: 'maxHp' },
     // Enemy
-    'Enemy.kind', 'Enemy.radius', 'Enemy.facingX', 'Enemy.facingY', 'Enemy.t',
-    'Enemy.state', 'Enemy.aggro', 'Enemy.hidden', 'Enemy.lungeT', 'Enemy.freezeT',
-    'Enemy.flashT', 'Enemy.seed', 'Enemy.speed', 'Enemy.dmg', 'Enemy.stateT',
-    'Enemy.pathI', 'Enemy.repathT', 'Enemy.contactCd', 'Enemy.guardOf', 'Enemy.fade',
-    'Enemy.dropDew', 'Enemy.leashX', 'Enemy.leashY', 'Enemy.fogOnly', 'Enemy.nearLitShrine',
+    { comp: Enemy, field: 'kind' },
+    { comp: Enemy, field: 'radius' },
+    { comp: Enemy, field: 'facingX' },
+    { comp: Enemy, field: 'facingY' },
+    { comp: Enemy, field: 't' },
+    { comp: Enemy, field: 'state' },
+    { comp: Enemy, field: 'aggro' },
+    { comp: Enemy, field: 'hidden' },
+    { comp: Enemy, field: 'lungeT' },
+    { comp: Enemy, field: 'freezeT' },
+    { comp: Enemy, field: 'flashT' },
+    { comp: Enemy, field: 'seed' },
+    { comp: Enemy, field: 'speed' },
+    { comp: Enemy, field: 'dmg' },
+    { comp: Enemy, field: 'stateT' },
+    { comp: Enemy, field: 'pathI' },
+    { comp: Enemy, field: 'repathT' },
+    { comp: Enemy, field: 'contactCd' },
+    { comp: Enemy, field: 'guardOf' },
+    { comp: Enemy, field: 'fade' },
+    { comp: Enemy, field: 'dropDew' },
+    { comp: Enemy, field: 'leashX' },
+    { comp: Enemy, field: 'leashY' },
+    { comp: Enemy, field: 'fogOnly' },
+    { comp: Enemy, field: 'nearLitShrine' },
     // Projectile
-    'Projectile.kind', 'Projectile.dmg', 'Projectile.life', 'Projectile.dist',
-    'Projectile.returning', 'Projectile.spin',
+    { comp: Projectile, field: 'kind' },
+    { comp: Projectile, field: 'dmg' },
+    { comp: Projectile, field: 'life' },
+    { comp: Projectile, field: 'dist' },
+    { comp: Projectile, field: 'returning' },
+    { comp: Projectile, field: 'spin' },
     // Drop
-    'Drop.kind', 'Drop.t', 'Drop.magnet', 'Drop.life',
+    { comp: Drop, field: 'kind' },
+    { comp: Drop, field: 't' },
+    { comp: Drop, field: 'magnet' },
+    { comp: Drop, field: 'life' },
     // NPC
-    'NPC.id', 'NPC.name',
+    { comp: NPC, field: 'id' },
+    { comp: NPC, field: 'name' },
     // Chest
-    'Chest.item', 'Chest.opened',
+    { comp: Chest, field: 'item' },
+    { comp: Chest, field: 'opened' },
     // Pedestal
-    'Pedestal.id', 'Pedestal.taken', 'Pedestal.guardsLeft', 'Pedestal.guardsSpawned',
+    { comp: Pedestal, field: 'id' },
+    { comp: Pedestal, field: 'taken' },
+    { comp: Pedestal, field: 'guardsLeft' },
+    { comp: Pedestal, field: 'guardsSpawned' },
     // Shrine
-    'Shrine.lit',
+    { comp: Shrine, field: 'lit' },
     // Door
-    'Door.open', 'Door.locked',
+    { comp: Door, field: 'open' },
+    { comp: Door, field: 'locked' },
     // Barrier
-    'Barrier.active',
+    { comp: Barrier, field: 'active' },
     // Altar
-    'Altar.runes',
-    // Dead
-    'Dead',
+    { comp: Altar, field: 'runes' },
+    // Dead — скалярный массив (без вложенного поля)
+    { comp: Dead, field: '' },
     // EnemyAI
-    'EnemyAI.path', 'EnemyAI.lightspeedT', 'EnemyAI.slowT', 'EnemyAI.freezeT',
-    'EnemyAI.flashT', 'EnemyAI.lungeT', 'EnemyAI.repathT', 'EnemyAI.stateT',
-    'EnemyAI.contactCd', 'EnemyAI.guardsSpawned',
-    // Sprite
-    'Sprite.ref',
-    // PhysicsBody
-    'PhysicsBody.body',
-  ] as const;
+    { comp: EnemyAI, field: 'path' },
+    { comp: EnemyAI, field: 'lightspeedT' },
+    { comp: EnemyAI, field: 'slowT' },
+    { comp: EnemyAI, field: 'freezeT' },
+    { comp: EnemyAI, field: 'flashT' },
+    { comp: EnemyAI, field: 'lungeT' },
+    { comp: EnemyAI, field: 'repathT' },
+    { comp: EnemyAI, field: 'stateT' },
+    { comp: EnemyAI, field: 'contactCd' },
+    { comp: EnemyAI, field: 'guardsSpawned' },
+  ];
 
   /**
-   * Создать clone префаба на позиции (x, y).
-   * Копирует все значения компонентов из prefabEid (в prefabWorld) в новую сущность
-   * в игровом мире. Sprite и PhysicsBody НЕ копируются — они создаются в ecs-bridge.ts.
+   * Универсальное копирование полей компонентов из srcEid в dstEid.
+   * Использует CLONEABLE_FIELDS для декларативного определения копируемых полей.
+   * Автоматически исключает Sprite.ref и PhysicsBody.body — их клонирование запрещено.
    */
-  clonePrefab(prefabEid: number, x: number, y: number): number {
-    const newEid = addEntity(this.gameWorld);
-
-    // Копируем все Float32Array/Uint8Array/Int32Array/Uint32Array поля
-    // Position.x
-    (Position as any).x[newEid] = x;
-    (Position as any).y[newEid] = y;
-
-    // Остальные поля копируем из префаба
-    const src = prefabEid;
-    const dst = newEid;
-
-    // Health
-    (Health as any).current[dst] = (Health as any).current[src];
-    (Health as any).max[dst] = (Health as any).max[src];
-
-    // Radius
-    (Radius as any).value[dst] = (Radius as any).value[src];
-
-    // Time
-    (Time as any).value[dst] = (Time as any).value[src];
-
-    // Direction
-    (Direction as any).x[dst] = (Direction as any).x[src];
-    (Direction as any).y[dst] = (Direction as any).y[src];
-
-    // RenderLayer
-    (RenderLayer as any).value[dst] = (RenderLayer as any).value[src];
-
-    // Velocity
-    (Velocity as any).x[dst] = (Velocity as any).x[src];
-    (Velocity as any).y[dst] = (Velocity as any).y[src];
-
-    // Player fields
-    (Player as any).moving[dst] = (Player as any).moving[src];
-    (Player as any).animT[dst] = (Player as any).animT[src];
-    (Player as any).swingT[dst] = (Player as any).swingT[src];
-    (Player as any).hurtT[dst] = (Player as any).hurtT[src];
-    (Player as any).slowT[dst] = (Player as any).slowT[src];
-    (Player as any).hasSword[dst] = (Player as any).hasSword[src];
-    (Player as any).runes[dst] = (Player as any).runes[src];
-    (Player as any).swingDirX[dst] = (Player as any).swingDirX[src];
-    (Player as any).swingDirY[dst] = (Player as any).swingDirY[src];
-    (Player as any).aiming[dst] = (Player as any).aiming[src];
-    (Player as any).maxHp[dst] = (Player as any).maxHp[src];
-
-    // Enemy fields
-    (Enemy as any).kind[dst] = (Enemy as any).kind[src];
-    (Enemy as any).radius[dst] = (Enemy as any).radius[src];
-    (Enemy as any).facingX[dst] = (Enemy as any).facingX[src];
-    (Enemy as any).facingY[dst] = (Enemy as any).facingY[src];
-    (Enemy as any).t[dst] = (Enemy as any).t[src];
-    (Enemy as any).state[dst] = (Enemy as any).state[src];
-    (Enemy as any).aggro[dst] = (Enemy as any).aggro[src];
-    (Enemy as any).hidden[dst] = (Enemy as any).hidden[src];
-    (Enemy as any).lungeT[dst] = (Enemy as any).lungeT[src];
-    (Enemy as any).freezeT[dst] = (Enemy as any).freezeT[src];
-    (Enemy as any).flashT[dst] = (Enemy as any).flashT[src];
-    (Enemy as any).seed[dst] = (Enemy as any).seed[src];
-    (Enemy as any).speed[dst] = (Enemy as any).speed[src];
-    (Enemy as any).dmg[dst] = (Enemy as any).dmg[src];
-    (Enemy as any).stateT[dst] = (Enemy as any).stateT[src];
-    (Enemy as any).pathI[dst] = (Enemy as any).pathI[src];
-    (Enemy as any).repathT[dst] = (Enemy as any).repathT[src];
-    (Enemy as any).contactCd[dst] = (Enemy as any).contactCd[src];
-    (Enemy as any).guardOf[dst] = (Enemy as any).guardOf[src];
-    (Enemy as any).fade[dst] = (Enemy as any).fade[src];
-    (Enemy as any).dropDew[dst] = (Enemy as any).dropDew[src];
-    (Enemy as any).leashX[dst] = (Enemy as any).leashX[src];
-    (Enemy as any).leashY[dst] = (Enemy as any).leashY[src];
-    (Enemy as any).fogOnly[dst] = (Enemy as any).fogOnly[src];
-    (Enemy as any).nearLitShrine[dst] = (Enemy as any).nearLitShrine[src];
-
-    // Projectile fields
-    (Projectile as any).kind[dst] = (Projectile as any).kind[src];
-    (Projectile as any).dmg[dst] = (Projectile as any).dmg[src];
-    (Projectile as any).life[dst] = (Projectile as any).life[src];
-    (Projectile as any).dist[dst] = (Projectile as any).dist[src];
-    (Projectile as any).returning[dst] = (Projectile as any).returning[src];
-    (Projectile as any).spin[dst] = (Projectile as any).spin[src];
-
-    // Drop fields
-    (Drop as any).kind[dst] = (Drop as any).kind[src];
-    (Drop as any).t[dst] = (Drop as any).t[src];
-    (Drop as any).magnet[dst] = (Drop as any).magnet[src];
-    (Drop as any).life[dst] = (Drop as any).life[src];
-
-    // NPC fields
-    (NPC as any).id[dst] = (NPC as any).id[src];
-    (NPC as any).name[dst] = (NPC as any).name[src];
-
-    // Chest fields
-    (Chest as any).item[dst] = (Chest as any).item[src];
-    (Chest as any).opened[dst] = (Chest as any).opened[src];
-
-    // Pedestal fields
-    (Pedestal as any).id[dst] = (Pedestal as any).id[src];
-    (Pedestal as any).taken[dst] = (Pedestal as any).taken[src];
-    (Pedestal as any).guardsLeft[dst] = (Pedestal as any).guardsLeft[src];
-    (Pedestal as any).guardsSpawned[dst] = (Pedestal as any).guardsSpawned[src];
-
-    // Shrine fields
-    (Shrine as any).lit[dst] = (Shrine as any).lit[src];
-
-    // Door fields
-    (Door as any).open[dst] = (Door as any).open[src];
-    (Door as any).locked[dst] = (Door as any).locked[src];
-
-    // Barrier fields
-    (Barrier as any).active[dst] = (Barrier as any).active[src];
-
-    // Altar fields
-    (Altar as any).runes[dst] = (Altar as any).runes[src];
-
-    // Dead
-    Dead[dst] = Dead[src];
-
-    // EnemyAI fields
-    (EnemyAI as any).path[dst] = (EnemyAI as any).path[src];
-    (EnemyAI as any).lightspeedT[dst] = (EnemyAI as any).lightspeedT[src];
-    (EnemyAI as any).slowT[dst] = (EnemyAI as any).slowT[src];
-    (EnemyAI as any).freezeT[dst] = (EnemyAI as any).freezeT[src];
-    (EnemyAI as any).flashT[dst] = (EnemyAI as any).flashT[src];
-    (EnemyAI as any).lungeT[dst] = (EnemyAI as any).lungeT[src];
-    (EnemyAI as any).repathT[dst] = (EnemyAI as any).repathT[src];
-    (EnemyAI as any).stateT[dst] = (EnemyAI as any).stateT[src];
-    (EnemyAI as any).contactCd[dst] = (EnemyAI as any).contactCd[src];
-    (EnemyAI as any).guardsSpawned[dst] = (EnemyAI as any).guardsSpawned[src];
-
-    // ВАЖНО: Sprite.ref и PhysicsBody.body НЕ копируются!
-    // Графика и физика создаются отдельно в ecs-bridge.ts
-    // после спавна сущности в игровой мир.
-    (Sprite as any).ref[dst] = 0;
-    (PhysicsBody as any).body[dst] = 0;
-
-    return newEid;
+  private cloneComponentFields(srcEid: number, dstEid: number): void {
+    for (const f of EntityFactory.CLONEABLE_FIELDS) {
+      if (f.field === '') {
+        // Скалярный массив (например, Dead)
+        (f.comp as any)[dstEid] = (f.comp as any)[srcEid];
+      } else {
+        // Структурированный компонент (например, Position.x)
+        (f.comp as any)[f.field][dstEid] = (f.comp as any)[f.field][srcEid];
+      }
+    }
   }
+
+  /**
+    * Создать clone префаба на позиции (x, y).
+    * Копирует все значения компонентов из prefabEid (в prefabWorld) в новую сущность
+    * в игровом мире. Sprite и PhysicsBody НЕ копируются — они создаются в ecs-bridge.ts.
+    */
+   clonePrefab(prefabEid: number, x: number, y: number): number {
+     const newEid = addEntity(this.gameWorld);
+
+     // Устанавливаем позицию из параметров (не из префаба)
+     Position.x[newEid] = x;
+     Position.y[newEid] = y;
+
+     // Декларативно копируем все остальные поля из префаба
+     this.cloneComponentFields(prefabEid, newEid);
+
+     // ВАЖНО: Sprite.ref и PhysicsBody.body НЕ клонируются!
+     // Они обнуляются — графика и физика создаются в ecs-bridge.ts
+     Sprite.ref[newEid] = 0;
+     PhysicsBody.body[newEid] = 0;
+
+     return newEid;
+   }
 
   /**
    * Создать сущность из префаба врага.
