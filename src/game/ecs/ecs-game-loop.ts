@@ -72,7 +72,7 @@ import {
   checkDungeonBoss,
 } from './ecs-systems/world-system';
 import { hasComponent } from 'bitecs';
-import { createEntityFactory, type EntityFactory } from './entity-factory';
+import { type EntityFactory } from './entity-factory';
 import {
   Position, Velocity, PhysicsBody, Player, Direction, Health,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
@@ -197,8 +197,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   let _planckWorld = planckWorld;
   let _fogState: FogState | null = null;
 
-  // Используем фабрику из конфига или создаём новую
-  const entityFactory = configFactory ?? createEntityFactory(world);
+  // Используем фабрику из конфига — она всегда передаётся из engine.ts
+  if (!configFactory) {
+    throw new Error('EntityFactory not provided to EcsGameLoop. This should never happen.');
+  }
+  const entityFactory = configFactory;
 
   // hintLayer — подсказка взаимодействия, на app.stage (не разрушается при смене сцены)
   const hintLayer = new Container();

@@ -60,3 +60,26 @@ export function resetWorldTime(world: World<WorldContext>): void {
 export function destroyEcsWorld(): void {
   _world = null;
 }
+
+// ============================================================
+// Prefab World — отдельный мир для шаблонов сущностей
+// ============================================================
+
+let _prefabWorld: World<WorldContext> | null = null;
+
+/** Создать мир префабов (живёт на протяжении всей жизни приложения) */
+export function createPrefabWorld(): World<WorldContext> {
+  _prefabWorld = createWorld();
+  return _prefabWorld;
+}
+
+/** Получить мир префабов */
+export function getPrefabWorld(): World<WorldContext> {
+  if (!_prefabWorld) throw new Error('Prefab world not initialized. Call createPrefabWorld() first.');
+  return _prefabWorld;
+}
+
+/** Уничтожить мир префабов */
+export function destroyPrefabWorld(): void {
+  _prefabWorld = null;
+}

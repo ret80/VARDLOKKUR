@@ -31,14 +31,19 @@ export class MapLoaderService {
   ecsMapLoader: EcsMapLoader | null = null;
   private _mmBase: ImageData | null = null;
   /** Фабрика чистых ECS-сущностей (без графики/физики) */
-  entityFactory: EntityFactory | null = null;
+  entityFactory: EntityFactory;
 
   constructor(
     private scene: SceneManager,
     private store: GameStore,
     private viewport: ViewportController,
-    private ecsWorld: World
-  ) {}
+    private ecsWorld: World,
+    private prefabWorld: World
+  ) {
+    // Фабрика создаётся ОДИН раз при инициализации сервиса
+    this.entityFactory = createEntityFactory(this.ecsWorld, this.prefabWorld);
+    this.entityFactory.initPrefabs();
+  }
 
   get mmBase(): ImageData | null { return this._mmBase; }
 
@@ -92,9 +97,6 @@ export class MapLoaderService {
     }
     this.wallCache = tileResult.wallCache;
     this.houseCache = tileResult.houseCache;
-
-    // Создаём EntityFactory для чистого создания ECS-сущностей
-    this.entityFactory = createEntityFactory(this.ecsWorld);
 
     // Создаём ECS Map Loader (используется общий ECS-мир движка)
     this.ecsMapLoader = new EcsMapLoader({

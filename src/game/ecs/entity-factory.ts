@@ -29,7 +29,8 @@ import {
   PhysicsBody,
 } from './ecs-components';
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
-import { PREFABS } from './ecs-systems/init-system';
+import { ENEMY_STATS } from '../entities';
+import { EnemyAIRegistry } from './ecs-components';
 
 // ============================================================
 // Конфигурация оружия
@@ -52,12 +53,253 @@ export interface EnemyStats {
   dmg: number;
 }
 
-export class EntityFactory {
-  constructor(private world: World) {}
+/** Хранилище ID префабов в prefabWorld */
+interface PrefabRegistry {
+  player: number | null;
+  enemy: Record<string, number>;
+  projectile: number | null;
+  drop: number | null;
+  npc: number | null;
+  chest: number | null;
+  pedestal: number | null;
+  shrine: number | null;
+  door: number | null;
+  barrier: number | null;
+  altar: number | null;
+}
 
-  /** Получить world (для обратных вызовов и других систем) */
+export class EntityFactory {
+  /** Игровой мир — сюда создаются сущности для текущей карты */
+  private gameWorld: World;
+  /** Мир префабов — шаблоны, живёт вечно, не имеет графики/физики */
+  private prefabWorld: World;
+  /** Зарегистрированные префабы (eid в prefabWorld) */
+  private prefabs: PrefabRegistry;
+
+  constructor(gameWorld: World, prefabWorld: World) {
+    this.gameWorld = gameWorld;
+    this.prefabWorld = prefabWorld;
+    this.prefabs = {
+      player: null,
+      enemy: {},
+      projectile: null,
+      drop: null,
+      npc: null,
+      chest: null,
+      pedestal: null,
+      shrine: null,
+      door: null,
+      barrier: null,
+      altar: null,
+    };
+  }
+
+  /** Получить игровой world (для обратных вызовов и других систем) */
   getWorld(): World {
-    return this.world;
+    return this.gameWorld;
+  }
+
+  /** Получить world префабов */
+  getPrefabWorld(): World {
+    return this.prefabWorld;
+  }
+
+  // ============================================================
+  // Инициализация префабов (вызывается ОДИН раз при старте)
+  // ============================================================
+
+  /** Инициализировать все префабы в prefabWorld */
+  initPrefabs(): void {
+    this.createPlayerPrefab();
+    this.createEnemyPrefabs();
+    this.createProjectilePrefabs();
+    this.createDropPrefabs();
+    this.createNPCPrefabs();
+    this.createChestPrefabs();
+    this.createPedestalPrefabs();
+    this.createShrinePrefabs();
+    this.createDoorPrefabs();
+    this.createBarrierPrefabs();
+    this.createAltarPrefabs();
+  }
+
+  /** Создать префаб игрока в prefabWorld */
+  private createPlayerPrefab(): void {
+    const eid = addEntity(this.prefabWorld);
+    addComponents(this.prefabWorld, eid, Position, Radius, Direction, Health, Player, RenderLayer);
+    Position.x[eid] = 0;
+    Position.y[eid] = 0;
+    Radius.value[eid] = 5;
+    Direction.x[eid] = 0;
+    Direction.y[eid] = 1;
+    Health.current[eid] = 12;
+    Health.max[eid] = 12;
+    RenderLayer.value[eid] = 100;
+    Player.moving[eid] = 0;
+    Player.animT[eid] = 0;
+    Player.swingT[eid] = 0;
+    Player.hurtT[eid] = 0;
+    Player.slowT[eid] = 0;
+    Player.hasSword[eid] = 0;
+    Player.runes[eid] = 0;
+    Player.swingDirX[eid] = 0;
+    Player.swingDirY[eid] = 1;
+    Player.aiming[eid] = 0;
+    this.prefabs.player = eid;
+  }
+
+  /** Создать префабы врагов в prefabWorld */
+  private createEnemyPrefabs(): void {
+    for (const kind of Object.keys(ENEMY_STATS) as EnemyKind[]) {
+      // Призраки не создаются как префабы
+      if (kind === 'ghost') continue;
+
+      const stats = ENEMY_STATS[kind];
+      const eid = addEntity(this.prefabWorld);
+      addComponents(this.prefabWorld, eid, Position, Radius, Velocity, Health, Enemy, EnemyAI, Direction, RenderLayer);
+      Position.x[eid] = 0;
+      Position.y[eid] = 0;
+      Radius.value[eid] = stats.r;
+      Velocity.x[eid] = 0;
+      Velocity.y[eid] = 0;
+      Health.current[eid] = stats.hp;
+      Health.max[eid] = stats.hp;
+      RenderLayer.value[eid] = 50;
+      Enemy.kind[eid] = poolAdd(StringPool.enemyKinds, kind);
+      Enemy.radius[eid] = stats.r;
+      Enemy.facingX[eid] = 1;
+      Enemy.facingY[eid] = 0;
+      Direction.x[eid] = 1;
+      Direction.y[eid] = 0;
+      Enemy.t[eid] = 0;
+      Enemy.state[eid] = EnemyState.idle;
+      Enemy.aggro[eid] = 0;
+      Enemy.hidden[eid] = kind === 'crawler' ? 1 : 0;
+      Enemy.lungeT[eid] = 0;
+      Enemy.freezeT[eid] = 0;
+      Enemy.flashT[eid] = 0;
+      Enemy.seed[eid] = 0;
+      Enemy.speed[eid] = stats.speed;
+      Enemy.dmg[eid] = stats.dmg;
+      Enemy.stateT[eid] = 0;
+      Enemy.pathI[eid] = 0;
+      Enemy.repathT[eid] = 0.5;
+      Enemy.contactCd[eid] = 0;
+      Enemy.guardOf[eid] = -1;
+      Enemy.fade[eid] = 1;
+      Enemy.dropDew[eid] = 0;
+      EnemyAI.path[eid] = 0;
+      EnemyAIRegistry[eid] = null;
+      this.prefabs.enemy[kind] = eid;
+    }
+  }
+
+  /** Создать префаб снаряда в prefabWorld */
+  private createProjectilePrefabs(): void {
+    const eid = addEntity(this.prefabWorld);
+    addComponents(this.prefabWorld, eid, Position, Radius, Velocity, Projectile, Time, RenderLayer);
+    Radius.value[eid] = 3;
+    Velocity.x[eid] = 0;
+    Velocity.y[eid] = 0;
+    Time.value[eid] = 0;
+    RenderLayer.value[eid] = 60;
+    Projectile.kind[eid] = poolAdd(StringPool.projectileKinds, 'arrow');
+    Projectile.dmg[eid] = 1;
+    Projectile.life[eid] = 3;
+    Projectile.dist[eid] = 0;
+    Projectile.returning[eid] = 0;
+    Projectile.spin[eid] = 0;
+    this.prefabs.projectile = eid;
+  }
+
+  /** Создать префаб дропа в prefabWorld */
+  private createDropPrefabs(): void {
+    const eid = addEntity(this.prefabWorld);
+    addComponents(this.prefabWorld, eid, Position, Radius, Drop, Time, RenderLayer);
+    Radius.value[eid] = 3;
+    Time.value[eid] = 0;
+    RenderLayer.value[eid] = 40;
+    Drop.kind[eid] = poolAdd(StringPool.dropKinds, 'heart');
+    Drop.t[eid] = 0;
+    Drop.magnet[eid] = 0;
+    Drop.life[eid] = 0;
+    this.prefabs.drop = eid;
+  }
+
+  /** Создать префаб NPC в prefabWorld */
+  private createNPCPrefabs(): void {
+    const eid = addEntity(this.prefabWorld);
+    addComponents(this.prefabWorld, eid, Position, Radius, NPC, RenderLayer);
+    Radius.value[eid] = 5;
+    RenderLayer.value[eid] = 30;
+    NPC.id[eid] = poolAdd(StringPool.npcIds, 'default');
+    NPC.name[eid] = poolAdd(StringPool.npcNames, '');
+    this.prefabs.npc = eid;
+  }
+
+  /** Создать префаб сундука в prefabWorld */
+  private createChestPrefabs(): void {
+    const eid = addEntity(this.prefabWorld);
+    addComponents(this.prefabWorld, eid, Position, Radius, Chest, RenderLayer);
+    Radius.value[eid] = 6;
+    RenderLayer.value[eid] = 20;
+    Chest.item[eid] = poolAdd(StringPool.chestItems, 'arrows');
+    Chest.opened[eid] = 0;
+    this.prefabs.chest = eid;
+  }
+
+  /** Создать префаб пьедестала в prefabWorld */
+  private createPedestalPrefabs(): void {
+    const eid = addEntity(this.prefabWorld);
+    addComponents(this.prefabWorld, eid, Position, Radius, Pedestal, RenderLayer);
+    Radius.value[eid] = 6;
+    RenderLayer.value[eid] = 10;
+    Pedestal.id[eid] = poolAdd(StringPool.pedestalIds, 'default');
+    Pedestal.taken[eid] = 0;
+    Pedestal.guardsLeft[eid] = 3;
+    Pedestal.guardsSpawned[eid] = 0;
+    this.prefabs.pedestal = eid;
+  }
+
+  /** Создать префаб святилища в prefabWorld */
+  private createShrinePrefabs(): void {
+    const eid = addEntity(this.prefabWorld);
+    addComponents(this.prefabWorld, eid, Position, Radius, Shrine, RenderLayer);
+    Radius.value[eid] = 6;
+    RenderLayer.value[eid] = 10;
+    Shrine.lit[eid] = 0;
+    this.prefabs.shrine = eid;
+  }
+
+  /** Создать префаб двери в prefabWorld */
+  private createDoorPrefabs(): void {
+    const eid = addEntity(this.prefabWorld);
+    addComponents(this.prefabWorld, eid, Position, Radius, Door, RenderLayer);
+    Radius.value[eid] = 6;
+    RenderLayer.value[eid] = 15;
+    Door.open[eid] = 0;
+    Door.locked[eid] = 0;
+    this.prefabs.door = eid;
+  }
+
+  /** Создать префаб барьера в prefabWorld */
+  private createBarrierPrefabs(): void {
+    const eid = addEntity(this.prefabWorld);
+    addComponents(this.prefabWorld, eid, Position, Radius, Barrier, RenderLayer);
+    Radius.value[eid] = 8;
+    RenderLayer.value[eid] = 10;
+    Barrier.active[eid] = 1;
+    this.prefabs.barrier = eid;
+  }
+
+  /** Создать префаб алтаря в prefabWorld */
+  private createAltarPrefabs(): void {
+    const eid = addEntity(this.prefabWorld);
+    addComponents(this.prefabWorld, eid, Position, Radius, Altar, RenderLayer);
+    Radius.value[eid] = 8;
+    RenderLayer.value[eid] = 10;
+    Altar.runes[eid] = 0;
+    this.prefabs.altar = eid;
   }
 
   // ============================================================
@@ -126,11 +368,11 @@ export class EntityFactory {
 
   /**
    * Создать clone префаба на позиции (x, y).
-   * Копирует все значения компонентов из prefabEid в новую сущность,
-   * перезаписывая Position.x/y на новые координаты.
+   * Копирует все значения компонентов из prefabEid (в prefabWorld) в новую сущность
+   * в игровом мире. Sprite и PhysicsBody НЕ копируются — они создаются в ecs-bridge.ts.
    */
   clonePrefab(prefabEid: number, x: number, y: number): number {
-    const newEid = addEntity(this.world);
+    const newEid = addEntity(this.gameWorld);
 
     // Копируем все Float32Array/Uint8Array/Int32Array/Uint32Array поля
     // Position.x
@@ -258,11 +500,11 @@ export class EntityFactory {
     (EnemyAI as any).contactCd[dst] = (EnemyAI as any).contactCd[src];
     (EnemyAI as any).guardsSpawned[dst] = (EnemyAI as any).guardsSpawned[src];
 
-    // Sprite
-    (Sprite as any).ref[dst] = (Sprite as any).ref[src];
-
-    // PhysicsBody
-    (PhysicsBody as any).body[dst] = (PhysicsBody as any).body[src];
+    // ВАЖНО: Sprite.ref и PhysicsBody.body НЕ копируются!
+    // Графика и физика создаются отдельно в ecs-bridge.ts
+    // после спавна сущности в игровой мир.
+    (Sprite as any).ref[dst] = 0;
+    (PhysicsBody as any).body[dst] = 0;
 
     return newEid;
   }
@@ -272,7 +514,7 @@ export class EntityFactory {
    * Копирует префаб и перезаписывает позицию + случайные параметры.
    */
   cloneEnemyFromPrefab(kind: EnemyKind, x: number, y: number, hp: number, radius: number, speed: number, dmg: number): number {
-    const prefabEid = PREFABS.enemy[kind];
+    const prefabEid = this.prefabs.enemy[kind];
     if (prefabEid === null || prefabEid === undefined) {
       // Fallback: создаём вручную если префаба нет
       return this.createEnemy(kind, x, y, hp, radius, speed, dmg);
@@ -304,7 +546,7 @@ export class EntityFactory {
     dmg: number,
     lifetime: number
   ): number {
-    const prefabEid = PREFABS.projectile;
+    const prefabEid = this.prefabs.projectile;
     if (prefabEid === null || prefabEid === undefined) {
       return this.createProjectile(kind, x, y, vx, vy, dmg, lifetime);
     }
@@ -343,8 +585,8 @@ export class EntityFactory {
     dmg: number,
     lifetime: number
   ): number {
-    const eid = addEntity(this.world);
-    addComponents(this.world, eid, Position, Velocity, Projectile, Time, RenderLayer, Radius);
+    const eid = addEntity(this.gameWorld);
+    addComponents(this.gameWorld, eid, Position, Velocity, Projectile, Time, RenderLayer, Radius);
 
     Position.x[eid] = x;
     Position.y[eid] = y;
@@ -420,8 +662,8 @@ export class EntityFactory {
     speed: number,
     dmg: number
   ): number {
-    const eid = addEntity(this.world);
-    addComponents(this.world, eid, Position, Health, Radius, RenderLayer, Enemy, Velocity, EnemyAI, Direction);
+    const eid = addEntity(this.gameWorld);
+    addComponents(this.gameWorld, eid, Position, Health, Radius, RenderLayer, Enemy, Velocity, EnemyAI, Direction);
 
     // Position
     Position.x[eid] = x;
@@ -497,8 +739,8 @@ export class EntityFactory {
    * @returns Entity ID
    */
   createFogGhost(x: number, y: number, hp: number = 5, speed: number = 100): number {
-    const eid = addEntity(this.world);
-    addComponents(this.world, eid, Position, Velocity, Health, Radius, Enemy, EnemyAI, Time, RenderLayer);
+    const eid = addEntity(this.gameWorld);
+    addComponents(this.gameWorld, eid, Position, Velocity, Health, Radius, Enemy, EnemyAI, Time, RenderLayer);
 
     // Position
     Position.x[eid] = x;
@@ -564,8 +806,8 @@ export class EntityFactory {
     magnet: boolean = false,
     life: number = 0
   ): number {
-    const eid = addEntity(this.world);
-    addComponents(this.world, eid, Position, Radius, Drop, Time, RenderLayer);
+    const eid = addEntity(this.gameWorld);
+    addComponents(this.gameWorld, eid, Position, Radius, Drop, Time, RenderLayer);
 
     Position.x[eid] = x;
     Position.y[eid] = y;
@@ -590,8 +832,8 @@ export class EntityFactory {
    * @returns Entity ID
    */
   createPlayer(x: number, y: number): number {
-    const eid = addEntity(this.world);
-    addComponents(this.world, eid, Position, Health, Radius, RenderLayer, Player, Direction, Velocity);
+    const eid = addEntity(this.gameWorld);
+    addComponents(this.gameWorld, eid, Position, Health, Radius, RenderLayer, Player, Direction, Velocity);
 
     // Health (12 HP)
     Health.current[eid] = 12;
@@ -639,8 +881,8 @@ export class EntityFactory {
    * Создать базовую сущность (для статических объектов: сундуки, пьедесталы, святилища и т.д.).
    */
   createStaticEntity(layer: number = 0): number {
-    const eid = addEntity(this.world);
-    addComponents(this.world, eid, Position, Radius, RenderLayer);
+    const eid = addEntity(this.gameWorld);
+    addComponents(this.gameWorld, eid, Position, Radius, RenderLayer);
 
     Position.x[eid] = 0;
     Position.y[eid] = 0;
@@ -655,7 +897,7 @@ export class EntityFactory {
    */
   createMovableEntity(layer: number = 0): number {
     const eid = this.createStaticEntity(layer);
-    addComponents(this.world, eid, Velocity);
+    addComponents(this.gameWorld, eid, Velocity);
     Velocity.x[eid] = 0;
     Velocity.y[eid] = 0;
     return eid;
@@ -666,7 +908,7 @@ export class EntityFactory {
    */
   createLivingEntity(hp: number, layer: number = 0): number {
     const eid = this.createStaticEntity(layer);
-    addComponents(this.world, eid, Health);
+    addComponents(this.gameWorld, eid, Health);
     Health.current[eid] = hp;
     Health.max[eid] = hp;
     return eid;
@@ -678,6 +920,6 @@ export class EntityFactory {
 // ============================================================
 
 /** Создать экземпляр EntityFactory */
-export function createEntityFactory(world: World): EntityFactory {
-  return new EntityFactory(world);
+export function createEntityFactory(gameWorld: World, prefabWorld: World): EntityFactory {
+  return new EntityFactory(gameWorld, prefabWorld);
 }

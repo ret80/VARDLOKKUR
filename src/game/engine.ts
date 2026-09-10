@@ -46,8 +46,7 @@ import { HudSystem } from "./hud/hud-system";
 
 import type { World } from 'bitecs';
 // ECS интеграция
-import { createEcsWorld, getEcsWorld } from './ecs/ecs-world';
-import { initPrefabs } from './ecs/ecs-systems';
+import { createEcsWorld, createPrefabWorld } from './ecs/ecs-world';
 import { createEcsGameLoop, type EcsGameLoop } from './ecs/ecs-game-loop';
 import { EcsMapLoader } from './ecs/ecs-map-loader';
 import { PlanckWorld, Cat, type PhysicsCallbacks, getEnemyCategory, getEnemyMask } from './physics/planck-world';
@@ -133,6 +132,7 @@ export class Engine {
 
   // ECS интеграция
   private ecsWorld: World | null = null;
+  private prefabWorld: World | null = null;
   private ecsGameLoop: EcsGameLoop | null = null;
   private ecsMapLoader: EcsMapLoader | null = null;
   private ecsPlayerBody: any = null;
@@ -255,8 +255,9 @@ export class Engine {
     this.input.register();
 
     // Инициализация ECS мира (только мир и префабы)
+    // prefabWorld — отдельный мир для шаблонов, живёт на протяжении всей жизни приложения
+    this.prefabWorld = createPrefabWorld();
     this.ecsWorld = createEcsWorld();
-    initPrefabs(this.ecsWorld);
 
     // Подписки на абстрактные действия ввода
     this.bus.on("input:pause", () => this.handlePause());
@@ -345,7 +346,7 @@ export class Engine {
       (msg) => this.cbs.onToast(msg),
       () => audio.uiClick()
     );
-    this.mapLoader = new MapLoaderService(this.scene, store, this.viewport, this.ecsWorld!);
+    this.mapLoader = new MapLoaderService(this.scene, store, this.viewport, this.ecsWorld!, this.prefabWorld!);
     this.playerLifecycle = new PlayerLifecycle(
       store, this.playerDomain, this.bus, this.hud,
       {
@@ -407,6 +408,7 @@ export class Engine {
         stepTRef: this.stepT,
         realTRef: this.realT,
         guardSpawn: (kind: string, x: number, y: number, idx: number) => this.guardSpawn(kind, x, y, idx),
+        entityFactory: this.mapLoader?.entityFactory ?? undefined,
       });
     }
 
