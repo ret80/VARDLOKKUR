@@ -1,50 +1,22 @@
-/* ecs-bridge.ts — мост между старым кодом и ECS */
+/* ecs-bridge.ts — мост между старым кодом и ECS
+
+   Фабрика (EntityFactory) создаёт чистые ECS-сущности без графики и физики.
+   Этот модуль координирует: вызов Фабрики → навешивание Sprite → навешивание PhysicsBody.
+*/
 
 import { type World } from 'bitecs';
 import {
-  createPlayerEntity,
-  createEnemyEntity,
-  createProjectileEntity,
-  createDropEntity,
-  createEntity,
-} from './ecs-utils';
-import {
   Position,
-  Velocity,
-  Health,
-  Radius,
   Sprite,
-  Direction,
-  Player,
-  Enemy,
-  Projectile,
-  Drop,
-  NPC,
-  Chest,
-  Pedestal,
-  Shrine,
-  Door,
-  Barrier,
-  Altar,
-  PhysicsBody,
-  EnemyAI,
-  Time,
-  RenderLayer,
-  Magnet,
-  Taken,
-  Flashing,
-  StringPool,
-  poolAdd,
   SpriteRegistry,
   PhysicsBodyRegistry,
-  EnemyAIRegistry,
 } from './ecs-components';
+import { type EntityFactory } from './entity-factory';
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
 import type { Graphics } from 'pixi.js';
 import type { PlanckWorld } from '../physics/planck-world';
 import type { Cat } from '../physics/planck-world';
 import { createBodyForEntity } from './ecs-systems';
-import { addComponent, addComponents } from 'bitecs';
 import { ENEMY_STATS } from '../entities';
 
 // ============================================================
@@ -53,20 +25,27 @@ import { ENEMY_STATS } from '../entities';
 
 /** Создать игрока в ECS */
 export function createPlayerInEcs(
+  factory: EntityFactory,
   world: World,
   x: number,
   y: number,
-  spriteRef: Graphics
+  spriteRef: Graphics,
+  planckWorld: PlanckWorld,
+  category: number,
+  mask: number
 ): number {
-  const eid = createPlayerEntity(world, x, y);
+  const eid = factory.createPlayer(x, y);
   addComponent(world, eid, Sprite);
   SpriteRegistry.push(spriteRef);
   Sprite.ref[eid] = SpriteRegistry.length;
+  // Create physics body
+  createBodyForEntity(planckWorld, world, eid, 5, category, mask);
   return eid;
 }
 
 /** Создать врага в ECS */
 export function createEnemyInEcs(
+  factory: EntityFactory,
   world: World,
   kind: EnemyKind,
   x: number,
@@ -77,19 +56,18 @@ export function createEnemyInEcs(
   mask: number
 ): number {
   const stats = ENEMY_STATS[kind];
-  const eid = createEnemyEntity(world, kind, x, y, stats.hp, stats.r, stats.speed, stats.dmg);
+  const eid = factory.createEnemy(kind, x, y, stats.hp, stats.r, stats.speed, stats.dmg);
   addComponent(world, eid, Sprite);
   SpriteRegistry.push(spriteRef);
   Sprite.ref[eid] = SpriteRegistry.length;
-  
   // Create physics body
   createBodyForEntity(planckWorld, world, eid, stats.r, category, mask);
-  
   return eid;
 }
 
 /** Создать NPC в ECS */
 export function createNpcInEcs(
+  factory: EntityFactory,
   world: World,
   id: string,
   name: string,
@@ -97,26 +75,28 @@ export function createNpcInEcs(
   y: number,
   spriteRef: Graphics
 ): number {
-  const eid = createEntity(world, 30);
+  const eid = factory.createStaticEntity(10);
   addNpcComponents(world, eid, id, name, x, y, spriteRef);
   return eid;
 }
 
 /** Создать сундук в ECS */
 export function createChestInEcs(
+  factory: EntityFactory,
   world: World,
   x: number,
   y: number,
   item: string,
   spriteRef: Graphics
 ): number {
-  const eid = createEntity(world, 20);
+  const eid = factory.createStaticEntity(20);
   addChestComponents(world, eid, item, x, y, spriteRef);
   return eid;
 }
 
 /** Создать пьедестал в ECS */
 export function createPedestalInEcs(
+  factory: EntityFactory,
   world: World,
   id: string,
   x: number,
@@ -124,63 +104,68 @@ export function createPedestalInEcs(
   guardsLeft: number,
   spriteRef: Graphics
 ): number {
-  const eid = createEntity(world, 10);
+  const eid = factory.createStaticEntity(10);
   addPedestalComponents(world, eid, id, x, y, guardsLeft, spriteRef);
   return eid;
 }
 
 /** Создать святилище в ECS */
 export function createShrineInEcs(
+  factory: EntityFactory,
   world: World,
   x: number,
   y: number,
   spriteRef: Graphics
 ): number {
-  const eid = createEntity(world, 10);
+  const eid = factory.createStaticEntity(10);
   addShrineComponents(world, eid, x, y, spriteRef);
   return eid;
 }
 
 /** Создать дверь в ECS */
 export function createDoorInEcs(
+  factory: EntityFactory,
   world: World,
   x: number,
   y: number,
   locked: boolean,
   spriteRef: Graphics
 ): number {
-  const eid = createEntity(world, 15);
+  const eid = factory.createStaticEntity(15);
   addDoorComponents(world, eid, x, y, locked, spriteRef);
   return eid;
 }
 
 /** Создать барьер в ECS */
 export function createBarrierInEcs(
+  factory: EntityFactory,
   world: World,
   x: number,
   y: number,
   active: boolean,
   spriteRef: Graphics
 ): number {
-  const eid = createEntity(world, 10);
+  const eid = factory.createStaticEntity(10);
   addBarrierComponents(world, eid, x, y, active, spriteRef);
   return eid;
 }
 
 /** Создать алтарь в ECS */
 export function createAltarInEcs(
+  factory: EntityFactory,
   world: World,
   x: number,
   y: number,
   spriteRef: Graphics
 ): number {
-  const eid = createEntity(world, 10);
+  const eid = factory.createStaticEntity(10);
   addAltarComponents(world, eid, x, y, spriteRef);
   return eid;
 }
 
 /** Создать снаряд в ECS */
 export function createProjectileInEcs(
+  factory: EntityFactory,
   world: World,
   kind: ProjectileKind,
   x: number,
@@ -191,7 +176,7 @@ export function createProjectileInEcs(
   life: number,
   spriteRef: Graphics
 ): number {
-  const eid = createProjectileEntity(world, kind, x, y, vx, vy, dmg, life);
+  const eid = factory.createProjectile(kind, x, y, vx, vy, dmg, life);
   addComponent(world, eid, Sprite);
   SpriteRegistry.push(spriteRef);
   Sprite.ref[eid] = SpriteRegistry.length;
@@ -200,13 +185,14 @@ export function createProjectileInEcs(
 
 /** Создать дроп в ECS */
 export function createDropInEcs(
+  factory: EntityFactory,
   world: World,
   kind: DropKind,
   x: number,
   y: number,
   spriteRef: Graphics
 ): number {
-  const eid = createDropEntity(world, kind, x, y);
+  const eid = factory.createDrop(kind, x, y);
   addComponent(world, eid, Sprite);
   SpriteRegistry.push(spriteRef);
   Sprite.ref[eid] = SpriteRegistry.length;
@@ -216,6 +202,20 @@ export function createDropInEcs(
 // ============================================================
 // Вспомогательные функции
 // ============================================================
+
+import { addComponent, addComponents } from 'bitecs';
+import {
+  NPC,
+  Chest,
+  Pedestal,
+  Shrine,
+  Door,
+  Barrier,
+  Altar,
+  poolAdd,
+  StringPool,
+  RenderLayer,
+} from './ecs-components';
 
 function addNpcComponents(world: World, eid: number, id: string, name: string, x: number, y: number, spriteRef: Graphics): void {
   addComponents(world, eid, NPC, Sprite);

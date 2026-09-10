@@ -86,6 +86,9 @@ export function createBodyForEntity(
 ): void {
   const { x: px, y: py } = Position;
 
+  // Добавляем компонент PhysicsBody (если ещё не добавлен)
+  addComponent(world, eid, PhysicsBody);
+
   // Создаём физическое тело
   const body = planckWorld.createEntityBody(px[eid], py[eid], radius, category, {});
   PhysicsBody.body[eid] = PhysicsBodyRegistry.length + 1;

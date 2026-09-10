@@ -179,14 +179,15 @@ export class Engine {
 
   /** ECS callback для спавна стражей пьедестала */
   private guardSpawn(kind: string, x: number, y: number, pedestalIndex: number): void {
-    if (!this.ecsWorld || !this.ecsMapLoader) return;
+    if (!this.ecsWorld || !this.mapLoader || !this.mapLoader.entityFactory) return;
     const g = new Graphics();
     g.position.set(x, y);
     const enemyKind = kind as EnemyKind;
     const category = getEnemyCategory(enemyKind);
     const mask = getEnemyMask(enemyKind);
     const eid = createEnemyInEcs(
-      this.ecsWorld, enemyKind, x, y, g, this.ecsMapLoader.planckWorld,
+      this.mapLoader.entityFactory,
+      this.ecsWorld, enemyKind, x, y, g, this.ecsMapLoader!.planckWorld,
       category, mask
     );
     this.scene.dynamic.addChild(g);
@@ -558,12 +559,13 @@ export class Engine {
         this.playerLifecycle.respawn();
       },
       spawnEnemy: (kind: string, x: number, y: number) => {
-        if (!this.ecsWorld || !this.ecsMapLoader) return -1;
+        if (!this.ecsWorld || !this.mapLoader || !this.mapLoader.entityFactory || !this.ecsMapLoader) return -1;
         const g = new Graphics();
         g.position.set(x, y);
         const category = getEnemyCategory(kind as any);
         const mask = getEnemyMask(kind as any);
         const eid = createEnemyInEcs(
+          this.mapLoader.entityFactory,
           this.ecsWorld!, kind as any, x, y, g, this.ecsMapLoader.planckWorld,
           category, mask
         );

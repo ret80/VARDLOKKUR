@@ -43,6 +43,21 @@ import { ENEMY_STATS, type EnemyKind } from '../../entities';
 let _playerPrefab: number | null = null;
 let _enemyPrefabs: Record<string, number> = {};
 
+/** Экспорт всех префабов для EntityFactory */
+export const PREFABS = {
+  player: null as number | null,
+  enemy: {} as Record<string, number>,
+  projectile: null as number | null,
+  drop: null as number | null,
+  npc: null as number | null,
+  chest: null as number | null,
+  pedestal: null as number | null,
+  shrine: null as number | null,
+  door: null as number | null,
+  barrier: null as number | null,
+  altar: null as number | null,
+};
+
 /** Создать префаб игрока */
 export function createPlayerPrefab(world: World): number {
   const eid = addEntity(world);
@@ -67,6 +82,7 @@ export function createPlayerPrefab(world: World): number {
   Player.swingDirY[eid] = 1;
   Player.aiming[eid] = 0;
   _playerPrefab = eid;
+  PREFABS.player = eid;
   return eid;
 }
 
@@ -116,6 +132,7 @@ export function createEnemyPrefabs(world: World): Record<string, number> {
     EnemyAI.path[eid] = 0;
     EnemyAIRegistry[eid] = null;
     prefabs[kind] = eid;
+    PREFABS.enemy[kind] = eid;
   }
   _enemyPrefabs = prefabs;
   return prefabs;
@@ -138,6 +155,7 @@ export function createProjectilePrefabs(world: World): void {
   Projectile.dist[eid] = 0;
   Projectile.returning[eid] = 0;
   Projectile.spin[eid] = 0;
+  PREFABS.projectile = eid;
 }
 
 /** Создать префаб дропа */
@@ -152,6 +170,7 @@ export function createDropPrefabs(world: World): void {
   Drop.t[eid] = 0;
   Drop.magnet[eid] = 0;
   Drop.life[eid] = 0;
+  PREFABS.drop = eid;
 }
 
 /** Создать префабы NPC */
@@ -165,6 +184,7 @@ export function createNPCPrefabs(world: World): void {
   NPC.name[eid] = poolAdd(StringPool.npcNames, '');
   // Sprite
   Sprite.ref[eid] = 0;
+  PREFABS.npc = eid;
 }
 
 /** Создать префаб сундука */
@@ -178,6 +198,7 @@ export function createChestPrefabs(world: World): void {
   Chest.opened[eid] = 0;
   // Sprite
   Sprite.ref[eid] = 0;
+  PREFABS.chest = eid;
 }
 
 /** Создать префаб пьедестала */
@@ -193,6 +214,7 @@ export function createPedestalPrefabs(world: World): void {
   Pedestal.guardsSpawned[eid] = 0;
   // Sprite
   Sprite.ref[eid] = 0;
+  PREFABS.pedestal = eid;
 }
 
 /** Создать префаб святилища */
@@ -205,6 +227,7 @@ export function createShrinePrefabs(world: World): void {
   Shrine.lit[eid] = 0;
   // Sprite
   Sprite.ref[eid] = 0;
+  PREFABS.shrine = eid;
 }
 
 /** Создать префаб двери */
@@ -218,6 +241,7 @@ export function createDoorPrefabs(world: World): void {
   Door.locked[eid] = 0;
   // Sprite
   Sprite.ref[eid] = 0;
+  PREFABS.door = eid;
 }
 
 /** Создать префаб барьера */
@@ -230,6 +254,7 @@ export function createBarrierPrefabs(world: World): void {
   Barrier.active[eid] = 1;
   // Sprite
   Sprite.ref[eid] = 0;
+  PREFABS.barrier = eid;
 }
 
 /** Создать префаб алтаря */
@@ -242,6 +267,7 @@ export function createAltarPrefabs(world: World): void {
   Altar.runes[eid] = 0;
   // Sprite
   Sprite.ref[eid] = 0;
+  PREFABS.altar = eid;
 }
 
 // ============================================================

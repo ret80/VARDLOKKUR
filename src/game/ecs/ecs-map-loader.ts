@@ -1,6 +1,6 @@
 /* ecs-map-loader.ts — загрузка сущностей карты в ECS */
 
-import { type World, query, removeEntity, addComponent } from 'bitecs';
+import { type World, query, removeEntity } from 'bitecs';
 import { Graphics } from 'pixi.js';
 import { Cat, getEnemyCategory, getEnemyMask } from '../physics/planck-world';
 import { T, WorldData, Vec, solidTileAt } from '../world';
@@ -17,9 +17,9 @@ import {
   createBarrierInEcs,
   createAltarInEcs,
   createDropInEcs,
+  createPlayerInEcs,
 } from './ecs-bridge';
-import { createBodyForEntity } from './ecs-systems';
-import { createPlayerEntity } from './ecs-utils';
+import type { EntityFactory } from './entity-factory';
 import { EventBus } from '../event-bus';
 import { logger } from '../debug/logger';
 import {
@@ -27,7 +27,6 @@ import {
   Sprite,
   SpriteRegistry,
   PhysicsBodyRegistry,
-  EnemyAI,
   EnemyAIRegistry,
   Chest,
   resetAllComponents,
@@ -58,6 +57,8 @@ export interface EcsMapLoaderConfig {
   savedDrops: { kind: string; x: number; y: number; life?: number; ambientIdx?: number }[];
   toast: (msg: string) => void;
   bus?: EventBus;
+  /** Фабрика чистых ECS-сущностей (без графики/физики) */
+  entityFactory: EntityFactory;
 }
 
 // ============================================================
@@ -74,6 +75,7 @@ export class EcsMapLoader {
   }
 
   get planckWorld(): PlanckWorld { return this.config.planckWorld; }
+  get entityFactory(): EntityFactory { return this.config.entityFactory; }
   get playerEidValue(): number { return this.playerEid; }
 
   /** Загрузить карту в ECS */
@@ -187,24 +189,21 @@ export class EcsMapLoader {
   private createPlayer(
     world: World, spawn: Vec, playerG: Graphics, planckWorld: PlanckWorld
   ): number {
+    const factory = this.config.entityFactory;
     // Создаём ECS сущность игрока (без Sprite — playerG уже восстановлен в clearWorld)
-    const eid = createPlayerEntity(world, spawn.x, spawn.y);
-    // Добавляем компонент Sprite и связываем с уже существующим playerG
-    addComponent(world, eid, Sprite);
-    // playerG уже в SpriteRegistry[0] после clearWorld — устанавливаем индекс
-    Sprite.ref[eid] = 1;
-    // Создаём физическое тело
-    createBodyForEntity(planckWorld, world, eid, 5, Cat.Player, Cat.Player | Cat.Ground | Cat.Enemy | Cat.Projectile);
+    const eid = createPlayerInEcs(factory, world, spawn.x, spawn.y, playerG, planckWorld,
+      Cat.Player, Cat.Player | Cat.Ground | Cat.Enemy | Cat.Projectile);
     return eid;
   }
 
   private spawnEnemies(world: World, map: WorldData, planckWorld: PlanckWorld, dc: { addChild(g: Graphics): void }): void {
+    const factory = this.config.entityFactory;
     for (const s of map.spawns) {
       const g = new Graphics();
       g.position.set(s.x, s.y);
       const category = getEnemyCategory(s.kind);
       const mask = getEnemyMask(s.kind);
-      const eid = createEnemyInEcs(world, s.kind, s.x, s.y, g, planckWorld, category, mask);
+      const eid = createEnemyInEcs(factory, world, s.kind, s.x, s.y, g, planckWorld, category, mask);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
@@ -212,12 +211,13 @@ export class EcsMapLoader {
   }
 
   private spawnChests(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+    const factory = this.config.entityFactory;
     logger.debug('map-loader', `spawnChests chests=${map.chests.length}`);
     const { openedChests } = this.config;
     for (const c of map.chests) {
       const g = new Graphics();
       g.position.set(c.x * T + 8, c.y * T + 8);
-      const eid = createChestInEcs(world, c.x * T + 8, c.y * T + 8, c.item, g);
+      const eid = createChestInEcs(factory, world, c.x * T + 8, c.y * T + 8, c.item, g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
@@ -229,7 +229,7 @@ export class EcsMapLoader {
     if (!map.isDungeon && this.config.flags.secretKnown) {
       const g = new Graphics();
       g.position.set(map.stashSpot.x * T + 8, map.stashSpot.y * T + 8);
-      const eid = createChestInEcs(world, map.stashSpot.x * T + 8, map.stashSpot.y * T + 8, "heartPiece", g);
+      const eid = createChestInEcs(factory, world, map.stashSpot.x * T + 8, map.stashSpot.y * T + 8, "heartPiece", g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
@@ -240,6 +240,7 @@ export class EcsMapLoader {
   }
 
   private spawnPedestals(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+    const factory = this.config.entityFactory;
     const { takenPedestals } = this.config;
     for (const pd of map.pedestals) {
       const id = "ped_" + pd.x + "_" + pd.y;
@@ -247,7 +248,7 @@ export class EcsMapLoader {
       const py = pd.y * T + 8;
       const g = new Graphics();
       g.position.set(px, py);
-      const eid = createPedestalInEcs(world, id, px, py, takenPedestals.has(id) ? 0 : pd.guards.length, g);
+      const eid = createPedestalInEcs(factory, world, id, px, py, takenPedestals.has(id) ? 0 : pd.guards.length, g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
@@ -257,6 +258,7 @@ export class EcsMapLoader {
   }
 
   private spawnShrines(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+    const factory = this.config.entityFactory;
     logger.debug('map-loader', `spawnShrines shrines=${map.shrines.length}`);
     for (let j = 0; j < map.shrines.length; j++) {
       const s = map.shrines[j];
@@ -264,7 +266,7 @@ export class EcsMapLoader {
       const sy = s.y * T + 8;
       const g = new Graphics();
       g.position.set(sx, sy);
-      const eid = createShrineInEcs(world, sx, sy, g);
+      const eid = createShrineInEcs(factory, world, sx, sy, g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
@@ -278,11 +280,12 @@ export class EcsMapLoader {
   }
 
   private spawnNpcs(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+    const factory = this.config.entityFactory;
     logger.debug('map-loader', `spawnNpcs npcs=${map.npcs.length} souls=${map.souls?.length ?? 0}`);
     for (const n of map.npcs) {
       const g = new Graphics();
       g.position.set(n.x * T + 8, n.y * T + 8);
-      const eid = createNpcInEcs(world, n.id, n.name, n.x * T + 8, n.y * T + 8, g);
+      const eid = createNpcInEcs(factory, world, n.id, n.name, n.x * T + 8, n.y * T + 8, g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
@@ -291,7 +294,7 @@ export class EcsMapLoader {
       for (const s of map.souls) {
         const g = new Graphics();
         g.position.set(s.x * T + 8, s.y * T + 8);
-        const eid = createNpcInEcs(world, `soul${map.souls.indexOf(s)}`, "Потерянная душа", s.x * T + 8, s.y * T + 8, g);
+        const eid = createNpcInEcs(factory, world, `soul${map.souls.indexOf(s)}`, "Потерянная душа", s.x * T + 8, s.y * T + 8, g);
         (g as any).userData = (g as any).userData || {};
         (g as any).userData.eid = eid;
         dc.addChild(g);
@@ -300,10 +303,11 @@ export class EcsMapLoader {
   }
 
   private spawnDungeonDoors(world: World, map: WorldData, planckWorld: PlanckWorld, dc: { addChild(g: Graphics): void }): void {
+    const factory = this.config.entityFactory;
     for (const d of map.doors) {
       const g = new Graphics();
       g.position.set(d.x, d.y);
-      const eid = createDoorInEcs(world, d.x, d.y, true, g);
+      const eid = createDoorInEcs(factory, world, d.x, d.y, true, g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
@@ -312,6 +316,7 @@ export class EcsMapLoader {
   }
 
   private spawnOverworldObjects(world: World, map: WorldData, planckWorld: PlanckWorld, dc: { addChild(g: Graphics): void }): void {
+    const factory = this.config.entityFactory;
     const { flags } = this.config;
     // Создаём barrier только если noBarrier не установлен
     if (!map.noBarrier) {
@@ -320,7 +325,7 @@ export class EcsMapLoader {
       const active = flags.runes < 5 && !flags.snakeStarted;
       const barrierG = new Graphics();
       barrierG.position.set(bx, by);
-      const barrierEid = createBarrierInEcs(world, bx, by, active, barrierG);
+      const barrierEid = createBarrierInEcs(factory, world, bx, by, active, barrierG);
       (barrierG as any).userData = (barrierG as any).userData || {};
       (barrierG as any).userData.eid = barrierEid;
       dc.addChild(barrierG);
@@ -331,7 +336,7 @@ export class EcsMapLoader {
     const ax = map.treeAltar.x * T + 8;
     const ay = map.treeAltar.y * T + 8;
     altarG.position.set(ax, ay);
-    const altarEid = createAltarInEcs(world, ax, ay, altarG);
+    const altarEid = createAltarInEcs(factory, world, ax, ay, altarG);
     (altarG as any).userData = (altarG as any).userData || {};
     (altarG as any).userData.eid = altarEid;
     dc.addChild(altarG);
@@ -340,10 +345,11 @@ export class EcsMapLoader {
   }
 
   private spawnDrops(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+    const factory = this.config.entityFactory;
     for (const sd of this.config.savedDrops) {
       const g = new Graphics();
       g.position.set(sd.x, sd.y);
-      const eid = createDropInEcs(world, sd.kind as DropKind, sd.x, sd.y, g);
+      const eid = createDropInEcs(factory, world, sd.kind as DropKind, sd.x, sd.y, g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);
@@ -352,7 +358,7 @@ export class EcsMapLoader {
       const g = new Graphics();
       g.position.set(ambient.x * T + 8, ambient.y * T + 8);
       const kind = ambient.kind === 'shard' ? 'shard' : 'bones';
-      const eid = createDropInEcs(world, kind as DropKind, ambient.x * T + 8, ambient.y * T + 8, g);
+      const eid = createDropInEcs(factory, world, kind as DropKind, ambient.x * T + 8, ambient.y * T + 8, g);
       (g as any).userData = (g as any).userData || {};
       (g as any).userData.eid = eid;
       dc.addChild(g);

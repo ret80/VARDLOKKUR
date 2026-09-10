@@ -1,6 +1,6 @@
 /* combat-system.ts — боевая система на основе ECS */
 
-import { query, addEntity, addComponents, removeEntity, hasComponent, type World } from 'bitecs';
+import { query, addComponents, removeEntity, hasComponent, type World } from 'bitecs';
 import {
   Position,
   Velocity,
@@ -22,6 +22,7 @@ import {
   StringPool,
   PhysicsBodyRegistry,
 } from '../ecs-components';
+import { type EntityFactory } from '../entity-factory';
 import { dist2 } from '../../utils';
 import type { EnemyKind, ProjectileKind } from '../../generators/types';
 import type { PlanckWorld } from '../../physics/planck-world';
@@ -149,7 +150,7 @@ export function swordAttackSystem(
 
 /** Бросок секиры (бумеранг) */
 export function axeThrowSystem(
-  world: World,
+  factory: EntityFactory,
   playerEid: number,
   hasAxe: boolean,
   axeUp: boolean,
@@ -163,27 +164,8 @@ export function axeThrowSystem(
   const dirAngle = Math.atan2(dy[playerEid], dx[playerEid]);
   const dmg = axeUp ? 2 : 1;
 
-  // Create axe projectile
-  const eid = addEntity(world);
-  addComponents(world, eid, Position, Velocity, Projectile, Time, RenderLayer);
-
-  const startX = px[playerEid] + Math.cos(dirAngle) * 8;
-  const startY = py[playerEid] - 2 + Math.sin(dirAngle) * 8;
-
-  Position.x[eid] = startX;
-  Position.y[eid] = startY;
-  Velocity.x[eid] = Math.cos(dirAngle) * AXE_SPEED;
-  Velocity.y[eid] = Math.sin(dirAngle) * AXE_SPEED;
-  Projectile.kind[eid] = poolAdd(StringPool.projectileKinds, 'axe');
-  Projectile.dmg[eid] = dmg;
-  Projectile.life[eid] = AXE_LIFETIME;
-  Projectile.dist[eid] = 0;
-  Projectile.returning[eid] = 0;
-  Projectile.spin[eid] = 0;
-  Time.value[eid] = 0;
-  RenderLayer.value[eid] = 60;
-
-  onProjectileSpawn(eid);
+  // Create axe projectile via factory
+  const eid = factory.createAxe(px[playerEid], py[playerEid], dirAngle, dmg, onProjectileSpawn);
   return eid;
 }
 
@@ -193,7 +175,7 @@ export function axeThrowSystem(
 
 /** Выстрел из лука */
 export function arrowShootSystem(
-  world: World,
+  factory: EntityFactory,
   playerEid: number,
   hasBow: boolean,
   arrows: number,
@@ -206,23 +188,8 @@ export function arrowShootSystem(
 
   const dirAngle = Math.atan2(dy[playerEid], dx[playerEid]);
 
-  const eid = addEntity(world);
-  addComponents(world, eid, Position, Velocity, Projectile, Time, RenderLayer);
-
-  Position.x[eid] = px[playerEid] + Math.cos(dirAngle) * 8;
-  Position.y[eid] = py[playerEid] - 2 + Math.sin(dirAngle) * 8;
-  Velocity.x[eid] = Math.cos(dirAngle) * ARROW_SPEED;
-  Velocity.y[eid] = Math.sin(dirAngle) * ARROW_SPEED;
-  Projectile.kind[eid] = poolAdd(StringPool.projectileKinds, 'arrow');
-  Projectile.dmg[eid] = 2;
-  Projectile.life[eid] = ARROW_LIFETIME;
-  Projectile.dist[eid] = 0;
-  Projectile.returning[eid] = 0;
-  Projectile.spin[eid] = 0;
-  Time.value[eid] = 0;
-  RenderLayer.value[eid] = 60;
-
-  onProjectileSpawn(eid);
+  // Create arrow via factory
+  const eid = factory.createArrow(px[playerEid], py[playerEid], dirAngle, onProjectileSpawn);
   return eid;
 }
 
@@ -638,7 +605,7 @@ export function damagePlayerEcs(
 
 /** Create projectile entity */
 export function fireProjectileEcs(
-  world: World,
+  factory: EntityFactory,
   kind: ProjectileKind,
   x: number,
   y: number,
@@ -648,23 +615,7 @@ export function fireProjectileEcs(
   lifetime: number,
   onProjectileSpawn: (eid: number) => void
 ): number {
-  const eid = addEntity(world);
-  addComponents(world, eid, Position, Velocity, Projectile, Time, RenderLayer, Radius);
-
-  Position.x[eid] = x;
-  Position.y[eid] = y;
-  Velocity.x[eid] = vx;
-  Velocity.y[eid] = vy;
-  Projectile.kind[eid] = poolAdd(StringPool.projectileKinds, kind);
-  Projectile.dmg[eid] = dmg;
-  Projectile.life[eid] = lifetime;
-  Projectile.dist[eid] = 0;
-  Projectile.returning[eid] = 0;
-  Projectile.spin[eid] = 0;
-  Time.value[eid] = 0;
-  RenderLayer.value[eid] = 60;
-  Radius.value[eid] = kind === 'fire' ? 5 : 4;
-
+  const eid = factory.createProjectile(kind, x, y, vx, vy, dmg, lifetime);
   onProjectileSpawn(eid);
   return eid;
 }

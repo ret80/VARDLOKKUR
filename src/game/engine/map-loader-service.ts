@@ -6,6 +6,7 @@ import type { WorldData, Vec } from "../world";
 import type { GameStore } from "../store";
 import type { World } from "bitecs";
 import { EcsMapLoader } from "../ecs/ecs-map-loader";
+import { createEntityFactory, type EntityFactory } from "../ecs/entity-factory";
 import type { SceneManager } from "./scene-manager";
 import type { ViewportController } from "./viewport-controller";
 import type { PlayerDomain } from "../store/player-domain";
@@ -29,6 +30,8 @@ export class MapLoaderService {
   houseCache = new HouseTextureCache();
   ecsMapLoader: EcsMapLoader | null = null;
   private _mmBase: ImageData | null = null;
+  /** Фабрика чистых ECS-сущностей (без графики/физики) */
+  entityFactory: EntityFactory | null = null;
 
   constructor(
     private scene: SceneManager,
@@ -90,6 +93,9 @@ export class MapLoaderService {
     this.wallCache = tileResult.wallCache;
     this.houseCache = tileResult.houseCache;
 
+    // Создаём EntityFactory для чистого создания ECS-сущностей
+    this.entityFactory = createEntityFactory(this.ecsWorld);
+
     // Создаём ECS Map Loader (используется общий ECS-мир движка)
     this.ecsMapLoader = new EcsMapLoader({
       world: this.ecsWorld,
@@ -111,6 +117,7 @@ export class MapLoaderService {
       viewH: this.viewport.viewH,
       savedDrops,
       toast,
+      entityFactory: this.entityFactory,
     });
 
     const result = this.ecsMapLoader.loadMap(playerG, playerDomain, onPlayerCreated);

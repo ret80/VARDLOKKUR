@@ -73,6 +73,7 @@ import {
   checkDungeonBoss,
 } from './ecs-systems/world-system';
 import { hasComponent } from 'bitecs';
+import { createEntityFactory, type EntityFactory } from './entity-factory';
 import {
   Position, Velocity, PhysicsBody, Player, Direction, Health,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
@@ -162,6 +163,8 @@ export interface EcsGameLoopConfig {
   onStepAudio: () => void;
   /** Callback для спавна стражей пьедестала (kind, x, y) */
   guardSpawn?: GuardSpawnCallback;
+  /** Фабрика чистых ECS-сущностей (без графики/физики) */
+  entityFactory?: EntityFactory;
 }
 
 /** Глобальный singleton registry дропов */
@@ -186,6 +189,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     dialogueActive, talkedSig,
     viewW, viewH,
     fx,
+    entityFactory: configFactory,
   } = config;
 
   let _stepT = stepTRef;
@@ -193,6 +197,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   let _playerEid = playerEidRef;
   let _planckWorld = planckWorld;
   let _fogState: FogState | null = null;
+
+  // Используем фабрику из конфига или создаём новую
+  const entityFactory = configFactory ?? createEntityFactory(world);
 
   // hintLayer — подсказка взаимодействия, на app.stage (не разрушается при смене сцены)
   const hintLayer = new Container();
@@ -240,7 +247,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   bus.on("combat:tryAxe", () => {
     const peid = _playerEid;
     if (peid < 0) return;
-    const eid = axeThrowSystem(world, peid, store.flags.hasAxe, store.flags.axeUp, (eid: number) => {
+    const eid = axeThrowSystem(
+      entityFactory, peid, store.flags.hasAxe, store.flags.axeUp, (eid: number) => {
       // Спавн графики для топора
         const g = new Graphics();
         g.position.set(Position.x[eid], Position.y[eid]);
@@ -259,7 +267,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     if (peid < 0) return;
     const lifetime = e.kind === 'arrow' ? 2.2 : 3;
     const eid = fireProjectileEcs(
-      world, e.kind as any, e.x, e.y, e.vx, e.vy, e.dmg,
+      entityFactory, e.kind as any, e.x, e.y, e.vx, e.vy, e.dmg,
       lifetime,
       (eid: number) => {
         const g = new Graphics();
@@ -478,7 +486,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         const g = new Graphics();
         g.position.set(x, y);
         const eid = createEnemyInEcs(
-          world, kind as any, x, y, g, _planckWorld,
+          entityFactory, world, kind as any, x, y, g, _planckWorld,
           Cat.Ghost, Cat.Ghost | Cat.Player | Cat.Projectile
         );
         (g as any).userData = (g as any).userData || {};
