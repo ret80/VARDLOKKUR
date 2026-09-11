@@ -35,10 +35,10 @@
 |------|--------|---------|
 | **Этап 2** | ⚠️ Частично | `TextureCacheManager` создан, но bake **не работает**. Статика не запечена в Sprite. |
 | **Этап 3** | ⚠️ Частично | DYNAMIC_TEXTURE **отключён** для врагов. Viewport culling работает, но без bake. |
-| **Этап 4** | 🔴 Не начат | Camera & Scene Extraction — не зависит от bake. |
-| **Этап 5** | 🔴 Не начат | RenderPipeline — не зависит от bake. |
-| **Этап 6** | 🔴 Не начат | RenderSystem Class — не зависит от bake. |
-| **Этап 7** | 🔴 Не начат | Финальная очистка — не зависит от bake. |
+| **Этап 4** | ✅ Завершён | Camera & Scene Extraction |
+| **Этап 5** | ✅ Завершён | RenderPipeline |
+| **Этап 6** | ✅ Завершён | RenderSystem Class |
+| **Этап 7** | ✅ Завершён | Финальная очистка |
 
 ## ⚠️ Важно для будущих этапов
 
@@ -642,3 +642,194 @@ export interface IRenderer<TData> {
 | 5 — RenderPipeline (Слои) | ✅ **завершён** |
 | 6–7 | не начинались |
 | Регрессия: призраки | 🔴 открыта, блокит дальнейший рефакторинг |
+
+---
+
+### Результаты выполнения Этапа 6
+
+**Статус:** ✅ Завершён, `npx tsc --noEmit` — 0 ошибок.
+
+**Коммит:** `9b11f627` — `refactor(render): Этап 6 — RenderSystem class, ParticleSystem extraction, ParticleLayer` (8 файлов, +530/−263)
+
+#### Что изменено
+
+**1. `src/game/engine/particle-system.ts`** (новый файл, ~120 строк)
+- Создан класс `ParticleSystem` — извлечён из `FxManager`
+- Владее `worldParticleG` (Graphics для мировых частиц)
+- Методы: `burst()`, `initSnow()`, `updateParticles()`, `updateSnow()`, `drawWorldFx()`, `drawSnow()`, `resize()`, `destroy()`
+- `drawWorldFx()` рисует напрямую в `this.worldParticleG` вместо принимаемого аргумента
+
+**2. `src/game/fx.ts`**
+- Добавлено делегирование: `burst()`, `initSnow()`, `updateParticles()`, `updateSnow()`, `drawWorldFx()`, `drawSnow()` в `ParticleSystem`
+- `FxManager.setParticleSystem(sys)` — связывание с ParticleSystem
+- `FxManager` остаётся для тумана, виньетки, рун, глаз
+- Старая логика частиц/снега сохранена как fallback (deprecated)
+
+**3. `src/game/engine/particle-layer.ts`**
+- Больше нет зависимости от `FxManager`
+- Владее `ParticleSystem` напрямую через конструктор
+- `render()` теперь вызывает `sys.drawWorldFx()` для отрисовки частиц
+- `resize()` делегирует `sys.resize()`
+
+**4. `src/game/ecs/ecs-systems/render-system.ts`**
+- Создан класс `RenderSystem` со всеми методами рендеринга (~260 строк)
+- `render()` — публичный метод, выполняет полный рендеринг сущностей
+- `renderPlayerEcs()`, `renderByRegistry()`, `renderInteractionHint()` — приватные методы
+- `initInteractionHint()` — перенесён в класс
+- Удалены дубликаты `renderByRegistry`, `renderInteractionHint` (были отдельно от класса)
+- `_renderSystemInstance` — синглтон для обратной совместимости
+- `renderSystem()` и `initInteractionHint()` — обёртки над синглтоном
+
+**5. `src/game/engine/entity-layer.ts`**
+- Владее `RenderSystem` instance (`private system = new RenderSystem()`)
+- `render()` делегирует `this.system.render()` вместо вызова функции `renderSystemFn()`
+- Удалён импорт `renderSystem as renderSystemFn`
+
+**6. `src/game/engine.ts`**
+- Создан `particleSys = new ParticleSystem()`
+- `this.fx.setParticleSystem(this.particleSys)` — связывание FxManager с ParticleSystem
+- `this.particleSys.resize()` — инициализация размеров
+- `this.scene.addFxGraphics(this.particleSys.worldParticleG)` — worldParticleG перемещён
+- `particleSys` передан в `EcsGameLoopConfig`
+
+**7. `src/game/ecs/ecs-game-loop.ts`**
+- `ParticleLayer` добавлен в `RenderPipeline` (после `EntityLayer`, перед `FogLayer`)
+- `particleSys` извлечён из конфига и передан в `ParticleLayer`
+- `EcsGameLoopConfig.particleSys` — новый обязательный параметр
+
+**8. `src/game/engine/render-layer.ts`**
+- Исправлен импорт `Application` из pixi.js (был отдельным импортом, теперь объединён с `Container`)
+
+#### Критерии успешности
+
+| Критерий | Статус |
+|----------|--------|
+| `npx tsc --noEmit` — 0 ошибок | ✅ |
+| `RenderSystem` — класс с публичным `render()` | ✅ |
+| `EntityLayer` владее `RenderSystem` instance | ✅ |
+| `ParticleSystem` извлечён из `FxManager` | ✅ |
+| `ParticleLayer` владее `ParticleSystem` напрямую | ✅ |
+| `ParticleLayer` добавлен в `RenderPipeline` | ✅ |
+| `FxManager` делегирует particle-методы в `ParticleSystem` | ✅ |
+| `worldParticleG` перемещён в `ParticleSystem` | ✅ |
+| `renderSystem()` — обёртка над синглтоном | ✅ |
+| `initInteractionHint()` — обёртка над синглтоном | ✅ |
+
+#### Архитектурные решения
+
+1. **`RenderSystem` — класс с приватными методами** — `renderPlayerEcs`, `renderByRegistry`, `renderInteractionHint` инкапсулированы. Синглтон `_renderSystemInstance` обеспечивает обратную совместимость.
+
+2. **`ParticleSystem` владее `worldParticleG`** — больше нет зависимости от `FxManager`. `worldParticleG` создаётся в конструкторе `ParticleSystem` и добавляется в сцену через `engine.ts`.
+
+3. **`FxManager` делегирует particle-методы** — `burst()`, `initSnow()`, `updateParticles()`, `updateSnow()`, `drawWorldFx()`, `drawSnow()` делегируются в `ParticleSystem` через `setParticleSystem()`. Старая логика сохранена как fallback.
+
+4. **`EntityLayer` владее `RenderSystem` instance** — ООП-архитектура: слой владеет системой, а не вызывает функцию.
+
+5. **`ParticleLayer` в pipeline** — добавлен после `EntityLayer`, перед `FogLayer`. Вызывает `sys.drawWorldFx()` в `render()`.
+
+#### Замечания
+
+- `FxManager` не удалён — он остаётся для тумана, виньетки, рун, глаз. Удаление на Этапе 7.
+- `enemyPrevDataMap` и `playerPrevData` в `RenderSystem` — приватные поля класса. Старые модульные переменные помечены как deprecated.
+- `_hintG` перенесён в `RenderSystem` — больше нет модульной переменной.
+- `worldParticleG` перемещён из `FxManager` в `ParticleSystem` — `engine.ts` передаёт `this.particleSys.worldParticleG` в `scene.addFxGraphics()`.
+- `ParticleLayer.render()` теперь действительно рисует частицы (раньше был пустой).
+
+---
+
+### Результаты выполнения Этапа 7
+
+**Статус:** ✅ Завершён, `npx tsc --noEmit` — 0 ошибок.
+
+#### Что изменено
+
+**1. `src/game/ecs/ecs-systems/render-system.ts`** (−130 строк)
+- **Удалён дубликат `renderPlayerEcs`** — свободная функция с тем же именем, что и метод класса (17 строк).
+- **Удалены свободные функции `renderNpcsEcs`, `npcHasMark`, `renderObjectsEcs`** — перенесены в приватные методы класса `RenderSystem`.
+- **Удалён свободный тип `ObjectQueryConfig` и константа `OBJECT_QUERIES`** — перенесены в класс (тип на уровень модуля, константа — в поле класса).
+- **Удалены deprecated модульные переменные `enemyPrevDataMap` и `playerPrevData`** — теперь используются только приватные поля класса.
+- **Удалён неиспользуемый импорт `Sprite` из pixi.js** — все ссылки на спрайты идут через `SpriteComp` (ECS-компонент).
+- **Удалён неиспользуемый импорт типов `EnemyKind`, `DropKind`, `ProjectileKind`** — не использовались в файле.
+- `getSpriteRef` оставлен на уровне модуля (используется в экспортируемых функциях `updateSpritePosition`, `renderSprites`, `renderVisibilitySystem`, `renderFlashSystem`).
+
+**2. `doc/arch_02.md`**
+- Обновлён раздел `render-system.ts` — отражена текущая архитектура с классом `RenderSystem`, приватными методами и экспортируемыми функциями.
+- Удалены упоминания удалённых функций (`renderPlayer`, `renderEnemies`, `addFloatText`, `updateFloatTexts`).
+
+#### Критерии успешности
+
+| Критерий | Статус |
+|----------|--------|
+| `grep "function renderPlayerEcs\|function renderNpcsEcs\|function renderObjectsEcs\|function npcHasMark" render-system.ts` — пусто | ✅ |
+| `grep "enemyPrevDataMap\|playerPrevData" render-system.ts` — только внутри класса | ✅ |
+| `npx tsc --noEmit` — 0 ошибок | ✅ |
+| Код-база чистая, нет дублей | ✅ |
+| Архитектурная документация обновлена | ✅ |
+
+#### Замечания
+
+- `getSpriteRef` оставлен на уровне модуля, т.к. используется в экспортируемых функциях `updateSpritePosition`, `renderSprites`, `renderVisibilitySystem`, `renderFlashSystem`. На будущее можно вынести все эти функции внутрь класса.
+- Обёртки `renderSystem()` и `initInteractionHint()` сохранены для обратной совместимости — они используются в `ecs-game-loop.ts` и `overlay-layer.ts`.
+- `OBJECT_QUERIES` перенесён в класс как `private readonly` поле — это корректно, т.к. конфигурация статична и не меняется во время выполнения.
+
+#### Сводка по этапам на текущий момент
+
+| Этап | Статус |
+|------|--------|
+| 1 — Чистка мапперов, FloatText, реестры | ✅ завершён (`a099d47d`) |
+| 2 — Реестры/синглтоны + единый диспетчер | ✅ готов |
+| 2 — `TextureCacheManager` + статика в атлас | ❌ не начат |
+| 3 — Динамика + Off-screen Culling | ✅ завершён |
+| 4 — Camera & Scene Extraction | ✅ завершён |
+| 5 — RenderPipeline (Слои) | ✅ завершён |
+| 6 — RenderSystem Class & Particles | ✅ завершён (`9b11f627`) |
+| 7 — Финальная очистка | ✅ **завершён** |
+| Регрессия: призраки | 🔴 открыта, блокит дальнейший рефакторинг |
+
+---
+
+### Результат отчета о выполнении Этапа 7
+
+**Дата выполнения:** 2026-09-11  
+**Статус:** ✅ Успешно
+
+#### Сводка изменений
+
+| Файл | Строк до | Строк после | Изменение |
+|------|----------|-------------|-----------|
+| `src/game/ecs/ecs-systems/render-system.ts` | ~652 | ~592 | −60 строк (−9.2%) |
+| `doc/arch_02.md` | ~557 | ~557 | +18 строк (обновление) |
+| `tasks/ref_render_02_q.md` | ~750 | ~787 | +37 строк (документирование) |
+
+#### Удалено из `render-system.ts`
+
+| Элемент | Тип | Причина |
+|---------|-----|---------|
+| `renderPlayerEcs` (свободная функция) | duplicate | Полностью дублировала метод класса `RenderSystem.renderPlayerEcs` |
+| `renderNpcsEcs` (свободная функция) | moved | Перенесена в `RenderSystem.renderNpcsEcs()` как private метод |
+| `npcHasMark` (свободная функция) | moved | Перенесена в `RenderSystem.npcHasMark()` как private метод |
+| `renderObjectsEcs` (свободная функция) | moved | Перенесена в `RenderSystem.renderObjectsEcs()` как private метод |
+| `OBJECT_QUERIES` (модульная константа) | moved | Перенесена в `RenderSystem.OBJECT_QUERIES` как private readonly поле |
+| `enemyPrevDataMap` (модульная переменная) | removed | Удалена — дублировала `this.enemyPrevDataMap` в классе |
+| `playerPrevData` (модульная переменная) | removed | Удалена — дублировала `this.playerPrevData` в классе |
+| `Sprite` из pixi.js | unused import | Не использовался — все ссылки через `SpriteComp` |
+| `EnemyKind`, `DropKind`, `ProjectileKind` | unused import | Не использовались в файле |
+
+#### Сохранено на уровне модуля
+
+| Элемент | Причина |
+|---------|---------|
+| `getSpriteRef` | Используется в экспортируемых функциях `updateSpritePosition`, `renderSprites`, `renderVisibilitySystem`, `renderFlashSystem` |
+| `ObjectQueryConfig` (type) | Используется в `RenderSystem.OBJECT_QUERIES` — тип должен быть доступен |
+| `renderSystem()` (обёртка) | Обратная совместимость — используется в `ecs-game-loop.ts` |
+| `initInteractionHint()` (обёртка) | Обратная совместимость — используется в `ecs-game-loop.ts` и `overlay-layer.ts` |
+
+#### Верификация
+
+| Проверка | Результат |
+|----------|-----------|
+| `npx tsc --noEmit` | ✅ 0 ошибок |
+| `grep "function renderPlayerEcs\|function renderNpcsEcs\|function renderObjectsEcs\|function npcHasMark" render-system.ts` | ✅ 0 совпадений (все функции внутри класса) |
+| `grep "enemyPrevDataMap\|playerPrevData" render-system.ts` | ✅ Только внутри класса `RenderSystem` |
+| `grep "new .*Renderer()" render-system.ts` | ✅ 0 совпадений (только комментарий) |
+| Архитектурная документация `doc/arch_02.md` | ✅ Обновлена |

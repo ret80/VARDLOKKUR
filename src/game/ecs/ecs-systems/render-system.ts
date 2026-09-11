@@ -1,8 +1,7 @@
 /* render-system.ts — ECS система рендеринга на основе PixiJS (SOLID: DIP) */
 
-import { Application, Container, Graphics, Sprite } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 import { query, hasComponent, type World } from 'bitecs';
-import type { EnemyKind, DropKind, ProjectileKind } from '../../generators/types';
 import {
   Position,
   Player,
@@ -55,15 +54,7 @@ import { TextureCacheManager } from '../../renderers/core/TextureCacheManager';
 import { CameraController } from '../../engine/camera-controller';
 
 // ============================================================
-// Кэширование DYNAMIC_TEXTURE (Этап 3)
-// ============================================================
-
-/** prevData для каждой сущности — используется для needsTextureUpdate (deprecated: перенесено в RenderSystem) */
-const enemyPrevDataMap = new Map<number, any>();
-let playerPrevData: any = null;
-
-// ============================================================
-// Утилиты рендеринга
+// Утилиты рендеринга (module-level private)
 // ============================================================
 
 /** Получить PixiJS объект из Sprite registry */
@@ -73,12 +64,17 @@ function getSpriteRef(eid: number): any {
     return undefined;
   }
   const s = SpriteRegistry[idx - 1];
-  // Спрайт мог быть уничтожен (смерть врага) — возвращаем undefined
   if (!s) return undefined;
-  // Спрайт мог быть уничтожен в PixiJS — проверяем флаг destroyed
   if ((s as any).destroyed) return undefined;
   return s;
 }
+
+/** Конфигурация диспетчера объектов окружения */
+type ObjectQueryConfig = {
+  components: any[];
+  key: string;
+  mapper: (eid: number, world: World) => any;
+};
 
 /** Обновить позицию спрайта из Position компонента */
 export function updateSpritePosition(world: World, eid: number): void {
@@ -260,6 +256,62 @@ export class RenderSystem {
   /** Persistent Graphics для подсказки взаимодействия */
   private _hintG: Graphics | null = null;
 
+  /** Конфигурация всех статических объектов окружения */
+  private readonly OBJECT_QUERIES: ObjectQueryConfig[] = [
+    { components: [SpriteComp, Chest], key: "chest", mapper: eidToChestData },
+    { components: [SpriteComp, Pedestal], key: "pedestal", mapper: eidToPedestalData },
+    { components: [SpriteComp, Shrine], key: "shrine", mapper: eidToShrineData },
+    { components: [SpriteComp, Door], key: "door", mapper: eidToDoorData },
+    { components: [SpriteComp, Barrier], key: "barrier", mapper: eidToBarrierData },
+    { components: [SpriteComp, Altar], key: "altar", mapper: eidToAltarData },
+  ];
+
+  /** Проверить, есть ли у NPC маркер */
+  private npcHasMark(
+    npcId: string,
+    getNpcSig?: (npcId: string) => string,
+    talkedSig?: Map<string, string>
+  ): boolean {
+    const sig = getNpcSig ? getNpcSig(npcId) : "";
+    if (!sig) return false;
+    return talkedSig?.get(npcId) !== sig;
+  }
+
+  /** Рендеринг NPC (ECS) */
+  private renderNpcsEcs(
+    world: World,
+    ctx: RenderContext,
+    getNpcSig?: (npcId: string) => string,
+    talkedSig?: Map<string, string>
+  ): void {
+    for (const eid of query(world, [SpriteComp, NPC])) {
+      const ref = getSpriteRef(eid);
+      if (!ref) continue;
+
+      const npcId = poolGet(StringPool.npcIds, NPC.id[eid]);
+      const mark = this.npcHasMark(npcId, getNpcSig, talkedSig);
+      const data = eidToNpcData(eid, world);
+
+      const npcCtx = { ...ctx, mark } as any;
+      const renderer = npcRegistry.get(npcId as any) ?? npcRegistry.get("default" as any);
+      if (renderer) {
+        renderer.render(ref as Graphics, data, npcCtx);
+      }
+    }
+  }
+
+  /** Единый диспетчер отрисовки объектов окружения */
+  private renderObjectsEcs(world: World, ctx: RenderContext): void {
+    for (const config of this.OBJECT_QUERIES) {
+      const renderer = objectRegistry.getOrThrow(config.key);
+      for (const eid of query(world, config.components)) {
+        const ref = getSpriteRef(eid);
+        if (!ref) continue;
+        renderer.render(ref as Graphics, config.mapper(eid, world), ctx);
+      }
+    }
+  }
+
   /** Инициализировать подсказку — вызывается один раз */
   initInteractionHint(layer: Container): void {
     if (this._hintG) return;
@@ -347,10 +399,10 @@ export class RenderSystem {
     );
 
     // NPC
-    renderNpcsEcs(world, ctx, opts.getNpcSig, opts.talkedSig);
+    this.renderNpcsEcs(world, ctx, opts.getNpcSig, opts.talkedSig);
 
     // Объекты окружения (сундуки, пьедесталы, святилища, двери, барьеры, алтари)
-    renderObjectsEcs(world, ctx);
+    this.renderObjectsEcs(world, ctx);
 
     // Обновить плавающий текст
     float.update(dt);
@@ -525,6 +577,10 @@ export class RenderSystem {
   }
 }
 
+// ============================================================
+// Обёртки для обратной совместимости
+// ============================================================
+
 /** Синглтон RenderSystem — создаётся один раз и переиспользуется */
 const _renderSystemInstance = new RenderSystem();
 
@@ -535,116 +591,6 @@ export function renderSystem(
 ): void {
   _renderSystemInstance.render(world, opts);
 }
-
-/** Рендеринг игрока (ECS) — viewport culling + Graphics render */
-function renderPlayerEcs(
-  world: World,
-  playerEid: number,
-  ctx: RenderContext,
-  opts: RenderSystemOptions
-): void {
-  if (playerEid < 0) return;
-  if (!!Dead[playerEid]) return;
-
-  const playerX = Position.x[playerEid];
-  const playerY = Position.y[playerEid];
-  const ref = getSpriteRef(playerEid);
-  
-  logger.debug('render', `playerEid=${playerEid} x=${playerX} y=${playerY} ref=${!!ref} SpriteComp.ref=${SpriteComp.ref[playerEid]} SpriteRegistry.len=${SpriteRegistry.length} camX=${opts.cameraController.cam.x} camY=${opts.cameraController.cam.y} visible=${opts.cameraController.isVisibleInViewport(playerX, playerY, 8)}`);
-  
-  if (!ref) {
-    logger.warn('render', `playerEid=${playerEid} ref is null/undefined`);
-    return;
-  }
-
-  if (!opts.cameraController.isVisibleInViewport(playerX, playerY, 8)) {
-    ref.visible = false;
-    return;
-  }
-
-  ref.visible = true;
-  playerRenderer.render(ref as Graphics, playerToRenderData(playerEid, ctx.time), ctx);
-}
-
-/** Рендеринг NPC (ECS) */
-function renderNpcsEcs(
-  world: World,
-  ctx: RenderContext,
-  getNpcSig?: (npcId: string) => string,
-  talkedSig?: Map<string, string>
-): void {
-  for (const eid of query(world, [SpriteComp, NPC])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    
-    const npcId = poolGet(StringPool.npcIds, NPC.id[eid]);
-    const mark = npcHasMark(npcId, getNpcSig, talkedSig);
-    const data = eidToNpcData(eid, world);
-    
-    // Передаём mark через контекст
-    const npcCtx = { ...ctx, mark } as any;
-    // Fallback на GenericNpcRenderer для NPC, которых нет в реестре
-    const renderer = npcRegistry.get(npcId as any) ?? npcRegistry.get("default" as any);
-    if (renderer) {
-      renderer.render(ref as Graphics, data, npcCtx);
-    }
-  }
-}
-
-/** Проверить, есть ли у NPC маркер */
-function npcHasMark(
-  npcId: string,
-  getNpcSig?: (npcId: string) => string,
-  talkedSig?: Map<string, string>
-): boolean {
-  const sig = getNpcSig ? getNpcSig(npcId) : "";
-  if (!sig) return false;
-  return talkedSig?.get(npcId) !== sig;
-}
-
-/** Конфигурация диспетчера объектов окружения */
-type ObjectQueryConfig = {
-  /** ECS-компоненты для query */
-  components: any[];
-  /** Ключ рендерера в objectRegistry */
-  key: string;
-  /** Маппер eid → data */
-  mapper: (eid: number, world: World) => any;
-};
-
-/**
- * Конфигурация всех статических объектов окружения.
- * Новый тип объекта = одна строка здесь + регистрация рендерера в objectRegistry
- * (OCP — тело диспетчера не правится).
- */
-const OBJECT_QUERIES: ObjectQueryConfig[] = [
-  { components: [SpriteComp, Chest], key: "chest", mapper: eidToChestData },
-  { components: [SpriteComp, Pedestal], key: "pedestal", mapper: eidToPedestalData },
-  { components: [SpriteComp, Shrine], key: "shrine", mapper: eidToShrineData },
-  { components: [SpriteComp, Door], key: "door", mapper: eidToDoorData },
-  { components: [SpriteComp, Barrier], key: "barrier", mapper: eidToBarrierData },
-  { components: [SpriteComp, Altar], key: "altar", mapper: eidToAltarData },
-];
-
-/**
- * Единый диспетчер отрисовки объектов окружения.
- * Рендереры берутся из objectRegistry (синглтоны, создаются один раз при старте),
- * данные — из ecs-mappers. Никаких new *Renderer() в кадровом цикле.
- */
-function renderObjectsEcs(world: World, ctx: RenderContext): void {
-  for (const config of OBJECT_QUERIES) {
-    const renderer = objectRegistry.getOrThrow(config.key);
-    for (const eid of query(world, config.components)) {
-      const ref = getSpriteRef(eid);
-      if (!ref) continue;
-      renderer.render(ref as Graphics, config.mapper(eid, world), ctx);
-    }
-  }
-}
-
-// ============================================================
-// Подсказка взаимодействия (E) — обёртка для обратной совместимости
-// ============================================================
 
 /** Инициализировать подсказку — вызывается один раз (обёртка над RenderSystem) */
 export function initInteractionHint(layer: Container): void {

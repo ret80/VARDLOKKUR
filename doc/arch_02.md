@@ -257,14 +257,37 @@ AI врагов на основе стейт-машины:
 - `updateBow` — управление луком (прицел, замедление времени, выстрел).
 
 #### `render-system.ts`
-Рендеринг ECS-сущностей на PixiJS:
-- `updateSpritePosition` — синхронизация позиции PixiJS Graphics с ECS Position.
-- `renderSprites` — отрисовка всех спрайтов.
-- `renderVisibilitySystem` — управление видимостью (скрытые враги в тумане).
-- `renderFlashSystem` — эффект мигания при попадании.
-- Специализированные рендереры: `renderPlayer`, `renderEnemies`, `renderProjectiles`, `renderDrops`, `renderNPCs`, `renderChests`, `renderPedestals`, `renderShrines`, `renderDoors`, `renderBarrier`, `renderAltar`.
-- `addFloatText` / `updateFloatTexts` — всплывающие тексты (урон, лечение, подсказки).
-- `renderSystem` — главный цикл рендеринга.
+Класс `RenderSystem` — ECS-оркестратор рендеринга (Этап 6). Владее:
+- `enemyPrevDataMap` — prevData для DYNAMIC_TEXTURE
+- `_hintG` — Graphics для interaction hints
+- `OBJECT_QUERIES` — конфигурация объектов окружения
+
+Публичный метод: `render(world, opts)` — полный рендеринг сущностей.
+
+Приватные методы класса:
+- `renderPlayerEcs()` — игрок с viewport culling
+- `renderByRegistry()` — универсальная диспетчеризация через реестр (DYNAMIC_TEXTURE для врагов)
+- `renderNpcsEcs()` — NPC через npcRegistry
+- `renderObjectsEcs()` — объекты окружения через objectRegistry
+- `renderInteractionHint()` — подсказка взаимодействия (E)
+- `npcHasMark()` — проверка маркера у NPC
+- `getSpriteRef()` — получение PixiJS объекта из Sprite registry
+
+Экспортируемые функции (вне класса):
+- `updateSpritePosition(world, eid)` — синхронизация позиции PixiJS Graphics с ECS Position.
+- `renderSprites(world)` — обновление позиций всех спрайтов.
+- `renderVisibilitySystem(world, playerEid, time)` — управление видимостью (Dead, Hidden, hurt-мигание).
+- `renderFlashSystem(world, time)` — эффект мигания при попадании.
+- `renderSortSystem(world, dynamic)` — сортировка по глубине (z-index).
+- `renderSystem(world, opts)` — обёртка над `_renderSystemInstance.render()` (обратная совместимость).
+- `initInteractionHint(layer)` — обёртка над `_renderSystemInstance.initInteractionHint()` (обратная совместимость).
+- `ENTITY_LAYER` — карта слоёв отрисовки для сортировки.
+- `RenderSystemOptions` — тип конфигурации для `render()`.
+
+Вспомогательные модули:
+- `TextureCacheManager` — синглтон для DYNAMIC_TEXTURE baking (Этап 3).
+- `ecs-mappers.ts` — мапперы eid → данные для рендереров.
+- `registry.ts` / `objectRegistry` / `enemyRegistry` и др. — реестры синглтон-рендереров (Этап 2).
 
 #### `world-system.ts`
 Системы мира:
