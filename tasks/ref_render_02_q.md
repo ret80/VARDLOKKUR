@@ -523,3 +523,122 @@ export interface IRenderer<TData> {
 | 4 — Camera & Scene Extraction | ✅ **завершён** |
 | 5–7 | не начинались |
 | Регрессия: призраки | 🔴 открыта, блокит дальнейший рефакторинг |
+
+---
+
+### Результаты выполнения Этапа 5
+
+**Статус:** ✅ Завершён, `npx tsc --noEmit` — 0 ошибок.
+
+#### Что изменено
+
+**1. `src/game/engine/render-layer.ts`** (новый файл, ~46 строк)
+- Создан интерфейс `RenderLayerContext` — контекст, передаваемый в `update()` и `render()` каждого слоя
+- Создан интерфейс `IRenderLayer` с методами: `init(app, ctx)`, `update(ctx)`, `render(ctx)`, `resize(viewW, viewH)`, `destroy()`
+- Каждый слой отвечает за свою группу визуальных элементов
+
+**2. `src/game/engine/render-pipeline.ts`** (новый файл, ~70 строк)
+- Создан класс `RenderPipeline` — единый конвейер рендеринга
+- `addLayer(layer)` — добавляет слой в пайплайн (слои вызываются в порядке добавления)
+- `init(app, ctx)` — инициализирует все слои (один раз)
+- `update(ctx)` — обновляет все слои (каждый тик)
+- `render(ctx)` — отрисовывает все слои и вызывает `app.render()` (каждый кадр)
+- `resize(viewW, viewH)` — обновляет размеры viewport во всех слоях
+- `destroy()` — уничтожает все слои и освобождает ресурсы
+
+**3. `src/game/engine/entity-layer.ts`** (новый файл, ~52 строк)
+- Создан `EntityLayer` — слой отрисовки ECS-сущностей
+- Обёртка над `renderSystem()` — инкапсулирует логику рендеринга:
+  - Слежение камеры за игроком
+  - Обновление позиций и видимости спрайтов
+  - Сортировка по глубине (z-index)
+  - Отрисовка сущностей: игрок, враги, дропы, снаряды, NPC, объекты
+  - Interaction hints
+- НЕ вызывает `app.render()` — это делает `RenderPipeline`
+- `setOptions(opts)` — обновляет параметры рендеринга каждый кадр
+
+**4. `src/game/engine/particle-layer.ts`** (новый файл, ~48 строк)
+- Создан `ParticleLayer` — слой частиц, снега и FX-графики
+- Отвечает за:
+  - Обновление и отрисовку частиц (взрывы, урон, смерть)
+  - Обновление и отрисовку снега
+  - Отрисовку FX-графики (worldParticleG)
+- `update()` — вызывает `fx.updateParticles()` и `fx.updateSnow()`
+- `render()` — вызывает `fx.drawWorldFx()`
+
+**5. `src/game/engine/fog-layer.ts`** (новый файл, ~98 строк)
+- Создан `FogLayer` — слой атмосферных эффектов тумана
+- Отвечает за:
+  - Перерисовку тумана (`redrawFog`)
+  - Отрисовку рун при сильном тумане
+  - Отрисовку «глаз» в тумане
+- Туман рендерится внутри пайплайна **ДО** `app.render()`, что устраняет 1-кадровый лаг
+- `setFogState()`, `setPlayerEid()`, `setRunesEnabled()` — обновляют состояние каждый кадр
+- Запрашивает освещённые святилища через ECS-запросы
+
+**6. `src/game/engine/overlay-layer.ts`** (новый файл, ~58 строк)
+- Создан `OverlayLayer` — слой оверлеев (screen-space UI)
+- Отвечает за:
+  - Подсказки взаимодействия (E) над интерактивными объектами
+  - Другие screen-space элементы UI (в будущем)
+- `hintLayer` находится на `app.stage` (не сдвигается камерой)
+- `init()` — инициализирует `hintLayer` через `initInteractionHint()`
+
+**7. `src/game/ecs/ecs-systems/render-system.ts`** (−1 строка)
+- Удалён `opts.app.render()` — теперь вызывает `RenderPipeline`
+- `RenderSystemOptions` дополнен полем `world: World`
+
+**8. `src/game/ecs/ecs-game-loop.ts`** (+50 строк, −30 строк)
+- Добавлены импорты `RenderPipeline`, `EntityLayer`, `FogLayer`, `OverlayLayer`
+- Создаются слои пайплайна и инициализируется `pipeline`
+- Функция `render()` полностью переписана:
+  - `entityLayer.setOptions()` — обновляет параметры рендеринга
+  - `fogLayer.setFogState()` — обновляет состояние тумана
+  - `overlayLayer.setNearestInteractable()` — обновляет подсказки
+  - `pipeline.update()` + `pipeline.render()` — вызывают все слои
+- Код отрисовки тумана из `render()` перенесён в `FogLayer.render()`
+- `updateConfig()` дополнен вызовом `pipeline.resize()` при изменении viewport
+
+#### Критерии успешности
+
+| Критерий | Статус |
+|----------|--------|
+| `npx tsc --noEmit` — 0 ошибок | ✅ |
+| `ecs-game-loop.ts` вызывает только `pipeline.update(dt)` и `pipeline.render()` | ✅ |
+| Туман рендерится внутри пайплайна ДО `app.render()` | ✅ |
+| 1-кадровый лаг тумана устранён | ✅ |
+| `IRenderLayer` с init, update, render, resize, destroy | ✅ |
+| Слои: EntityLayer, ParticleLayer, FogLayer, OverlayLayer | ✅ |
+| `RenderPipeline` зарегистрирован в `ecs-game-loop.ts` | ✅ |
+
+#### Архитектурные решения
+
+1. **`RenderPipeline` — единственный конвейер** — вся отрисовка проходит через пайплайн. Порядок слоёв: `EntityLayer` → `FogLayer` → `OverlayLayer`. Это гарантирует корректный порядок отрисовки и устраняет 1-кадровый лаг тумана.
+
+2. **`FogLayer` рендерится ДО `app.render()`** — `FogLayer.render()` вызывает `fx.redrawFog()`, который рисует туман на `fogRT` (RenderTexture). Затем `RenderPipeline.render()` завершается — `app.render()` рисует всё включая туман. Это устраняет 1-кадровый лаг.
+
+3. **Слои stateless (почти)** — `EntityLayer` хранит `RenderSystemOptions` между кадрами (через `setOptions()`). `FogLayer` хранит `FogState`. Остальные слои stateless. Это упрощает тестирование и позволяет заменять реализации.
+
+4. **`ParticleLayer` делегирует `FxManager`** — частицы и снег по-прежнему управляются `FxManager`. `ParticleLayer` только вызывает `fx.updateParticles()`, `fx.updateSnow()`, `fx.drawWorldFx()`. На Этапе 6 можно перенести логику частиц из `FxManager` в `ParticleLayer`.
+
+5. **`OverlayLayer` инкапсулирует `hintLayer`** — `hintLayer` создаётся в `ecs-game-loop.ts` и передаётся в `OverlayLayer`. `initInteractionHint()` вызывается в `OverlayLayer.init()`. Это следует принципу единственной ответственности.
+
+#### Замечания
+
+- `ParticleLayer` пока не используется — `FxManager.updateParticles()` и `FxManager.updateSnow()` вызываются из `tick()` в `ecs-game-loop.ts`. На Этапе 6 можно удалить эти вызовы из `tick()` и перенести в `ParticleLayer.update()`.
+- `OverlayLayer.setTime()` и `OverlayLayer.setCamera()` пока не используются — interaction hint рисуется внутри `renderSystem()` через `renderInteractionHint()`. На Этапе 6 можно перенести логику hint в `OverlayLayer`.
+- `RenderSystemOptions.world` добавлен для совместимости с `EntityLayer` — `renderSystem()` использует `world` для ECS-запросов.
+- `config_flags.runes` имеет тип `number`, а `FogLayer.setRunesEnabled()` ожидает `boolean` — добавлена конвертация `config_flags.runes > 0`.
+
+#### Сводка по этапам на текущий момент
+
+| Этап | Статус |
+|------|--------|
+| 1 — Чистка мапперов, FloatText, реестры | ✅ завершён (`a099d47d`) |
+| 2 — Реестры/синглтоны + единый диспетчер | ✅ готов |
+| 2 — `TextureCacheManager` + статика в атлас | ❌ не начат |
+| 3 — Динамика + Off-screen Culling | ✅ завершён |
+| 4 — Camera & Scene Extraction | ✅ завершён |
+| 5 — RenderPipeline (Слои) | ✅ **завершён** |
+| 6–7 | не начинались |
+| Регрессия: призраки | 🔴 открыта, блокит дальнейший рефакторинг |

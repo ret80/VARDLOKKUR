@@ -221,6 +221,7 @@ export function renderFlashSystem(world: World, time: number): void {
 // ============================================================
 
 export interface RenderSystemOptions {
+  world: World;
   time: number;
   dt: number;
   app: Application;
@@ -334,9 +335,7 @@ export function renderSystem(
   if (dynamic) {
     sceneManager.cleanupDestroyedSprites(dynamic);
   }
-  
-  // Render PixiJS app
-  opts.app.render();
+  // app.render() вызывается RenderPipeline после render() всех слоёв (Этап 5)
 }
 
 /** Рендеринг игрока (ECS) — viewport culling + Graphics render */

@@ -53,6 +53,10 @@ import {
 import { Graphics, Container } from 'pixi.js';
 import { CameraController } from '../engine/camera-controller';
 import { SceneManager } from '../engine/scene-manager';
+import { RenderPipeline } from '../engine/render-pipeline';
+import { EntityLayer } from '../engine/entity-layer';
+import { FogLayer } from '../engine/fog-layer';
+import { OverlayLayer } from '../engine/overlay-layer';
 import {
   tryInteract,
   onEnemyKilledEcs,
@@ -215,6 +219,21 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   hintLayer.zIndex = 9999;
   app.stage.addChild(hintLayer);
   initInteractionHint(hintLayer);
+
+  // ── RenderPipeline (Этап 5) ──
+  // Создаём слои пайплайна
+  const entityLayer = new EntityLayer();
+  const fogLayer = new FogLayer(fx);
+  const overlayLayer = new OverlayLayer(hintLayer);
+
+  // Создаём пайплайн и добавляем слои
+  const pipeline = new RenderPipeline();
+  pipeline.addLayer(entityLayer);
+  pipeline.addLayer(fogLayer);
+  pipeline.addLayer(overlayLayer);
+
+  // Инициализируем пайплайн
+  pipeline.init(app, { dt: _stepT, time: _realT, world });
 
   // Локальные копии для updateConfig
   let config_map = map;
@@ -562,10 +581,13 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     deathCleanupSystem(world);
   }
 
-  /** Выполнить ECS рендеринг */
+  /** Выполнить ECS рендеринг через RenderPipeline (Этап 5) */
   function render(rdt: number): void {
     const nearestInteractable = getNearestInteractable(world, _playerEid, store);
-    renderSystem(world, {
+    
+    // Обновляем параметры EntityLayer
+    entityLayer.setOptions({
+      world,
       time: _realT,
       dt: rdt,
       app,
@@ -581,26 +603,24 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       nearestInteractable,
     });
 
-    // ===== Отрисовка тумана =====
-    if (_fogState && _playerEid >= 0) {
-      const shrineSpots: Array<{x: number, y: number}> = [];
-      for (const eid of query(world, [Shrine])) {
-        if (Shrine.lit[eid]) {
-          shrineSpots.push({ x: Position.x[eid], y: Position.y[eid] });
-        }
-      }
-      fx.redrawFog(
-        rdt,
-        _fogState.fogRadius,
-        Position.x[_playerEid],
-        Position.y[_playerEid],
-        cam.x,
-        cam.y,
-        viewW,
-        viewH,
-        shrineSpots.length > 0 ? shrineSpots : undefined
-      );
+    // Обновляем состояние FogLayer
+    if (_fogState) {
+      fogLayer.setFogState(_fogState);
     }
+    fogLayer.setPlayerEid(_playerEid);
+    fogLayer.setRunesEnabled(config_flags.runes > 0);
+    fogLayer.setCamera(cam);
+
+    // Обновляем OverlayLayer
+    overlayLayer.setNearestInteractable(nearestInteractable);
+    overlayLayer.setCamera(cam);
+    overlayLayer.setTime(_realT);
+
+    // Вызываем update() и render() пайплайна
+    // app.render() вызывается внутри RenderPipeline.render() после всех слоёв
+    // (включая FogLayer — это устраняет 1-кадровый лаг тумана)
+    pipeline.update({ dt: rdt, time: _realT, world });
+    pipeline.render({ dt: rdt, time: _realT, world });
   }
 
   return {
@@ -634,6 +654,12 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       // Обновить размеры viewport в CameraController (Этап 4)
       if (cfg.viewW !== undefined) cameraController.updateOptions({ viewportW: cfg.viewW });
       if (cfg.viewH !== undefined) cameraController.updateOptions({ viewportH: cfg.viewH });
+      // Обновить размеры viewport в RenderPipeline (Этап 5)
+      if (cfg.viewW !== undefined || cfg.viewH !== undefined) {
+        const w = cfg.viewW ?? cameraController.viewportW;
+        const h = cfg.viewH ?? cameraController.viewportH;
+        pipeline.resize(w, h);
+      }
     },
   };
 }
