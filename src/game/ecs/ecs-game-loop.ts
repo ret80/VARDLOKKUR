@@ -51,6 +51,8 @@ import {
   type FogState,
 } from './ecs-systems/fog-system';
 import { Graphics, Container } from 'pixi.js';
+import { CameraController } from '../engine/camera-controller';
+import { SceneManager } from '../engine/scene-manager';
 import {
   tryInteract,
   onEnemyKilledEcs,
@@ -132,6 +134,7 @@ export interface EcsGameLoopConfig {
   dynamic: Container;
   floatLayer: FloatTextLayer;
   gameWorld: Container;
+  sceneManager: SceneManager;
   fx: FxManager;
   input: InputSystem;
   state: StateManager;
@@ -181,7 +184,7 @@ function getDropRegistry(): DropHandlerRegistry {
 /** Создать минимальный ECS Game Loop */
 export function createEcsGameLoop(config: EcsGameLoopConfig) {
   const {
-    world, bus, store, planckWorld, app, dynamic, floatLayer, gameWorld,
+    world, bus, store, planckWorld, app, dynamic, floatLayer, gameWorld, sceneManager,
     input, state, cam, map, flags, playerEid: playerEidRef,
     playerDomain, playerHelpers, hud, quests, dialogue,
     dungeonBossDead, toast, float: addFloat, pushHud, startDialogue, npcSig,
@@ -203,6 +206,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     throw new Error('EntityFactory not provided to EcsGameLoop. This should never happen.');
   }
   const entityFactory = configFactory;
+
+  // CameraController — извлечён из render-system.ts (Этап 4)
+  const cameraController = new CameraController({ cam, viewportW: viewW, viewportH: viewH });
 
   // hintLayer — подсказка взаимодействия, на app.stage (не разрушается при смене сцены)
   const hintLayer = new Container();
@@ -564,9 +570,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       dt: rdt,
       app,
       float: floatLayer,
-      cam,
+      cameraController,
       gameWorld,
       dynamic,
+      sceneManager,
       hintLayer,
       playerEid: _playerEid,
       getNpcSig: npcSig,
@@ -624,6 +631,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       if (cfg.map !== undefined) config_map = cfg.map;
       if (cfg.playerEid !== undefined) { _playerEid = cfg.playerEid; }
       if (cfg.flags) config_flags = cfg.flags;
+      // Обновить размеры viewport в CameraController (Этап 4)
+      if (cfg.viewW !== undefined) cameraController.updateOptions({ viewportW: cfg.viewW });
+      if (cfg.viewH !== undefined) cameraController.updateOptions({ viewportH: cfg.viewH });
     },
   };
 }

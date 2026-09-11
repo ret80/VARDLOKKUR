@@ -436,5 +436,90 @@ export interface IRenderer<TData> {
 | 2 — Реестры/синглтоны + единый диспетчер | ✅ готов |
 | 2 — `TextureCacheManager` + статика в атлас | ❌ не начат |
 | 3 — Динамика + Off-screen Culling | ✅ **завершён** |
-| 4–7 | не начинались |
+| 4 — Camera & Scene Extraction | ✅ **завершён** |
+| 5–7 | не начинались |
+| Регрессия: призраки | 🔴 открыта, блокит дальнейший рефакторинг |
+
+---
+
+### Результаты выполнения Этапа 4
+
+**Статус:** ✅ Завершён, `npx tsc --noEmit` — 0 ошибок.
+
+#### Что изменено
+
+**1. `src/game/engine/camera-controller.ts`** (новый файл, ~60 строк)
+- Создан класс `CameraController` — извлечённый из `render-system.ts` контроллер камеры
+- `trackPlayer(x, y)` — слежение за игроком (центрирование камеры: `cam.x = playerX - viewportW/2`)
+- `isVisibleInViewport(entityX, entityY, entityRadius)` — viewport culling (полные размеры viewport)
+- `applyToWorld(container)` — применение камеры к world-контейнеру (`position.set(-cam.x, -cam.y)`)
+- Геттеры `cam`, `viewportW`, `viewportH`
+- `updateOptions(opts)` — обновление размеров viewport (для ресайза)
+
+**2. `src/game/engine/scene-manager.ts`** (+15 строк)
+- **Исправлен баг:** `addFxScreenChild()` теперь добавляет на `this.fxScreen` вместо `this.app.stage`
+- Добавлен метод `cleanupDestroyedSprites(dynamicContainer)` — очистка уничтоженных спрайтов из dynamic контейнера (вынесена из `render-system.ts`)
+
+**3. `src/game/ecs/ecs-systems/render-system.ts`** (−30 строк камеры, + делегирование)
+- **Удалена функция `isVisibleInViewport`** — перенесена в `CameraController`
+- **Удалён код слежения камеры** (`cam.x = Position.x[playerEid] - halfW`) — делегировано `cameraController.trackPlayer()`
+- **Удалено применение камеры к world** — делегировано `cameraController.applyToWorld()`
+- **Удалена очистка destroyed спрайтов** — делегировано `sceneManager.cleanupDestroyedSprites()`
+- **Удалён прямой доступ к `app.stage`** — `render-system.ts` больше не обращается к `app.stage`
+- `RenderSystemOptions` обновлён: `cam` заменён на `cameraController: CameraController` и `sceneManager`
+- Viewport culling для игрока и врагов использует `cameraController.isVisibleInViewport()`
+- Interaction hint использует `cameraController.cam` вместо `opts.cam`
+
+**4. `src/game/ecs/ecs-game-loop.ts`** (+ делегирование)
+- Добавлен импорт `CameraController` и `SceneManager`
+- `EcsGameLoopConfig.sceneManager: SceneManager` — новый обязательный параметр
+- Создан `cameraController = new CameraController({ cam, viewportW: viewW, viewportH: viewH })` при инициализации
+- `render()` передаёт `cameraController` и `sceneManager` в `renderSystem()`
+- `updateConfig()` обновляет viewport размеры в `cameraController`
+
+**5. `src/game/engine.ts`** (+1 строка)
+- `sceneManager: this.scene` передан в `createEcsGameLoop()`
+
+#### Критерии успешности
+
+| Критерий | Статус |
+|----------|--------|
+| `npx tsc --noEmit` — 0 ошибок | ✅ |
+| `render-system.ts` не содержит кода слежения камеры | ✅ (заменено на `cameraController.trackPlayer()`) |
+| `render-system.ts` не содержит `cam.x/cam.y` присваиваний | ✅ |
+| `render-system.ts` не содержит прямого обращения к `app.stage` | ✅ |
+| `render-system.ts` не содержит `halfW/halfH` вычислений | ✅ |
+| `CameraController` инкапсулирует всю логику камеры | ✅ |
+| `SceneManager` инкапсулирует cleanup destroyed спрайтов | ✅ |
+| `addFxScreenChild` добавляет на `fxScreen` (не на `stage`) | ✅ |
+| Визуально игра не изменилась | ⚠️ **не проверялось** |
+
+#### Архитектурные решения
+
+1. **CameraController — единственный источник камеры** — вся логика слежения за игроком и viewport culling централизована. Это упрощает тестирование и позволяет заменить реализацию (например, добавить плавное слежение) без изменения `render-system.ts`.
+
+2. **SceneManager — владелец контейнеров** — `cleanupDestroyedSprites` перенесён из `render-system.ts` в `SceneManager`, который владеет `dynamic` контейнером. Это следует принципу единственной ответственности (SRP).
+
+3. **CameraController обновляется при ресайзе** — `updateConfig()` в `ecs-game-loop.ts` вызывает `cameraController.updateOptions()` при изменении `viewW/viewH`. Это гарантирует корректность viewport culling после ресайза окна.
+
+4. **Прямая зависимость `this.scene` как `SceneManager`** — `engine.ts` передаёт `this.scene` (который является экземпляром `SceneManager`) в `createEcsGameLoop`. Это работает, но на Этапе 6 можно сделать `SceneManager` отдельным полем `Engine`.
+
+#### Замечания
+
+- `cameraController._opts.cam` используется в логировании — геттер `cameraController.cam` возвращает ту же ссылку, но `_opts` приватный. На Этапе 6 можно сделать `cam` публичным геттером.
+- `SceneManager.cleanupDestroyedSprites()` принимает диктированный тип `{ children: any[]; removeChild(child: any): void }` — это интерфейс-структура (structural typing), работает, но можно заменить на явный тип `Container` из PixiJS.
+- `hintLayer` по-прежнему находится на `app.stage` (добавляется в `ecs-game-loop.ts:210`) — это корректно, так как hintLayer должен быть в screen-space (не сдвигается камерой).
+- Прямое обращение к `app.stage` осталось в `ecs-game-loop.ts` для `hintLayer` — это допустимо, hintLayer не разрушается при смене сцены и не связан с `SceneManager`.
+- Призраки (ghost) по-прежнему скрыты при `fade = 0` — регрессия не исправлена, это отдельная проблема.
+
+#### Сводка по этапам на текущий момент
+
+| Этап | Статус |
+|------|--------|
+| 1 — Чистка мапперов, FloatText, реестры | ✅ завершён (`a099d47d`) |
+| 2 — Реестры/синглтоны + единый диспетчер | ✅ готов |
+| 2 — `TextureCacheManager` + статика в атлас | ❌ не начат |
+| 3 — Динамика + Off-screen Culling | ✅ завершён |
+| 4 — Camera & Scene Extraction | ✅ **завершён** |
+| 5–7 | не начинались |
 | Регрессия: призраки | 🔴 открыта, блокит дальнейший рефакторинг |

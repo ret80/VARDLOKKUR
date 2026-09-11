@@ -52,6 +52,7 @@ import type { RenderContext } from '../../renderers';
 import { FloatTextLayer } from '../../renderers/float/FloatTextLayer';
 import { logger } from '../../debug/logger';
 import { TextureCacheManager } from '../../renderers/core/TextureCacheManager';
+import { CameraController } from '../../engine/camera-controller';
 
 // ============================================================
 // Кэширование DYNAMIC_TEXTURE (Этап 3)
@@ -60,22 +61,6 @@ import { TextureCacheManager } from '../../renderers/core/TextureCacheManager';
 /** prevData для каждой сущности — используется для needsTextureUpdate */
 const enemyPrevDataMap = new Map<number, any>();
 let playerPrevData: any = null;
-
-/** Проверка видимости сущности в viewport камеры */
-function isVisibleInViewport(
-  entityX: number,
-  entityY: number,
-  camX: number,
-  camY: number,
-  entityRadius: number,
-  viewportW: number,
-  viewportH: number
-): boolean {
-  const dx = Math.abs(entityX - camX);
-  const dy = Math.abs(entityY - camY);
-  // viewportW/H — это ПОЛНЫЕ размеры viewport (renderer.width/height), а не половина
-  return dx < viewportW && dy < viewportH;
-}
 
 // ============================================================
 // Утилиты рендеринга
@@ -240,9 +225,10 @@ export interface RenderSystemOptions {
   dt: number;
   app: Application;
   float: FloatTextLayer;
-  cam: { x: number; y: number };
+  cameraController: CameraController;
   gameWorld: Container | null;
   dynamic: Container | null;
+  sceneManager: { cleanupDestroyedSprites(dynamicContainer: { children: any[] }): void };
   hintLayer: Container;
   playerEid: number;
   getNpcSig?: (npcId: string) => string;
@@ -259,7 +245,7 @@ export function renderSystem(
   world: World,
   opts: RenderSystemOptions
 ): void {
-  const { time, dt, float, cam, gameWorld, dynamic, hintLayer, playerEid } = opts;
+  const { time, dt, float, cameraController, gameWorld, dynamic, sceneManager, hintLayer, playerEid } = opts;
 
   // Lazy-init TextureCacheManager — один раз при первом вызове renderSystem
   if (!TextureCacheManager.instance.isInit && opts.app) {
@@ -271,17 +257,14 @@ export function renderSystem(
     logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]} ref=${SpriteComp.ref[playerEid]}`);
   }
 
-  // Слежение камеры за игроком
+  // Слежение камеры за игроком — делегирование CameraController (Этап 4)
   if (playerEid >= 0 && Position.x.length > playerEid) {
-    const halfW = opts.app.renderer.width / 2;
-    const halfH = opts.app.renderer.height / 2;
-    cam.x = Position.x[playerEid] - halfW;
-    cam.y = Position.y[playerEid] - halfH;
+    cameraController.trackPlayer(Position.x[playerEid], Position.y[playerEid]);
   }
   
-  // Применяем камеру к world контейнеру — он содержит tileLayer + dynamic
+  // Применяем камеру к world контейнеру — делегирование CameraController
   if (gameWorld) {
-    gameWorld.position.set(-Math.round(cam.x), -Math.round(cam.y));
+    cameraController.applyToWorld(gameWorld);
   }
   
   // Update sprite positions
@@ -345,20 +328,11 @@ export function renderSystem(
   float.update(dt);
   
   // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
-  renderInteractionHint(hintLayer, opts.nearestInteractable, cam, time);
+  renderInteractionHint(hintLayer, opts.nearestInteractable, opts.cameraController.cam, time);
   
-  // Очистка уничтоженных спрайтов из dynamic контейнера
-  // (они могли остаться если parent.removeChild не сработал)
+  // Очистка уничтоженных спрайтов из dynamic контейнера — делегирование SceneManager (Этап 4)
   if (dynamic) {
-    const dyn = dynamic as any;
-    const children = dyn.children;
-    for (let i = children.length - 1; i >= 0; i--) {
-      const child = children[i];
-      if (child && child.destroyed) {
-        dyn.removeChild(child);
-        try { child.destroy(); } catch {}
-      }
-    }
+    sceneManager.cleanupDestroyedSprites(dynamic);
   }
   
   // Render PixiJS app
@@ -377,20 +351,16 @@ function renderPlayerEcs(
 
   const playerX = Position.x[playerEid];
   const playerY = Position.y[playerEid];
-
-  // Viewport culling — camW/camH это ПОЛНЫЕ размеры viewport
-  const camW = opts.app.renderer.width;
-  const camH = opts.app.renderer.height;
   const ref = getSpriteRef(playerEid);
   
-  logger.debug('render', `playerEid=${playerEid} x=${playerX} y=${playerY} ref=${!!ref} SpriteComp.ref=${SpriteComp.ref[playerEid]} SpriteRegistry.len=${SpriteRegistry.length} camX=${opts.cam.x} camY=${opts.cam.y} visible=${isVisibleInViewport(playerX, playerY, opts.cam.x, opts.cam.y, 8, camW, camH)}`);
+  logger.debug('render', `playerEid=${playerEid} x=${playerX} y=${playerY} ref=${!!ref} SpriteComp.ref=${SpriteComp.ref[playerEid]} SpriteRegistry.len=${SpriteRegistry.length} camX=${opts.cameraController.cam.x} camY=${opts.cameraController.cam.y} visible=${opts.cameraController.isVisibleInViewport(playerX, playerY, 8)}`);
   
   if (!ref) {
     logger.warn('render', `playerEid=${playerEid} ref is null/undefined`);
     return;
   }
 
-  if (!isVisibleInViewport(playerX, playerY, opts.cam.x, opts.cam.y, 8, camW, camH)) {
+  if (!opts.cameraController.isVisibleInViewport(playerX, playerY, 8)) {
     ref.visible = false;
     return;
   }
@@ -486,9 +456,6 @@ function renderByRegistry<TKey extends string, TData>(
   opts?: RenderSystemOptions
 ): void {
   const isEnemy = mask.includes(Enemy);
-  // camW/camH — ПОЛНЫЕ размеры viewport
-  const camW = opts ? opts.app.renderer.width : 500;
-  const camH = opts ? opts.app.renderer.height : 300;
 
   for (const eid of query(world, mask)) {
     // Для врагов проверяем dead
@@ -512,8 +479,8 @@ function renderByRegistry<TKey extends string, TData>(
       const enemyY = Position.y[eid];
       const radius = Radius.value[eid] || 6;
 
-      // Viewport culling
-      if (!isVisibleInViewport(enemyX, enemyY, opts.cam.x, opts.cam.y, radius, camW, camH)) {
+      // Viewport culling — делегирование CameraController (Этап 4)
+      if (!opts.cameraController.isVisibleInViewport(enemyX, enemyY, radius)) {
         ref.visible = false;
         continue;
       }

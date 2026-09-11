@@ -33,9 +33,21 @@ export class SceneManager {
     this.fxWorld.addChild(g);
   }
 
-  /** Добавить элемент на fxScreen */
+  /** Добавить элемент на fxScreen (screen-space FX) */
   addFxScreenChild(child: any): void {
-    this.app.stage.addChild(child);
+    this.fxScreen.addChild(child);
+  }
+
+  /** Очистить dynamic контейнер от уничтоженных спрайтов */
+  cleanupDestroyedSprites(dynamicContainer: { children: any[]; removeChild(child: any): void }): void {
+    const children = dynamicContainer.children;
+    for (let i = children.length - 1; i >= 0; i--) {
+      const child = children[i];
+      if (child && (child as any).destroyed) {
+        dynamicContainer.removeChild(child);
+        try { (child as any).destroy(); } catch {}
+      }
+    }
   }
 
   /** Очистить tileLayer и уничтожить все спрайты */

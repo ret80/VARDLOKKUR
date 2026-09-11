@@ -381,6 +381,7 @@ export class Engine {
         dynamic: this.scene.dynamic,
         floatLayer: this.floatTextLayer,
         gameWorld: this.scene.world,
+        sceneManager: this.scene,
         fx: this.fx,
         input: this.input,
         state: this.state,
