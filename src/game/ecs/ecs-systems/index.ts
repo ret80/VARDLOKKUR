@@ -74,8 +74,6 @@ export {
   renderVisibilitySystem,
   renderFlashSystem,
   renderSystem,
-  addFloatText,
-  updateFloatTexts,
   initInteractionHint,
   ENTITY_LAYER,
   renderSortSystem,

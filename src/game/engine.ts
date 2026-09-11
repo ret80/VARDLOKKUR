@@ -1,7 +1,7 @@
 /* engine.ts – Оркестратор: создаёт EventBus, GameStore и системы */
 
 import { Application, Container, Graphics, RenderTexture, Sprite, Texture, Text } from "pixi.js";
-import { addFloatText } from './ecs/ecs-systems/render-system';
+import { FloatTextLayer } from './renderers/float/FloatTextLayer';
 import {
   T, Tl, WorldData, Vec,
   generateOverworld, generateDungeon, solidTileAt, tileAt, zoneFor, DUNGEONS,
@@ -147,6 +147,7 @@ export class Engine {
   private fx = new FxManager();
   private canvasEl: HTMLCanvasElement | null = null;
   private scene!: SceneManager;
+  private floatTextLayer!: FloatTextLayer;
   private viewport!: ViewportController;
   private screenRouter!: ScreenRouter;
   private playerLifecycle!: PlayerLifecycle;
@@ -223,6 +224,7 @@ export class Engine {
     this.app = app;
     this.viewport = new ViewportController(container, app, { x: 0, y: 0 });
     this.scene = new SceneManager(app);
+    this.floatTextLayer = new FloatTextLayer(this.scene.floatLayer);
     const cv = app.canvas as HTMLCanvasElement;
     cv.classList.add("pixi");
     cv.style.position = "absolute";
@@ -377,7 +379,7 @@ export class Engine {
         planckWorld: null as any, // будет установлен после загрузки карты
         app: this.app,
         dynamic: this.scene.dynamic,
-        floatLayer: this.scene.floatLayer,
+        floatLayer: this.floatTextLayer,
         gameWorld: this.scene.world,
         fx: this.fx,
         input: this.input,
@@ -957,7 +959,7 @@ export class Engine {
   }
 
   private float(x: number, y: number, text: string, color: number) {
-    addFloatText(this.scene.floatLayer, text, x, y, color);
+    this.floatTextLayer.add(x, y, text, color);
   }
 
   /* ================= big map (public) ================= */

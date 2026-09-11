@@ -1,6 +1,6 @@
 /* render-system.ts — ECS система рендеринга на основе PixiJS (SOLID: DIP) */
 
-import { Application, Container, Graphics, Text } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 import { query, hasComponent, type World } from 'bitecs';
 import type { EnemyKind, DropKind, ProjectileKind } from '../../generators/types';
 import {
@@ -39,15 +39,29 @@ import {
   dropRegistry,
   projectileRegistry,
   PlayerRenderer,
-  ChestRenderer,
-  PedestalRenderer,
-  ShrineRenderer,
-  DoorRenderer,
-  BarrierRenderer,
-  AltarRenderer,
+  chestRegistry,
+  pedestalRegistry,
+  shrineRegistry,
+  doorRegistry,
+  barrierRegistry,
+  altarRegistry,
 } from '../../renderers';
+import {
+  eidToEnemyData,
+  eidToDropData,
+  eidToProjectileData,
+  eidToNpcData,
+  eidToChestData,
+  eidToPedestalData,
+  eidToShrineData,
+  eidToDoorData,
+  eidToBarrierData,
+  eidToAltarData,
+  playerToRenderData,
+} from '../../renderers/ecs-mappers';
 import type { InteractableHit } from './interaction-system';
 import type { RenderContext } from '../../renderers';
+import { FloatTextLayer } from '../../renderers/float/FloatTextLayer';
 import { logger } from '../../debug/logger';
 
 // ============================================================
@@ -209,141 +223,6 @@ export function renderFlashSystem(world: World, time: number): void {
 }
 
 // ============================================================
-// Мапперы ECS → data для рендереров
-// ============================================================
-
-/** Маппер ECS Player → PlayerRenderData */
-function eidToPlayerRenderData(eid: number) {
-  const d = Direction;
-  return {
-    data: {
-      x: 0, y: 0,
-      dir: { x: d.x[eid], y: d.y[eid] },
-      moving: !!Player.moving[eid],
-      animT: Player.animT[eid],
-      swingT: Player.swingT[eid],
-      hurtT: Player.hurtT[eid],
-      slowT: Player.slowT[eid],
-      r: 5,
-    },
-    extra: {
-      hasSword: !!Player.hasSword[eid],
-      runes: Player.runes[eid],
-      swingDir: { x: Player.swingDirX[eid], y: Player.swingDirY[eid] },
-      aiming: !!Player.aiming[eid],
-    },
-  };
-}
-
-/** Маппер ECS Enemy → IEnemyData */
-function eidToEnemyData(eid: number) {
-  const health = Health;
-  const radius = Radius;
-  return {
-    x: 0, y: 0,
-    kind: poolGet(StringPool.enemyKinds, Enemy.kind[eid]) as EnemyKind,
-    r: radius.value[eid],
-    hp: health.current[eid],
-    maxHp: health.max[eid],
-    facing: { x: Enemy.facingX[eid], y: Enemy.facingY[eid] },
-    t: Enemy.t[eid],
-    state: getEnemyStateName(Enemy.state[eid]),
-    aggro: !!Enemy.aggro[eid],
-    dead: false,
-    hidden: !!Enemy.hidden[eid],
-    lungeT: Enemy.lungeT[eid],
-    freezeT: Enemy.freezeT[eid],
-    flashT: Enemy.flashT[eid],
-    seed: Enemy.seed[eid],
-    fade: Enemy.fade[eid],
-    leash: null,
-    dropDew: !!Enemy.dropDew[eid],
-    nearLitShrine: !!Enemy.nearLitShrine[eid],
-  };
-}
-
-/** Маппер ECS Drop → IDropData */
-function eidToDropData(eid: number) {
-  return {
-    x: 0, y: 0,
-    kind: poolGet(StringPool.dropKinds, Drop.kind[eid]) as DropKind,
-    t: Drop.t[eid],
-    taken: !!Taken[eid],
-    magnet: !!Drop.magnet[eid],
-  };
-}
-
-/** Маппер ECS Projectile → IProjectileData */
-function eidToProjectileData(eid: number) {
-  return {
-    x: 0, y: 0,
-    kind: poolGet(StringPool.projectileKinds, Projectile.kind[eid]) as ProjectileKind,
-    r: 3,
-    spin: Projectile.spin[eid],
-    vx: 0, vy: 0,
-  };
-}
-
-/** Маппер ECS NPC → INpcData */
-function eidToNpcData(eid: number) {
-  return {
-    x: 0, y: 0,
-    id: poolGet(StringPool.npcIds, NPC.id[eid]),
-    name: poolGet(StringPool.npcNames, NPC.name[eid]),
-  };
-}
-
-/** Маппер ECS Chest → IChestData */
-function eidToChestData(eid: number) {
-  return {
-    x: 0, y: 0,
-    opened: !!Chest.opened[eid],
-  };
-}
-
-/** Маппер ECS Pedestal → IPedestalData */
-function eidToPedestalData(eid: number) {
-  return {
-    x: 0, y: 0,
-    taken: !!Pedestal.taken[eid],
-    guardsLeft: Pedestal.guardsLeft[eid],
-  };
-}
-
-/** Маппер ECS Shrine → IShrineData */
-function eidToShrineData(eid: number) {
-  return {
-    x: 0, y: 0,
-    lit: !!Shrine.lit[eid],
-  };
-}
-
-/** Маппер ECS Door → IDoorData */
-function eidToDoorData(eid: number) {
-  return {
-    x: 0, y: 0,
-    open: Door.open[eid],
-    locked: !!Door.locked[eid],
-  };
-}
-
-/** Маппер ECS Barrier → IBarrierData */
-function eidToBarrierData(eid: number) {
-  return {
-    x: 0, y: 0,
-    active: !!Barrier.active[eid],
-  };
-}
-
-/** Маппер ECS Altar → IAltarData */
-function eidToAltarData(eid: number) {
-  return {
-    x: 0, y: 0,
-    runes: Altar.runes[eid],
-  };
-}
-
-// ============================================================
 // Options для RenderSystem.render()
 // ============================================================
 
@@ -351,7 +230,7 @@ export interface RenderSystemOptions {
   time: number;
   dt: number;
   app: Application;
-  floatLayer: Container;
+  float: FloatTextLayer;
   cam: { x: number; y: number };
   gameWorld: Container | null;
   dynamic: { children: any[] } | null;
@@ -371,7 +250,7 @@ export function renderSystem(
   world: World,
   opts: RenderSystemOptions
 ): void {
-  const { time, dt, floatLayer, cam, gameWorld, dynamic, hintLayer, playerEid } = opts;
+  const { time, dt, float, cam, gameWorld, dynamic, hintLayer, playerEid } = opts;
   
   // Лог: состояние игрока при рендере (раз в 5 сек)
   if (playerEid >= 0 && time % 5 < dt) {
@@ -417,7 +296,7 @@ export function renderSystem(
     [SpriteComp, Enemy],
     StringPool.enemyKinds,
     enemyRegistry,
-    eidToEnemyData,
+    (eid) => eidToEnemyData(eid, world),
     time
   );
   
@@ -427,7 +306,7 @@ export function renderSystem(
     [SpriteComp, Projectile],
     StringPool.projectileKinds,
     projectileRegistry,
-    eidToProjectileData,
+    (eid) => eidToProjectileData(eid, world),
     time
   );
   
@@ -437,7 +316,7 @@ export function renderSystem(
     [SpriteComp, Drop],
     StringPool.dropKinds,
     dropRegistry,
-    eidToDropData,
+    (eid) => eidToDropData(eid, world),
     time
   );
   
@@ -453,7 +332,7 @@ export function renderSystem(
   renderAltarEcs(world, ctx);
   
   // Обновить плавающий текст
-  updateFloatTexts(floatLayer, dt);
+  float.update(dt);
   
   // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
   renderInteractionHint(hintLayer, opts.nearestInteractable, cam, time);
@@ -494,7 +373,8 @@ function renderPlayerEcs(world: World, playerEid: number, ctx: RenderContext): v
   }
   
   const renderer = new PlayerRenderer();
-  renderer.render(ref as Graphics, eidToPlayerRenderData(playerEid), ctx);
+  const renderData = playerToRenderData(playerEid, ctx.time);
+  renderer.render(ref as Graphics, renderData, ctx);
 }
 
 /** Рендеринг NPC (ECS) */
@@ -510,7 +390,7 @@ function renderNpcsEcs(
     
     const npcId = poolGet(StringPool.npcIds, NPC.id[eid]);
     const mark = npcHasMark(npcId, getNpcSig, talkedSig);
-    const data = eidToNpcData(eid);
+    const data = eidToNpcData(eid, world);
     
     // Передаём mark через контекст
     const npcCtx = { ...ctx, mark } as any;
@@ -535,67 +415,67 @@ function npcHasMark(
 
 /** Рендеринг сундуков (ECS) */
 function renderChestsEcs(world: World, ctx: RenderContext): void {
+  const renderer = chestRegistry.get("default");
+  if (!renderer) return;
   for (const eid of query(world, [SpriteComp, Chest])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
-    
-    const renderer = new ChestRenderer();
-    renderer.render(ref as Graphics, eidToChestData(eid), ctx);
+    renderer.render(ref as Graphics, eidToChestData(eid, world), ctx);
   }
 }
 
 /** Рендеринг пьедесталов (ECS) */
 function renderPedestalsEcs(world: World, ctx: RenderContext): void {
+  const renderer = pedestalRegistry.get("default");
+  if (!renderer) return;
   for (const eid of query(world, [SpriteComp, Pedestal])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
-    
-    const renderer = new PedestalRenderer();
-    renderer.render(ref as Graphics, eidToPedestalData(eid), ctx);
+    renderer.render(ref as Graphics, eidToPedestalData(eid, world), ctx);
   }
 }
 
 /** Рендеринг святилищ (ECS) */
 function renderShrinesEcs(world: World, ctx: RenderContext): void {
+  const renderer = shrineRegistry.get("default");
+  if (!renderer) return;
   for (const eid of query(world, [SpriteComp, Shrine])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
-    
-    const renderer = new ShrineRenderer();
-    renderer.render(ref as Graphics, eidToShrineData(eid), ctx);
+    renderer.render(ref as Graphics, eidToShrineData(eid, world), ctx);
   }
 }
 
 /** Рендеринг дверей (ECS) */
 function renderDoorsEcs(world: World, ctx: RenderContext): void {
+  const renderer = doorRegistry.get("default");
+  if (!renderer) return;
   for (const eid of query(world, [SpriteComp, Door])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
-    
-    const renderer = new DoorRenderer();
-    renderer.render(ref as Graphics, eidToDoorData(eid), ctx);
+    renderer.render(ref as Graphics, eidToDoorData(eid, world), ctx);
   }
 }
 
 /** Рендеринг барьера (ECS) */
 function renderBarrierEcs(world: World, ctx: RenderContext): void {
+  const renderer = barrierRegistry.get("default");
+  if (!renderer) return;
   for (const eid of query(world, [SpriteComp, Barrier])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
-    
-    const renderer = new BarrierRenderer();
-    renderer.render(ref as Graphics, eidToBarrierData(eid), ctx);
+    renderer.render(ref as Graphics, eidToBarrierData(eid, world), ctx);
   }
 }
 
 /** Рендеринг алтаря (ECS) */
 function renderAltarEcs(world: World, ctx: RenderContext): void {
+  const renderer = altarRegistry.get("default");
+  if (!renderer) return;
   for (const eid of query(world, [SpriteComp, Altar])) {
     const ref = getSpriteRef(eid);
     if (!ref) continue;
-    
-    const renderer = new AltarRenderer();
-    renderer.render(ref as Graphics, eidToAltarData(eid), ctx);
+    renderer.render(ref as Graphics, eidToAltarData(eid, world), ctx);
   }
 }
 
@@ -625,49 +505,6 @@ function renderByRegistry<TKey extends string, TData>(
     if (!r) continue;
     
     r.render(ref as Graphics, mapper(eid), { time });
-  }
-}
-
-// ============================================================
-// Плавающий текст
-// ============================================================
-
-/** Добавить плавающий текст */
-export function addFloatText(
-  floatLayer: Container,
-  text: string,
-  x: number,
-  y: number,
-  color: number
-): void {
-  const txt = new Text({
-    text,
-    style: {
-      fontFamily: 'Arial',
-      fontSize: 4,
-      fill: color,
-      fontWeight: 'bold',
-    },
-  });
-  txt.x = x;
-  txt.y = y;
-  txt.anchor.set(0.5, 0);
-  txt.alpha = 0.7;
-  floatLayer.addChild(txt);
-}
-
-/** Обновить плавающий текст */
-export function updateFloatTexts(floatLayer: Container, dt: number): void {
-  const children = floatLayer.children as Text[];
-  for (let i = children.length - 1; i >= 0; i--) {
-    const txt = children[i];
-    txt.y -= 20 * dt;
-    txt.alpha -= dt * 0.5;
-    
-    if (txt.alpha <= 0) {
-      floatLayer.removeChild(txt);
-      txt.destroy();
-    }
   }
 }
 

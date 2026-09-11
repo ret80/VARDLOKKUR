@@ -1,6 +1,7 @@
 /* ecs-game-loop.ts — минимальный ECS game loop */
 
 import { type World, query, removeEntity, addComponent } from 'bitecs';
+import type { FloatTextLayer } from '../renderers/float/FloatTextLayer';
 import {
   syncPositionToBody,
   syncVelocityToBody,
@@ -129,7 +130,7 @@ export interface EcsGameLoopConfig {
   planckWorld: PlanckWorld;
   app: Application;
   dynamic: Container;
-  floatLayer: Container;
+  floatLayer: FloatTextLayer;
   gameWorld: Container;
   fx: FxManager;
   input: InputSystem;
@@ -562,7 +563,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       time: _realT,
       dt: rdt,
       app,
-      floatLayer,
+      float: floatLayer,
       cam,
       gameWorld,
       dynamic,
