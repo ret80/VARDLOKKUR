@@ -1,7 +1,7 @@
 /* render-layer.ts — Интерфейс слоя рендеринга для RenderPipeline */
 
+import type { Application, Container } from 'pixi.js';
 import type { World } from 'bitecs';
-import type { Application } from 'pixi.js';
 
 /** Контекст, передаваемый в update() и render() каждого слоя */
 export interface RenderLayerContext {
@@ -11,6 +11,8 @@ export interface RenderLayerContext {
   time: number;
   /** ECS-мир */
   world: World;
+  /** FX-контейнер для частиц и эффектов (Этап 6) */
+  fxWorld?: Container;
 }
 
 /**

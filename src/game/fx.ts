@@ -1,10 +1,15 @@
-/* fx.ts — Атмосферные визуальные эффекты: частицы, снег, туман, виньетка.
-   Отделён от engine.ts для разделения ответственности:
-   логика состояния остаётся в engine, математика рендеринга — здесь. */
+/* fx.ts — Атмосферные визуальные эффекты: туман, виньетка.
+   Отделён от engine.ts для разделения ответственности.
+   
+   Этап 6: частицы и снег извлечены в ParticleSystem.
+   FxManager делегирует burst() и initSnow() в ParticleSystem.
+   Остается: туман, виньетка, руны, глаза.
+*/
 
 import { Application, Container, Graphics, RenderTexture, Sprite, Texture } from "pixi.js";
 import { NoiseGenerator } from "./noise";
 import { clamp } from "./utils";
+import type { ParticleSystem } from './engine/particle-system';
 
 /* ======================== Интерфейсы ======================== */
 
@@ -34,6 +39,9 @@ export class FxManager {
   private viewW = 0;
   private viewH = 0;
 
+  /** Ссылка на ParticleSystem для делегирования burst/initSnow (Этап 6) */
+  private _particleSys: ParticleSystem | null = null;
+
   // --- Слои ---
   // --- Слои (публичные для отрисовки из engine) ---
   public worldParticleG = new Graphics();
@@ -41,7 +49,7 @@ export class FxManager {
   public vignette: Sprite | null = null;
   public fogVignette: Sprite | null = null;
 
-  // --- Данные ---
+  // --- Данные (deprecated: перенесено в ParticleSystem) ---
   private particles: Particle[] = [];
   public snow: Snowflake[] = [];
 
@@ -67,6 +75,11 @@ export class FxManager {
     this.fogAlpha = 0;
   }
 
+  /** Установить ParticleSystem для делегирования burst/initSnow (Этап 6) */
+  public setParticleSystem(sys: ParticleSystem): void {
+    this._particleSys = sys;
+  }
+
   /** Вызывается один раз после создания сцены в engine. */
   public attachToStage(stage: Container, screenFx: Graphics) {
     this.screenFxG = screenFx;
@@ -84,8 +97,14 @@ export class FxManager {
 
   /* ---------- API для Engine ---------- */
 
-  /** Создать взрыв частиц. Вызывается из engine в местах урона/смерти. */
+  /** Создать взрыв частиц. Вызывается из engine в местах урона/смерти.
+   *  Этап 6: делегирует в ParticleSystem. */
   public burst(x: number, y: number, color: number, n: number, speed: number, life: number, size: number, grav: number) {
+    if (this._particleSys) {
+      this._particleSys.burst(x, y, color, n, speed, life, size, grav);
+      return;
+    }
+    // Fallback (deprecated): старый путь через FxManager
     if (this.particles.length > 420) return;
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
@@ -99,8 +118,14 @@ export class FxManager {
     }
   }
 
-  /** Инициализация снега (вызывается один раз в init engine). */
+  /** Инициализация снега (вызывается один раз в init engine).
+   *  Этап 6: делегирует в ParticleSystem. */
   public initSnow() {
+    if (this._particleSys) {
+      this._particleSys.initSnow();
+      return;
+    }
+    // Fallback (deprecated): старый путь через FxManager
     for (let i = 0; i < 130; i++) {
       this.snow.push({
         x: Math.random() * 640,
@@ -112,8 +137,14 @@ export class FxManager {
     }
   }
 
-  /** Обновление частиц и снега. Вызывается каждый тик. */
+  /** Обновление частиц. Вызывается каждый тик.
+   *  Этап 6: делегирует в ParticleSystem. */
   public updateParticles(rdt: number) {
+    if (this._particleSys) {
+      this._particleSys.updateParticles(rdt);
+      return;
+    }
+    // Fallback (deprecated): старый путь через FxManager
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
       p.life -= rdt;
@@ -124,8 +155,14 @@ export class FxManager {
     }
   }
 
-  /** Обновление состояния снега. Вызывается в update(). */
+  /** Обновление состояния снега. Вызывается в update().
+   *  Этап 6: делегирует в ParticleSystem. */
   public updateSnow(realT: number) {
+    if (this._particleSys) {
+      this._particleSys.updateSnow(realT);
+      return;
+    }
+    // Fallback (deprecated): старый путь через FxManager
     for (const f of this.snow) {
       f.y += f.s * 0.016;
       f.x += Math.sin(realT * 0.8 + f.d) * 8 * 0.016 - 4 * 0.016;
@@ -316,8 +353,14 @@ export class FxManager {
 
   /* ---------- Отрисовка ---------- */
 
-  /** Отрисовка мировых частиц и SlamZone. Вызывается в tick() перед рендером сущностей. */
-  public drawWorldFx(rdt: number, realT: number) {
+  /** Отрисовка мировых частиц и SlamZone. Вызывается в tick() перед рендером сущностей.
+   *  Этап 6: делегирует в ParticleSystem. */
+  public drawWorldFx(_rdt: number, _realT: number) {
+    if (this._particleSys) {
+      this._particleSys.drawWorldFx();
+      return;
+    }
+    // Fallback (deprecated): старый путь через FxManager
     const g = this.worldParticleG;
     g.clear();
     for (const p of this.particles) {
@@ -326,8 +369,14 @@ export class FxManager {
     }
   }
 
-  /** Отрисовка снежного слоя на screenFx. Вызывается в tick(). */
-  public drawSnow(fx: Graphics, realT: number) {
+  /** Отрисовка снежного слоя на screenFx. Вызывается в tick().
+   *  Этап 6: делегирует в ParticleSystem. */
+  public drawSnow(fx: Graphics, _realT: number) {
+    if (this._particleSys) {
+      this._particleSys.drawSnow(fx);
+      return;
+    }
+    // Fallback (deprecated): старый путь через FxManager
     for (const f of this.snow) {
       fx.rect(f.x, f.y, f.w, f.w).fill({ color: 0xc8d8e8, alpha: 0.4 });
     }

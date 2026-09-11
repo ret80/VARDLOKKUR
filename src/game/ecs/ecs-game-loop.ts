@@ -57,6 +57,7 @@ import { RenderPipeline } from '../engine/render-pipeline';
 import { EntityLayer } from '../engine/entity-layer';
 import { FogLayer } from '../engine/fog-layer';
 import { OverlayLayer } from '../engine/overlay-layer';
+import { ParticleLayer } from '../engine/particle-layer';
 import {
   tryInteract,
   onEnemyKilledEcs,
@@ -140,6 +141,8 @@ export interface EcsGameLoopConfig {
   gameWorld: Container;
   sceneManager: SceneManager;
   fx: FxManager;
+  /** Этап 6: система частиц и снега (извлечение из FxManager) */
+  particleSys: import('../engine/particle-system').ParticleSystem;
   input: InputSystem;
   state: StateManager;
   cam: { x: number; y: number };
@@ -196,6 +199,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     dialogueActive, talkedSig,
     viewW, viewH,
     fx,
+    particleSys,
     entityFactory: configFactory,
   } = config;
 
@@ -220,15 +224,17 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   app.stage.addChild(hintLayer);
   initInteractionHint(hintLayer);
 
-  // ── RenderPipeline (Этап 5) ──
+  // ── RenderPipeline (Этап 5-6) ──
   // Создаём слои пайплайна
   const entityLayer = new EntityLayer();
+  const particleLayer = new ParticleLayer(particleSys); // Этап 6: извлечение из FxManager
   const fogLayer = new FogLayer(fx);
   const overlayLayer = new OverlayLayer(hintLayer);
 
   // Создаём пайплайн и добавляем слои
   const pipeline = new RenderPipeline();
   pipeline.addLayer(entityLayer);
+  pipeline.addLayer(particleLayer);
   pipeline.addLayer(fogLayer);
   pipeline.addLayer(overlayLayer);
 

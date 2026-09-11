@@ -16,6 +16,7 @@ import {
 } from "./store";
 import { audio } from "./audio";
 import { FxManager } from "./fx";
+import { ParticleSystem } from "./engine/particle-system";
 import {
   HouseSpriteEntry,
   WallTextureCache,
@@ -145,6 +146,7 @@ export class Engine {
 
   // Слои сцены и вьюпорт
   private fx = new FxManager();
+  private particleSys = new ParticleSystem(); // Этап 6: извлечение частиц из FxManager
   private canvasEl: HTMLCanvasElement | null = null;
   private scene!: SceneManager;
   private floatTextLayer!: FloatTextLayer;
@@ -237,10 +239,14 @@ export class Engine {
 
     // Инициализация FX-менеджера
     this.fx.init(app, this.viewport.viewW, this.viewport.viewH);
+    // Этап 6: связываем FxManager с ParticleSystem для делегирования
+    this.fx.setParticleSystem(this.particleSys);
+    this.particleSys.resize(this.viewport.viewW, this.viewport.viewH);
 
     // Слои сцены привязываются к stage (world, fxScreen, fadeG)
     this.scene.attachToStage();
-    this.scene.addFxGraphics(this.fx.worldParticleGraphics);
+    // Этап 6: worldParticleG перемещён в ParticleSystem
+    this.scene.addFxGraphics(this.particleSys.worldParticleG);
 
     // Вигнетки и фейд размещаем в исходном порядке (fadeG поверх вигнеток)
     app.stage.removeChild(this.scene.fadeG);
@@ -383,6 +389,7 @@ export class Engine {
         gameWorld: this.scene.world,
         sceneManager: this.scene,
         fx: this.fx,
+        particleSys: this.particleSys, // Этап 6: извлечение частиц из FxManager
         input: this.input,
         state: this.state,
         cam: this.viewport.cam,

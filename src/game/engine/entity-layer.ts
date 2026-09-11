@@ -4,12 +4,14 @@ import type { Application } from 'pixi.js';
 import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import type { RenderSystemOptions } from '../ecs/ecs-systems/render-system';
-import { renderSystem as renderSystemFn } from '../ecs/ecs-systems/render-system';
+import { RenderSystem } from '../ecs/ecs-systems/render-system';
 
 /**
  * EntityLayer — слой отрисовки ECS-сущностей.
  *
- * Обёртка над renderSystem(), инкапсулирующая логику рендеринга:
+ * Этап 6: владее RenderSystem instance вместо вызова функции.
+ *
+ * Обёртка над RenderSystem.render(), инкапсулирующая логику рендеринга:
  * - Слежение камеры за игроком
  * - Обновление позиций и видимости спрайтов
  * - Сортировка по глубине (z-index)
@@ -20,6 +22,7 @@ import { renderSystem as renderSystemFn } from '../ecs/ecs-systems/render-system
  */
 export class EntityLayer implements IRenderLayer {
   private app: Application | null = null;
+  private system = new RenderSystem();
   private opts: RenderSystemOptions | null = null;
 
   /**
@@ -39,8 +42,8 @@ export class EntityLayer implements IRenderLayer {
 
   render(_ctx: RenderLayerContext): void {
     if (!this.opts) return;
-    // Delegating to renderSystem — она не вызывает app.render() (это делает RenderPipeline)
-    renderSystemFn(this.opts.world, this.opts);
+    // Delegating to RenderSystem instance — он не вызывает app.render() (это делает RenderPipeline)
+    this.system.render(this.opts.world, this.opts);
   }
 
   resize(_viewW: number, _viewH: number): void {

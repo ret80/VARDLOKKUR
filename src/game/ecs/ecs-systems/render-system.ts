@@ -58,7 +58,7 @@ import { CameraController } from '../../engine/camera-controller';
 // Кэширование DYNAMIC_TEXTURE (Этап 3)
 // ============================================================
 
-/** prevData для каждой сущности — используется для needsTextureUpdate */
+/** prevData для каждой сущности — используется для needsTextureUpdate (deprecated: перенесено в RenderSystem) */
 const enemyPrevDataMap = new Map<number, any>();
 let playerPrevData: any = null;
 
@@ -238,104 +238,302 @@ export interface RenderSystemOptions {
 }
 
 // ============================================================
-// Главный класс RenderSystem (ECS-оркестратор)
+// Главный класс RenderSystem (ECS-оркестратор) — Этап 6
 // ============================================================
 
-/** Выполнить полный рендеринг */
+/**
+ * RenderSystem — класс-оркестратор рендеринга ECS-сущностей.
+ *
+ * Этап 6: превращён из функции renderSystem() в класс.
+ * Владее:
+ * - enemyPrevDataMap — prevData для DYNAMIC_TEXTURE
+ * - playerPrevData — prevData для игрока
+ * - _hintG — Graphics для interaction hints
+ *
+ * Метод render() выполняет полный рендеринг сущностей.
+ */
+export class RenderSystem {
+  /** prevData для каждой сущности — используется для needsTextureUpdate */
+  private enemyPrevDataMap = new Map<number, any>();
+  private playerPrevData: any = null;
+
+  /** Persistent Graphics для подсказки взаимодействия */
+  private _hintG: Graphics | null = null;
+
+  /** Инициализировать подсказку — вызывается один раз */
+  initInteractionHint(layer: Container): void {
+    if (this._hintG) return;
+    this._hintG = new Graphics();
+    this._hintG.zIndex = 9999;
+    layer.addChild(this._hintG);
+  }
+
+  /** Выполнить полный рендеринг */
+  render(
+    world: World,
+    opts: RenderSystemOptions
+  ): void {
+    const { time, dt, float, cameraController, gameWorld, dynamic, sceneManager, hintLayer, playerEid } = opts;
+
+    // Lazy-init TextureCacheManager — один раз при первом вызове renderSystem
+    if (!TextureCacheManager.instance.isInit && opts.app) {
+      TextureCacheManager.instance.init(opts.app);
+    }
+
+    // Лог: состояние игрока при рендере (раз в 5 сек)
+    if (playerEid >= 0 && time % 5 < dt) {
+      logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]} ref=${SpriteComp.ref[playerEid]}`);
+    }
+
+    // Слежение камеры за игроком — делегирование CameraController (Этап 4)
+    if (playerEid >= 0 && Position.x.length > playerEid) {
+      cameraController.trackPlayer(Position.x[playerEid], Position.y[playerEid]);
+    }
+
+    // Применяем камеру к world контейнеру — делегирование CameraController
+    if (gameWorld) {
+      cameraController.applyToWorld(gameWorld);
+    }
+
+    // Update sprite positions
+    renderSprites(world);
+
+    // Сортировка по глубине (z-index) на основе RenderLayer + Y
+    if (dynamic) {
+      renderSortSystem(world, dynamic);
+    }
+
+    // Update visibility
+    renderVisibilitySystem(world, playerEid, time);
+
+    // Update flash effects
+    renderFlashSystem(world, time);
+
+    // --- Диспетчеризация через реестры ---
+    const ctx: RenderContext = { time };
+
+    // Игрок
+    this.renderPlayerEcs(world, playerEid, ctx, opts);
+
+    // Враги
+    this.renderByRegistry(
+      world,
+      [SpriteComp, Enemy],
+      StringPool.enemyKinds,
+      enemyRegistry,
+      (eid) => eidToEnemyData(eid, world),
+      time,
+      opts
+    );
+
+    // Снаряды
+    this.renderByRegistry(
+      world,
+      [SpriteComp, Projectile],
+      StringPool.projectileKinds,
+      projectileRegistry,
+      (eid) => eidToProjectileData(eid, world),
+      time
+    );
+
+    // Дропы
+    this.renderByRegistry(
+      world,
+      [SpriteComp, Drop],
+      StringPool.dropKinds,
+      dropRegistry,
+      (eid) => eidToDropData(eid, world),
+      time
+    );
+
+    // NPC
+    renderNpcsEcs(world, ctx, opts.getNpcSig, opts.talkedSig);
+
+    // Объекты окружения (сундуки, пьедесталы, святилища, двери, барьеры, алтари)
+    renderObjectsEcs(world, ctx);
+
+    // Обновить плавающий текст
+    float.update(dt);
+
+    // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
+    this.renderInteractionHint(hintLayer, opts.nearestInteractable, opts.cameraController.cam, time);
+
+    // Очистка уничтоженных спрайтов из dynamic контейнера — делегирование SceneManager (Этап 4)
+    if (dynamic) {
+      sceneManager.cleanupDestroyedSprites(dynamic);
+    }
+    // app.render() вызывается RenderPipeline после render() всех слоёв (Этап 5)
+  }
+
+  /** Рендеринг игрока (ECS) — viewport culling + Graphics render */
+  private renderPlayerEcs(
+    world: World,
+    playerEid: number,
+    ctx: RenderContext,
+    opts: RenderSystemOptions
+  ): void {
+    if (playerEid < 0) return;
+    if (!!Dead[playerEid]) return;
+
+    const playerX = Position.x[playerEid];
+    const playerY = Position.y[playerEid];
+    const ref = getSpriteRef(playerEid);
+
+    logger.debug('render', `playerEid=${playerEid} x=${playerX} y=${playerY} ref=${!!ref} SpriteComp.ref=${SpriteComp.ref[playerEid]} SpriteRegistry.len=${SpriteRegistry.length} camX=${opts.cameraController.cam.x} camY=${opts.cameraController.cam.y} visible=${opts.cameraController.isVisibleInViewport(playerX, playerY, 8)}`);
+
+    if (!ref) {
+      logger.warn('render', `playerEid=${playerEid} ref is null/undefined`);
+      return;
+    }
+
+    if (!opts.cameraController.isVisibleInViewport(playerX, playerY, 8)) {
+      ref.visible = false;
+      return;
+    }
+
+    ref.visible = true;
+    playerRenderer.render(ref as Graphics, playerToRenderData(playerEid, ctx.time), ctx);
+  }
+
+  /** Универсальная диспетчеризация через реестр (DYNAMIC_TEXTURE для врагов) */
+  private renderByRegistry<TKey extends string, TData>(
+    world: World,
+    mask: any[],
+    pool: string[],
+    reg: { get: (key: TKey) => any | undefined },
+    mapper: (eid: number) => TData,
+    time: number,
+    opts?: RenderSystemOptions
+  ): void {
+    const isEnemy = mask.includes(Enemy);
+
+    for (const eid of query(world, mask)) {
+      // Для врагов проверяем dead
+      if (isEnemy && Dead[eid]) continue;
+      // Для дропов проверяем taken
+      if (mask.includes(Drop) && Taken[eid]) continue;
+
+      const kindArr = mask.includes(Enemy) ? Enemy.kind :
+                      mask.includes(Drop) ? Drop.kind :
+                      mask.includes(Projectile) ? Projectile.kind : null;
+      const key = kindArr ? (poolGet(pool, kindArr[eid]) as TKey) : (null as any);
+      const r = reg.get(key);
+      if (!r) continue;
+
+      // DYNAMIC_TEXTURE для врагов
+      if (isEnemy && (r as any).strategy === 'dynamic' && opts) {
+        const ref = getSpriteRef(eid);
+        if (!ref) continue;
+
+        const enemyX = Position.x[eid];
+        const enemyY = Position.y[eid];
+        const radius = Radius.value[eid] || 6;
+
+        // Viewport culling — делегирование CameraController (Этап 4)
+        if (!opts.cameraController.isVisibleInViewport(enemyX, enemyY, radius)) {
+          ref.visible = false;
+          continue;
+        }
+
+        ref.visible = true;
+
+        const data = mapper(eid) as any;
+        const needsUpdate = (r as any).needsTextureUpdate
+          ? (r as any).needsTextureUpdate(data, this.enemyPrevDataMap.get(eid) || null)
+          : true;
+
+        if (needsUpdate) {
+          try {
+            const cache = TextureCacheManager.instance.getOrCreate(eid, radius);
+
+            // Рисуем тело в контейнер
+            (r as any).renderToContainer(cache.container, data, { time });
+
+            // Запекаем в текстуру
+            const baked = TextureCacheManager.instance.bake(eid);
+
+            if (baked) {
+              // Baked Sprite — используем его
+              cache.sprite.x = enemyX;
+              cache.sprite.y = enemyY;
+              cache.sprite.zIndex = 40;
+
+              // Alpha для призраков: (hidden ? 0.25 : 1) * fade
+              cache.sprite.alpha = (data.hidden ? 0.25 : 1) * data.fade;
+
+              // Добавляем в dynamic контейнер если нужно
+              const dyn = opts.dynamic;
+              if (dyn && !dyn.children.includes(cache.sprite as any)) {
+                dyn.addChild(cache.sprite);
+              }
+
+              // Скрываем старый Graphics-спрайт
+              ref.visible = false;
+            } else {
+              // Bake не удался — fallback на Graphics
+              logger.warn('render', `Bake failed for enemy eid=${eid}, fallback to Graphics`);
+              r.render(ref as Graphics, data, { time });
+            }
+          } catch (err) {
+            // Fallback: если TextureCacheManager не инициализирован — рисуем в Graphics
+            logger.warn('render', `DYNAMIC_TEXTURE failed for enemy eid=${eid}, fallback: ${err}`);
+            r.render(ref as Graphics, data, { time });
+          }
+
+          // Сохраняем prevData
+          this.enemyPrevDataMap.set(eid, { ...data });
+        }
+      } else {
+        // Fallback: рисуем в Graphics как раньше
+        const ref = getSpriteRef(eid);
+        if (!ref) continue;
+        r.render(ref as Graphics, mapper(eid), { time });
+      }
+    }
+  }
+
+  /** Отрисовать подсказку взаимодействия над ближайшим интерактивным объектом */
+  private renderInteractionHint(
+    hintLayer: Container,
+    nearestInteractable: InteractableHit | null | undefined,
+    cam: { x: number; y: number },
+    time: number
+  ): void {
+    if (!this._hintG) return;
+
+    if (!nearestInteractable) {
+      this._hintG.visible = false;
+      return;
+    }
+
+    this._hintG.visible = true;
+    // Экраные координаты: gameWorld сдвинут на -cam.x/-cam.y, а hintLayer — нет
+    const hx = nearestInteractable.x - cam.x;
+    const hy = nearestInteractable.y - cam.y - 20 + Math.sin(time * 5) * 1.5;
+
+    this._hintG.clear();
+    // Тёмный фон
+    this._hintG.rect(hx - 6, hy - 6, 12, 10).fill({ color: 0x0a0f16, alpha: 0.85 });
+    // Золотая рамка
+    this._hintG.rect(hx - 6, hy - 6, 12, 10).stroke({ color: 0xc9a24b, width: 1, alpha: 0.8 });
+    // Буква "E" — пиксель-арт стиль
+    this._hintG.poly([
+      hx - 2, hy - 3, hx + 2, hy - 3,
+      hx + 2, hy - 1, hx, hy - 1,
+      hx, hy + 2, hx - 2, hy + 2
+    ]).fill({ color: 0xe8dcc0 });
+  }
+}
+
+/** Синглтон RenderSystem — создаётся один раз и переиспользуется */
+const _renderSystemInstance = new RenderSystem();
+
+/** Выполнить полный рендеринг (обёртка для обратной совместимости) */
 export function renderSystem(
   world: World,
   opts: RenderSystemOptions
 ): void {
-  const { time, dt, float, cameraController, gameWorld, dynamic, sceneManager, hintLayer, playerEid } = opts;
-
-  // Lazy-init TextureCacheManager — один раз при первом вызове renderSystem
-  if (!TextureCacheManager.instance.isInit && opts.app) {
-    TextureCacheManager.instance.init(opts.app);
-  }
-  
-  // Лог: состояние игрока при рендере (раз в 5 сек)
-  if (playerEid >= 0 && time % 5 < dt) {
-    logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]} ref=${SpriteComp.ref[playerEid]}`);
-  }
-
-  // Слежение камеры за игроком — делегирование CameraController (Этап 4)
-  if (playerEid >= 0 && Position.x.length > playerEid) {
-    cameraController.trackPlayer(Position.x[playerEid], Position.y[playerEid]);
-  }
-  
-  // Применяем камеру к world контейнеру — делегирование CameraController
-  if (gameWorld) {
-    cameraController.applyToWorld(gameWorld);
-  }
-  
-  // Update sprite positions
-  renderSprites(world);
-  
-  // Сортировка по глубине (z-index) на основе RenderLayer + Y
-  if (dynamic) {
-    renderSortSystem(world, dynamic);
-  }
-  
-  // Update visibility
-  renderVisibilitySystem(world, playerEid, time);
-  
-  // Update flash effects
-  renderFlashSystem(world, time);
-
-  // --- Диспетчеризация через реестры ---
-  const ctx: RenderContext = { time };
-
-  // Игрок
-  renderPlayerEcs(world, playerEid, ctx, opts);
-  
-  // Враги
-  renderByRegistry(
-    world,
-    [SpriteComp, Enemy],
-    StringPool.enemyKinds,
-    enemyRegistry,
-    (eid) => eidToEnemyData(eid, world),
-    time,
-    opts
-  );
-  
-  // Снаряды
-  renderByRegistry(
-    world,
-    [SpriteComp, Projectile],
-    StringPool.projectileKinds,
-    projectileRegistry,
-    (eid) => eidToProjectileData(eid, world),
-    time
-  );
-  
-  // Дропы
-  renderByRegistry(
-    world,
-    [SpriteComp, Drop],
-    StringPool.dropKinds,
-    dropRegistry,
-    (eid) => eidToDropData(eid, world),
-    time
-  );
-  
-  // NPC
-  renderNpcsEcs(world, ctx, opts.getNpcSig, opts.talkedSig);
-  
-  // Объекты окружения (сундуки, пьедесталы, святилища, двери, барьеры, алтари)
-  renderObjectsEcs(world, ctx);
-  
-  // Обновить плавающий текст
-  float.update(dt);
-  
-  // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
-  renderInteractionHint(hintLayer, opts.nearestInteractable, opts.cameraController.cam, time);
-  
-  // Очистка уничтоженных спрайтов из dynamic контейнера — делегирование SceneManager (Этап 4)
-  if (dynamic) {
-    sceneManager.cleanupDestroyedSprites(dynamic);
-  }
-  // app.render() вызывается RenderPipeline после render() всех слоёв (Этап 5)
+  _renderSystemInstance.render(world, opts);
 }
 
 /** Рендеринг игрока (ECS) — viewport culling + Graphics render */
@@ -444,146 +642,11 @@ function renderObjectsEcs(world: World, ctx: RenderContext): void {
   }
 }
 
-/** Универсальная диспетчеризация через реестр (DYNAMIC_TEXTURE для врагов) */
-function renderByRegistry<TKey extends string, TData>(
-  world: World,
-  mask: any[],
-  pool: string[],
-  reg: { get: (key: TKey) => any | undefined },
-  mapper: (eid: number) => TData,
-  time: number,
-  opts?: RenderSystemOptions
-): void {
-  const isEnemy = mask.includes(Enemy);
-
-  for (const eid of query(world, mask)) {
-    // Для врагов проверяем dead
-    if (isEnemy && Dead[eid]) continue;
-    // Для дропов проверяем taken
-    if (mask.includes(Drop) && Taken[eid]) continue;
-    
-    const kindArr = mask.includes(Enemy) ? Enemy.kind :
-                    mask.includes(Drop) ? Drop.kind :
-                    mask.includes(Projectile) ? Projectile.kind : null;
-    const key = kindArr ? (poolGet(pool, kindArr[eid]) as TKey) : (null as any);
-    const r = reg.get(key);
-    if (!r) continue;
-    
-    // DYNAMIC_TEXTURE для врагов
-    if (isEnemy && (r as any).strategy === 'dynamic' && opts) {
-      const ref = getSpriteRef(eid);
-      if (!ref) continue;
-
-      const enemyX = Position.x[eid];
-      const enemyY = Position.y[eid];
-      const radius = Radius.value[eid] || 6;
-
-      // Viewport culling — делегирование CameraController (Этап 4)
-      if (!opts.cameraController.isVisibleInViewport(enemyX, enemyY, radius)) {
-        ref.visible = false;
-        continue;
-      }
-
-      ref.visible = true;
-
-      const data = mapper(eid) as any;
-      const needsUpdate = (r as any).needsTextureUpdate
-        ? (r as any).needsTextureUpdate(data, enemyPrevDataMap.get(eid) || null)
-        : true;
-
-      if (needsUpdate) {
-        try {
-          const cache = TextureCacheManager.instance.getOrCreate(eid, radius);
-
-          // Рисуем тело в контейнер
-          (r as any).renderToContainer(cache.container, data, { time });
-
-          // Запекаем в текстуру
-          const baked = TextureCacheManager.instance.bake(eid);
-
-          if (baked) {
-            // Baked Sprite — используем его
-            cache.sprite.x = enemyX;
-            cache.sprite.y = enemyY;
-            cache.sprite.zIndex = 40;
-
-            // Alpha для призраков: (hidden ? 0.25 : 1) * fade
-            cache.sprite.alpha = (data.hidden ? 0.25 : 1) * data.fade;
-
-            // Добавляем в dynamic контейнер если нужно
-            const dyn = opts.dynamic;
-            if (dyn && !dyn.children.includes(cache.sprite as any)) {
-              dyn.addChild(cache.sprite);
-            }
-
-            // Скрываем старый Graphics-спрайт
-            ref.visible = false;
-          } else {
-            // Bake не удался — fallback на Graphics
-            logger.warn('render', `Bake failed for enemy eid=${eid}, fallback to Graphics`);
-            r.render(ref as Graphics, data, { time });
-          }
-        } catch (err) {
-          // Fallback: если TextureCacheManager не инициализирован — рисуем в Graphics
-          logger.warn('render', `DYNAMIC_TEXTURE failed for enemy eid=${eid}, fallback: ${err}`);
-          r.render(ref as Graphics, data, { time });
-        }
-
-        // Сохраняем prevData
-        enemyPrevDataMap.set(eid, { ...data });
-      }
-    } else {
-      // Fallback: рисуем в Graphics как раньше
-      const ref = getSpriteRef(eid);
-      if (!ref) continue;
-      r.render(ref as Graphics, mapper(eid), { time });
-    }
-  }
-}
-
 // ============================================================
-// Подсказка взаимодействия (E)
+// Подсказка взаимодействия (E) — обёртка для обратной совместимости
 // ============================================================
 
-/** Persistent Graphics для подсказки взаимодействия */
-let _hintG: Graphics | null = null;
-
-/** Инициализировать подсказку — вызывается один раз */
+/** Инициализировать подсказку — вызывается один раз (обёртка над RenderSystem) */
 export function initInteractionHint(layer: Container): void {
-  if (_hintG) return;
-  _hintG = new Graphics();
-  _hintG.zIndex = 9999;
-  layer.addChild(_hintG);
-}
-
-/** Отрисовать подсказку взаимодействия над ближайшим интерактивным объектом */
-function renderInteractionHint(
-  hintLayer: Container,
-  nearestInteractable: InteractableHit | null | undefined,
-  cam: { x: number; y: number },
-  time: number
-): void {
-  if (!_hintG) return;
-  
-  if (!nearestInteractable) {
-    _hintG.visible = false;
-    return;
-  }
-  
-  _hintG.visible = true;
-  // Экраные координаты: gameWorld сдвинут на -cam.x/-cam.y, а hintLayer — нет
-  const hx = nearestInteractable.x - cam.x;
-  const hy = nearestInteractable.y - cam.y - 20 + Math.sin(time * 5) * 1.5;
-  
-  _hintG.clear();
-  // Тёмный фон
-  _hintG.rect(hx - 6, hy - 6, 12, 10).fill({ color: 0x0a0f16, alpha: 0.85 });
-  // Золотая рамка
-  _hintG.rect(hx - 6, hy - 6, 12, 10).stroke({ color: 0xc9a24b, width: 1, alpha: 0.8 });
-  // Буква "E" — пиксель-арт стиль
-  _hintG.poly([
-    hx - 2, hy - 3, hx + 2, hy - 3,
-    hx + 2, hy - 1, hx, hy - 1,
-    hx, hy + 2, hx - 2, hy + 2
-  ]).fill({ color: 0xe8dcc0 });
+  _renderSystemInstance.initInteractionHint(layer);
 }
