@@ -204,3 +204,84 @@ export interface IRenderer<TData> {
 - `PlayerRenderer` по-прежнему инстанцируется `new PlayerRenderer()` в `renderPlayerEcs()` (не в цикле, один раз на игрока) — это допустимо, но на Этапе 6 можно вынести в синглтон.
 - `FloatTextLayer` теперь единственный источник плавающего текста — дублирование кода устранено.
 - Все мапперы теперь возвращают реальные координаты (`Position.x[eid]`, `Position.y[eid]`) — ранее в `render-system.ts` мапперы возвращали `{ x: 0, y: 0 }`, что могло приводить к некорректной отрисовке при использовании в других контекстах.
+
+---
+
+### Результаты выполнения Этапа 2 (фактический статус)
+
+**Коммит:** `abe502f5` — `refactor(render): этап 2 — синглтоны рендереров, objectRegistry, единый renderObjectsEcs` (9 файлов, +1001/−125)
+
+**Статус:** ⚠️ **Частично.** Выполнена подготовительная часть — синглтоны, `objectRegistry` и единый диспетчер (шаги 2.1–2.5 детального плана `ref_render_02_q_s_02_e.md`). **Ядро идеи этого этапа из плана выше — `TextureCacheManager` и запекание статики в `Sprite` — НЕ реализовано.** `npx tsc --noEmit` — 0 ошибок.
+
+#### Что изменено (фактически)
+
+**1. `src/game/renderers/core/registry.ts`** (+13)
+- Добавлен `getOrThrow(key)` — бросает `Error`, если рендерер не зарегистрирован (явная ошибка вместо тихого `if (!renderer) return`).
+
+**2. `src/game/renderers/objects/objectRegistry.ts`** (новый, 36 строк)
+- 6 stateless-синглтонов: `chestRenderer`, `pedestalRenderer`, `shrineRenderer`, `doorRenderer`, `barrierRenderer`, `altarRenderer`.
+- Единый `objectRegistry` с ключами `chest | pedestal | shrine | door | barrier | altar`.
+- Отклонение от плана в лучшую сторону: вместо `new` внутри `.register()` — отдельные константы-синглтоны, чтобы по-типовые реестры переиспользовали те же экземпляры (нет двойных аллокаций).
+
+**3. `src/game/renderers/player/playerRendererInstance.ts`** (новый, 5 строк)
+- `export const playerRenderer = new PlayerRenderer()` — создаётся один раз при загрузке модуля.
+
+**4. `src/game/renderers/objects/index.ts`**
+- По-типовые реестры (`chestRegistry` и др.) переписаны на переиспользование тех же синглтонов; добавлен реэкспорт `objectRegistry`.
+
+**5. `src/game/renderers/core/types.ts`** (+63)
+- **Только контракт** под будущий гибридный рендеринг: `enum CacheStrategy`, опциональные `renderToContainer?`, `getCacheKey?`, `needsTextureUpdate?`, `strategy?`, интерфейсы `CachedTexture`, `DynamicTextureRef`.
+- Ни одна реализация поверх этого контракта не написана — см. «Не выполнено».
+
+**6. `src/game/ecs/ecs-systems/render-system.ts`** (−6 функций, +диспетчер)
+- Удалены 6 функций `renderChestsEcs` … `renderAltarEcs`.
+- Добавлены `type ObjectQueryConfig`, таблица `OBJECT_QUERIES` (6 записей `components` / `key` / `mapper`) и `renderObjectsEcs(world, ctx)`.
+- В `renderSystem()` — один вызов `renderObjectsEcs(world, ctx)` (стр. 314) вместо шести.
+- `renderPlayerEcs` использует синглтон `playerRenderer` (прямой импорт из `playerRendererInstance`).
+- Убраны неиспользуемые импорты по-типовых реестров; удалены мёртвые импорты компонентов.
+
+#### Результат
+
+- **Аллокации в кадре:** `new *Renderer()` в `render-system.ts` — **0** (было ~7 на каждый кадр).
+- **OCP:** новый тип объекта = 1 строка в `OBJECT_QUERIES` + регистрация рендерера в `objectRegistry`; тело диспетчера не правится.
+- **Дублирование:** 6 однотипных функций свёрнуты в один цикл по таблице.
+
+#### Критерии успешности (проверено в терминале)
+
+| Критерий | Результат |
+|----------|-----------|
+| `grep "new .*Renderer()" render-system.ts` — пусто | ✅ (единственное совпадение — текст комментария) |
+| `objectRegistry` используется диспетчером | ✅ `getOrThrow` в `renderObjectsEcs` (стр. 429) |
+| 6 функций `render<Type>Ecs` удалены | ✅ находится только `renderObjectsEcs` (вызов стр. 314 + определение стр. 427) |
+| `npx tsc --noEmit` | ✅ exit 0 |
+| Деревья/камни/сундуки рисуются через `Sprite` (цель этапа из плана) | ❌ не выполнено |
+| DevTools (Memory): нет утечек текстур при перезаходе на карту | ❌ не проверялось |
+| FPS в деревне вырос/стабилизировался | ❌ не измерялся |
+| Визуальный QA игры | ❌ **не выполнялся** |
+
+#### Не выполнено (остаток Этапа 2 по исходному плану)
+
+1. **`TextureCacheManager.ts` не создан** — `grep -rn "TextureCacheManager" src/` пусто.
+2. **Ни один рендерер не мигрирован на `CacheStrategy`** — `grep "strategy:" src/game/renderers/` пусто; `renderToContainer` встречается только в doc-комментариях `types.ts`.
+3. **`generateTexture` не вызывается в проекте ни разу** → статика по-прежнему рисуется в `Graphics`, ожидаемого снижения нагрузки на CPU нет.
+4. **Ручная проверка и профилирование пропущены.**
+
+#### Открытые проблемы / риски
+
+- 🔴 **РЕГРЕССИЯ: пропали призраки — НЕ исправлено.** Ход диагностики:
+  - основной путь спавна `fogUpdateSystem` → `ensureGhosts` → колбэк в `ecs-game-loop.ts:487` (создаёт `Graphics`, `createEnemyInEcs`, `dynamic.addChild`) выглядит интактным;
+  - `entityFactory.createFogGhost` инициализирует `Enemy.fade = 0`, а `BaseEnemyRenderer` считает альфу как `(hidden ? 0.25 : 1) * e.fade` → при `fade = 0` спрайт **полностью прозрачен**, оживляет его только ИИ (`ai-system` поднимает fade до 0.85 в состояниях `appear`/wander);
+  - обёртка `spawnGhost` (`ecs-game-loop.ts:314`, путь респавна) создаёт сущность и `Sprite`-компонент, **но не создаёт `Graphics` и не добавляет объект в `dynamic`** → `getSpriteRef` вернёт `undefined`, и рендер пропустит такую сущность;
+  - первопричина окончательно не установлена, изменения не вносились.
+- 🟡 По-типовые реестры (`chestRegistry`, `pedestalRegistry`, `shrineRegistry`, `doorRegistry`, `barrierRegistry`, `altarRegistry`) больше не импортируются из `render-system.ts` → кандидаты на удаление на Этапе 7.
+- 🟡 `tsconfig.tsbuildinfo` не в `.gitignore` и постоянно светится в `git status`.
+
+#### Сводка по этапам на текущий момент
+
+| Этап | Статус |
+|------|--------|
+| 1 — Чистка мапперов, FloatText, реестры | ✅ завершён (`a099d47d`) |
+| 2 — Реестры/синглтоны + единый диспетчер | ✅ готов |
+| 2 — `TextureCacheManager` + статика в атлас | ❌ не начат |
+| 3–7 | не начинались |
+| Регрессия: призраки | 🔴 открыта, блокит дальнейший рефакторинг |
