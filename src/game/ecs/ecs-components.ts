@@ -241,9 +241,16 @@ export const ShrineLit = new Uint8Array(10000);
 // 3. ОБЪЕКТНЫЕ РЕЕСТРЫ
 // ============================================================
 
-export const SpriteRegistry: Graphics[] = [];
+/** Спрайты сущностей: Graphics (статика) или Sprite (DYNAMIC_TEXTURE) */
+export const SpriteRegistry: any[] = [];
 export const PhysicsBodyRegistry: any[] = [];
 export const EnemyAIRegistry: any[] = [];
+
+/** Временный Container для запекания DYNAMIC_TEXTURE сущностей (переиспользуется) */
+export const SpriteBakeContainer: any[] = [];
+
+/** Baked Sprite для DYNAMIC_TEXTURE сущностей (вместо Graphics) */
+export const SpriteBakedSprite: any[] = [];
 
 export const Sprite = {
   ref: new Int32Array(10000),

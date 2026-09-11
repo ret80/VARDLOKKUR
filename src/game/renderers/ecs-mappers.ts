@@ -40,7 +40,11 @@ import { ENEMY_STATS } from '../entities';
 // Мапперы для врагов
 // ============================================================
 
-export function eidToEnemyData(eid: number, _world: World): IEnemyData {
+export function eidToEnemyData(
+  eid: number,
+  _world: World,
+  prevData?: IEnemyData | null
+): IEnemyData {
   const kind = poolGet(StringPool.enemyKinds, Enemy.kind[eid]) as EnemyKind;
   const stats = ENEMY_STATS[kind];
   const hp = Health.current[eid];
@@ -70,6 +74,7 @@ export function eidToEnemyData(eid: number, _world: World): IEnemyData {
       : null,
     dropDew: !!Enemy.dropDew[eid],
     nearLitShrine: !!Enemy.nearLitShrine[eid],
+    prevData,
   };
 }
 

@@ -1,6 +1,7 @@
 /* renderers/player/PlayerRenderer.ts — отрисовка игрока (SRP) */
 
-import { Graphics } from "pixi.js";
+import { Container, Graphics } from "pixi.js";
+import { CacheStrategy } from "../core/types";
 import type { Renderer, RenderContext } from "../core/types";
 import type { IPlayerData, IPlayerExtra } from "../../models";
 import { px } from "../core/primitives";
@@ -10,12 +11,62 @@ export interface PlayerRenderData {
   extra: IPlayerExtra;
 }
 
+/** Ключевые поля для детекции изменений визуала */
+interface PlayerVisualSnapshot {
+  dirX: number; dirY: number;
+  moving: boolean;
+  animT: number;
+  swingT: number;
+  hurtT: number;
+  slowT: number;
+  hasSword: boolean;
+  runes: number;
+  aiming: boolean;
+}
+
 export class PlayerRenderer implements Renderer<PlayerRenderData> {
+  readonly strategy: CacheStrategy = CacheStrategy.DYNAMIC_TEXTURE;
+
   render(g: Graphics, data: PlayerRenderData, ctx: RenderContext): void {
     g.clear();
+    this.drawBody(g, data);
+  }
+
+  /**
+   * Отрисовать игрока в Container (для запекания в RenderTexture).
+   */
+  renderToContainer(container: Container, data: PlayerRenderData, ctx: RenderContext): void {
+    container.removeChildren();
+    const g = new Graphics();
+    this.drawBody(g, data);
+    container.addChild(g);
+  }
+
+  /** Нужно ли обновлять текстуру? */
+  needsTextureUpdate(data: PlayerRenderData, prevData: PlayerRenderData | null): boolean {
+    if (!prevData) return true;
+
+    const snap = this.snapshot(data);
+    const prevSnap = this.snapshot(prevData);
+
+    return (
+      snap.dirX !== prevSnap.dirX ||
+      snap.dirY !== prevSnap.dirY ||
+      snap.moving !== prevSnap.moving ||
+      snap.animT !== prevSnap.animT ||
+      snap.swingT !== prevSnap.swingT ||
+      snap.hurtT !== prevSnap.hurtT ||
+      snap.slowT !== prevSnap.slowT ||
+      snap.aiming !== prevSnap.aiming
+    );
+  }
+
+  // ── Рисование тела (общее для render и renderToContainer) ────────
+
+  private drawBody(g: Graphics, data: PlayerRenderData): void {
     const p = data.data;
     const extra = data.extra;
-    const time = ctx.time;
+    const time = (data as any).ctx?.time ?? data.data.animT;
     const bob = p.moving ? Math.sin(p.animT * 12) * 1.2 : Math.sin(time * 2) * 0.4;
     const legSwing = p.moving ? Math.sin(p.animT * 12) * 2.5 : 0;
 
@@ -99,5 +150,23 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
     if (p.slowT > 0) {
       g.circle(0, -4 + bob, 9).stroke({ color: 0x9fe0ee, width: 1, alpha: 0.5 });
     }
+  }
+
+  // ── Утилиты ─────────────────────────────────────────────────────
+
+  private snapshot(data: PlayerRenderData): PlayerVisualSnapshot {
+    const p = data.data;
+    return {
+      dirX: p.dir.x,
+      dirY: p.dir.y,
+      moving: p.moving,
+      animT: p.animT,
+      swingT: p.swingT,
+      hurtT: p.hurtT,
+      slowT: p.slowT,
+      hasSword: data.extra.hasSword,
+      runes: data.extra.runes,
+      aiming: data.extra.aiming,
+    };
   }
 }

@@ -223,6 +223,9 @@ export interface IEnemyData {
   leash: Vec | null;
   dropDew: boolean;
   nearLitShrine: boolean;
+
+  /** Предыдущие данные для детекции изменений (DYNAMIC_TEXTURE) */
+  prevData?: IEnemyData | null;
 }
 
 export interface INpcData {

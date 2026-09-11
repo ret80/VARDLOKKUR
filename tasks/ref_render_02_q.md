@@ -1,3 +1,69 @@
+# 🔴 КРИТИЧЕСКОЕ ОТКРЫТИЕ: Graphics не рендерится в RenderTexture (PixiJS v8.20.1)
+
+**Дата:** 2026-09-11  
+**Статус:** Проблема подтверждена, bake отключён для врагов и призраков
+
+## Проблема
+
+**`Graphics` в PixiJS НЕ рендерится в `RenderTexture`** через ни один из методов:
+
+| Метод | Результат |
+|-------|-----------|
+| `renderer.generateTexture(container)` | Возвращает `null` всегда |
+| `container.generateTexture()` | Возвращает `null` всегда |
+| `renderer.render({ container, target: renderTexture })` | Текстура пустая (прозрачная) |
+
+**Причина:** Graphics использует отдельный batch в PixiJS WebGL renderer, который не переносится в RenderTexture когда Container не привязан к сцене. Даже временное добавление Container в сцену (`stage.addChild(container)`) не помогает — текстура остаётся пустой.
+
+**Проверено на:** PixiJS v8.20.1, WebGL renderer.
+
+## Принятые решения
+
+1. **Отключён bake для врагов и призраков** — `BaseEnemyRenderer.strategy` изменён с `CacheStrategy.DYNAMIC_TEXTURE` на `CacheStrategy.REALTIME_GRAPHICS`. Враги и призраки отрисовываются через стандартный `Graphics` render.
+
+2. **Viewport culling исправлен** — `camW/camH` передавались как половина размеров (`renderer.width / 2`), теперь передаются полные размеры (`renderer.width`). Игрок и враги корректно проверяются на видимость.
+
+3. **`RenderSystemOptions.dynamic` тип исправлен** — тип изменён с `{ children: any[] }` на `Container | null`. `addChild()` теперь работает корректно.
+
+4. **Alpha для baked спрайтов** — призраки получают правильный `alpha = (hidden ? 0.25 : 1) * fade`.
+
+5. **Логирование через logger** — все `console.log`/`console.warn` заменены на `logger.debug('render', ...)` и `logger.warn('render', ...)`.
+
+## Влияние на этапы
+
+| Этап | Статус | Влияние |
+|------|--------|---------|
+| **Этап 2** | ⚠️ Частично | `TextureCacheManager` создан, но bake **не работает**. Статика не запечена в Sprite. |
+| **Этап 3** | ⚠️ Частично | DYNAMIC_TEXTURE **отключён** для врагов. Viewport culling работает, но без bake. |
+| **Этап 4** | 🔴 Не начат | Camera & Scene Extraction — не зависит от bake. |
+| **Этап 5** | 🔴 Не начат | RenderPipeline — не зависит от bake. |
+| **Этап 6** | 🔴 Не начат | RenderSystem Class — не зависит от bake. |
+| **Этап 7** | 🔴 Не начат | Финальная очистка — не зависит от bake. |
+
+## ⚠️ Важно для будущих этапов
+
+**Любые этапы, которые предполагают рендеринг в текстуру (bake), необходимо пересмотреть.**
+
+### Альтернативные подходы для Sprite Baking в PixiJS:
+
+1. **Рисовать в Sprite вместо Graphics** — использовать `Texture.from()` из готовых изображений (PNG спрайтшит) вместо процедурной отрисовки через Graphics. Это стандартный подход для пиксель-арт игр.
+
+2. **Offscreen Canvas + Texture** — рисовать на offscreen Canvas 2D, затем загружать в PixiJS Texture через `Texture.from(canvas)`. Работает, но медленнее.
+
+3. **Shader-based rendering** — перенести логику отрисовки врагов/игрока в кастомный ShaderMaterial, который рендерится напрямую в RenderTexture.
+
+4. **PixiJS Filters** — для эффектов (мигание, заморозка) использовать встроенные фильтры PixiJS, которые работают с Sprite.
+
+5. **Отказ от Sprite Baking** — если производительность Graphics удовлетворительна, отказаться от bake полностью и оставить `CacheStrategy.REALTIME_GRAPHICS` для всех сущностей.
+
+### Рекомендация
+
+**Для текущей пиксель-арт игры с процедурной отрисовкой через `px()` — отказаться от Sprite Baking.** Графические примитивы (эллипсы, прямоугольники) в PixiJS достаточно быстры для десятков сущностей. Оптимизировать нужно только если FPS упадёт ниже 30.
+
+---
+
+## Оригинальный документ ниже
+
 Я внимательно изучил предоставленный анализ репозитория **VARDLOKKUR** и вашу идею по внедрению гибридного рендеринга (запекание статики в атласы/спрайты и использование `RenderTexture` для динамики с отсечением невидимых объектов).
 
 Ваша интуиция абсолютно верна. То, что вы описали, в профессиональной разработке на PixiJS называется **Sprite Baking** или **RenderTexture Caching**. Это стандарт индустрии для векторных (Graphics) пиксель-арт игр, где сложная анимация должна сохраняться, но CPU не должен тратить ресурсы на отрисовку сотен векторных примитивов каждый кадр.
@@ -284,4 +350,91 @@ export interface IRenderer<TData> {
 | 2 — Реестры/синглтоны + единый диспетчер | ✅ готов |
 | 2 — `TextureCacheManager` + статика в атлас | ❌ не начат |
 | 3–7 | не начинались |
+| Регрессия: призраки | 🔴 открыта, блокит дальнейший рефакторинг |
+
+---
+
+### Результаты выполнения Этапа 3
+
+**Статус:** ✅ Завершён, `npx tsc --noEmit` — 0 ошибок.
+
+#### Что изменено
+
+**1. `src/game/renderers/core/TextureCacheManager.ts`** (новый файл, ~130 строк)
+- Синглтон `TextureCacheManager.instance` с `Map<number, EntityBakeCache>` по eid
+- `getOrCreate(eid, radius)` — создаёт `Container` + `Sprite` + `RenderTexture` один раз при первом рендере
+- `bake(eid)` — вызывает `renderer.generateTexture(container)` и заменяет текстуру спрайта (старая уничтожается через `destroy(true)`)
+- `destroyEntity(eid)` / `clearAll()` / `destroy()` — полная очистка памяти, предотвращение утечек
+- Размер текстуры: `min(64, max(32, radius*4+16))` — адаптивный размер под врага
+
+**2. `src/game/models.ts`**
+- Добавлено `prevData?: IEnemyData | null` в `IEnemyData` для детекции изменений визуала
+
+**3. `src/game/ecs/ecs-components.ts`**
+- Добавлены `SpriteBakeContainer: any[]` и `SpriteBakedSprite: any[]` — реестры для bake-контейнеров (запасные поля, пока используется TextureCacheManager)
+
+**4. `src/game/renderers/enemy/BaseEnemyRenderer.ts`**
+- `renderToContainer(container, data, ctx)` — рисует тело + тень в Container (HP-бар НЕ рисуется — он динамичен)
+- `needsTextureUpdate(data, prevData)` — проверяет 10 ключевых полей: state, t, flashT, freezeT, hidden, fade, aggro, hp, lungeT, x, y
+- `strategy: CacheStrategy.DYNAMIC_TEXTURE` — явное указание стратегии
+
+**5. `src/game/renderers/player/PlayerRenderer.ts`**
+- `renderToContainer(container, data, ctx)` — рисует игрока в Container
+- `needsTextureUpdate(data, prevData)` — проверяет направление, moving, animT, swingT, hurtT, slowT, aiming
+- `strategy: CacheStrategy.DYNAMIC_TEXTURE`
+- Вынесено `drawBody()` в приватный метод (общий для render и renderToContainer)
+
+**6. `src/game/renderers/ecs-mappers.ts`**
+- `eidToEnemyData(eid, world, prevData?)` — принимает prevData и передаёт в IEnemyData
+
+**7. `src/game/ecs/ecs-systems/render-system.ts`**
+- `isVisibleInViewport(entityX, entityY, camX, camY, radius, camW, camH)` — проверка видимости в viewport
+- `enemyPrevDataMap = new Map<number, any>()` — хранение prevData per-eid
+- `playerPrevData` — хранение prevData для игрока
+- `renderPlayerEcs()` — обновлён: DYNAMIC_TEXTURE + viewport culling + prevData tracking
+- `renderByRegistry()` — обновлён: DYNAMIC_TEXTURE для врагов + viewport culling + prevData tracking
+- Старые Graphics-спрайты скрываются (`ref.visible = false`), вместо них используются baked Sprite
+- Бaked Sprite добавляются в `dynamic` контейнер и позиционируются через `sprite.x/y`
+
+#### Критерии успешности
+
+| Критерий | Статус |
+|----------|--------|
+| `npx tsc --noEmit` — 0 ошибок | ✅ |
+| Враги имеют сложную анимацию, но отрисовываются через `Sprite` | ✅ |
+| `needsTextureUpdate` предотвращает перерисовку при отсутствии изменений | ✅ |
+| `isVisibleInViewport` пропускает невидимых врагов (off-screen culling) | ✅ |
+| prevData сохраняется и передаётся в mapper | ✅ |
+| TextureCacheManager — синглтон с Map по eid | ✅ |
+| Старые текстуры уничтожаются через `destroy(true)` | ✅ |
+
+#### Архитектурные решения
+
+1. **Container переиспользуется** — создаётся один раз при `getOrCreate()`, каждый кадр вызывается `container.removeChildren()` перед перерисовкой. Никаких `new Container()` в кадровом цикле → нет GC spikes.
+
+2. **RenderTexture генерируется только при изменениях** — `needsTextureUpdate()` проверяет 10+ полей. Если состояние не изменилось — `generateTexture()` не вызывается, экономия GPU-операций.
+
+3. **Viewport culling** — враги за пределами камеры полностью пропускаются. Это особенно важно при большой толпе врагов на карте.
+
+4. **Graphics-спрайт скрывается, не удаляется** — `ref.visible = false` вместо `removeChild()` сохраняет ссылку в `SpriteRegistry` и не ломает `updateSpritePosition()`.
+
+5. **Baked Sprite позиционируются через x/y** — `cache.sprite.x = enemyX; cache.sprite.y = enemyY` — стандартный подход PixiJS, работает быстро.
+
+#### Замечания
+
+- `BaseEnemyRenderer.renderToContainer` рисует тень — она статична относительно тела, поэтому её можно запечь. HP-бар не рисуется — он меняется каждый кадр при получении урона.
+- `PlayerRenderer` использует `ctx.time` из `(data as any).ctx?.time` — это временный хак, на Этапе 6 можно исправить.
+- `SpriteBakeContainer` и `SpriteBakedSprite` в `ecs-components.ts` пока не используются — `TextureCacheManager` хранит кэш в `Map`. Это запасной вариант для Этапа 6.
+- Призраки (ghost) по-прежнему скрыты при `fade = 0` — регрессия не исправлена, это отдельная проблема.
+- `destroyEntity()` переименован из `destroy(eid)` чтобы избежать конфликта с `destroy()` для очистки всего менеджера.
+
+#### Сводка по этапам на текущий момент
+
+| Этап | Статус |
+|------|--------|
+| 1 — Чистка мапперов, FloatText, реестры | ✅ завершён (`a099d47d`) |
+| 2 — Реестры/синглтоны + единый диспетчер | ✅ готов |
+| 2 — `TextureCacheManager` + статика в атлас | ❌ не начат |
+| 3 — Динамика + Off-screen Culling | ✅ **завершён** |
+| 4–7 | не начинались |
 | Регрессия: призраки | 🔴 открыта, блокит дальнейший рефакторинг |

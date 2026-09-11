@@ -1,6 +1,6 @@
 /* render-system.ts — ECS система рендеринга на основе PixiJS (SOLID: DIP) */
 
-import { Application, Container, Graphics } from "pixi.js";
+import { Application, Container, Graphics, Sprite } from "pixi.js";
 import { query, hasComponent, type World } from 'bitecs';
 import type { EnemyKind, DropKind, ProjectileKind } from '../../generators/types';
 import {
@@ -22,6 +22,7 @@ import {
   Flashing,
   Taken,
   SpriteRegistry,
+  Radius,
   poolGet,
   StringPool,
 } from '../ecs-components';
@@ -50,6 +51,31 @@ import type { InteractableHit } from './interaction-system';
 import type { RenderContext } from '../../renderers';
 import { FloatTextLayer } from '../../renderers/float/FloatTextLayer';
 import { logger } from '../../debug/logger';
+import { TextureCacheManager } from '../../renderers/core/TextureCacheManager';
+
+// ============================================================
+// Кэширование DYNAMIC_TEXTURE (Этап 3)
+// ============================================================
+
+/** prevData для каждой сущности — используется для needsTextureUpdate */
+const enemyPrevDataMap = new Map<number, any>();
+let playerPrevData: any = null;
+
+/** Проверка видимости сущности в viewport камеры */
+function isVisibleInViewport(
+  entityX: number,
+  entityY: number,
+  camX: number,
+  camY: number,
+  entityRadius: number,
+  viewportW: number,
+  viewportH: number
+): boolean {
+  const dx = Math.abs(entityX - camX);
+  const dy = Math.abs(entityY - camY);
+  // viewportW/H — это ПОЛНЫЕ размеры viewport (renderer.width/height), а не половина
+  return dx < viewportW && dy < viewportH;
+}
 
 // ============================================================
 // Утилиты рендеринга
@@ -216,7 +242,7 @@ export interface RenderSystemOptions {
   float: FloatTextLayer;
   cam: { x: number; y: number };
   gameWorld: Container | null;
-  dynamic: { children: any[] } | null;
+  dynamic: Container | null;
   hintLayer: Container;
   playerEid: number;
   getNpcSig?: (npcId: string) => string;
@@ -234,6 +260,11 @@ export function renderSystem(
   opts: RenderSystemOptions
 ): void {
   const { time, dt, float, cam, gameWorld, dynamic, hintLayer, playerEid } = opts;
+
+  // Lazy-init TextureCacheManager — один раз при первом вызове renderSystem
+  if (!TextureCacheManager.instance.isInit && opts.app) {
+    TextureCacheManager.instance.init(opts.app);
+  }
   
   // Лог: состояние игрока при рендере (раз в 5 сек)
   if (playerEid >= 0 && time % 5 < dt) {
@@ -271,7 +302,7 @@ export function renderSystem(
   const ctx: RenderContext = { time };
 
   // Игрок
-  renderPlayerEcs(world, playerEid, ctx);
+  renderPlayerEcs(world, playerEid, ctx, opts);
   
   // Враги
   renderByRegistry(
@@ -280,7 +311,8 @@ export function renderSystem(
     StringPool.enemyKinds,
     enemyRegistry,
     (eid) => eidToEnemyData(eid, world),
-    time
+    time,
+    opts
   );
   
   // Снаряды
@@ -333,26 +365,38 @@ export function renderSystem(
   opts.app.render();
 }
 
-/** Рендеринг игрока (ECS) */
-function renderPlayerEcs(world: World, playerEid: number, ctx: RenderContext): void {
-  if (playerEid < 0) {
-    logger.debug('render', `SKIP: playerEid < 0`);
-    return;
-  }
-  if (!!Dead[playerEid]) {
-    logger.debug('render', `SKIP: Dead playerEid=${playerEid}`);
-    return;
-  }
-  
+/** Рендеринг игрока (ECS) — viewport culling + Graphics render */
+function renderPlayerEcs(
+  world: World,
+  playerEid: number,
+  ctx: RenderContext,
+  opts: RenderSystemOptions
+): void {
+  if (playerEid < 0) return;
+  if (!!Dead[playerEid]) return;
+
+  const playerX = Position.x[playerEid];
+  const playerY = Position.y[playerEid];
+
+  // Viewport culling — camW/camH это ПОЛНЫЕ размеры viewport
+  const camW = opts.app.renderer.width;
+  const camH = opts.app.renderer.height;
   const ref = getSpriteRef(playerEid);
+  
+  logger.debug('render', `playerEid=${playerEid} x=${playerX} y=${playerY} ref=${!!ref} SpriteComp.ref=${SpriteComp.ref[playerEid]} SpriteRegistry.len=${SpriteRegistry.length} camX=${opts.cam.x} camY=${opts.cam.y} visible=${isVisibleInViewport(playerX, playerY, opts.cam.x, opts.cam.y, 8, camW, camH)}`);
+  
   if (!ref) {
-    logger.debug('render', `SKIP: ref is null playerEid=${playerEid}`);
+    logger.warn('render', `playerEid=${playerEid} ref is null/undefined`);
     return;
   }
-  
-  const renderer = playerRenderer;
-  const renderData = playerToRenderData(playerEid, ctx.time);
-  renderer.render(ref as Graphics, renderData, ctx);
+
+  if (!isVisibleInViewport(playerX, playerY, opts.cam.x, opts.cam.y, 8, camW, camH)) {
+    ref.visible = false;
+    return;
+  }
+
+  ref.visible = true;
+  playerRenderer.render(ref as Graphics, playerToRenderData(playerEid, ctx.time), ctx);
 }
 
 /** Рендеринг NPC (ECS) */
@@ -431,21 +475,24 @@ function renderObjectsEcs(world: World, ctx: RenderContext): void {
   }
 }
 
-/** Универсальная диспетчеризация через реестр */
+/** Универсальная диспетчеризация через реестр (DYNAMIC_TEXTURE для врагов) */
 function renderByRegistry<TKey extends string, TData>(
   world: World,
   mask: any[],
   pool: string[],
   reg: { get: (key: TKey) => any | undefined },
   mapper: (eid: number) => TData,
-  time: number
+  time: number,
+  opts?: RenderSystemOptions
 ): void {
+  const isEnemy = mask.includes(Enemy);
+  // camW/camH — ПОЛНЫЕ размеры viewport
+  const camW = opts ? opts.app.renderer.width : 500;
+  const camH = opts ? opts.app.renderer.height : 300;
+
   for (const eid of query(world, mask)) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    
     // Для врагов проверяем dead
-    if (mask.includes(Enemy) && Dead[eid]) continue;
+    if (isEnemy && Dead[eid]) continue;
     // Для дропов проверяем taken
     if (mask.includes(Drop) && Taken[eid]) continue;
     
@@ -456,7 +503,75 @@ function renderByRegistry<TKey extends string, TData>(
     const r = reg.get(key);
     if (!r) continue;
     
-    r.render(ref as Graphics, mapper(eid), { time });
+    // DYNAMIC_TEXTURE для врагов
+    if (isEnemy && (r as any).strategy === 'dynamic' && opts) {
+      const ref = getSpriteRef(eid);
+      if (!ref) continue;
+
+      const enemyX = Position.x[eid];
+      const enemyY = Position.y[eid];
+      const radius = Radius.value[eid] || 6;
+
+      // Viewport culling
+      if (!isVisibleInViewport(enemyX, enemyY, opts.cam.x, opts.cam.y, radius, camW, camH)) {
+        ref.visible = false;
+        continue;
+      }
+
+      ref.visible = true;
+
+      const data = mapper(eid) as any;
+      const needsUpdate = (r as any).needsTextureUpdate
+        ? (r as any).needsTextureUpdate(data, enemyPrevDataMap.get(eid) || null)
+        : true;
+
+      if (needsUpdate) {
+        try {
+          const cache = TextureCacheManager.instance.getOrCreate(eid, radius);
+
+          // Рисуем тело в контейнер
+          (r as any).renderToContainer(cache.container, data, { time });
+
+          // Запекаем в текстуру
+          const baked = TextureCacheManager.instance.bake(eid);
+
+          if (baked) {
+            // Baked Sprite — используем его
+            cache.sprite.x = enemyX;
+            cache.sprite.y = enemyY;
+            cache.sprite.zIndex = 40;
+
+            // Alpha для призраков: (hidden ? 0.25 : 1) * fade
+            cache.sprite.alpha = (data.hidden ? 0.25 : 1) * data.fade;
+
+            // Добавляем в dynamic контейнер если нужно
+            const dyn = opts.dynamic;
+            if (dyn && !dyn.children.includes(cache.sprite as any)) {
+              dyn.addChild(cache.sprite);
+            }
+
+            // Скрываем старый Graphics-спрайт
+            ref.visible = false;
+          } else {
+            // Bake не удался — fallback на Graphics
+            logger.warn('render', `Bake failed for enemy eid=${eid}, fallback to Graphics`);
+            r.render(ref as Graphics, data, { time });
+          }
+        } catch (err) {
+          // Fallback: если TextureCacheManager не инициализирован — рисуем в Graphics
+          logger.warn('render', `DYNAMIC_TEXTURE failed for enemy eid=${eid}, fallback: ${err}`);
+          r.render(ref as Graphics, data, { time });
+        }
+
+        // Сохраняем prevData
+        enemyPrevDataMap.set(eid, { ...data });
+      }
+    } else {
+      // Fallback: рисуем в Graphics как раньше
+      const ref = getSpriteRef(eid);
+      if (!ref) continue;
+      r.render(ref as Graphics, mapper(eid), { time });
+    }
   }
 }
 
