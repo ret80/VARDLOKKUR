@@ -5,6 +5,7 @@ export * from "./core/registry";
 export * from "./core/primitives";
 
 export * from "./player/PlayerRenderer";
+export * from "./player/playerRendererInstance";
 export * from "./enemy/index";
 export * from "./npc/index";
 export * from "./drop/index";

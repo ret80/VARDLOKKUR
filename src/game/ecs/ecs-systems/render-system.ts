@@ -5,10 +5,6 @@ import { query, hasComponent, type World } from 'bitecs';
 import type { EnemyKind, DropKind, ProjectileKind } from '../../generators/types';
 import {
   Position,
-  Velocity,
-  Health,
-  Radius,
-  Direction,
   Player,
   Enemy,
   Projectile,
@@ -21,31 +17,22 @@ import {
   Barrier,
   Altar,
   Sprite as SpriteComp,
-  RenderLayer,
   Dead,
   Hidden,
   Flashing,
-  Time,
   Taken,
   SpriteRegistry,
   poolGet,
   StringPool,
-  EnemyState,
-  getEnemyStateName,
 } from '../ecs-components';
 import {
   enemyRegistry,
   npcRegistry,
   dropRegistry,
   projectileRegistry,
-  PlayerRenderer,
-  chestRegistry,
-  pedestalRegistry,
-  shrineRegistry,
-  doorRegistry,
-  barrierRegistry,
-  altarRegistry,
+  objectRegistry,
 } from '../../renderers';
+import { playerRenderer } from '../../renderers/player/playerRendererInstance';
 import {
   eidToEnemyData,
   eidToDropData,
@@ -114,10 +101,6 @@ export function renderSprites(world: World): void {
     ref.x = px[eid];
     ref.y = py[eid];
     
-    // Лог для игрока — только при изменении позиции
-    if (eid === 12 && (oldX !== px[eid] || oldY !== py[eid])) {
-      logger.debug('render', `player pos ${oldX},${oldY} -> ${px[eid]},${py[eid]}`);
-    }
   }
 }
 
@@ -323,13 +306,8 @@ export function renderSystem(
   // NPC
   renderNpcsEcs(world, ctx, opts.getNpcSig, opts.talkedSig);
   
-  // Объекты окружения
-  renderChestsEcs(world, ctx);
-  renderPedestalsEcs(world, ctx);
-  renderShrinesEcs(world, ctx);
-  renderDoorsEcs(world, ctx);
-  renderBarrierEcs(world, ctx);
-  renderAltarEcs(world, ctx);
+  // Объекты окружения (сундуки, пьедесталы, святилища, двери, барьеры, алтари)
+  renderObjectsEcs(world, ctx);
   
   // Обновить плавающий текст
   float.update(dt);
@@ -372,7 +350,7 @@ function renderPlayerEcs(world: World, playerEid: number, ctx: RenderContext): v
     return;
   }
   
-  const renderer = new PlayerRenderer();
+  const renderer = playerRenderer;
   const renderData = playerToRenderData(playerEid, ctx.time);
   renderer.render(ref as Graphics, renderData, ctx);
 }
@@ -413,69 +391,43 @@ function npcHasMark(
   return talkedSig?.get(npcId) !== sig;
 }
 
-/** Рендеринг сундуков (ECS) */
-function renderChestsEcs(world: World, ctx: RenderContext): void {
-  const renderer = chestRegistry.get("default");
-  if (!renderer) return;
-  for (const eid of query(world, [SpriteComp, Chest])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    renderer.render(ref as Graphics, eidToChestData(eid, world), ctx);
-  }
-}
+/** Конфигурация диспетчера объектов окружения */
+type ObjectQueryConfig = {
+  /** ECS-компоненты для query */
+  components: any[];
+  /** Ключ рендерера в objectRegistry */
+  key: string;
+  /** Маппер eid → data */
+  mapper: (eid: number, world: World) => any;
+};
 
-/** Рендеринг пьедесталов (ECS) */
-function renderPedestalsEcs(world: World, ctx: RenderContext): void {
-  const renderer = pedestalRegistry.get("default");
-  if (!renderer) return;
-  for (const eid of query(world, [SpriteComp, Pedestal])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    renderer.render(ref as Graphics, eidToPedestalData(eid, world), ctx);
-  }
-}
+/**
+ * Конфигурация всех статических объектов окружения.
+ * Новый тип объекта = одна строка здесь + регистрация рендерера в objectRegistry
+ * (OCP — тело диспетчера не правится).
+ */
+const OBJECT_QUERIES: ObjectQueryConfig[] = [
+  { components: [SpriteComp, Chest], key: "chest", mapper: eidToChestData },
+  { components: [SpriteComp, Pedestal], key: "pedestal", mapper: eidToPedestalData },
+  { components: [SpriteComp, Shrine], key: "shrine", mapper: eidToShrineData },
+  { components: [SpriteComp, Door], key: "door", mapper: eidToDoorData },
+  { components: [SpriteComp, Barrier], key: "barrier", mapper: eidToBarrierData },
+  { components: [SpriteComp, Altar], key: "altar", mapper: eidToAltarData },
+];
 
-/** Рендеринг святилищ (ECS) */
-function renderShrinesEcs(world: World, ctx: RenderContext): void {
-  const renderer = shrineRegistry.get("default");
-  if (!renderer) return;
-  for (const eid of query(world, [SpriteComp, Shrine])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    renderer.render(ref as Graphics, eidToShrineData(eid, world), ctx);
-  }
-}
-
-/** Рендеринг дверей (ECS) */
-function renderDoorsEcs(world: World, ctx: RenderContext): void {
-  const renderer = doorRegistry.get("default");
-  if (!renderer) return;
-  for (const eid of query(world, [SpriteComp, Door])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    renderer.render(ref as Graphics, eidToDoorData(eid, world), ctx);
-  }
-}
-
-/** Рендеринг барьера (ECS) */
-function renderBarrierEcs(world: World, ctx: RenderContext): void {
-  const renderer = barrierRegistry.get("default");
-  if (!renderer) return;
-  for (const eid of query(world, [SpriteComp, Barrier])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    renderer.render(ref as Graphics, eidToBarrierData(eid, world), ctx);
-  }
-}
-
-/** Рендеринг алтаря (ECS) */
-function renderAltarEcs(world: World, ctx: RenderContext): void {
-  const renderer = altarRegistry.get("default");
-  if (!renderer) return;
-  for (const eid of query(world, [SpriteComp, Altar])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    renderer.render(ref as Graphics, eidToAltarData(eid, world), ctx);
+/**
+ * Единый диспетчер отрисовки объектов окружения.
+ * Рендереры берутся из objectRegistry (синглтоны, создаются один раз при старте),
+ * данные — из ecs-mappers. Никаких new *Renderer() в кадровом цикле.
+ */
+function renderObjectsEcs(world: World, ctx: RenderContext): void {
+  for (const config of OBJECT_QUERIES) {
+    const renderer = objectRegistry.getOrThrow(config.key);
+    for (const eid of query(world, config.components)) {
+      const ref = getSpriteRef(eid);
+      if (!ref) continue;
+      renderer.render(ref as Graphics, config.mapper(eid, world), ctx);
+    }
   }
 }
 
