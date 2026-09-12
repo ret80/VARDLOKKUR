@@ -66,7 +66,6 @@ import {
 } from './ecs-systems/interaction-system';
 import {
   renderSystem,
-  initInteractionHint,
 } from './ecs-systems/render-system';
 import {
   updatePlayerInput,
@@ -229,7 +228,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   const hintLayer = new Container();
   hintLayer.zIndex = 9999;
   app.stage.addChild(hintLayer);
-  initInteractionHint(hintLayer);
 
   // ── RenderPipeline (Этап 5-6) ──
   // Создаём слои пайплайна
@@ -532,7 +530,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         const g = new Graphics();
         g.position.set(x, y);
         const eid = createEnemyInEcs(
-          entityFactory, world, kind as any, x, y, g, _planckWorld,
+          entityFactory, world, kind as any, x, y, _planckWorld,
           Cat.Ghost, Cat.Ghost | Cat.Player | Cat.Projectile
         );
         (g as any).userData = (g as any).userData || {};
@@ -608,13 +606,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       world,
       time: _realT,
       dt: rdt,
-      app,
+      batchers: pipeline.getBatchers()!,
       float: floatLayer,
       cameraController,
-      gameWorld,
-      dynamic,
-      sceneManager,
-      hintLayer,
       playerEid: _playerEid,
       getNpcSig: npcSig,
       talkedSig: talkedSig.value,

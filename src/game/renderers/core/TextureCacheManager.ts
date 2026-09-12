@@ -1,12 +1,9 @@
 /* TextureCacheManager — управление RenderTexture для DYNAMIC_TEXTURE сущностей.
- *
- * Проблема: Graphics не рендерится в RenderTexture через generateTexture() или render().
- * Решение: используем Sprite напрямую (без bake), но кэшируем для предотвращения
- * лишних аллокаций. DYNAMIC_TEXTURE означает, что мы обновляем текстуру только
- * при изменениях, а не каждый кадр.
- *
- * Но если Graphics не рендерится в текстуру — fallback на прямой render().
- */
+
+   @deprecated Этап 4: удалён. Больше не используется.
+   Все рендереры теперь рисуют напрямую через PrimitiveBatcher / SpriteBatcher.
+   DYNAMIC_TEXTURE стратегия больше не применяется.
+*/
 
 import { Application, Container, RenderTexture, Sprite } from "pixi.js";
 import { logger } from '../../debug/logger';

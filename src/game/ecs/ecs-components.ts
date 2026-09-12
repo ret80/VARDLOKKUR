@@ -1,7 +1,6 @@
 /* ecs-components.ts — все компоненты для bitECS */
 
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
-import { Graphics } from 'pixi.js';
 
 // ============================================================
 // 1. SOA КОМПОНЕНТЫ (Structure of Arrays — hot path)
@@ -238,12 +237,47 @@ export const Returning = new Uint8Array(10000);
 export const ShrineLit = new Uint8Array(10000);
 
 // ============================================================
-// 3. ОБЪЕКТНЫЕ РЕЕСТРЫ
+// 3. КОМПОНЕНТ РЕНДЕРИНГА (ECS-независимый)
 // ============================================================
 
-/** Спрайты сущностей: Graphics (статика) или Sprite (DYNAMIC_TEXTURE) */
+/**
+ * Renderable — компонент, помечающий сущность как рендерингуемую.
+ *
+ * Этап 4: заменил старый Sprite + SpriteRegistry (PixiJS-зависимые).
+ * Хранит metadata для рендеринга без привязки к PixiJS.
+ */
+export const Renderable = {
+  /** ID текстуры (для спрайтовых сущностей) или 0 для процедурных */
+  textureId: new Uint32Array(10000),
+  /** Ширина в пикселях */
+  width: new Float32Array(10000),
+  /** Высота в пикселях */
+  height: new Float32Array(10000),
+  /** Z-индекс (слой + y-координата вычисляется в render-system) */
+  zIndex: new Int32Array(10000),
+  /** Видимость: 1 = visible, 0 = hidden */
+  visible: new Uint8Array(10000),
+} as const;
+
+/**
+ * @deprecated Этап 4: заменён на Renderable.
+ * Старый Sprite + SpriteRegistry — PixiJS-зависимые.
+ * Оставлен для обратной совместимости на время миграции.
+ */
+export const Sprite = {
+  ref: new Int32Array(10000),
+} as const;
+
+/**
+ * @deprecated Этап 4: заменён на Renderable.
+ * SpriteRegistry хранил PixiJS Graphics/Sprite объекты.
+ */
 export const SpriteRegistry: any[] = [];
+
+/** Физические тела сущностей (Planck.js bodies) */
 export const PhysicsBodyRegistry: any[] = [];
+
+/** AI данные врагов */
 export const EnemyAIRegistry: any[] = [];
 
 /** Временный Container для запекания DYNAMIC_TEXTURE сущностей (переиспользуется) */
@@ -251,10 +285,6 @@ export const SpriteBakeContainer: any[] = [];
 
 /** Baked Sprite для DYNAMIC_TEXTURE сущностей (вместо Graphics) */
 export const SpriteBakedSprite: any[] = [];
-
-export const Sprite = {
-  ref: new Int32Array(10000),
-} as const;
 
 export const PhysicsBody = {
   body: new Int32Array(10000),

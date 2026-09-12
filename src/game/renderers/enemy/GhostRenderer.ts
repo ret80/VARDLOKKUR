@@ -1,12 +1,12 @@
 /* renderers/enemy/GhostRenderer.ts */
-import { Graphics } from "pixi.js";
+import type { Batchers } from '../../engine/batcher-types.js';
 import type { IEnemyData } from "../../models";
 import type { RenderContext } from "../core/types";
 import { px } from "../core/primitives";
 import { BaseEnemyRenderer } from "./BaseEnemyRenderer";
 
 export class GhostRenderer extends BaseEnemyRenderer {
-  protected drawBody(g: Graphics, data: IEnemyData, ctx: RenderContext): void {
+  protected drawBody(b: Batchers, data: IEnemyData, ctx: RenderContext): void {
     const e = data;
     const time = ctx.time;
     const { a } = ctx as any;
@@ -45,111 +45,111 @@ export class GhostRenderer extends BaseEnemyRenderer {
 
     if (isBack) {
       // НАЗАД
-      px(g, -2, -12 + floatY, 4, 1, HI, a);
-      px(g, -3, -11 + floatY, 6, 1, BODY, a);
-      px(g, -4, -10 + floatY, 8, 2, BODY, a);
-      px(g, -4, -8 + floatY, 8, 7, BODY, a);
-      px(g, -4, -8 + floatY, 1, 7, HI, a);
-      px(g, 3, -8 + floatY, 1, 7, DK, a);
+      px(b, -2, -12 + floatY, 4, 1, HI, a);
+      px(b, -3, -11 + floatY, 6, 1, BODY, a);
+      px(b, -4, -10 + floatY, 8, 2, BODY, a);
+      px(b, -4, -8 + floatY, 8, 7, BODY, a);
+      px(b, -4, -8 + floatY, 1, 7, HI, a);
+      px(b, 3, -8 + floatY, 1, 7, DK, a);
       // "Шов" на затылке вместо лица
-      px(g, -1, -9 + floatY, 2, 3, DK, a);
+      px(b, -1, -9 + floatY, 2, 3, DK, a);
       
       if (aggr) {
-        px(g, -5, -6 + floatY, 1, 2, BODY, a);
-        px(g, 4, -6 + floatY, 1, 2, BODY, a);
+        px(b, -5, -6 + floatY, 1, 2, BODY, a);
+        px(b, 4, -6 + floatY, 1, 2, BODY, a);
       } else {
-        px(g, -5, -6 + floatY, 1, 3, BODY, a);
-        px(g, 4, -6 + floatY, 1, 3, BODY, a);
+        px(b, -5, -6 + floatY, 1, 3, BODY, a);
+        px(b, 4, -6 + floatY, 1, 3, BODY, a);
       }
     } 
     else if (isLeft) {
       // ВЛЕВО
-      px(g, -2, -12 + floatY, 4, 1, HI, a);
-      px(g, -3, -11 + floatY, 6, 1, BODY, a);
-      px(g, -4, -10 + floatY, 8, 2, BODY, a);
-      px(g, -4, -8 + floatY, 8, 7, BODY, a);
-      px(g, -4, -8 + floatY, 1, 7, HI, a);
-      px(g, 3, -8 + floatY, 1, 7, DK, a);
+      px(b, -2, -12 + floatY, 4, 1, HI, a);
+      px(b, -3, -11 + floatY, 6, 1, BODY, a);
+      px(b, -4, -10 + floatY, 8, 2, BODY, a);
+      px(b, -4, -8 + floatY, 8, 7, BODY, a);
+      px(b, -4, -8 + floatY, 1, 7, HI, a);
+      px(b, 3, -8 + floatY, 1, 7, DK, a);
       
       // Лицо и глаза сдвинуты влево
-      px(g, -3, -9 + floatY, 4, 3, FACE, a);
-      px(g, -3, -8 + floatY, 1, 1, eye, a);
-      px(g, -1, -8 + floatY, 1, 1, eye, a);
-      if (aggr) px(g, -2, -7 + floatY, 2, 1, FACE, a);
+      px(b, -3, -9 + floatY, 4, 3, FACE, a);
+      px(b, -3, -8 + floatY, 1, 1, eye, a);
+      px(b, -1, -8 + floatY, 1, 1, eye, a);
+      if (aggr) px(b, -2, -7 + floatY, 2, 1, FACE, a);
 
       if (aggr) {
         // Передняя (левая) рука вытянута
-        px(g, -7, -7 + floatY, 1, 2, BODY, a);
-        px(g, -6, -6 + floatY, 4, 1, BODY, a);
+        px(b, -7, -7 + floatY, 1, 2, BODY, a);
+        px(b, -6, -6 + floatY, 4, 1, BODY, a);
         // Задняя (правая) рука вытянута на фоне тела (темнее)
-        px(g, -4, -6 + floatY, 1, 2, DK, a);
-        px(g, -3, -5 + floatY, 4, 1, DK, a);
+        px(b, -4, -6 + floatY, 1, 2, DK, a);
+        px(b, -3, -5 + floatY, 4, 1, DK, a);
       } else {
-        px(g, -5, -6 + floatY, 1, 3, BODY, a);
-        px(g, 4, -6 + floatY, 1, 3, BODY, a);
+        px(b, -5, -6 + floatY, 1, 3, BODY, a);
+        px(b, 4, -6 + floatY, 1, 3, BODY, a);
       }
     } 
     else if (isRight) {
       // ВПРАВО (зеркально ВЛЕВО)
-      px(g, -2, -12 + floatY, 4, 1, HI, a);
-      px(g, -3, -11 + floatY, 6, 1, BODY, a);
-      px(g, -4, -10 + floatY, 8, 2, BODY, a);
-      px(g, -4, -8 + floatY, 8, 7, BODY, a);
-      px(g, -4, -8 + floatY, 1, 7, HI, a);
-      px(g, 3, -8 + floatY, 1, 7, DK, a);
+      px(b, -2, -12 + floatY, 4, 1, HI, a);
+      px(b, -3, -11 + floatY, 6, 1, BODY, a);
+      px(b, -4, -10 + floatY, 8, 2, BODY, a);
+      px(b, -4, -8 + floatY, 8, 7, BODY, a);
+      px(b, -4, -8 + floatY, 1, 7, HI, a);
+      px(b, 3, -8 + floatY, 1, 7, DK, a);
       
       // Лицо и глаза сдвинуты вправо
-      px(g, -1, -9 + floatY, 4, 3, FACE, a);
-      px(g, 0, -8 + floatY, 1, 1, eye, a);
-      px(g, 2, -8 + floatY, 1, 1, eye, a);
-      if (aggr) px(g, 0, -7 + floatY, 2, 1, FACE, a);
+      px(b, -1, -9 + floatY, 4, 3, FACE, a);
+      px(b, 0, -8 + floatY, 1, 1, eye, a);
+      px(b, 2, -8 + floatY, 1, 1, eye, a);
+      if (aggr) px(b, 0, -7 + floatY, 2, 1, FACE, a);
 
       if (aggr) {
         // Передняя (правая) рука вытянута
-        px(g, 6, -7 + floatY, 1, 2, BODY, a);
-        px(g, 2, -6 + floatY, 4, 1, BODY, a);
+        px(b, 6, -7 + floatY, 1, 2, BODY, a);
+        px(b, 2, -6 + floatY, 4, 1, BODY, a);
         // Задняя (левая) рука вытянута на фоне тела (темнее)
-        px(g, 4, -6 + floatY, 1, 2, DK, a);
-        px(g, 1, -5 + floatY, 4, 1, DK, a);
+        px(b, 4, -6 + floatY, 1, 2, DK, a);
+        px(b, 1, -5 + floatY, 4, 1, DK, a);
       } else {
-        px(g, -5, -6 + floatY, 1, 3, BODY, a);
-        px(g, 4, -6 + floatY, 1, 3, BODY, a);
+        px(b, -5, -6 + floatY, 1, 3, BODY, a);
+        px(b, 4, -6 + floatY, 1, 3, BODY, a);
       }
     } 
     else {
       // ВПЕРЁД (по умолчанию)
-      px(g, -2, -12 + floatY, 4, 1, HI, a);
-      px(g, -3, -11 + floatY, 6, 1, BODY, a);
-      px(g, -4, -10 + floatY, 8, 2, BODY, a);
-      px(g, -4, -8 + floatY, 8, 7, BODY, a);
-      px(g, -4, -8 + floatY, 1, 7, HI, a);
-      px(g, 3, -8 + floatY, 1, 7, DK, a);
+      px(b, -2, -12 + floatY, 4, 1, HI, a);
+      px(b, -3, -11 + floatY, 6, 1, BODY, a);
+      px(b, -4, -10 + floatY, 8, 2, BODY, a);
+      px(b, -4, -8 + floatY, 8, 7, BODY, a);
+      px(b, -4, -8 + floatY, 1, 7, HI, a);
+      px(b, 3, -8 + floatY, 1, 7, DK, a);
       
-      px(g, -2, -9 + floatY, 4, 3, FACE, a);
-      px(g, -2, -8 + floatY, 1, 1, eye, a);
-      px(g, 1, -8 + floatY, 1, 1, eye, a);
-      if (aggr) px(g, -1, -7 + floatY, 2, 1, FACE, a);
+      px(b, -2, -9 + floatY, 4, 3, FACE, a);
+      px(b, -2, -8 + floatY, 1, 1, eye, a);
+      px(b, 1, -8 + floatY, 1, 1, eye, a);
+      if (aggr) px(b, -1, -7 + floatY, 2, 1, FACE, a);
 
       if (aggr) {
         // Обе руки тянутся к зрителю
-        px(g, -6, -7 + floatY, 1, 2, BODY, a);
-        px(g, -5, -6 + floatY, 2, 1, BODY, a);
-        px(g, 5, -7 + floatY, 1, 2, BODY, a);
-        px(g, 3, -6 + floatY, 2, 1, BODY, a);
+        px(b, -6, -7 + floatY, 1, 2, BODY, a);
+        px(b, -5, -6 + floatY, 2, 1, BODY, a);
+        px(b, 5, -7 + floatY, 1, 2, BODY, a);
+        px(b, 3, -6 + floatY, 2, 1, BODY, a);
       } else {
-        px(g, -5, -6 + floatY, 1, 3, BODY, a);
-        px(g, 4, -6 + floatY, 1, 3, BODY, a);
+        px(b, -5, -6 + floatY, 1, 3, BODY, a);
+        px(b, 4, -6 + floatY, 1, 3, BODY, a);
       }
     }
 
     // --- ОТРИСОВКА БАХРОМЫ (с независимым синусоидальным покачиванием по X) ---
     // Левый сегмент
-    px(g, -4 + swayL, -1 + floatY, 2, 2, DK, a);
+    px(b, -4 + swayL, -1 + floatY, 2, 2, DK, a);
     // Центральный сегмент (самый длинный)
-    px(g, -1 + swayC, -1 + floatY, 2, 3, DK, a);
+    px(b, -1 + swayC, -1 + floatY, 2, 3, DK, a);
     // Правый сегмент
-    px(g, 2 + swayR, -1 + floatY, 2, 2, DK, a);
+    px(b, 2 + swayR, -1 + floatY, 2, 2, DK, a);
     // Нижний блик (с прозрачностью)
-    px(g, -1 + swayB, 2 + floatY, 2, 1, DK, a * 0.7);
+    px(b, -1 + swayB, 2 + floatY, 2, 1, DK, a * 0.7);
   }
 }

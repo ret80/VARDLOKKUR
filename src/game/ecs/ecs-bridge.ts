@@ -1,20 +1,20 @@
 /* ecs-bridge.ts — мост между старым кодом и ECS
 
    Фабрика (EntityFactory) создаёт чистые ECS-сущности без графики и физики.
-   Этот модуль координирует: вызов Фабрики → навешивание Sprite → навешивание PhysicsBody.
+   Этот модуль координирует: вызов Фабрики → навешивание Renderable → навешивание PhysicsBody.
+
+   Этап 4: удалена зависимость от PixiJS (Graphics, SpriteRegistry).
 */
 
 import { type World, query } from 'bitecs';
 import {
   Position,
-  Sprite,
-  SpriteRegistry,
+  Renderable,
   PhysicsBodyRegistry,
   PhysicsBody,
 } from './ecs-components';
 import { type EntityFactory } from './entity-factory';
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
-import type { Graphics } from 'pixi.js';
 import type { PlanckWorld } from '../physics/planck-world';
 import type { Cat } from '../physics/planck-world';
 import { createBodyForEntity } from './ecs-systems';
@@ -25,34 +25,17 @@ import { ENEMY_STATS } from '../entities';
 // ============================================================
 
 /**
- * Уничтожить все спрайты и физические тела в мире.
+ * Уничтожить все физические тела в мире.
  * Вызывается ПЕРЕД clearWorld() — чтобы компоненты ещё были валидными.
  *
- * @param world    — ECS мир, сущности которого нужно очистить
- * @param pw       — PlanckWorld для уничтожения физических тел
- * @param preservePlayerG — спрайт игрока, который НЕ нужно уничтожать
+ * Этап 4: удалена логика уничтожения PixiJS спрайтов.
+ *
+ * @param world  — ECS мир, сущности которого нужно очистить
+ * @param pw     — PlanckWorld для уничтожения физических тел
  */
-export function teardownWorld(
-  world: World,
-  pw: PlanckWorld,
-  preservePlayerG?: Graphics
-): void {
-  // 1. Уничтожить спрайты и физические тела всех сущностей
+export function teardownWorld(world: World, pw: PlanckWorld): void {
+  // 1. Уничтожить физические тела всех сущностей
   for (const eid of query(world, [PhysicsBody])) {
-    // Уничтожить спрайт
-    const spriteIdx = Sprite.ref[eid];
-    if (spriteIdx > 0 && spriteIdx <= SpriteRegistry.length) {
-      const spriteRef = SpriteRegistry[spriteIdx - 1];
-      if (spriteRef && spriteRef !== preservePlayerG) {
-        if (spriteRef.parent) {
-          spriteRef.parent.removeChild(spriteRef);
-        }
-        spriteRef.destroy({ texture: true });
-      }
-    }
-    Sprite.ref[eid] = 0;
-
-    // Уничтожить физическое тело
     const pbIdx = PhysicsBody.body[eid];
     if (pbIdx > 0 && pbIdx <= PhysicsBodyRegistry.length) {
       const body = PhysicsBodyRegistry[pbIdx - 1];
@@ -65,22 +48,7 @@ export function teardownWorld(
     PhysicsBody.body[eid] = 0;
   }
 
-  // 2. Уничтожить спрайты сущностей БЕЗ физического тела (NPC, сундуки, пьедесталы и т.д.)
-  for (const eid of query(world, [Sprite])) {
-    const spriteIdx = Sprite.ref[eid];
-    if (spriteIdx > 0 && spriteIdx <= SpriteRegistry.length) {
-      const spriteRef = SpriteRegistry[spriteIdx - 1];
-      if (spriteRef && spriteRef !== preservePlayerG) {
-        if (spriteRef.parent) {
-          spriteRef.parent.removeChild(spriteRef);
-        }
-        spriteRef.destroy({ texture: true });
-      }
-    }
-    Sprite.ref[eid] = 0;
-  }
-
-  // 3. Очистить PlanckWorld (tile bodies)
+  // 2. Очистить PlanckWorld (tile bodies)
   try { pw.clear(); } catch {}
 }
 
@@ -94,15 +62,12 @@ export function createPlayerInEcs(
   world: World,
   x: number,
   y: number,
-  spriteRef: Graphics,
   planckWorld: PlanckWorld,
   category: number,
   mask: number
 ): number {
   const eid = factory.createPlayer(x, y);
-  addComponent(world, eid, Sprite);
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  addRenderable(world, eid, 0, 8, 12);
   // Create physics body
   createBodyForEntity(planckWorld, world, eid, 5, category, mask);
   return eid;
@@ -115,16 +80,13 @@ export function createEnemyInEcs(
   kind: EnemyKind,
   x: number,
   y: number,
-  spriteRef: Graphics,
   planckWorld: PlanckWorld,
   category: number,
   mask: number
 ): number {
   const stats = ENEMY_STATS[kind];
   const eid = factory.createEnemy(kind, x, y, stats.hp, stats.r, stats.speed, stats.dmg);
-  addComponent(world, eid, Sprite);
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  addRenderable(world, eid, 0, stats.r * 2, stats.r * 2);
   // Create physics body
   createBodyForEntity(planckWorld, world, eid, stats.r, category, mask);
   return eid;
@@ -137,11 +99,10 @@ export function createNpcInEcs(
   id: string,
   name: string,
   x: number,
-  y: number,
-  spriteRef: Graphics
+  y: number
 ): number {
   const eid = factory.createStaticEntity(10);
-  addNpcComponents(world, eid, id, name, x, y, spriteRef);
+  addNpcComponents(world, eid, id, name, x, y);
   return eid;
 }
 
@@ -151,11 +112,10 @@ export function createChestInEcs(
   world: World,
   x: number,
   y: number,
-  item: string,
-  spriteRef: Graphics
+  item: string
 ): number {
   const eid = factory.createStaticEntity(20);
-  addChestComponents(world, eid, item, x, y, spriteRef);
+  addChestComponents(world, eid, item, x, y);
   return eid;
 }
 
@@ -166,11 +126,10 @@ export function createPedestalInEcs(
   id: string,
   x: number,
   y: number,
-  guardsLeft: number,
-  spriteRef: Graphics
+  guardsLeft: number
 ): number {
   const eid = factory.createStaticEntity(10);
-  addPedestalComponents(world, eid, id, x, y, guardsLeft, spriteRef);
+  addPedestalComponents(world, eid, id, x, y, guardsLeft);
   return eid;
 }
 
@@ -179,11 +138,10 @@ export function createShrineInEcs(
   factory: EntityFactory,
   world: World,
   x: number,
-  y: number,
-  spriteRef: Graphics
+  y: number
 ): number {
   const eid = factory.createStaticEntity(10);
-  addShrineComponents(world, eid, x, y, spriteRef);
+  addShrineComponents(world, eid, x, y);
   return eid;
 }
 
@@ -193,11 +151,10 @@ export function createDoorInEcs(
   world: World,
   x: number,
   y: number,
-  locked: boolean,
-  spriteRef: Graphics
+  locked: boolean
 ): number {
   const eid = factory.createStaticEntity(15);
-  addDoorComponents(world, eid, x, y, locked, spriteRef);
+  addDoorComponents(world, eid, x, y, locked);
   return eid;
 }
 
@@ -207,11 +164,10 @@ export function createBarrierInEcs(
   world: World,
   x: number,
   y: number,
-  active: boolean,
-  spriteRef: Graphics
+  active: boolean
 ): number {
   const eid = factory.createStaticEntity(10);
-  addBarrierComponents(world, eid, x, y, active, spriteRef);
+  addBarrierComponents(world, eid, x, y, active);
   return eid;
 }
 
@@ -220,11 +176,10 @@ export function createAltarInEcs(
   factory: EntityFactory,
   world: World,
   x: number,
-  y: number,
-  spriteRef: Graphics
+  y: number
 ): number {
   const eid = factory.createStaticEntity(10);
-  addAltarComponents(world, eid, x, y, spriteRef);
+  addAltarComponents(world, eid, x, y);
   return eid;
 }
 
@@ -238,13 +193,10 @@ export function createProjectileInEcs(
   vx: number,
   vy: number,
   dmg: number,
-  life: number,
-  spriteRef: Graphics
+  life: number
 ): number {
   const eid = factory.createProjectile(kind, x, y, vx, vy, dmg, life);
-  addComponent(world, eid, Sprite);
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  addRenderable(world, eid, 0, 6, 6);
   return eid;
 }
 
@@ -254,13 +206,10 @@ export function createDropInEcs(
   world: World,
   kind: DropKind,
   x: number,
-  y: number,
-  spriteRef: Graphics
+  y: number
 ): number {
   const eid = factory.createDrop(kind, x, y);
-  addComponent(world, eid, Sprite);
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  addRenderable(world, eid, 0, 6, 6);
   return eid;
 }
 
@@ -282,78 +231,102 @@ import {
   RenderLayer,
 } from './ecs-components';
 
-function addNpcComponents(world: World, eid: number, id: string, name: string, x: number, y: number, spriteRef: Graphics): void {
-  addComponents(world, eid, NPC, Sprite);
+/** Добавить компонент Renderable с заданными параметрами */
+function addRenderable(
+  world: World,
+  eid: number,
+  textureId: number,
+  width: number,
+  height: number
+): void {
+  addComponent(world, eid, Renderable);
+  Renderable.textureId[eid] = textureId;
+  Renderable.width[eid] = width;
+  Renderable.height[eid] = height;
+  Renderable.visible[eid] = 1;
+  Position.x[eid] = 0;
+  Position.y[eid] = 0;
+}
+
+function addNpcComponents(world: World, eid: number, id: string, name: string, x: number, y: number): void {
+  addComponents(world, eid, NPC, Renderable);
   NPC.id[eid] = poolAdd(StringPool.npcIds, id);
   NPC.name[eid] = poolAdd(StringPool.npcNames, name);
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  Renderable.textureId[eid] = 0;
+  Renderable.width[eid] = 8;
+  Renderable.height[eid] = 12;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
-function addChestComponents(world: World, eid: number, item: string, x: number, y: number, spriteRef: Graphics): void {
+function addChestComponents(world: World, eid: number, item: string, x: number, y: number): void {
   addComponents(world, eid, Chest);
-  addComponent(world, eid, Sprite);
+  addComponent(world, eid, Renderable);
   Chest.item[eid] = poolAdd(StringPool.chestItems, item);
   Chest.opened[eid] = 0;
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  Renderable.textureId[eid] = 0;
+  Renderable.width[eid] = 12;
+  Renderable.height[eid] = 9;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
-function addPedestalComponents(world: World, eid: number, id: string, x: number, y: number, guardsLeft: number, spriteRef: Graphics): void {
+function addPedestalComponents(world: World, eid: number, id: string, x: number, y: number, guardsLeft: number): void {
   addComponents(world, eid, Pedestal);
-  addComponent(world, eid, Sprite);
+  addComponent(world, eid, Renderable);
   Pedestal.id[eid] = poolAdd(StringPool.pedestalIds, id);
   Pedestal.taken[eid] = 0;
   Pedestal.guardsLeft[eid] = guardsLeft;
   Pedestal.guardsSpawned[eid] = 0;
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  Renderable.textureId[eid] = 0;
+  Renderable.width[eid] = 10;
+  Renderable.height[eid] = 14;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
-function addShrineComponents(world: World, eid: number, x: number, y: number, spriteRef: Graphics): void {
+function addShrineComponents(world: World, eid: number, x: number, y: number): void {
   addComponents(world, eid, Shrine, Position);
-  addComponent(world, eid, Sprite);
+  addComponent(world, eid, Renderable);
   Shrine.lit[eid] = 0;
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  Renderable.textureId[eid] = 0;
+  Renderable.width[eid] = 10;
+  Renderable.height[eid] = 14;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
-function addDoorComponents(world: World, eid: number, x: number, y: number, locked: boolean, spriteRef: Graphics): void {
+function addDoorComponents(world: World, eid: number, x: number, y: number, locked: boolean): void {
   addComponents(world, eid, Door);
-  addComponent(world, eid, Sprite);
+  addComponent(world, eid, Renderable);
   Door.open[eid] = 0;
   Door.locked[eid] = locked ? 1 : 0;
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  Renderable.textureId[eid] = 0;
+  Renderable.width[eid] = 10;
+  Renderable.height[eid] = 16;
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
-function addBarrierComponents(world: World, eid: number, x: number, y: number, active: boolean, spriteRef: Graphics): void {
+function addBarrierComponents(world: World, eid: number, x: number, y: number, active: boolean): void {
   addComponents(world, eid, Barrier);
-  addComponent(world, eid, Sprite);
+  addComponent(world, eid, Renderable);
   Barrier.active[eid] = active ? 1 : 0;
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  Renderable.textureId[eid] = 0;
+  Renderable.width[eid] = 16;
+  Renderable.height[eid] = 16;
   RenderLayer.value[eid] = 30; // barrier — средний слой
   Position.x[eid] = x;
   Position.y[eid] = y;
 }
 
-function addAltarComponents(world: World, eid: number, x: number, y: number, spriteRef: Graphics): void {
+function addAltarComponents(world: World, eid: number, x: number, y: number): void {
   addComponents(world, eid, Altar);
-  addComponent(world, eid, Sprite);
+  addComponent(world, eid, Renderable);
   Altar.runes[eid] = 0;
-  SpriteRegistry.push(spriteRef);
-  Sprite.ref[eid] = SpriteRegistry.length;
+  Renderable.textureId[eid] = 0;
+  Renderable.width[eid] = 8;
+  Renderable.height[eid] = 15;
   RenderLayer.value[eid] = 30; // altar — средний слой
   Position.x[eid] = x;
   Position.y[eid] = y;

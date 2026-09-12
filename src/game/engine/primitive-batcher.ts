@@ -164,37 +164,121 @@ export class PrimitiveBatcher {
   }
 
   /**
-   * Контур круга — замена ring(g, x, y, r, c, w, a).
-   *
-   * Два концентрических круга с противоположной winding order.
-   *
-   * @param cx, cy — центр
-   * @param radius — внешний радиус
-   * @param width — ширина обводки
-   * @param color — цвет (hex)
-   * @param alpha — альфа
-   */
-  pushCircleStroke(cx: number, cy: number, radius: number, width: number, color: number, alpha = 1): void {
-    const [r, g, b, a] = colorToRgb(color, alpha);
-    const segments = 16;
-    const innerR = Math.max(radius - width, 0);
+    * Контур круга — замена ring(g, x, y, r, c, w, a).
+    *
+    * Два концентрических круга с противоположной winding order.
+    *
+    * @param cx, cy — центр
+    * @param radius — внешний радиус
+    * @param width — ширина обводки
+    * @param color — цвет (hex)
+    * @param alpha — альфа
+    */
+   pushCircleStroke(cx: number, cy: number, radius: number, width: number, color: number, alpha = 1): void {
+     const [r, g, b, a] = colorToRgb(color, alpha);
+     const segments = 16;
+     const innerR = Math.max(radius - width, 0);
 
-    // Внешний круг (по часовой)
-    for (let i = 0; i <= segments; i++) {
-      const angle = (i / segments) * Math.PI * 2;
-      const x = cx + Math.cos(angle) * radius;
-      const y = cy + Math.sin(angle) * radius;
-      this.addVertex(x, y, r, g, b, a);
-    }
+     // Внешний круг (по часовой)
+     for (let i = 0; i <= segments; i++) {
+       const angle = (i / segments) * Math.PI * 2;
+       const x = cx + Math.cos(angle) * radius;
+       const y = cy + Math.sin(angle) * radius;
+       this.addVertex(x, y, r, g, b, a);
+     }
 
-    // Внутренний круг (против часовой — reverse winding)
-    for (let i = segments; i >= 0; i--) {
-      const angle = (i / segments) * Math.PI * 2;
-      const x = cx + Math.cos(angle) * innerR;
-      const y = cy + Math.sin(angle) * innerR;
-      this.addVertex(x, y, r, g, b, a);
-    }
-  }
+     // Внутренний круг (против часовой — reverse winding)
+     for (let i = segments; i >= 0; i--) {
+       const angle = (i / segments) * Math.PI * 2;
+       const x = cx + Math.cos(angle) * innerR;
+       const y = cy + Math.sin(angle) * innerR;
+       this.addVertex(x, y, r, g, b, a);
+     }
+   }
+
+   // ── Линии и полигоны (Этап 4) ──────────────────────────────
+
+   /**
+    * Линия с обводкой — замена g.moveTo().lineTo().stroke().
+    * Рисуется как тонкий прямоугольник.
+    *
+    * @param x1, y1 — начало
+    * @param x2, y2 — конец
+    * @param color — цвет (hex)
+    * @param alpha — альфа
+    * @param width — ширина линии (по умолчанию 1)
+    */
+   pushLine(x1: number, y1: number, x2: number, y2: number, color: number, alpha = 1, width = 1): void {
+     const [r, g, b, a] = colorToRgb(color, alpha);
+     const dx = x2 - x1;
+     const dy = y2 - y1;
+     const len = Math.sqrt(dx * dx + dy * dy);
+     if (len < 0.001) return;
+
+     // Перпендикуляр для ширины линии
+     const nx = (-dy / len) * (width / 2);
+     const ny = (dx / len) * (width / 2);
+
+     this.addQuad(
+       x1 + nx, y1 + ny,
+       x1 - nx, y1 - ny,
+       x2 - nx, y2 - ny,
+       x2 + nx, y2 + ny,
+       r, g, b, a
+     );
+   }
+
+   /**
+    * Заполненный треугольник — замена g.moveTo().lineTo().lineTo().closePath().fill().
+    *
+    * @param x1, y1 — вершина 1
+    * @param x2, y2 — вершина 2
+    * @param x3, y3 — вершина 3
+    * @param color — цвет (hex)
+    * @param alpha — альфа
+    */
+   pushTriangle(x1: number, y1: number, x2: number, y2: number, x3: number, y3: number, color: number, alpha = 1): void {
+     const [r, g, b, a] = colorToRgb(color, alpha);
+     this.addVertex(x1, y1, r, g, b, a);
+     this.addVertex(x2, y2, r, g, b, a);
+     this.addVertex(x3, y3, r, g, b, a);
+   }
+
+   /**
+    * Дуга с обводкой — замена g.arc(...).stroke().
+    *
+    * @param cx, cy — центр
+    * @param radius — радиус
+    * @param startAngle — начальный угол (радианы)
+    * @param endAngle — конечный угол (радианы)
+    * @param color — цвет (hex)
+    * @param width — ширина обводки
+    * @param alpha — альфа
+    * @param segments — количество сегментов (по умолчанию 12)
+    */
+   pushArc(cx: number, cy: number, radius: number, startAngle: number, endAngle: number, color: number, width = 1, alpha = 1, segments = 12): void {
+     const [r, g, b, a] = colorToRgb(color, alpha);
+     const innerR = Math.max(radius - width, 0);
+
+     const delta = endAngle - startAngle;
+     const segCount = Math.max(2, Math.round(segments * Math.abs(delta) / (Math.PI * 2)));
+
+     // Внешняя дуга (по часовой)
+     for (let i = 0; i <= segCount; i++) {
+       const angle = startAngle + (i / segCount) * delta;
+       const x = cx + Math.cos(angle) * radius;
+       const y = cy + Math.sin(angle) * radius;
+       this.addVertex(x, y, r, g, b, a);
+     }
+
+     // Внутренняя дуга (против часовой)
+     for (let i = segCount; i >= 0; i--) {
+       const angle = startAngle + (i / segCount) * delta;
+       const x = cx + Math.cos(angle) * innerR;
+       const y = cy + Math.sin(angle) * innerR;
+       this.addVertex(x, y, r, g, b, a);
+     }
+   }
 
   // ── Flush / Clear ───────────────────────────────────────────
 

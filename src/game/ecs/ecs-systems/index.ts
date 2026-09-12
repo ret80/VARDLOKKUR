@@ -69,13 +69,7 @@ export {
 } from './interaction-system';
 
 export {
-  updateSpritePosition,
-  renderSprites,
-  renderVisibilitySystem,
-  renderFlashSystem,
   renderSystem,
-  initInteractionHint,
   ENTITY_LAYER,
-  renderSortSystem,
   type RenderSystemOptions,
 } from './render-system';

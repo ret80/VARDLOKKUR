@@ -72,7 +72,6 @@ import {
   fullHealEntityEcs,
   increaseMaxHpEcs,
 } from './ecs/ecs-components';
-import { updateSpritePosition } from './ecs/ecs-systems/render-system';
 import { query, removeEntity } from 'bitecs';
 import { ViewportController } from './engine/viewport-controller';
 import { SceneManager } from './engine/scene-manager';
@@ -195,7 +194,7 @@ export class Engine {
     const mask = getEnemyMask(enemyKind);
     const eid = createEnemyInEcs(
       this.mapLoader.entityFactory,
-      this.ecsWorld, enemyKind, x, y, g, this.ecsMapLoader!.planckWorld,
+      this.ecsWorld, enemyKind, x, y, this.ecsMapLoader!.planckWorld,
       category, mask
     );
     this.scene.dynamic.addChild(g);
@@ -593,7 +592,7 @@ export class Engine {
         const mask = getEnemyMask(kind as any);
         const eid = createEnemyInEcs(
           this.mapLoader.entityFactory,
-          this.ecsWorld!, kind as any, x, y, g, this.ecsMapLoader.planckWorld,
+          this.ecsWorld!, kind as any, x, y, this.ecsMapLoader.planckWorld,
           category, mask
         );
         this.scene.dynamic.addChild(g);

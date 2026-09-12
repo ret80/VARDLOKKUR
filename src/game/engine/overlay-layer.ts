@@ -5,7 +5,6 @@ import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import type { CameraPosition } from './camera-controller';
 import type { InteractableHit } from '../ecs/ecs-systems/interaction-system';
-import { initInteractionHint } from '../ecs/ecs-systems/render-system';
 
 /**
  * OverlayLayer — слой оверлеев (screen-space UI).
@@ -27,9 +26,7 @@ export class OverlayLayer implements IRenderLayer {
   }
 
   init(_app: Application, _ctx: RenderLayerContext): void {
-    if (this.hintLayer) {
-      initInteractionHint(this.hintLayer);
-    }
+    // Stage 4: initInteractionHint removed - hint now drawn directly in render-system
   }
 
   update(_ctx: RenderLayerContext): void {

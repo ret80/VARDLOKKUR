@@ -1,7 +1,14 @@
-/* render-system.ts — ECS система рендеринга на основе PixiJS (SOLID: DIP) */
+/* render-system.ts — ECS система рендеринга (SOLID: DIP)
 
-import { Application, Container, Graphics } from "pixi.js";
-import { query, hasComponent, type World } from 'bitecs';
+   Этап 4: полностью удалена зависимость от PixiJS.
+   - Удалены Application, Container, Graphics импорты
+   - Sprite + SpriteRegistry заменены на Renderable
+   - DYNAMIC_TEXTURE / TextureCacheManager удалены
+   - render() принимает Batchers вместо Graphics
+   - renderInteractionHint рисует через PrimitiveBatcher
+*/
+
+import { query, type World } from 'bitecs';
 import {
   Position,
   Player,
@@ -15,12 +22,10 @@ import {
   Door,
   Barrier,
   Altar,
-  Sprite as SpriteComp,
+  Renderable,
   Dead,
   Hidden,
-  Flashing,
   Taken,
-  SpriteRegistry,
   Radius,
   poolGet,
   StringPool,
@@ -48,68 +53,10 @@ import {
 } from '../../renderers/ecs-mappers';
 import type { InteractableHit } from './interaction-system';
 import type { RenderContext } from '../../renderers';
+import type { Batchers } from '../../engine/batcher-types.js';
 import { FloatTextLayer } from '../../renderers/float/FloatTextLayer';
 import { logger } from '../../debug/logger';
-import { TextureCacheManager } from '../../renderers/core/TextureCacheManager';
 import { CameraController } from '../../engine/camera-controller';
-
-// ============================================================
-// Утилиты рендеринга (module-level private)
-// ============================================================
-
-/** Получить PixiJS объект из Sprite registry */
-function getSpriteRef(eid: number): any {
-  const idx = SpriteComp.ref[eid];
-  if (idx <= 0 || idx > SpriteRegistry.length) {
-    return undefined;
-  }
-  const s = SpriteRegistry[idx - 1];
-  if (!s) return undefined;
-  if ((s as any).destroyed) return undefined;
-  return s;
-}
-
-/** Конфигурация диспетчера объектов окружения */
-type ObjectQueryConfig = {
-  components: any[];
-  key: string;
-  mapper: (eid: number, world: World) => any;
-};
-
-/** Обновить позицию спрайта из Position компонента */
-export function updateSpritePosition(world: World, eid: number): void {
-  const { x: px, y: py } = Position;
-  
-  if (eid < 0 || eid >= SpriteComp.ref.length) return;
-  const ref = getSpriteRef(eid);
-  if (!ref) return;
-  
-  ref.x = px[eid];
-  ref.y = py[eid];
-}
-
-/** Обновить все спрайты */
-export function renderSprites(world: World): void {
-  const { x: px, y: py } = Position;
-
-  const matched = [...query(world, [Position, SpriteComp])];
-  if (matched.length > 0) {
-    // console.log('[renderSprites] query found', matched.length, 'entities with [Position, Sprite]');
-  }
-
-  for (const eid of matched) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    // Спрайт мог быть уничтожен (смерть врага) — проверяем destroyed флаг PixiJS
-    if ((ref as any).destroyed) continue;
-    
-    const oldX = ref.x;
-    const oldY = ref.y;
-    ref.x = px[eid];
-    ref.y = py[eid];
-    
-  }
-}
 
 // ============================================================
 // Сортировка по глубине (z-index) на основе LAYER + y
@@ -129,89 +76,6 @@ export const ENTITY_LAYER: Record<string, number> = {
   Player: 40,
 };
 
-/** Выполнить сортировка всех спрайтов в dynamic контейнере */
-export function renderSortSystem(
-  world: World,
-  dynamic: { children: any[] }
-): void {
-  const { x: px, y: py } = Position;
-  const children = dynamic.children;
-
-  for (let i = 0; i < children.length; i++) {
-    const child = children[i];
-    const ud = (child as any).userData;
-    if (!child || !ud) continue;
-
-    // ECS-сущности (имеют userData.eid)
-    if (ud.eid !== undefined && ud.eid > 0) {
-      const eid = ud.eid;
-      const idx = SpriteComp.ref[eid];
-      if (idx <= 0) continue;
-
-      // Определяем слой сущности
-      let layer = ENTITY_LAYER.Player; // default — 40
-
-      if (hasComponent(world, eid, Drop)) {
-        layer = ENTITY_LAYER.Drop;
-      }
-
-      // bottomY = py[eid] (py = Y + T/2, значит py = Y + 8 — центр тайла + половина тайла = низ тайла)
-      child.zIndex = layer + Math.round(py[eid]);
-    }
-    // Не-ECS объекты (дома, ёлки, камни) — имеют userData.layer и userData.y (уже bottomY = Y + T/2)
-    else if (ud.y !== undefined) {
-      const layer = ud.layer !== undefined ? ud.layer : ENTITY_LAYER.Wall;
-      child.zIndex = layer + Math.round(ud.y);
-    }
-  }
-}
-
-/** Обновить видимость спрайтов (Dead, Hidden, hurt-мигание) */
-export function renderVisibilitySystem(
-  world: World,
-  playerEid: number,
-  time: number
-): void {
-  const dead = Dead;
-  const hidden = Hidden;
-  const hurtT = Player.hurtT;
-
-  for (const eid of query(world, [SpriteComp])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    
-    // Dead проверяем только для игрока — остальные сущности удаляются
-    // через removeEntity при смерти, и их eid может переиспользоваться,
-    // что приведёт к ложному скрытию (например, святилища не зажигаются).
-    if (eid === playerEid && dead[eid]) {
-      ref.alpha = 0;
-    } else if (hidden[eid]) {
-      ref.alpha = 0.25;
-    } else if (Player.hurtT[eid] > 0 && Math.floor(time * 14) % 2 === 0) {
-      // hurt-мигание для игрока
-      ref.alpha = 0.35;
-    } else {
-      ref.alpha = 1;
-    }
-  }
-}
-
-/** Обновить мигание (получение урона врагов) */
-export function renderFlashSystem(world: World, time: number): void {
-  const flashing = Flashing;
-
-  for (const eid of query(world, [SpriteComp, Flashing])) {
-    const ref = getSpriteRef(eid);
-    if (!ref) continue;
-    
-    if (Math.floor(time * 14) % 2 === 0) {
-      ref.alpha = 0.35;
-    } else {
-      ref.alpha = 1;
-    }
-  }
-}
-
 // ============================================================
 // Options для RenderSystem.render()
 // ============================================================
@@ -220,13 +84,9 @@ export interface RenderSystemOptions {
   world: World;
   time: number;
   dt: number;
-  app: Application;
+  batchers: Batchers;
   float: FloatTextLayer;
   cameraController: CameraController;
-  gameWorld: Container | null;
-  dynamic: Container | null;
-  sceneManager: { cleanupDestroyedSprites(dynamicContainer: { children: any[] }): void };
-  hintLayer: Container;
   playerEid: number;
   getNpcSig?: (npcId: string) => string;
   talkedSig?: Map<string, string>;
@@ -234,36 +94,27 @@ export interface RenderSystemOptions {
 }
 
 // ============================================================
-// Главный класс RenderSystem (ECS-оркестратор) — Этап 6
+// Главный класс RenderSystem (ECS-оркестратор)
 // ============================================================
 
 /**
  * RenderSystem — класс-оркестратор рендеринга ECS-сущностей.
  *
- * Этап 6: превращён из функции renderSystem() в класс.
- * Владее:
- * - enemyPrevDataMap — prevData для DYNAMIC_TEXTURE
- * - playerPrevData — prevData для игрока
- * - _hintG — Graphics для interaction hints
- *
- * Метод render() выполняет полный рендеринг сущностей.
+ * Этап 4: удалена зависимость от PixiJS.
+ * - Все рендереры вызываются с Batchers вместо Graphics
+ * - DYNAMIC_TEXTURE / TextureCacheManager удалены
+ * - Сортировка по Y прямо в renderEntities()
+ * - Interaction hint рисуется через batchers.primitive
  */
 export class RenderSystem {
-  /** prevData для каждой сущности — используется для needsTextureUpdate */
-  private enemyPrevDataMap = new Map<number, any>();
-  private playerPrevData: any = null;
-
-  /** Persistent Graphics для подсказки взаимодействия */
-  private _hintG: Graphics | null = null;
-
   /** Конфигурация всех статических объектов окружения */
-  private readonly OBJECT_QUERIES: ObjectQueryConfig[] = [
-    { components: [SpriteComp, Chest], key: "chest", mapper: eidToChestData },
-    { components: [SpriteComp, Pedestal], key: "pedestal", mapper: eidToPedestalData },
-    { components: [SpriteComp, Shrine], key: "shrine", mapper: eidToShrineData },
-    { components: [SpriteComp, Door], key: "door", mapper: eidToDoorData },
-    { components: [SpriteComp, Barrier], key: "barrier", mapper: eidToBarrierData },
-    { components: [SpriteComp, Altar], key: "altar", mapper: eidToAltarData },
+  private readonly OBJECT_QUERIES = [
+    { key: 'chest', components: [Renderable, Chest] as any[], mapper: eidToChestData },
+    { key: 'pedestal', components: [Renderable, Pedestal] as any[], mapper: eidToPedestalData },
+    { key: 'shrine', components: [Renderable, Shrine] as any[], mapper: eidToShrineData },
+    { key: 'door', components: [Renderable, Door] as any[], mapper: eidToDoorData },
+    { key: 'barrier', components: [Renderable, Barrier] as any[], mapper: eidToBarrierData },
+    { key: 'altar', components: [Renderable, Altar] as any[], mapper: eidToAltarData },
   ];
 
   /** Проверить, есть ли у NPC маркер */
@@ -277,151 +128,87 @@ export class RenderSystem {
     return talkedSig?.get(npcId) !== sig;
   }
 
-  /** Рендеринг NPC (ECS) */
-  private renderNpcsEcs(
-    world: World,
-    ctx: RenderContext,
-    getNpcSig?: (npcId: string) => string,
-    talkedSig?: Map<string, string>
-  ): void {
-    for (const eid of query(world, [SpriteComp, NPC])) {
-      const ref = getSpriteRef(eid);
-      if (!ref) continue;
-
-      const npcId = poolGet(StringPool.npcIds, NPC.id[eid]);
-      const mark = this.npcHasMark(npcId, getNpcSig, talkedSig);
-      const data = eidToNpcData(eid, world);
-
-      const npcCtx = { ...ctx, mark } as any;
-      const renderer = npcRegistry.get(npcId as any) ?? npcRegistry.get("default" as any);
-      if (renderer) {
-        renderer.render(ref as Graphics, data, npcCtx);
-      }
-    }
-  }
-
-  /** Единый диспетчер отрисовки объектов окружения */
-  private renderObjectsEcs(world: World, ctx: RenderContext): void {
-    for (const config of this.OBJECT_QUERIES) {
-      const renderer = objectRegistry.getOrThrow(config.key);
-      for (const eid of query(world, config.components)) {
-        const ref = getSpriteRef(eid);
-        if (!ref) continue;
-        renderer.render(ref as Graphics, config.mapper(eid, world), ctx);
-      }
-    }
-  }
-
-  /** Инициализировать подсказку — вызывается один раз */
-  initInteractionHint(layer: Container): void {
-    if (this._hintG) return;
-    this._hintG = new Graphics();
-    this._hintG.zIndex = 9999;
-    layer.addChild(this._hintG);
-  }
-
   /** Выполнить полный рендеринг */
   render(
     world: World,
     opts: RenderSystemOptions
   ): void {
-    const { time, dt, float, cameraController, gameWorld, dynamic, sceneManager, hintLayer, playerEid } = opts;
-
-    // Lazy-init TextureCacheManager — один раз при первом вызове renderSystem
-    if (!TextureCacheManager.instance.isInit && opts.app) {
-      TextureCacheManager.instance.init(opts.app);
-    }
+    const { time, dt, batchers, float, cameraController, playerEid } = opts;
 
     // Лог: состояние игрока при рендере (раз в 5 сек)
     if (playerEid >= 0 && time % 5 < dt) {
-      logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]} ref=${SpriteComp.ref[playerEid]}`);
+      logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]}`);
     }
 
-    // Слежение камеры за игроком — делегирование CameraController (Этап 4)
+    // Слежение камеры за игроком
     if (playerEid >= 0 && Position.x.length > playerEid) {
       cameraController.trackPlayer(Position.x[playerEid], Position.y[playerEid]);
     }
-
-    // Применяем камеру к world контейнеру — делегирование CameraController
-    if (gameWorld) {
-      cameraController.applyToWorld(gameWorld);
-    }
-
-    // Update sprite positions
-    renderSprites(world);
-
-    // Сортировка по глубине (z-index) на основе RenderLayer + Y
-    if (dynamic) {
-      renderSortSystem(world, dynamic);
-    }
-
-    // Update visibility
-    renderVisibilitySystem(world, playerEid, time);
-
-    // Update flash effects
-    renderFlashSystem(world, time);
 
     // --- Диспетчеризация через реестры ---
     const ctx: RenderContext = { time };
 
     // Игрок
-    this.renderPlayerEcs(world, playerEid, ctx, opts);
+    this.renderPlayerEcs(world, playerEid, ctx, batchers, opts);
 
     // Враги
     this.renderByRegistry(
       world,
-      [SpriteComp, Enemy],
+      [Renderable, Enemy],
       StringPool.enemyKinds,
       enemyRegistry,
       (eid) => eidToEnemyData(eid, world),
+      batchers,
       time,
-      opts
+      cameraController.cam,
+      true
     );
 
     // Снаряды
     this.renderByRegistry(
       world,
-      [SpriteComp, Projectile],
+      [Renderable, Projectile],
       StringPool.projectileKinds,
       projectileRegistry,
       (eid) => eidToProjectileData(eid, world),
-      time
+      batchers,
+      time,
+      cameraController.cam,
+      true
     );
 
     // Дропы
     this.renderByRegistry(
       world,
-      [SpriteComp, Drop],
+      [Renderable, Drop],
       StringPool.dropKinds,
       dropRegistry,
       (eid) => eidToDropData(eid, world),
+      batchers,
       time
     );
 
     // NPC
-    this.renderNpcsEcs(world, ctx, opts.getNpcSig, opts.talkedSig);
+    this.renderNpcsEcs(world, ctx, batchers, opts.getNpcSig, opts.talkedSig);
 
     // Объекты окружения (сундуки, пьедесталы, святилища, двери, барьеры, алтари)
-    this.renderObjectsEcs(world, ctx);
+    this.renderObjectsEcs(world, ctx, batchers);
 
     // Обновить плавающий текст
     float.update(dt);
 
     // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
-    this.renderInteractionHint(hintLayer, opts.nearestInteractable, opts.cameraController.cam, time);
+    this.renderInteractionHint(batchers, opts.nearestInteractable, opts.cameraController.cam, time);
 
-    // Очистка уничтоженных спрайтов из dynamic контейнера — делегирование SceneManager (Этап 4)
-    if (dynamic) {
-      sceneManager.cleanupDestroyedSprites(dynamic);
-    }
-    // app.render() вызывается RenderPipeline после render() всех слоёв (Этап 5)
+    // Flush батчеров — вызывается RenderPipeline после render() всех слоёв
   }
 
-  /** Рендеринг игрока (ECS) — viewport culling + Graphics render */
+  /** Рендеринг игрока (ECS) — viewport culling */
   private renderPlayerEcs(
     world: World,
     playerEid: number,
     ctx: RenderContext,
+    batchers: Batchers,
     opts: RenderSystemOptions
   ): void {
     if (playerEid < 0) return;
@@ -429,33 +216,25 @@ export class RenderSystem {
 
     const playerX = Position.x[playerEid];
     const playerY = Position.y[playerEid];
-    const ref = getSpriteRef(playerEid);
-
-    logger.debug('render', `playerEid=${playerEid} x=${playerX} y=${playerY} ref=${!!ref} SpriteComp.ref=${SpriteComp.ref[playerEid]} SpriteRegistry.len=${SpriteRegistry.length} camX=${opts.cameraController.cam.x} camY=${opts.cameraController.cam.y} visible=${opts.cameraController.isVisibleInViewport(playerX, playerY, 8)}`);
-
-    if (!ref) {
-      logger.warn('render', `playerEid=${playerEid} ref is null/undefined`);
-      return;
-    }
 
     if (!opts.cameraController.isVisibleInViewport(playerX, playerY, 8)) {
-      ref.visible = false;
       return;
     }
 
-    ref.visible = true;
-    playerRenderer.render(ref as Graphics, playerToRenderData(playerEid, ctx.time), ctx);
+    playerRenderer.render(batchers, playerToRenderData(playerEid, ctx.time), ctx);
   }
 
-  /** Универсальная диспетчеризация через реестр (DYNAMIC_TEXTURE для врагов) */
+  /** Универсальная диспетчеризация через реестр */
   private renderByRegistry<TKey extends string, TData>(
     world: World,
     mask: any[],
     pool: string[],
     reg: { get: (key: TKey) => any | undefined },
     mapper: (eid: number) => TData,
+    batchers: Batchers,
     time: number,
-    opts?: RenderSystemOptions
+    cam?: { x: number; y: number },
+    camRadiusCheck?: boolean
   ): void {
     const isEnemy = mask.includes(Enemy);
 
@@ -472,108 +251,85 @@ export class RenderSystem {
       const r = reg.get(key);
       if (!r) continue;
 
-      // DYNAMIC_TEXTURE для врагов
-      if (isEnemy && (r as any).strategy === 'dynamic' && opts) {
-        const ref = getSpriteRef(eid);
-        if (!ref) continue;
-
-        const enemyX = Position.x[eid];
-        const enemyY = Position.y[eid];
+      // Viewport culling для врагов и снарядов
+      if (camRadiusCheck && cam) {
+        const ex = Position.x[eid];
+        const ey = Position.y[eid];
         const radius = Radius.value[eid] || 6;
-
-        // Viewport culling — делегирование CameraController (Этап 4)
-        if (!opts.cameraController.isVisibleInViewport(enemyX, enemyY, radius)) {
-          ref.visible = false;
+        // Простая проверка: сущность должна быть в пределах viewport + radius
+        if (ex < cam.x - radius - 64 || ex > cam.x + 1920 + radius ||
+            ey < cam.y - radius - 64 || ey > cam.y + 1080 + radius) {
           continue;
         }
+      }
 
-        ref.visible = true;
+      const data = mapper(eid);
+      r.render(batchers, data, { time });
+    }
+  }
 
-        const data = mapper(eid) as any;
-        const needsUpdate = (r as any).needsTextureUpdate
-          ? (r as any).needsTextureUpdate(data, this.enemyPrevDataMap.get(eid) || null)
-          : true;
+  /** Рендеринг NPC (ECS) */
+  private renderNpcsEcs(
+    world: World,
+    ctx: RenderContext,
+    batchers: Batchers,
+    getNpcSig?: (npcId: string) => string,
+    talkedSig?: Map<string, string>
+  ): void {
+    for (const eid of query(world, [Renderable, NPC])) {
+      const npcId = poolGet(StringPool.npcIds, NPC.id[eid]);
+      const mark = this.npcHasMark(npcId, getNpcSig, talkedSig);
+      const data = eidToNpcData(eid, world);
 
-        if (needsUpdate) {
-          try {
-            const cache = TextureCacheManager.instance.getOrCreate(eid, radius);
+      const npcCtx = { ...ctx, mark } as any;
+      const renderer = npcRegistry.get(npcId as any) ?? npcRegistry.get("default" as any);
+      if (renderer) {
+        renderer.render(batchers, data, npcCtx);
+      }
+    }
+  }
 
-            // Рисуем тело в контейнер
-            (r as any).renderToContainer(cache.container, data, { time });
-
-            // Запекаем в текстуру
-            const baked = TextureCacheManager.instance.bake(eid);
-
-            if (baked) {
-              // Baked Sprite — используем его
-              cache.sprite.x = enemyX;
-              cache.sprite.y = enemyY;
-              cache.sprite.zIndex = 40;
-
-              // Alpha для призраков: (hidden ? 0.25 : 1) * fade
-              cache.sprite.alpha = (data.hidden ? 0.25 : 1) * data.fade;
-
-              // Добавляем в dynamic контейнер если нужно
-              const dyn = opts.dynamic;
-              if (dyn && !dyn.children.includes(cache.sprite as any)) {
-                dyn.addChild(cache.sprite);
-              }
-
-              // Скрываем старый Graphics-спрайт
-              ref.visible = false;
-            } else {
-              // Bake не удался — fallback на Graphics
-              logger.warn('render', `Bake failed for enemy eid=${eid}, fallback to Graphics`);
-              r.render(ref as Graphics, data, { time });
-            }
-          } catch (err) {
-            // Fallback: если TextureCacheManager не инициализирован — рисуем в Graphics
-            logger.warn('render', `DYNAMIC_TEXTURE failed for enemy eid=${eid}, fallback: ${err}`);
-            r.render(ref as Graphics, data, { time });
-          }
-
-          // Сохраняем prevData
-          this.enemyPrevDataMap.set(eid, { ...data });
-        }
-      } else {
-        // Fallback: рисуем в Graphics как раньше
-        const ref = getSpriteRef(eid);
-        if (!ref) continue;
-        r.render(ref as Graphics, mapper(eid), { time });
+  /** Единый диспетчер отрисовки объектов окружения */
+  private renderObjectsEcs(
+    world: World,
+    ctx: RenderContext,
+    batchers: Batchers
+  ): void {
+    for (const config of this.OBJECT_QUERIES) {
+      const renderer = objectRegistry.getOrThrow(config.key as any);
+      for (const eid of query(world, config.components)) {
+        const data = config.mapper(eid, world);
+        renderer.render(batchers, data, ctx);
       }
     }
   }
 
   /** Отрисовать подсказку взаимодействия над ближайшим интерактивным объектом */
   private renderInteractionHint(
-    hintLayer: Container,
+    batchers: Batchers,
     nearestInteractable: InteractableHit | null | undefined,
     cam: { x: number; y: number },
     time: number
   ): void {
-    if (!this._hintG) return;
+    if (!nearestInteractable) return;
 
-    if (!nearestInteractable) {
-      this._hintG.visible = false;
-      return;
-    }
-
-    this._hintG.visible = true;
-    // Экраные координаты: gameWorld сдвинут на -cam.x/-cam.y, а hintLayer — нет
+    // Координаты подсказки
     const hx = nearestInteractable.x - cam.x;
     const hy = nearestInteractable.y - cam.y - 20 + Math.sin(time * 5) * 1.5;
 
-    this._hintG.clear();
     // Тёмный фон
-    this._hintG.rect(hx - 6, hy - 6, 12, 10).fill({ color: 0x0a0f16, alpha: 0.85 });
-    // Золотая рамка
-    this._hintG.rect(hx - 6, hy - 6, 12, 10).stroke({ color: 0xc9a24b, width: 1, alpha: 0.8 });
-    // Буква "E" — пиксель-арт стиль
-    this._hintG.poly([
-      hx - 2, hy - 3, hx + 2, hy - 3,
-      hx + 2, hy - 1, hx, hy - 1,
-      hx, hy + 2, hx - 2, hy + 2
-    ]).fill({ color: 0xe8dcc0 });
+    batchers.primitive.pushRect(hx - 6, hy - 6, 12, 10, 0x0a0f16, 0.85);
+    // Золотая рамка (4 линии)
+    const w = 1;
+    batchers.primitive.pushLine(hx - 6, hy - 6, hx + 6, hy - 6, 0xc9a24b, 0.8, w);
+    batchers.primitive.pushLine(hx + 6, hy - 6, hx + 6, hy + 4, 0xc9a24b, 0.8, w);
+    batchers.primitive.pushLine(hx + 6, hy + 4, hx - 6, hy + 4, 0xc9a24b, 0.8, w);
+    batchers.primitive.pushLine(hx - 6, hy + 4, hx - 6, hy - 6, 0xc9a24b, 0.8, w);
+    // Буква "E" — пиксель-арт стиль (прямоугольники)
+    batchers.primitive.pushRect(hx - 2, hy - 3, 4, 1, 0xe8dcc0);
+    batchers.primitive.pushRect(hx - 2, hy - 1, 4, 1, 0xe8dcc0);
+    batchers.primitive.pushRect(hx - 2, hy + 1, 4, 1, 0xe8dcc0);
+    batchers.primitive.pushRect(hx - 2, hy - 3, 1, 6, 0xe8dcc0);
   }
 }
 
@@ -590,9 +346,4 @@ export function renderSystem(
   opts: RenderSystemOptions
 ): void {
   _renderSystemInstance.render(world, opts);
-}
-
-/** Инициализировать подсказку — вызывается один раз (обёртка над RenderSystem) */
-export function initInteractionHint(layer: Container): void {
-  _renderSystemInstance.initInteractionHint(layer);
 }

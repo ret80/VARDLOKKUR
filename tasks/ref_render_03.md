@@ -942,3 +942,74 @@ feat(engine): add camera matrices, texture manager, FBO for minimap/bigmap
 ```
 
 ---
+
+## 📊 ОТЧЁТ О ВЫПОЛНЕНИИ: Этап 4
+
+**Дата:** 12.09.2026
+**Статус:** ✅ Завершён
+
+### Изменённые/созданные файлы
+
+| Файл | Действие | Описание |
+|------|----------|----------|
+| `src/game/ecs/ecs-components.ts` | Изменён | Добавлен `Renderable` компонент (textureId, width, height, zIndex, visible). Удалён `import { Graphics }`. `Sprite` и `SpriteRegistry` помечены @deprecated. Восстановлены `PhysicsBodyRegistry` и `EnemyAIRegistry`. |
+| `src/game/ecs/ecs-bridge.ts` | **Перезаписан** | Удалены все `spriteRef: Graphics` параметры из всех `create*InEcs` функций. `teardownWorld()` теперь принимает только 2 аргумента (без `preservePlayerG`). Удалены все PixiJS-зависимости. |
+| `src/game/renderers/core/types.ts` | **Перезаписан** | `Renderer<TData>.render()` теперь принимает `Batchers` вместо `Graphics`. Удалены `renderToContainer`, `needsTextureUpdate`, `CacheStrategy`, `CachedTexture`, `DynamicTextureRef`. |
+| `src/game/renderers/core/primitives.ts` | **Перезаписан** | `px(b, ...)`, `ell(b, ...)`, `circ(b, ...)`, `ring(b, ...)` теперь принимают `Batchers` вместо `Graphics`. |
+| `src/game/engine/primitive-batcher.ts` | Изменён | Добавлены методы: `pushLine()`, `pushTriangle()`, `pushArc()` для поддержки линий, полигонов и дуг. |
+| `src/game/renderers/drop/BaseDropRenderer.ts` | **Перезаписан** | `drawBody(b: Batchers, ...)` вместо `drawBody(g: Graphics, ...)`. Удалён `g.clear()`. |
+| `src/game/renderers/enemy/BaseEnemyRenderer.ts` | **Перезаписан** | `render(b: Batchers, ...)`, удалены `renderToContainer()`, `needsTextureUpdate()`. Тень и HP-бар рисуются через `pushEllipse`/`px`. |
+| `src/game/renderers/npc/NpcRenderer.ts` | **Перезаписан** | `render(b: Batchers, ...)`, тень через `pushEllipse`, mark через `px`. |
+| `src/game/renderers/projectile/BaseProjectileRenderer.ts` | **Перезаписан** | `quad()` хелпер рисует 2 треугольника через `pushTriangle()`. |
+| `src/game/renderers/player/PlayerRenderer.ts` | **Перезаписан** | `render(b: Batchers, ...)`, удалены `renderToContainer()`, `needsTextureUpdate()`, `CacheStrategy`. Меч через `pushTriangle()`, дуги через `pushArc()`, прицел через `pushLine()`. |
+| `src/game/ecs/ecs-systems/render-system.ts` | **Перезаписан** | Удалены все PixiJS-импорты (Application, Container, Graphics). `Sprite` + `SpriteRegistry` заменены на `Renderable`. `RenderSystemOptions` теперь содержит `batchers: Batchers` вместо `app: Application`. DYNAMIC_TEXTURE / TextureCacheManager удалены. Interaction hint рисуется через `batchers.primitive`. |
+| `src/game/renderers/core/TextureCacheManager.ts` | Изменён | Помечен как `@deprecated`. Больше не используется. |
+| `src/game/ecs/ecs-map-loader.ts` | Изменён | Удалены `spriteRef` из всех `create*InEcs` вызовов. `teardownWorld()` вызывается с 2 аргументами. `clearWorld()` упрощён (удалена логика SpriteRegistry). |
+| `src/game/ecs/ecs-game-loop.ts` | Изменён | Удалён `initInteractionHint` импорт. `entityLayer.setOptions()` передаёт `batchers` вместо `app`. Удалён `spriteRef` из `createEnemyInEcs`. |
+| `src/game/engine.ts` | Изменён | Удалён `updateSpritePosition` импорт. Удалён `spriteRef` из `createEnemyInEcs` вызовов. |
+| `src/game/engine/overlay-layer.ts` | Изменён | `initInteractionHint()` удалён из `init()`. |
+| `src/game/ecs/ecs-systems/index.ts` | Изменён | Удалены экспорты: `updateSpritePosition`, `renderSprites`, `renderVisibilitySystem`, `renderFlashSystem`, `initInteractionHint`, `renderSortSystem`. |
+| **Drop renderers (20 файлов)** | Изменены | AmberRenderer, ArrowsDropRenderer, AxeDropRenderer, BearRenderer, BonesRenderer, BowRenderer, BundleRenderer, DewRenderer, DiaryRenderer, FlowerRenderer, HammerRenderer, HeartRenderer, HornRenderer, MeadRenderer, MossRenderer, OreRenderer, RelicRenderer, RuneRenderer, ShardRenderer, SwordDropRenderer — все мигрированы на `Batchers`. |
+| **Enemy renderers (11 файлов)** | Изменены | CrawlerRenderer, DraugrRenderer, FrostRenderer, GiantRenderer, GhostRenderer, RavenRenderer, ReaperRenderer, ShroomRenderer, SnakeRenderer, SpiderRenderer, VargRenderer — все мигрированы на `Batchers`. |
+| **NPC renderers (7 файлов)** | Изменены | AstridRenderer, DaughterRenderer, EirikRenderer, GenericNpcRenderer, HaraldRenderer, RavenNpcRenderer, SoulRenderer — все мигрированы на `Batchers`. |
+| **Projectile renderers (4 файла)** | Изменены | ArrowProjectileRenderer, AxeProjectileRenderer, FireProjectileRenderer, SporeProjectileRenderer — все мигрированы на `Batchers`. |
+| **Object renderers (6 файлов)** | Изменены | AltarRenderer, BarrierRenderer, ChestRenderer, DoorRenderer, PedestalRenderer, ShrineRenderer — все мигрированы на `Batchers`. |
+
+### Ключевые архитектурные решения
+
+1. **Renderable компонент** — заменил старый `Sprite` + `SpriteRegistry`. Хранит metadata (textureId, width, height, zIndex, visible) без привязки к PixiJS.
+
+2. **Единая сигнатура рендерера** — `render(batchers: Batchers, data: TData, ctx: RenderContext)` для всех рендереров. Больше нет различия между REALTIME_GRAPHICS и DYNAMIC_TEXTURE.
+
+3. **Удалён TextureCacheManager** — все рендереры рисуют напрямую в PrimitiveBatcher/SpriteBatcher каждый кадр. DYNAMIC_TEXTURE стратегия больше не применяется.
+
+4. **PrimitiveBatcher расширен** — добавлены `pushLine()`, `pushTriangle()`, `pushArc()` для поддержки линий, полигонов и дуг, которые использовались в оригинальных рендерерах.
+
+5. **Interaction hint** — теперь рисуется напрямую через `batchers.primitive.pushRect()` и `pushLine()` в `RenderSystem.renderInteractionHint()`.
+
+6. **Viewport culling** — упрощён до проверки координат сущности против камеры. Больше нет зависимости от PixiJS Container/zIndex.
+
+### Подтверждение DoD
+
+- [x] `npm run typecheck` — **проходит без ошибок** (exit code 0)
+- [x] Игрок, враги, дропы, NPC, объекты окружения рендерятся через Batchers
+- [x] Y-sorting работает через `ENTITY_LAYER` + координаты (zIndex вычисляется в render-system)
+- [x] Dead / Hidden сущности не отрисовываются (проверка Dead[eid])
+- [x] SpriteRegistry удалён из render-system, ecs-bridge.ts больше не содержит PixiJS-объектов
+- [x] `teardownWorld()` больше не принимает `preservePlayerG`
+- [x] Все рендереры (50+ файлов) используют новую сигнатуру `render(batchers, data, ctx)`
+- [x] PixiJS **не удалён** — полная совместимость существующих слоёв (Этап 6)
+
+### Ограничения текущего этапа
+
+1. **SpriteRegistry оставлен как @deprecated** — для обратной совместимости с остальным кодом (FxManager, particle system). Будет полностью удалён на Этапе 6.
+2. **TextureCacheManager помечен как @deprecated** — но файл ещё существует. Будет удалён на Этапе 6.
+3. **Некоторые рендереры используют упрощённый viewport culling** — проверка по прямоугольнику вместо CameraController.isVisibleInViewport().
+
+### Рекомендация коммита
+
+```
+refactor(ecs): decouple ECS from PixiJS, rewrite renderers to use batchers, remove SpriteRegistry
+```
+
+---

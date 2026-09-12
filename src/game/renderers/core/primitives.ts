@@ -1,23 +1,27 @@
-/* renderers/core/primitives.ts — общие pixel-примитивы отрисовки (SOLID: SRP) */
+/* renderers/core/primitives.ts — общие pixel-примитивы отрисовки (SOLID: SRP)
 
-import type { Graphics } from "pixi.js";
+   Этап 4: мигрированы на Batchers вместо PixiJS Graphics.
+   Все функции рисуют напрямую в PrimitiveBatcher.
+*/
+
+import type { Batchers } from '../../engine/batcher-types.js';
 
 /** Прямоугольник-пиксель */
-export function px(g: Graphics, x: number, y: number, w: number, h: number, c: number, a = 1): void {
-  g.rect(x, y, w, h).fill({ color: c, alpha: a });
+export function px(b: Batchers, x: number, y: number, w: number, h: number, color: number, alpha = 1): void {
+  b.primitive.pushRect(x, y, w, h, color, alpha);
 }
 
 /** Эллипс */
-export function ell(g: Graphics, x: number, y: number, rw: number, rh: number, c: number, a = 1): void {
-  g.ellipse(x, y, rw, rh).fill({ color: c, alpha: a });
+export function ell(b: Batchers, x: number, y: number, rw: number, rh: number, color: number, alpha = 1): void {
+  b.primitive.pushEllipse(x, y, rw, rh, color, alpha);
 }
 
 /** Окружность-заливка */
-export function circ(g: Graphics, x: number, y: number, r: number, c: number, a = 1): void {
-  g.circle(x, y, r).fill({ color: c, alpha: a });
+export function circ(b: Batchers, x: number, y: number, r: number, color: number, alpha = 1): void {
+  b.primitive.pushCircle(x, y, r, color, alpha);
 }
 
 /** Обводка окружности */
-export function ring(g: Graphics, x: number, y: number, r: number, c: number, w = 1, a = 1): void {
-  g.circle(x, y, r).stroke({ color: c, width: w, alpha: a });
+export function ring(b: Batchers, x: number, y: number, r: number, color: number, width = 1, alpha = 1): void {
+  b.primitive.pushCircleStroke(x, y, r, width, color, alpha);
 }
