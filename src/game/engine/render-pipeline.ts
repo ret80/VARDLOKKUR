@@ -4,6 +4,8 @@ import type { World } from 'bitecs';
 import type { Application } from 'pixi.js';
 import type REGL from 'regl';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
+import { createBatchers, type Batchers } from './batcher-types.js';
+import { logger } from '../debug/logger';
 
 /**
  * RenderPipeline — единый конвейер рендеринга игры.
@@ -35,6 +37,7 @@ export class RenderPipeline {
   private layers: IRenderLayer[] = [];
   private initialized = false;
   private regl: REGL.Regl | null = null;
+  private batchers: Batchers | null = null;
 
   /** Добавить слой в пайплайн. Слои вызываются в порядке добавления. */
   addLayer(layer: IRenderLayer): void {
@@ -46,12 +49,28 @@ export class RenderPipeline {
     this.regl = regl;
   }
 
+  /** Создать батчеры на основе regl-контекста (Этап 2) */
+  private createBatchersIfNeeded(): void {
+    if (this.batchers || !this.regl) return;
+
+    logger.info('render-pipeline', 'Creating SpriteBatcher + PrimitiveBatcher');
+    this.batchers = createBatchers(this.regl);
+    logger.info('render-pipeline', 'Batchers created successfully');
+  }
+
   /** Инициализировать все слои. Вызывается один раз при создании пайплайна. */
   init(app: Application, ctx: RenderLayerContext): void {
     // Добавляем regl в контекст если он доступен
     if (this.regl) {
       ctx.regl = this.regl;
     }
+
+    // Создаём батчери (Этап 2)
+    this.createBatchersIfNeeded();
+    if (this.batchers) {
+      ctx.batchers = this.batchers;
+    }
+
     for (const layer of this.layers) {
       layer.init(app, ctx);
     }
@@ -89,5 +108,11 @@ export class RenderPipeline {
     this.layers.length = 0;
     this.initialized = false;
     this.regl = null;
+    this.batchers = null;
+  }
+
+  /** Получить батчери (для прямого доступа извне) */
+  getBatchers(): Batchers | null {
+    return this.batchers;
   }
 }

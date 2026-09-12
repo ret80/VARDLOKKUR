@@ -3,6 +3,7 @@
 import type { Application, Container } from 'pixi.js';
 import type REGL from 'regl';
 import type { World } from 'bitecs';
+import type { Batchers } from './batcher-types.js';
 
 /** Контекст, передаваемый в update() и render() каждого слоя */
 export interface RenderLayerContext {
@@ -18,6 +19,8 @@ export interface RenderLayerContext {
   regl?: REGL.Regl;
   /** Canvas Regl (Этап 1: добавлен для прямого доступа к canvas) */
   reglCanvas?: HTMLCanvasElement;
+  /** Батчеры для Regl-рендеринга (Этап 2: Sprite + Primitive) */
+  batchers?: Batchers;
 }
 
 /**
