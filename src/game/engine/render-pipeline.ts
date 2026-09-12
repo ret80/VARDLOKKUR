@@ -2,6 +2,7 @@
 
 import type { World } from 'bitecs';
 import type { Application } from 'pixi.js';
+import type REGL from 'regl';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 
 /**
@@ -33,14 +34,24 @@ import type { IRenderLayer, RenderLayerContext } from './render-layer';
 export class RenderPipeline {
   private layers: IRenderLayer[] = [];
   private initialized = false;
+  private regl: REGL.Regl | null = null;
 
   /** Добавить слой в пайплайн. Слои вызываются в порядке добавления. */
   addLayer(layer: IRenderLayer): void {
     this.layers.push(layer);
   }
 
+  /** Задать Regl-контекст (Этап 1: для передачи в слои) */
+  setRegl(regl: REGL.Regl): void {
+    this.regl = regl;
+  }
+
   /** Инициализировать все слои. Вызывается один раз при создании пайплайна. */
   init(app: Application, ctx: RenderLayerContext): void {
+    // Добавляем regl в контекст если он доступен
+    if (this.regl) {
+      ctx.regl = this.regl;
+    }
     for (const layer of this.layers) {
       layer.init(app, ctx);
     }
@@ -77,5 +88,6 @@ export class RenderPipeline {
     }
     this.layers.length = 0;
     this.initialized = false;
+    this.regl = null;
   }
 }

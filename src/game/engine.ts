@@ -79,6 +79,7 @@ import { SceneManager } from './engine/scene-manager';
 import { ScreenRouter } from './engine/screen-router';
 import { PlayerLifecycle } from './engine/player-lifecycle';
 import { MapLoaderService } from './engine/map-loader-service';
+import { createReglEngine } from './engine/regl-engine';
 // DebugServer импортируется динамически (Node.js API — http, ws)
 import {
   getPlayerState as getDebugPlayerState,
@@ -157,6 +158,10 @@ export class Engine {
 
   // Debug server (динамический импорт — Node.js API)
   private debugServer: any = null;
+
+  // Этап 1: Regl-движок
+  private reglEngine: import('./engine/regl-engine').ReglEngine | null = null;
+  private regl: any = null;
 
   // Локальные данные (для рендеринга и обновления)
   // Все данные игрока теперь через this.playerDomain (ECS) и this.store.flags
@@ -237,11 +242,19 @@ export class Engine {
     this.canvasEl = cv;
     this.viewport.apply(app.renderer);
 
+    // Этап 1: создаём Regl-движок
+    this.reglEngine = createReglEngine(container);
+    this.regl = this.reglEngine.regl;
+    this.reglEngine.resize(this.viewport.viewW, this.viewport.viewH);
+
     // Инициализация FX-менеджера
     this.fx.init(app, this.viewport.viewW, this.viewport.viewH);
     // Этап 6: связываем FxManager с ParticleSystem для делегирования
     this.fx.setParticleSystem(this.particleSys);
     this.particleSys.resize(this.viewport.viewW, this.viewport.viewH);
+
+    // Этап 1: обработчик ресайза
+    window.addEventListener('resize', () => this.handleResize());
 
     // Слои сцены привязываются к stage (world, fxScreen, fadeG)
     this.scene.attachToStage();
@@ -384,6 +397,8 @@ export class Engine {
         store: this.store,
         planckWorld: null as any, // будет установлен после загрузки карты
         app: this.app,
+        regl: this.regl,
+        reglCanvas: this.reglEngine?.canvas,
         dynamic: this.scene.dynamic,
         floatLayer: this.floatTextLayer,
         gameWorld: this.scene.world,
@@ -890,6 +905,11 @@ export class Engine {
 
     // Рендеринг через ECS
     if (this.ecsGameLoop) this.ecsGameLoop.render(rdt);
+    
+    // Этап 1: poll regl каждый кадр
+    if (this.regl) {
+      this.regl.poll();
+    }
     // Minimap update через ECS queries
     if (this.minimapCanvas && this.mmBase) {
       const ctx = this.minimapCanvas.getContext("2d");
@@ -1006,6 +1026,19 @@ export class Engine {
 
   private applyView() {
     this.viewport.apply(this.app ? this.app.renderer : null);
+  }
+
+  /* ===== Этап 1: обработчик ресайза для Regl ===== */
+
+  private handleResize(): void {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.reglEngine?.resize(w, h);
+    this.viewport.applyViewSize();
+    this.viewport.apply(this.app ? this.app.renderer : null);
+    if (this.ecsGameLoop) {
+      this.ecsGameLoop.updateConfig({ viewW: this.viewport.viewW, viewH: this.viewport.viewH });
+    }
   }
 
   /* ===== Уничтожение ===== */

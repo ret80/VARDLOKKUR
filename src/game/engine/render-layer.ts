@@ -1,6 +1,7 @@
 /* render-layer.ts — Интерфейс слоя рендеринга для RenderPipeline */
 
 import type { Application, Container } from 'pixi.js';
+import type REGL from 'regl';
 import type { World } from 'bitecs';
 
 /** Контекст, передаваемый в update() и render() каждого слоя */
@@ -13,6 +14,10 @@ export interface RenderLayerContext {
   world: World;
   /** FX-контейнер для частиц и эффектов (Этап 6) */
   fxWorld?: Container;
+  /** Regl-контекст (Этап 1: добавлен для миграции PixiJS → Regl) */
+  regl?: REGL.Regl;
+  /** Canvas Regl (Этап 1: добавлен для прямого доступа к canvas) */
+  reglCanvas?: HTMLCanvasElement;
 }
 
 /**
@@ -32,7 +37,11 @@ export interface RenderLayerContext {
  * 5. destroy() — один раз при уничтожении пайплайна
  */
 export interface IRenderLayer {
-  /** Инициализация слоя. Вызывается один раз при создании пайплайна. */
+  /**
+   * Инициализация слоя. Вызывается один раз при создании пайплайна.
+   * @param app — PixiJS Application (оставлен для совместимости, Этап 1)
+   * @param ctx — контект с regl, canvas и другими данными
+   */
   init(app: Application, ctx: RenderLayerContext): void;
 
   /** Обновление состояния слоя. Вызывается каждый тик, ДО render(). */

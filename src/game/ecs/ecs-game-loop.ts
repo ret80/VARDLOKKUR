@@ -94,6 +94,7 @@ import { createEnemyInEcs } from './ecs-bridge';
 import { PlanckWorld, Cat } from '../physics/planck-world';
 import { ENEMY_STATS } from '../entities';
 import type { Application } from 'pixi.js';
+import type REGL from 'regl';
 import type { FxManager } from '../fx';
 import type { StateManager } from '../state/state-manager';
 import { audio } from '../audio';
@@ -136,6 +137,10 @@ export interface EcsGameLoopConfig {
   store: GameStore;
   planckWorld: PlanckWorld;
   app: Application;
+  /** Этап 1: Regl-контекст (для миграции PixiJS → Regl) */
+  regl?: REGL.Regl;
+  /** Этап 1: Canvas Regl (для прямого доступа) */
+  reglCanvas?: HTMLCanvasElement;
   dynamic: Container;
   floatLayer: FloatTextLayer;
   gameWorld: Container;
@@ -201,6 +206,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     fx,
     particleSys,
     entityFactory: configFactory,
+    regl,
+    reglCanvas,
   } = config;
 
   let _stepT = stepTRef;
@@ -238,8 +245,13 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   pipeline.addLayer(fogLayer);
   pipeline.addLayer(overlayLayer);
 
+  // Этап 1: передаём regl в пайплайн
+  if (regl) {
+    pipeline.setRegl(regl);
+  }
+
   // Инициализируем пайплайн
-  pipeline.init(app, { dt: _stepT, time: _realT, world });
+  pipeline.init(app, { dt: _stepT, time: _realT, world, regl, reglCanvas });
 
   // Локальные копии для updateConfig
   let config_map = map;
@@ -625,8 +637,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // Вызываем update() и render() пайплайна
     // app.render() вызывается внутри RenderPipeline.render() после всех слоёв
     // (включая FogLayer — это устраняет 1-кадровый лаг тумана)
-    pipeline.update({ dt: rdt, time: _realT, world });
-    pipeline.render({ dt: rdt, time: _realT, world });
+    pipeline.update({ dt: rdt, time: _realT, world, regl, reglCanvas });
+    pipeline.render({ dt: rdt, time: _realT, world, regl, reglCanvas });
   }
 
   return {
