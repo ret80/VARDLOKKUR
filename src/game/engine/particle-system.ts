@@ -1,6 +1,6 @@
-/* particle-system.ts — Система частиц и снега (Этап 6: извлечение из FxManager) */
+/* particle-system.ts — Система частиц и снега (Этап 5: мигрирован на Batchers) */
 
-import { Graphics } from 'pixi.js';
+import type { Batchers } from './batcher-types.js';
 
 /** Частица взрыва (урон, смерть, магия) */
 export interface Particle {
@@ -20,12 +20,10 @@ export interface Snowflake {
 /**
  * ParticleSystem — система частиц и снега.
  *
- * Извлечена из FxManager (Этап 6). Отвечает за:
- * - Создание взрывов частиц (burst)
- * - Обновление физики частиц
- * - Отрисовку частиц в Graphics
- * - Обновление и отрисовку снега
- * - Владение worldParticleG (Graphics для мировых частиц)
+ * Этап 5: мигрирован на Batchers.
+ * - drawWorldFx() использует PrimitiveBatcher вместо Graphics
+ * - drawSnow() использует PrimitiveBatcher вместо Graphics
+ * - worldParticleG удалён (больше не нужен)
  */
 export class ParticleSystem {
   private particles: Particle[] = [];
@@ -35,9 +33,6 @@ export class ParticleSystem {
 
   /** Максимальное количество частиц */
   private maxParticles = 420;
-
-  /** Graphics для отрисовки мировых частиц (перемещён из FxManager) */
-  public worldParticleG = new Graphics();
 
   /* ---------- Инициализация ---------- */
 
@@ -102,19 +97,45 @@ export class ParticleSystem {
     }
   }
 
-  /** Отрисовка мировых частиц. Вызывается в render(). */
-  public drawWorldFx(): void {
-    this.worldParticleG.clear();
+  /**
+   * Отрисовка мировых частиц через PrimitiveBatcher.
+   * Каждая частица рисуется как маленький квадрат с alpha = life/max.
+   */
+  public drawWorldFx(batchers: Batchers): void {
+    const { primitive: prim } = batchers;
+
     for (const p of this.particles) {
-      this.worldParticleG.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size)
-        .fill({ color: p.color, alpha: p.alpha * (p.life / p.max) });
+      const lifeRatio = p.life / p.max;
+      const alpha = p.alpha * lifeRatio;
+      if (alpha <= 0.01) continue;
+
+      const halfSize = p.size / 2;
+      prim.pushRect(
+        p.x - halfSize,
+        p.y - halfSize,
+        p.size,
+        p.size,
+        p.color,
+        alpha
+      );
     }
   }
 
-  /** Отрисовка снежного слоя. */
-  public drawSnow(fx: Graphics): void {
+  /**
+   * Отрисовка снежного слоя через PrimitiveBatcher.
+   */
+  public drawSnow(batchers: Batchers): void {
+    const { primitive: prim } = batchers;
+
     for (const f of this.snow) {
-      fx.rect(f.x, f.y, f.w, f.w).fill({ color: 0xc8d8e8, alpha: 0.4 });
+      prim.pushRect(
+        f.x,
+        f.y,
+        f.w,
+        f.w,
+        0xc8d8e8,
+        0.4
+      );
     }
   }
 

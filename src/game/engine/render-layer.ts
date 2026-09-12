@@ -43,7 +43,7 @@ export interface IRenderLayer {
   /**
    * Инициализация слоя. Вызывается один раз при создании пайплайна.
    * @param app — PixiJS Application (оставлен для совместимости, Этап 1)
-   * @param ctx — контект с regl, canvas и другими данными
+   * @param ctx — контекст с regl, canvas, batchers и другими данными
    */
   init(app: Application, ctx: RenderLayerContext): void;
 

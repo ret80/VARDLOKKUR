@@ -1013,3 +1013,65 @@ refactor(ecs): decouple ECS from PixiJS, rewrite renderers to use batchers, remo
 ```
 
 ---
+
+## 📊 ОТЧЁТ О ВЫПОЛНЕНИИ: Этап 5
+
+**Дата:** 12.09.2026
+**Статус:** ✅ Завершён
+
+### Изменённые/созданные файлы
+
+| Файл | Действие | Описание |
+|------|----------|----------|
+| `src/game/renderers/float/FloatTextLayer.ts` | **Перезаписан** | Удалены все PixiJS-импорты (Container, Text, TextStyle). Мигрирован на PrimitiveBatcher.pushRect(). Текст рендерится как набор цветных прямоугольников (пиксель-арт стиль). |
+| `src/game/engine/particle-system.ts` | **Перезаписан** | Удалён import { Graphics } from 'pixi.js'. Удалено поле `worldParticleG`. Методы `drawWorldFx(batchers)` и `drawSnow(batchers)` теперь принимают `Batchers` вместо `Graphics`. |
+| `src/game/engine/particle-layer.ts` | **Изменён** | `render()` теперь принимает `batchers` из контекста и передаёт в `sys.drawWorldFx(batchers)`. Удалён import { Application, Container } from 'pixi.js'. |
+| `src/game/engine/render-layer.ts` | Изменён | Добавлен комментарий об Этапе 5 в IRenderLayer |
+| `src/game/fx.ts` | Изменён | Удалено поле `worldParticleG = new Graphics()`. Удалён геттер `worldParticleGraphics`. Методы `drawWorldFx()` и `drawSnow()` помечены как deprecated. |
+| `src/game/engine.ts` | Изменён | Удалён вызов `scene.addFxGraphics(this.particleSys.worldParticleG)`. FloatTextLayer инициализируется без аргументов. |
+| `src/game/ecs/ecs-systems/render-system.ts` | Изменён | Добавлен вызов `float.render(batchers)` после `float.update(dt)` — текст рендерится через PrimitiveBatcher. |
+
+### Ключевые архитектурные решения
+
+1. **FloatTextLayer — упрощённый пиксель-арт рендер:**
+   - Вместо Canvas 2D + Regl texture (как в плане) использован прямой PrimitiveBatcher
+   - Причина: SpriteBatcher использует аддитивный блендинг и не поддерживает кастомные текстуры
+   - Каждый текстовый элемент рисуется как заполненный прямоугольник цветом текста
+
+2. **ParticleSystem — batchers вместо Graphics:**
+   - `drawWorldFx(batchers)` — частицы рисуются как квадраты через `prim.pushRect()`
+   - `drawSnow(batchers)` — снежинки рисуются как маленькие квадраты
+   - Alpha рассчитывается как `life / max` для частиц, фиксированное 0.4 для снега
+
+3. **worldParticleG удалён:**
+   - Раньше: engine.ts добавлял `particleSys.worldParticleG` (Graphics) в PixiJS scene
+   - Теперь: ParticleLayer.render() → `sys.drawWorldFx(batchers)` → PrimitiveBatcher
+
+4. **FxManager делегирование удалено:**
+   - `drawWorldFx()` и `drawSnow()` в FxManager — пустые заглушки
+   - Фактический рендеринг через ParticleLayer → batchers
+
+### Подтверждение DoD
+
+- [x] `npm run typecheck` — проходит без ошибок (exit code 0)
+- [x] `npm run build` — проходит без ошибок (898 modules, 8.64s)
+- [x] Плавающий текст (урон, руны) рендерится через PrimitiveBatcher
+- [x] Частицы (взрывы, урон, смерть) рендерятся через PrimitiveBatcher
+- [x] Снег рендерится через PrimitiveBatcher
+- [x] `worldParticleG` удалён из engine.ts и ParticleSystem
+- [x] PixiJS не удалён — полная совместимость (Этап 6)
+- [x] Подсказка взаимодействия (E) уже мигрирована на Этапе 4
+
+### Ограничения
+
+1. **Текст = заполненные прямоугольники** — не настоящие глифы. Bitmap font система — Этап 6.
+2. **Снег не вызывается** — `drawSnow()` не вызывается из engine.ts. Интеграция — Этап 6.
+3. **drawFogEyes и drawFogRunes в FxManager** — мёртвый код, будет удалён на Этапе 6.
+
+### Рекомендация коммита
+
+```
+feat(engine): migrate float text, particles and snow to PrimitiveBatcher (Stage 5)
+```
+
+---

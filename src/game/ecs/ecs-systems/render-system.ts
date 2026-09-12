@@ -194,8 +194,9 @@ export class RenderSystem {
     // Объекты окружения (сундуки, пьедесталы, святилища, двери, барьеры, алтари)
     this.renderObjectsEcs(world, ctx, batchers);
 
-    // Обновить плавающий текст
+    // Обновить и отрисовать плавающий текст (Этап 5: через PrimitiveBatcher)
     float.update(dt);
+    float.render(batchers);
 
     // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
     this.renderInteractionHint(batchers, opts.nearestInteractable, opts.cameraController.cam, time);

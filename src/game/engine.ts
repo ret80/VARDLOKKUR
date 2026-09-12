@@ -230,7 +230,8 @@ export class Engine {
     this.app = app;
     this.viewport = new ViewportController(container, app, { x: 0, y: 0 });
     this.scene = new SceneManager(app);
-    this.floatTextLayer = new FloatTextLayer(this.scene.floatLayer);
+    // Этап 5: FloatTextLayer мигрирован на PrimitiveBatcher (без PixiJS)
+    this.floatTextLayer = new FloatTextLayer();
     const cv = app.canvas as HTMLCanvasElement;
     cv.classList.add("pixi");
     cv.style.position = "absolute";
@@ -257,8 +258,7 @@ export class Engine {
 
     // Слои сцены привязываются к stage (world, fxScreen, fadeG)
     this.scene.attachToStage();
-    // Этап 6: worldParticleG перемещён в ParticleSystem
-    this.scene.addFxGraphics(this.particleSys.worldParticleG);
+    // Этап 5: worldParticleG удалён — частицы рендерятся через PrimitiveBatcher в ParticleLayer
 
     // Вигнетки и фейд размещаем в исходном порядке (fadeG поверх вигнеток)
     app.stage.removeChild(this.scene.fadeG);

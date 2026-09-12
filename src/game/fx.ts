@@ -39,13 +39,13 @@ export class FxManager {
   private viewW = 0;
   private viewH = 0;
 
-  /** Ссылка на ParticleSystem для делегирования burst/initSnow (Этап 6) */
+  /** Ссылка на ParticleSystem для делегирования burst/initSnow (Этап 5-6) */
   private _particleSys: ParticleSystem | null = null;
 
   // --- Слои ---
   // --- Слои (публичные для отрисовки из engine) ---
-  public worldParticleG = new Graphics();
-  private screenFxG: Graphics | null = null; // Для снега (поверх UI)
+  // worldParticleG удалён на Этапе 5 — частицы рендерятся через PrimitiveBatcher
+  private screenFxG: Graphics | null = null; // Для снега (поверх UI) — Этап 6
   public vignette: Sprite | null = null;
   public fogVignette: Sprite | null = null;
 
@@ -353,33 +353,18 @@ export class FxManager {
 
   /* ---------- Отрисовка ---------- */
 
-  /** Отрисовка мировых частиц и SlamZone. Вызывается в tick() перед рендером сущностей.
-   *  Этап 6: делегирует в ParticleSystem. */
-  public drawWorldFx(_rdt: number, _realT: number) {
-    if (this._particleSys) {
-      this._particleSys.drawWorldFx();
-      return;
-    }
-    // Fallback (deprecated): старый путь через FxManager
-    const g = this.worldParticleG;
-    g.clear();
-    for (const p of this.particles) {
-      g.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size)
-        .fill({ color: p.color, alpha: p.alpha * (p.life / p.max) });
-    }
+  /** Отрисовка мировых частиц и SlamZone.
+    *  Этап 5: делегирование удалено — частицы рендерятся через PrimitiveBatcher в ParticleLayer.
+    *  Этот метод оставлен как заглушка (deprecated). */
+  public drawWorldFx(_rdt: number, _realT: number): void {
+    // Deprecated: частицы теперь рендерятся через ParticleLayer.draw() → batchers.primitive
   }
 
-  /** Отрисовка снежного слоя на screenFx. Вызывается в tick().
-   *  Этап 6: делегирует в ParticleSystem. */
-  public drawSnow(fx: Graphics, _realT: number) {
-    if (this._particleSys) {
-      this._particleSys.drawSnow(fx);
-      return;
-    }
-    // Fallback (deprecated): старый путь через FxManager
-    for (const f of this.snow) {
-      fx.rect(f.x, f.y, f.w, f.w).fill({ color: 0xc8d8e8, alpha: 0.4 });
-    }
+  /** Отрисовка снежного слоя.
+    *  Этап 5: делегирование удалено — снег рендерится через PrimitiveBatcher в ParticleLayer.
+    *  Этот метод оставлен как заглушка (deprecated). */
+  public drawSnow(_fx: Graphics, _realT: number): void {
+    // Deprecated: снег теперь рендерится через ParticleLayer.draw() → batchers.primitive
   }
 
   /** Отрисовка «рун» по углам экрана при сильном тумане. */
@@ -408,13 +393,12 @@ export class FxManager {
   }
 
   /* ---------- Геттеры для слоёв ---------- */
-
-  public get worldParticleGraphics(): Graphics { return this.worldParticleG; }
+  // worldParticleGraphics удалён на Этапе 5 — частицы рендерятся через PrimitiveBatcher
 
   /* ---------- Жизненный цикл ---------- */
 
   public destroy() {
-    this.worldParticleG.destroy();
+    // worldParticleG удалён на Этапе 5
     if (this.vignette) { this.vignette.destroy(true); this.vignette = null; }
     if (this.fogVignette) { this.fogVignette.destroy(true); this.fogVignette = null; }
     if (this.fogCanvas) { this.fogCanvas.remove(); this.fogCanvas = null; }

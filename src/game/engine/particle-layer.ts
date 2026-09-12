@@ -1,19 +1,14 @@
-/* particle-layer.ts — Слой частиц и снега (Этап 6: извлечение из FxManager) */
+/* particle-layer.ts — Слой частиц и снега (Этап 5: мигрирован на Batchers) */
 
-import type { Application } from 'pixi.js';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import type { ParticleSystem } from './particle-system';
 
 /**
  * ParticleLayer — слой частиц и снега.
  *
- * Этап 6: извлечён из FxManager.
- * Отвечает за:
- * - Обновление и отрисовку частиц (взрывы, урон, смерть)
- * - Обновление и отрисовку снега
- * - Владение ParticleSystem
- *
- * Владее ParticleSystem напрямую — больше нет зависимости от FxManager.
+ * Этап 5: мигрирован на Batchers.
+ * - drawWorldFx() теперь принимает Batchers вместо Graphics
+ * - snow rendering также мигрирован на PrimitiveBatcher
  */
 export class ParticleLayer implements IRenderLayer {
   private sys!: ParticleSystem;
@@ -24,7 +19,7 @@ export class ParticleLayer implements IRenderLayer {
     this.sys = sys;
   }
 
-  init(_app: Application, _ctx: RenderLayerContext): void {
+  init(_app: import('pixi.js').Application, _ctx: RenderLayerContext): void {
     // ParticleLayer не требует инициализации — sys уже создан в engine
   }
 
@@ -34,9 +29,12 @@ export class ParticleLayer implements IRenderLayer {
     this.sys.updateSnow(ctx.time);
   }
 
-  render(_ctx: RenderLayerContext): void {
-    // Отрисовка частиц в worldParticleG
-    this.sys.drawWorldFx();
+  render(ctx: RenderLayerContext): void {
+    // Отрисовка частиц через PrimitiveBatcher
+    const batchers = ctx.batchers;
+    if (batchers) {
+      this.sys.drawWorldFx(batchers);
+    }
   }
 
   resize(viewW: number, viewH: number): void {
