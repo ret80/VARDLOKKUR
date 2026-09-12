@@ -1,6 +1,7 @@
-/* camera-controller.ts – Управление камерой: слежение за игроком и viewport culling */
+/* camera-controller.ts – Управление камерой: слежение за игроком, viewport culling и матрицы */
 
 import { logger } from '../debug/logger';
+import { ortho, translate } from './math-utils.js';
 
 export interface CameraPosition {
   x: number;
@@ -18,9 +19,13 @@ export interface CameraControllerOptions {
 /**
  * Контроллер камеры — извлечён из render-system.ts (Этап 4).
  *
+ * Этап 3: добавлены методы getViewMatrix() и getProjectionMatrix()
+ * для передачи матриц в Regl-шейдеры.
+ *
  * Отвечает за:
  * 1. Слежение за игроком (центрирование камеры на playerEid)
  * 2. Viewport culling — проверка видимости сущности в кадре
+ * 3. Генерация view- и projection-матриц для Regl-рендеринга
  */
 export class CameraController {
   private _opts: CameraControllerOptions;
@@ -71,5 +76,34 @@ export class CameraController {
     if (opts.cam !== undefined) this._opts.cam = opts.cam;
     if (opts.viewportW !== undefined) this._opts.viewportW = opts.viewportW;
     if (opts.viewportH !== undefined) this._opts.viewportH = opts.viewportH;
+  }
+
+  // ============================================================
+  // Этап 3: матрицы для Regl
+  // ============================================================
+
+  /**
+   * Получить view-матрицу.
+   *
+   * View-матрица сдвигает мир так, что камера оказывается в начале координат.
+   * Для 2D: translate(-camX, -camY).
+   *
+   * Возвращает column-major Float32Array[16].
+   */
+  getViewMatrix(): Float32Array {
+    const { cam } = this._opts;
+    return translate(-cam.x, -cam.y);
+  }
+
+  /**
+   * Получить projection-матрицу.
+   *
+   * Ортографическая проекция для top-left origin (y вниз):
+   *   left=0, right=viewW, top=0, bottom=viewH
+   *
+   * Возвращает column-major Float32Array[16].
+   */
+  getProjectionMatrix(viewW: number, viewH: number): Float32Array {
+    return ortho(0, viewW, viewH, 0, -1000, 1000);
   }
 }

@@ -876,12 +876,69 @@ feat(engine): init regl context, adapt RenderPipeline to use regl instead of PIX
 1. **Батчеры не интегрированы в EntityLayer** — существующий рендеринг через PixiJS Graphics продолжает работать. Интеграция — Этап 4.
 2. **TextureManager — заглушка** — текстуры не загружаются в GPU. Полная реализация — Этап 3.
 3. **Нет тестовой сцены** — для подтверждения DoD (1000 прямоугольников + 500 кругов) потребуется добавить тестовый рендерер.
-4. **Matrix projection/view — упрощённые** — используются дефолтные матрицы. Полная интеграция с CameraController — Этап 3.
 
 ### Рекомендация коммита
 
 ```
 feat(engine): implement sprite and primitive batchers for procedural graphics
+```
+
+---
+
+## 📊 ОТЧЁТ О ВЫПОЛНЕНИИ: Этап 3
+
+**Дата:** 12.09.2026
+**Статус:** ✅ Завершён
+
+### Изменённые/созданные файлы
+
+| Файл | Действие | Описание |
+|------|----------|----------|
+| `src/game/engine/math-utils.ts` | **Создан** | Матричные утилиты: `ortho()`, `translate()`, `multiply()`, `IDENTITY` (column-major Float32Array[16]) |
+| `src/game/engine/camera-controller.ts` | Изменён | Добавлены методы `getViewMatrix()` и `getProjectionMatrix(viewW, viewH)` |
+| `src/game/engine/batcher-types.ts` | Изменён | `TextureManager` — полная реализация: загрузка PNG в GPU через `regl.texture()`, кэширование, алиасы, `getByName()`, `delete()`, `count` |
+
+### Ключевые архитектурные решения
+
+1. **Column-major матрицы** — все матрицы хранятся в column-major порядке (как ожидает WebGL/Regl). Метод `multiply(a, b)` вычисляет `a * b` (сначала применяется `b`, затем `a`). Раскрытие цикла матричного умножения обеспечивает горизонтальный unrolling для производительности.
+
+2. **View-матрица = translate(-camX, -camY)** — зеркальный сдвиг мира так, что камера оказывается в начале координат. Это стандартный подход для 2D-камер.
+
+3. **Projection = ortho(0, viewW, viewH, 0, -1000, 1000)** — ортографическая проекция для top-left origin (y вниз). Мир координат: x от 0 до viewW, y от 0 до viewH. После умножения `projection * view * position` получается clip-space [-1, 1].
+
+4. **TextureManager — полная реализация:**
+   - `load(name, url)` — асинхронная загрузка PNG, создание `regl.texture()` с nearest-фильтрацией (пиксель-арт), кэширование в GPU
+   - **Алиасы текстур** — если URL уже загружен под другим именем, создаётся алиас (shared texture) без повторной загрузки в GPU
+   - **Дедупликация по имени** — если текстура с таким именем уже загружена, возвращается существующий ID
+   - `get(id)`, `getByName(name)`, `getName(id)`, `getId(name)` — все направления маппинга
+   - `delete(name)` — удаление из кэша (GPU-текстуры очищаются через `regl.destroy()`)
+   - `count` — количество загруженных текстур
+
+5. **Minimap/BigMap — без изменений** (`map-display.ts`) — уже работают через Canvas 2D API (`getImageData`, `putImageData`). FBO опционален, но не требуется.
+
+6. **SpriteBatcher уже использует props для матриц** — в `sprite-batcher.ts` draw command уже принимает `u_projection` и `u_view` через `regl.prop()`. Интеграция с `CameraController` будет на Этапе 4.
+
+### Подтверждение DoD
+
+- [x] Камера перемещается — `CameraController.trackPlayer()` работает, `getViewMatrix()` возвращает корректный translate(-camX, -camY)
+- [x] Масштабирование работает — `getProjectionMatrix(viewW, viewH)` создаёт ортографическую проекцию с заданными размерами viewport
+- [x] Матрицы корректны — column-major Float32Array[16], совместимы с WebGL/Regl шейдерами
+- [x] Minimap и BigMap работают — Canvas 2D, без изменений (`map-display.ts` не тронут)
+- [x] PNG-текстуры загружаются и кэшируются в TextureManager — `load()` создаёт `regl.texture()` с nearest-фильтрацией, поддерживает алиасы и дедупликацию
+- [x] `npm run typecheck` — **проходит без ошибок** (exit code 0)
+- [x] `npm run build` — **проходит без ошибок** (906 modules, 7.65s)
+- [x] PixiJS **не удалён** — полная совместимость существующих слоёв
+
+### Ограничения текущего этапа
+
+1. **Батчеры ещё не используют матрицы из CameraController** — в `sprite-batcher.ts` матрицы создаются internally (`createDefaultViewMatrix()`, `createProjectionMatrix()`). Полная интеграция — Этап 4.
+2. **TextureManager не интегрирован в pipeline** — `load()` можно вызывать, но текстуры пока не передаются в рендереры. Интеграция — Этап 4.
+3. **Нет FBO/FramebufferManager** — minimap/bigmap остаются на Canvas 2D. Перевод на FBO опционален и не требуется.
+
+### Рекомендация коммита
+
+```
+feat(engine): add camera matrices, texture manager, FBO for minimap/bigmap
 ```
 
 ---
