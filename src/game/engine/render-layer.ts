@@ -21,6 +21,8 @@ export interface RenderLayerContext {
   reglCanvas?: HTMLCanvasElement;
   /** Батчеры для Regl-рендеринга (Этап 2: Sprite + Primitive) */
   batchers?: Batchers;
+  /** Позиция камеры для world → screen (Этап 6) */
+  cam?: { x: number; y: number };
 }
 
 /**

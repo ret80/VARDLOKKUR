@@ -185,18 +185,19 @@ export class RenderSystem {
       dropRegistry,
       (eid) => eidToDropData(eid, world),
       batchers,
-      time
+      time,
+      cameraController.cam
     );
 
     // NPC
-    this.renderNpcsEcs(world, ctx, batchers, opts.getNpcSig, opts.talkedSig);
+    this.renderNpcsEcs(world, ctx, batchers, opts.getNpcSig, opts.talkedSig, cameraController.cam);
 
     // Объекты окружения (сундуки, пьедесталы, святилища, двери, барьеры, алтари)
-    this.renderObjectsEcs(world, ctx, batchers);
+    this.renderObjectsEcs(world, ctx, batchers, cameraController.cam);
 
     // Обновить и отрисовать плавающий текст (Этап 5: через PrimitiveBatcher)
     float.update(dt);
-    float.render(batchers);
+    float.render(batchers, cameraController.cam);
 
     // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
     this.renderInteractionHint(batchers, opts.nearestInteractable, opts.cameraController.cam, time);
@@ -222,7 +223,11 @@ export class RenderSystem {
       return;
     }
 
+    // World → screen offset
+    const cam = opts.cameraController.cam;
+    batchers.primitive.setOffset(playerX - cam.x, playerY - cam.y);
     playerRenderer.render(batchers, playerToRenderData(playerEid, ctx.time), ctx);
+    batchers.primitive.resetOffset();
   }
 
   /** Универсальная диспетчеризация через реестр */
@@ -265,7 +270,15 @@ export class RenderSystem {
       }
 
       const data = mapper(eid);
+
+      // World → screen offset
+      if (cam) {
+        batchers.primitive.setOffset(Position.x[eid] - cam.x, Position.y[eid] - cam.y);
+      }
       r.render(batchers, data, { time });
+      if (cam) {
+        batchers.primitive.resetOffset();
+      }
     }
   }
 
@@ -275,7 +288,8 @@ export class RenderSystem {
     ctx: RenderContext,
     batchers: Batchers,
     getNpcSig?: (npcId: string) => string,
-    talkedSig?: Map<string, string>
+    talkedSig?: Map<string, string>,
+    cam?: { x: number; y: number }
   ): void {
     for (const eid of query(world, [Renderable, NPC])) {
       const npcId = poolGet(StringPool.npcIds, NPC.id[eid]);
@@ -285,7 +299,13 @@ export class RenderSystem {
       const npcCtx = { ...ctx, mark } as any;
       const renderer = npcRegistry.get(npcId as any) ?? npcRegistry.get("default" as any);
       if (renderer) {
+        if (cam) {
+          batchers.primitive.setOffset(Position.x[eid] - cam.x, Position.y[eid] - cam.y);
+        }
         renderer.render(batchers, data, npcCtx);
+        if (cam) {
+          batchers.primitive.resetOffset();
+        }
       }
     }
   }
@@ -294,13 +314,20 @@ export class RenderSystem {
   private renderObjectsEcs(
     world: World,
     ctx: RenderContext,
-    batchers: Batchers
+    batchers: Batchers,
+    cam?: { x: number; y: number }
   ): void {
     for (const config of this.OBJECT_QUERIES) {
       const renderer = objectRegistry.getOrThrow(config.key as any);
       for (const eid of query(world, config.components)) {
         const data = config.mapper(eid, world);
+        if (cam) {
+          batchers.primitive.setOffset(Position.x[eid] - cam.x, Position.y[eid] - cam.y);
+        }
         renderer.render(batchers, data, ctx);
+        if (cam) {
+          batchers.primitive.resetOffset();
+        }
       }
     }
   }

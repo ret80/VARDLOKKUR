@@ -40,8 +40,8 @@ export function createReglEngine(container: HTMLElement): ReglEngine {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.floor(w * dpr);
     canvas.height = Math.floor(h * dpr);
-    canvas.style.width = w + 'px';
-    canvas.style.height = h + 'px';
+    // CSS: canvas растягивается на весь контейнер (width:100%;height:100% из cssText),
+    // здесь задаём только размер drawing buffer
     regl.poll();
   };
 

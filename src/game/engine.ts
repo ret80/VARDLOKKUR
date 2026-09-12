@@ -157,6 +157,8 @@ export class Engine {
   // Этап 1: Regl-движок
   private reglEngine: import('./engine/regl-engine').ReglEngine | null = null;
   private regl: any = null;
+  private _frameHandle: { cancel: () => void } | null = null;
+  private _lastFrameTime = 0;
 
   // Локальные данные (для рендеринга и обновления)
   // Все данные игрока теперь через this.playerDomain (ECS) и this.store.flags
@@ -224,7 +226,8 @@ export class Engine {
     // Этап 1: создаём Regl-движок
     this.reglEngine = createReglEngine(container);
     this.regl = this.reglEngine.regl;
-    this.reglEngine.resize(this.viewport.viewW, this.viewport.viewH);
+    // Drawing buffer = размер окна (CSS растягивает canvas на контейнер)
+    this.reglEngine.resize(window.innerWidth, window.innerHeight);
 
     // Инициализация FX-менеджера
     this.fx.init(null, this.viewport.viewW, this.viewport.viewH);
@@ -262,7 +265,9 @@ export class Engine {
     this.bus.on("input:toggle-snow", () => this.handleSnow());
     this.bus.on("input:close-overlay", () => this.closeOverlay());
 
-    // Игровой цикл — Этап 6: удалён app.ticker, управление через ecs-game-loop
+    // Игровой цикл — Этап 6: regl.frame() заменяет удалённый app.ticker
+    this.startGameLoop();
+
     // Создаём GameStore и системы
     this.store = this.buildGameStore();
     this.instantiateSystems(this.store);
@@ -823,6 +828,25 @@ export class Engine {
   }
 
   /* ================= главный цикл ================= */
+
+  /**
+   * Запускает игровой цикл через regl.frame() — замену удалённому PixiJS ticker.
+   * regl.frame() автоматически вызывает poll() перед callback и gl.flush() после.
+   */
+  private startGameLoop(): void {
+    if (!this.regl) return;
+    this._lastFrameTime = performance.now();
+    this._frameHandle = this.regl.frame(() => {
+      const now = performance.now();
+      // dt в секундах, ограничен до 100мс для защиты от "спайков"
+      const dt = Math.min((now - this._lastFrameTime) / 1000, 0.1);
+      this._lastFrameTime = now;
+      // Очистка кадра с фоновым цветом
+      this.regl!.clear({ color: [0.02, 0.031, 0.052, 1.0], depth: 1 });
+      this.tick(dt);
+    });
+  }
+
   private tick(rdt: number) {
     // Этап 6: this.app удалён — управление через ecs-game-loop
     
@@ -852,10 +876,7 @@ export class Engine {
     // Рендеринг через ECS
     if (this.ecsGameLoop) this.ecsGameLoop.render(rdt);
     
-    // Этап 1: poll regl каждый кадр
-    if (this.regl) {
-      this.regl.poll();
-    }
+    // regl.poll() больше не нужен — regl.frame() автоматически вызывает poll() и gl.flush()
     // Minimap update через ECS queries
     if (this.minimapCanvas && this.mmBase) {
       const ctx = this.minimapCanvas.getContext("2d");
@@ -993,7 +1014,11 @@ export class Engine {
     this.input.unregister();
     this.mapLoader?.destroy();
     this.debugServer?.stop();
-    // Этап 6: this.app удалён — PixiJS больше не используется
+    // Остановить игровой цикл перед уничтожением regl
+    if (this._frameHandle) {
+      this._frameHandle.cancel();
+      this._frameHandle = null;
+    }
     this.reglEngine?.destroy();
     this.fx.destroy();
     this.bus.clear();

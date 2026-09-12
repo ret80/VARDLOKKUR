@@ -33,7 +33,7 @@ export class ParticleLayer implements IRenderLayer {
     // Отрисовка частиц через PrimitiveBatcher
     const batchers = ctx.batchers;
     if (batchers) {
-      this.sys.drawWorldFx(batchers);
+      this.sys.drawWorldFx(batchers, ctx.cam);
     }
   }
 

@@ -9,8 +9,6 @@ import primitiveFrag from '../engine/shaders/primitive.frag?raw';
 // Константы батчера
 // ============================================================
 
-/** Размер вершины: x, y, r, g, b, a */
-const VERTEX_SIZE = 6;
 /** Максимум вершин в одном батче (65K — хватает для большинства сцен) */
 const MAX_VERTICES = 65536;
 
@@ -50,10 +48,16 @@ function colorToRgb(color: number, alpha: number): [number, number, number, numb
  *   batcher.flush(); // отправить на GPU
  */
 export class PrimitiveBatcher {
-  /** Плоский массив вершин (INTERLEAVED: x,y,r,g,b,a) */
-  private vertices = new Float32Array(MAX_VERTICES * VERTEX_SIZE);
+  /** Массив позиций (x, y на вершину) */
+  private positions = new Float32Array(MAX_VERTICES * 2);
+  /** Массив цветов (r, g, b, a на вершину) */
+  private colors = new Float32Array(MAX_VERTICES * 4);
   /** Текущее количество вершин */
   private vertexCount = 0;
+
+  /** Текущий offset для translate (world → screen) */
+  private _offsetX = 0;
+  private _offsetY = 0;
 
   /** REGL draw command */
   private drawCommand: REGL.DrawCommand | null = null;
@@ -294,7 +298,6 @@ export class PrimitiveBatcher {
     }
 
     const vertCount = this.vertexCount;
-    const vertData = this.vertices.subarray(0, vertCount * VERTEX_SIZE);
 
     const viewMatrix = view || this.createDefaultViewMatrix();
     const projMatrix = proj
@@ -303,14 +306,14 @@ export class PrimitiveBatcher {
 
     this.drawCommand({
       attributes: {
-        a_position: vertData.subarray(0, vertCount * 2),
-        a_color: vertData.subarray(2, vertCount * 4 + 2),
+        a_position: this.positions.subarray(0, vertCount * 2),
+        a_color: this.colors.subarray(0, vertCount * 4),
       },
       count: vertCount,
-      props: {
-        proj: projMatrix,
-        view: viewMatrix,
-      },
+      // ВАЖНО: regl.prop('proj') при одиночном вызове читает ключи ВЕРХНЕГО уровня args,
+      // а не args.props (props работает только в batch-режиме)
+      proj: projMatrix,
+      view: viewMatrix,
     });
 
     // Сброс
@@ -329,18 +332,36 @@ export class PrimitiveBatcher {
 
   // ── Внутренние методы ───────────────────────────────────────
 
+  /**
+   * Установить offset для translate.
+   * Все последующие push-методы будут добавлять (offsetX, offsetY) к координатам.
+   * Используется для world → screen: setOffset(worldX - camX, worldY - camY).
+   */
+  setOffset(x: number, y: number): void {
+    this._offsetX = x;
+    this._offsetY = y;
+  }
+
+  /** Сбросить offset в (0, 0) */
+  resetOffset(): void {
+    this._offsetX = 0;
+    this._offsetY = 0;
+  }
+
   private addVertex(x: number, y: number, r: number, g: number, b: number, a: number): void {
     if (this.vertexCount + 1 >= MAX_VERTICES) {
       this.flush(); // auto-flush при переполнении
     }
 
-    const vi = this.vertexCount * VERTEX_SIZE;
-    this.vertices[vi + 0] = x; // x
-    this.vertices[vi + 1] = y; // y
-    this.vertices[vi + 2] = r; // r
-    this.vertices[vi + 3] = g; // g
-    this.vertices[vi + 4] = b; // b
-    this.vertices[vi + 5] = a; // a
+    const vi = this.vertexCount * 2;
+    this.positions[vi] = x + this._offsetX;
+    this.positions[vi + 1] = y + this._offsetY;
+
+    const ci = this.vertexCount * 4;
+    this.colors[ci] = r;
+    this.colors[ci + 1] = g;
+    this.colors[ci + 2] = b;
+    this.colors[ci + 3] = a;
 
     this.vertexCount++;
   }

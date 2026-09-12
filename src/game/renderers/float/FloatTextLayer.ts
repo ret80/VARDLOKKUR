@@ -71,7 +71,7 @@ export class FloatTextLayer {
   }
 
   /** Отрисовать текст через batchers — пиксель-арт стиль */
-  render(batchers: Batchers): void {
+  render(batchers: Batchers, cam?: { x: number; y: number }): void {
     if (this.texts.length === 0) return;
 
     const { primitive: prim } = batchers;
@@ -85,8 +85,12 @@ export class FloatTextLayer {
       const b = (t.color & 0xff) / 255;
       const a = t.alpha;
 
+      // World → screen
+      const sx = cam ? t.x - cam.x : t.x;
+      const sy = cam ? t.y - cam.y : t.y;
+
       // Рисуем текст как набор прямоугольников (пиксель-арт стиль)
-      this.drawTextPixels(prim, t.x, t.y, t.text, r, g, b, a);
+      this.drawTextPixels(prim, sx, sy, t.text, r, g, b, a);
     }
   }
 

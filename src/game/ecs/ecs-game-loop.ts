@@ -246,6 +246,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   // Инициализируем пайплайн
   pipeline.init(null, { dt: _stepT, time: _realT, world, regl, reglCanvas });
+  pipeline.resize(viewW, viewH);
 
   // Локальные копии для updateConfig
   let config_map = map;
@@ -602,8 +603,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // Вызываем update() и render() пайплайна
     // app.render() вызывается внутри RenderPipeline.render() после всех слоёв
     // (включая FogLayer — это устраняет 1-кадровый лаг тумана)
-    pipeline.update({ dt: rdt, time: _realT, world, regl, reglCanvas });
-    pipeline.render({ dt: rdt, time: _realT, world, regl, reglCanvas });
+    pipeline.update({ dt: rdt, time: _realT, world, regl, reglCanvas, cam });
+    pipeline.render({ dt: rdt, time: _realT, world, regl, reglCanvas, cam });
   }
 
   return {

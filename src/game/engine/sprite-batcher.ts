@@ -9,8 +9,6 @@ import spriteFrag from '../engine/shaders/sprite.frag?raw';
 // Константы батчера
 // ============================================================
 
-/** Размер вершины: x, y, u, v, r, g, b, a, textureIndex */
-const VERTEX_SIZE = 10;
 /** Максимум квадов в одном батче */
 const MAX_QUADS = 4096;
 /** Максимум вершин = MAX_QUADS * 4 */
@@ -50,8 +48,14 @@ interface SpriteVertex {
  *   batcher.flush(); // отправить на GPU
  */
 export class SpriteBatcher {
-  /** Плоский массив вершин (INTERLEAVED: x,y,u,v,r,g,b,a,texIdx) */
-  private vertices = new Float32Array(MAX_VERTICES * VERTEX_SIZE);
+  /** Массив позиций (x, y на вершину) */
+  private positions = new Float32Array(MAX_VERTICES * 2);
+  /** Массив UV (u, v на вершину) */
+  private uvs = new Float32Array(MAX_VERTICES * 2);
+  /** Массив цветов (r, g, b, a на вершину) */
+  private colors = new Float32Array(MAX_VERTICES * 4);
+  /** Массив индексов текстур */
+  private texIndices = new Float32Array(MAX_VERTICES);
   /** Предвычисленные индексы для квадов */
   private indices = new Uint32Array(MAX_INDICES);
   /** Текущее количество вершин */
@@ -145,8 +149,6 @@ export class SpriteBatcher {
       this.flush();
     }
 
-    const base = this.vertexCount * VERTEX_SIZE;
-
     // Вычисляем 4 вершины квада с учётом поворота
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
@@ -167,17 +169,16 @@ export class SpriteBatcher {
       const rx = cx + c.dx * cos - c.dy * sin;
       const ry = cy + c.dx * sin + c.dy * cos;
 
-      const vi = base + i * VERTEX_SIZE;
-      this.vertices[vi + 0] = rx; // x
-      this.vertices[vi + 1] = ry; // y
-      this.vertices[vi + 2] = c.u; // u
-      this.vertices[vi + 3] = c.v; // v
-      this.vertices[vi + 4] = r; // r
-      this.vertices[vi + 5] = g; // g
-      this.vertices[vi + 6] = b; // b
-      this.vertices[vi + 7] = a; // a
-      this.vertices[vi + 8] = textureIndex; // textureIndex
-      // vertexCount + 9 — unused padding
+      const vi = this.vertexCount + i;
+      this.positions[vi * 2] = rx;
+      this.positions[vi * 2 + 1] = ry;
+      this.uvs[vi * 2] = c.u;
+      this.uvs[vi * 2 + 1] = c.v;
+      this.colors[vi * 4] = r;
+      this.colors[vi * 4 + 1] = g;
+      this.colors[vi * 4 + 2] = b;
+      this.colors[vi * 4 + 3] = a;
+      this.texIndices[vi] = textureIndex;
     }
 
     this.vertexCount += 4;
@@ -218,23 +219,21 @@ export class SpriteBatcher {
       ? this.createProjectionMatrix(proj.w, proj.h)
       : this.createDefaultProjectionMatrix();
 
-    // Извлекаем подмассивы вершин
+    // Извлекаем подмассивы
     const vertCount = this.vertexCount;
-    const posData = this.vertices.subarray(0, vertCount * VERTEX_SIZE);
 
     this.drawCommand({
       attributes: {
-        a_position: posData.subarray(0, vertCount * 2),
-        a_uv: posData.subarray(2, vertCount * 2 + 2),
-        a_color: posData.subarray(4, vertCount * 4 + 4),
-        a_textureIndex: posData.subarray(8, vertCount),
+        a_position: this.positions.subarray(0, vertCount * 2),
+        a_uv: this.uvs.subarray(0, vertCount * 2),
+        a_color: this.colors.subarray(0, vertCount * 4),
+        a_textureIndex: this.texIndices.subarray(0, vertCount),
       },
       count: this.indexCount,
-      props: {
-        proj: projMatrix,
-        view: viewMatrix,
-        textures: [null!, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
-      },
+      // ВАЖНО: regl.prop при одиночном вызове читает ключи ВЕРХНЕГО уровня args
+      proj: projMatrix,
+      view: viewMatrix,
+      textures: [null!, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
     });
 
     // Сброс

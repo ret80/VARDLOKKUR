@@ -100,8 +100,9 @@ export class ParticleSystem {
   /**
    * Отрисовка мировых частиц через PrimitiveBatcher.
    * Каждая частица рисуется как маленький квадрат с alpha = life/max.
+   * @param cam — позиция камеры для world → screen
    */
-  public drawWorldFx(batchers: Batchers): void {
+  public drawWorldFx(batchers: Batchers, cam?: { x: number; y: number }): void {
     const { primitive: prim } = batchers;
 
     for (const p of this.particles) {
@@ -110,9 +111,11 @@ export class ParticleSystem {
       if (alpha <= 0.01) continue;
 
       const halfSize = p.size / 2;
+      const sx = cam ? p.x - cam.x : p.x;
+      const sy = cam ? p.y - cam.y : p.y;
       prim.pushRect(
-        p.x - halfSize,
-        p.y - halfSize,
+        sx - halfSize,
+        sy - halfSize,
         p.size,
         p.size,
         p.color,

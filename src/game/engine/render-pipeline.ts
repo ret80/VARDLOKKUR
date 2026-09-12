@@ -38,6 +38,8 @@ export class RenderPipeline {
   private initialized = false;
   private regl: REGL.Regl | null = null;
   private batchers: Batchers | null = null;
+  private viewW = 1024;
+  private viewH = 768;
 
   /** Добавить слой в пайплайн. Слои вызываются в порядке добавления. */
   addLayer(layer: IRenderLayer): void {
@@ -91,10 +93,18 @@ export class RenderPipeline {
     for (const layer of this.layers) {
       layer.render(ctx);
     }
+    // Flush батчеров — отправляем накопленные draw commands на GPU
+    if (this.batchers) {
+      const vp = { w: this.viewW, h: this.viewH };
+      this.batchers.primitive.flush(vp);
+      this.batchers.sprite.flush(vp);
+    }
   }
 
   /** Обновить размеры viewport во всех слоях. Вызывается при ресайзе. */
   resize(viewW: number, viewH: number): void {
+    this.viewW = viewW;
+    this.viewH = viewH;
     for (const layer of this.layers) {
       layer.resize(viewW, viewH);
     }
