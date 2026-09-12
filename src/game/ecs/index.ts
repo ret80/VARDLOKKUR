@@ -22,7 +22,6 @@ export {
   Door,
   Barrier,
   Altar,
-  Sprite,
   // Components — Markers
   Dead,
   Hidden,

@@ -1,6 +1,6 @@
-/* map-loader-service.ts – Загрузка карт: тайлы, ECS-сущности, миникарта */
+/* map-loader-service.ts – Загрузка карт: тайлы, ECS-сущности, миникарта
+   Этап 6: удалён import { Sprite, Graphics } из pixi.js */
 
-import { Sprite, Graphics } from "pixi.js";
 import { PlanckWorld } from "../physics/planck-world";
 import type { WorldData, Vec } from "../world";
 import type { GameStore } from "../store";
@@ -49,12 +49,11 @@ export class MapLoaderService {
 
   get mmBase(): ImageData | null { return this._mmBase; }
 
-  /** Очистить tileLayer и dynamic контейнеры перед загрузкой новой карты */
-  clearTiles(preservePlayerG?: Graphics): void {
-    // Сохраняем playerG перед очисткой dynamic — он может быть уничтожен clearDynamic()
-    // без этого playerG.destroy() вызовется и playerG.position станет null
+  /** Очистить tileLayer и dynamic контейнеры перед загрузкой новой карты (Этап 6: заглушка) */
+  clearTiles(_preservePlayerG?: unknown): void {
+    // Этап 6: тайлы больше не добавляются в PixiJS слои
     this.scene.clearTiles();
-    this.scene.clearDynamic(preservePlayerG);
+    this.scene.clearDynamic();
   }
 
   /** ECS загрузка карты: тайлы + сущности + миникарта */
@@ -62,7 +61,7 @@ export class MapLoaderService {
     map: WorldData,
     spawn: Vec,
     playerDomain: PlayerDomain,
-    playerG: any,
+    _playerG: unknown,
     savedDrops: Array<{ kind: string; x: number; y: number; life: number; ambientIdx?: number }>,
     toast: (msg: string) => void,
     onPlayerCreated?: (eid: number) => void
@@ -73,36 +72,8 @@ export class MapLoaderService {
       this._prevPlanckWorld = null;
     }
 
-    // Очищаем старые тайлы перед построением новых, сохраняем playerG
-    this.clearTiles(playerG);
-
-    // Строим текстуры — ground как фон, стены/дома в tileLayer
+    // Этап 6: тайлы рендерятся через Canvas 2D (не через PixiJS Sprites)
     const tileResult = buildAllTileTextures(map, this.store.roofSnow);
-
-    const groundSprite = new Sprite(tileResult.groundTexture);
-    groundSprite.position.set(0, 0);
-    groundSprite.zIndex = 0;
-    this.scene.tileLayer.addChildAt(groundSprite, 0);
-
-    // Переносим дома, ёлки, камни, монументы в dynamic — сортируются по layer + bottomY
-    // sprite.height может быть 0 (Texture.from асинхронный), поэтому используем фиксированные высоты
-    const WALL_H = 44;
-    for (const ws of tileResult.wallSprites) {
-      (ws as any).userData = (ws as any).userData || {};
-      (ws as any).userData.layer = 40;
-      // ws.position.y = Y - 20, значит Y = ws.position.y + 20
-      // bottomY = Y + T/2 = ws.position.y + 20 + 8 = ws.position.y + 28
-      (ws as any).userData.y = ws.position.y + 28;
-      this.scene.dynamic.addChild(ws);
-    }
-    for (const hs of tileResult.houseSprites) {
-      (hs.spr as any).userData = (hs.spr as any).userData || {};
-      (hs.spr as any).userData.layer = 40;
-      const m = houseMetrics(hs.hw, hs.hh);
-      // bottomY = y*T + hh*T (нижняя точка дома)
-      (hs.spr as any).userData.y = hs.spr.position.y + m.wallTop + m.wallH + m.foundH - 1;
-      this.scene.dynamic.addChild(hs.spr);
-    }
     this.wallCache = tileResult.wallCache;
     this.houseCache = tileResult.houseCache;
 
@@ -111,7 +82,6 @@ export class MapLoaderService {
     this.ecsMapLoader = new EcsMapLoader({
       world: this.ecsWorld,
       planckWorld: newPlanckWorld,
-      dynamicContainer: this.scene.dynamic,
       openedChests: this.store.openedChests,
       takenPedestals: this.store.takenPedestals,
       visitedShrines: this.store.visitedShrines,
@@ -133,7 +103,7 @@ export class MapLoaderService {
     // Сохраняем для уничтожения при следующей загрузке карты
     this._prevPlanckWorld = newPlanckWorld;
 
-    const result = this.ecsMapLoader.loadMap(playerG, playerDomain, onPlayerCreated);
+    const result = this.ecsMapLoader.loadMap(null, playerDomain, onPlayerCreated);
     this._mmBase = buildMinimapBase(map);
     return result;
   }

@@ -3,7 +3,6 @@
 import type { EnemyKind, DropKind, ProjectileKind } from "./generators/types";
 import type { Screen } from "./models";
 import type { Vec } from "./world";
-import type { Graphics } from "pixi.js";
 
 type GameEvents = {
   // Бой
@@ -46,10 +45,10 @@ type GameEvents = {
 
   // Снаряды
   "projectile:fire":  { kind: ProjectileKind; x: number; y: number; vx: number; vy: number; dmg: number };
-  "projectile:spawned": { g: Graphics; x: number; y: number };
+  "projectile:spawned": { g: unknown; x: number; y: number };
 
   // Дропы
-  "drop:spawned": { g: Graphics; x: number; y: number };
+  "drop:spawned": { g: unknown; x: number; y: number };
 
   // Бой (запросы от игрока)
   "combat:trySword":    {};

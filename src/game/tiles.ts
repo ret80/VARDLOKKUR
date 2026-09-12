@@ -1,8 +1,10 @@
 /* tiles.ts — Вся процедурная генерация тайловых текстур.
    Не знает про Engine, не хранит игровое состояние.
-   Принимает WorldData + параметры → возвращает текстуры/спрайты. */
+   Принимает WorldData + параметры → возвращает текстуры/спрайты.
+   
+   Этап 6: удалён import { Application, Sprite, Texture } из pixi.js.
+   Теперь используются Canvas 2D для всех текстур. */
 
-import { Application, Sprite, Texture } from "pixi.js";
 import { T, Tl, WorldData } from "./world";
 
 /* ================== типы ================== */
@@ -32,7 +34,7 @@ export interface HouseMetrics {
 }
 
 export interface HouseSpriteEntry {
-  spr: Sprite;
+  canvas: HTMLCanvasElement;
   hw: number;
   hh: number;
   v: number;
@@ -40,8 +42,8 @@ export interface HouseSpriteEntry {
 }
 
 export interface TileBuildResult {
-  groundTexture: Texture;
-  wallSprites: (Sprite | import("pixi.js").Graphics)[];
+  groundCanvas: HTMLCanvasElement;
+  wallCanvases: Array<{ canvas: HTMLCanvasElement; x: number; y: number; zIndex: number }>;
   houseSprites: HouseSpriteEntry[];
   wallCache: WallTextureCache;
   houseCache: HouseTextureCache;
@@ -435,55 +437,53 @@ export function paintHouse(ctx: CanvasRenderingContext2D, hw: number, hh: number
 /* ================== кэш текстур стен ================== */
 
 export class WallTextureCache {
-  private cache = new Map<string, Texture>();
+  private cache = new Map<string, HTMLCanvasElement>();
 
-  getSprite(t: number, r1: number, r2: number, dungeonId: number): Sprite {
+  getCanvas(t: number, r1: number, r2: number, dungeonId: number): HTMLCanvasElement {
     let v = 0;
     if (t === Tl.TREE) v = (r2 > 0.5 ? 1 : 0) | (r2 > 0.7 ? 2 : 0);
     else if (t === Tl.ROCK) v = r1 > 0.5 ? 1 : 0;
     else if (t === Tl.COLUMN) v = (r1 > 0.5 ? 1 : 0) | (r2 > 0.7 ? 2 : 0);
     const key = t + "_" + v + "_" + dungeonId;
-    let tex = this.cache.get(key);
-    if (!tex) {
-      const c = document.createElement("canvas");
-      c.width = 32; c.height = 44;
-      paintWall(c.getContext("2d")!, t, v, dungeonId);
-      tex = Texture.from(c);
-      this.cache.set(key, tex);
+    let canvas = this.cache.get(key);
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      canvas.width = 32; canvas.height = 44;
+      paintWall(canvas.getContext("2d")!, t, v, dungeonId);
+      this.cache.set(key, canvas);
     }
-    return new Sprite(tex);
+    return canvas;
   }
 
   invalidate() { this.cache.clear(); }
-  destroy() { this.cache.forEach((t) => t.destroy(true)); this.cache.clear(); }
+  destroy() { this.cache.clear(); }
 }
 
 /* ================== кэш текстур домов ================== */
 
 export class HouseTextureCache {
-  private cache = new Map<string, Texture>();
+  private cache = new Map<string, HTMLCanvasElement>();
 
-  getTexture(hw: number, hh: number, v: number, ruined: boolean, roofSnow: boolean): Texture {
+  getCanvas(hw: number, hh: number, v: number, ruined: boolean, roofSnow: boolean): HTMLCanvasElement {
     const key = `house_${hw}x${hh}_v${v}_r${ruined ? 1 : 0}_snow${roofSnow ? 1 : 0}`;
-    let tex = this.cache.get(key);
-    if (!tex) {
+    let canvas = this.cache.get(key);
+    if (!canvas) {
       const m = houseMetrics(hw, hh);
-      const c = document.createElement("canvas");
-      c.width = m.canvasW; c.height = m.canvasH;
-      paintHouse(c.getContext("2d")!, hw, hh, v, ruined, roofSnow);
-      tex = Texture.from(c);
-      this.cache.set(key, tex);
+      canvas = document.createElement("canvas");
+      canvas.width = m.canvasW; canvas.height = m.canvasH;
+      paintHouse(canvas.getContext("2d")!, hw, hh, v, ruined, roofSnow);
+      this.cache.set(key, canvas);
     }
-    return tex;
+    return canvas;
   }
 
   invalidate() { this.cache.clear(); }
-  destroy() { this.cache.forEach((t) => t.destroy(true)); this.cache.clear(); }
+  destroy() { this.cache.clear(); }
 }
 
-/* ================== buildGroundTexture ================== */
+/* ================== buildGroundCanvas ================== */
 
-function buildGroundTexture(map: WorldData): Texture {
+function buildGroundCanvas(map: WorldData): HTMLCanvasElement {
   const { W, H } = map;
   const gc = document.createElement("canvas"); gc.width = W * T; gc.height = H * T;
   const gx = gc.getContext("2d")!;
@@ -555,20 +555,20 @@ function buildGroundTexture(map: WorldData): Texture {
         gx.fillRect(X, Y, T, T);
     }
   }
-  return Texture.from(gc);
+  return gc;
 }
 
-/* ================== buildWallAndHouseSprites ================== */
+/* ================== buildWallAndHouseCanvases ================== */
 
-function buildWallAndHouseSprites(
+function buildWallAndHouseCanvases(
   map: WorldData,
   wallCache: WallTextureCache,
   houseCache: HouseTextureCache,
   ruinedTiles: Set<number>,
   roofSnow: boolean
-): { wallSprites: (Sprite | import("pixi.js").Graphics)[]; houseSprites: HouseSpriteEntry[] } {
+): { wallCanvases: Array<{ canvas: HTMLCanvasElement; x: number; y: number; zIndex: number }>; houseSprites: HouseSpriteEntry[] } {
   const { W, H } = map;
-  const wallSprites: (Sprite | import("pixi.js").Graphics)[] = [];
+  const wallCanvases: Array<{ canvas: HTMLCanvasElement; x: number; y: number; zIndex: number }> = [];
   const houseSprites: HouseSpriteEntry[] = [];
 
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -578,10 +578,8 @@ function buildWallAndHouseSprites(
       t === Tl.TREE || t === Tl.ROCK || t === Tl.PALISADE ||
       t === Tl.COLUMN || t === Tl.DWALL || t === Tl.CAVEWALL
     ) {
-      const ws = wallCache.getSprite(t, rnd(x, y, 11), rnd(x, y, 13), map.dungeonId);
-      ws.position.set(X - 8, Y - 20);
-      ws.zIndex = Y + T;
-      wallSprites.push(ws);
+      const canvas = wallCache.getCanvas(t, rnd(x, y, 11), rnd(x, y, 13), map.dungeonId);
+      wallCanvases.push({ canvas, x: X - 8, y: Y - 20, zIndex: Y + T });
     }
   }
 
@@ -610,15 +608,13 @@ function buildWallAndHouseSprites(
     const m = houseMetrics(hw, hh);
     const isRuined = ruinedTiles.has(y * W + x);
     const v = (rnd(x, y, 13) > 0.5 ? 1 : 0) | (rnd(x, y, 11) > 0.6 ? 2 : 0);
-    const tex = houseCache.getTexture(hw, hh, v, isRuined, roofSnow);
-    const ws = new Sprite(tex);
-    ws.position.set(x * T - m.marginX, y * T + hh * T + 1 - (m.wallTop + m.wallH + m.foundH));
-    ws.zIndex = y * T + hh * T;
-    wallSprites.push(ws);
-    houseSprites.push({ spr: ws, hw, hh, v, ruined: isRuined });
+    const canvas = houseCache.getCanvas(hw, hh, v, isRuined, roofSnow);
+    const houseY = y * T + hh * T + 1 - (m.wallTop + m.wallH + m.foundH);
+    wallCanvases.push({ canvas, x: x * T - m.marginX, y: houseY, zIndex: y * T + hh * T });
+    houseSprites.push({ canvas, hw, hh, v, ruined: isRuined });
   }
 
-  return { wallSprites, houseSprites };
+  return { wallCanvases, houseSprites };
 }
 
 /* ================== фасадная функция ================== */
@@ -633,8 +629,8 @@ export function buildAllTileTextures(map: WorldData, roofSnow: boolean): TileBui
     for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++)
       ruinedTiles.add((r.y + dy) * map.W + (r.x + dx));
 
-  const groundTexture = buildGroundTexture(map);
-  const { wallSprites, houseSprites } = buildWallAndHouseSprites(map, wallCache, houseCache, ruinedTiles, roofSnow);
+  const groundCanvas = buildGroundCanvas(map);
+  const { wallCanvases, houseSprites } = buildWallAndHouseCanvases(map, wallCache, houseCache, ruinedTiles, roofSnow);
 
-  return { groundTexture, wallSprites, houseSprites, wallCache, houseCache };
+  return { groundCanvas, wallCanvases, houseSprites, wallCache, houseCache };
 }

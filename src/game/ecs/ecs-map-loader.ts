@@ -1,7 +1,10 @@
-/* ecs-map-loader.ts — загрузка сущностей карты в ECS */
+/* ecs-map-loader.ts — загрузка сущностей карты в ECS
+   Этап 6: удалена зависимость от PixiJS (Graphics).
+   Все spawn-методы больше не создают Graphics-заглушки —
+   графика рендерится через ECS batchers.
+*/
 
 import { type World, query, removeEntity } from 'bitecs';
-import { Graphics } from 'pixi.js';
 import { Cat, getEnemyCategory, getEnemyMask } from '../physics/planck-world';
 import { T, WorldData, Vec, solidTileAt } from '../world';
 import { clamp } from '../utils';
@@ -21,12 +24,9 @@ import {
   teardownWorld,
 } from './ecs-bridge';
 import type { EntityFactory } from './entity-factory';
-import { EventBus } from '../event-bus';
 import { logger } from '../debug/logger';
 import {
   Shrine,
-  Sprite,
-  SpriteRegistry,
   PhysicsBodyRegistry,
   EnemyAIRegistry,
   Chest,
@@ -40,7 +40,8 @@ import {
 export interface EcsMapLoaderConfig {
   world: World;
   planckWorld: PlanckWorld;
-  dynamicContainer: { addChild(child: Graphics): void; removeChild(child: Graphics): void; children: unknown[] };
+  /** @deprecated — Этап 6: dynamicContainer больше не используется (графика через ECS batchers) */
+  dynamicContainer?: unknown;
   openedChests: Set<string>;
   takenPedestals: Set<string>;
   visitedShrines: Set<number>;
@@ -57,7 +58,7 @@ export interface EcsMapLoaderConfig {
   viewH: number;
   savedDrops: { kind: string; x: number; y: number; life?: number; ambientIdx?: number }[];
   toast: (msg: string) => void;
-  bus?: EventBus;
+  bus?: import('../event-bus').EventBus;
   /** Фабрика чистых ECS-сущностей (без графики/физики) */
   entityFactory: EntityFactory;
 }
@@ -81,54 +82,49 @@ export class EcsMapLoader {
 
   /** Загрузить карту в ECS */
   loadMap(
-    playerG: Graphics,
+    _playerG: unknown,
     playerDomain: any,
     onPlayerCreated?: (eid: number) => void
   ): { playerEid: number; playerBody: any; cam: { x: number; y: number } } {
-    const { world, planckWorld, dynamicContainer, map, spawn, viewW, viewH, flags } = this.config;
+    const { world, planckWorld, map, spawn, viewW, viewH, flags } = this.config;
 
-    // 1. Сохранить playerG перед очисткой — он мог быть удалён из dynamicContainer при смерти игрока
-    // и будет уничтожен clearWorld из-за !s.parent
-    // 1-0. TEARDOWN: корректно уничтожить физические тела старого мира
+    // TEARDOWN: корректно уничтожить физические тела старого мира
     teardownWorld(world, planckWorld);
 
-    // 1-1. Очистить старый мир (ECS сущности + SoA массивы)
+    // Очистить старый мир (ECS сущности + SoA массивы)
     this.clearWorld(world);
 
-    // 1-2. Сбросить ссылку на barrierBody — новое тело создастся при spawnOverworldObjects
+    // Сбросить ссылку на barrierBody — новое тело создастся при spawnOverworldObjects
     this.barrierBody = null;
 
-    // 2. Создать тайловые коллайдеры
+    // Создать тайловые коллайдеры
     this.createTileBodies(map, planckWorld);
 
-    // 3. Создать игрока
-    this.playerEid = this.createPlayer(world, spawn, playerG, planckWorld);
-    (playerG as any).userData = (playerG as any).userData || {};
-    (playerG as any).userData.eid = this.playerEid;
-    dynamicContainer.addChild(playerG);
+    // Создать игрока (графика удалена — ECS renderers handle visuals)
+    this.playerEid = this.createPlayer(world, spawn, planckWorld);
 
-    // 4. Вызвать callback после создания игрока — SpriteRegistry уже заполнен
+    // Вызвать callback после создания игрока
     logger.debug('map-loader', `playerEid=${this.playerEid} onPlayerCreated=${!!onPlayerCreated}`);
     if (onPlayerCreated) onPlayerCreated(this.playerEid);
 
-    // 5. Камера
+    // Камера
     const cam = {
       x: clamp(spawn.x - viewW / 2, 0, Math.max(0, map.W * T - viewW)),
       y: clamp(spawn.y - viewH / 2, 0, Math.max(0, map.H * T - viewH)),
     };
 
-    // 5-11. Спавн всех сущностей
-    this.spawnEnemies(world, map, planckWorld, dynamicContainer);
-    this.spawnChests(world, map, dynamicContainer);
-    this.spawnPedestals(world, map, dynamicContainer);
-    this.spawnShrines(world, map, dynamicContainer);
-    this.spawnNpcs(world, map, dynamicContainer);
+    // Спавн всех сущностей (графика удалена — ECS renderers handle visuals)
+    this.spawnEnemies(world, map, planckWorld);
+    this.spawnChests(world, map);
+    this.spawnPedestals(world, map);
+    this.spawnShrines(world, map);
+    this.spawnNpcs(world, map);
     if (map.isDungeon) {
-      this.spawnDungeonDoors(world, map, planckWorld, dynamicContainer);
+      this.spawnDungeonDoors(world, map, planckWorld);
     } else {
-      this.spawnOverworldObjects(world, map, planckWorld, dynamicContainer);
+      this.spawnOverworldObjects(world, map, planckWorld);
     }
-    this.spawnDrops(world, map, dynamicContainer);
+    this.spawnDrops(world, map);
 
     return { playerEid: this.playerEid, playerBody: null, cam };
   }
@@ -166,89 +162,64 @@ export class EcsMapLoader {
   }
 
   private createPlayer(
-    world: World, spawn: Vec, playerG: Graphics, planckWorld: PlanckWorld
+    world: World, spawn: Vec, planckWorld: PlanckWorld
   ): number {
     const factory = this.config.entityFactory;
-    // Создаём ECS сущность игрока (без Sprite — playerG уже восстановлен в clearWorld)
+    // Создаём ECS сущность игрока (графика удалена на Этапе 6)
     const eid = createPlayerInEcs(factory, world, spawn.x, spawn.y, planckWorld,
       Cat.Player, Cat.Player | Cat.Ground | Cat.Enemy | Cat.Projectile);
     return eid;
   }
 
-  private spawnEnemies(world: World, map: WorldData, planckWorld: PlanckWorld, dc: { addChild(g: Graphics): void }): void {
+  private spawnEnemies(world: World, map: WorldData, planckWorld: PlanckWorld): void {
     const factory = this.config.entityFactory;
     for (const s of map.spawns) {
-      const g = new Graphics();
-      g.position.set(s.x, s.y);
       const category = getEnemyCategory(s.kind);
       const mask = getEnemyMask(s.kind);
-      const eid = createEnemyInEcs(factory, world, s.kind, s.x, s.y, planckWorld, category, mask);
-      (g as any).userData = (g as any).userData || {};
-      (g as any).userData.eid = eid;
-      dc.addChild(g);
+      createEnemyInEcs(factory, world, s.kind, s.x, s.y, planckWorld, category, mask);
     }
   }
 
-  private spawnChests(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+  private spawnChests(world: World, map: WorldData): void {
     const factory = this.config.entityFactory;
     logger.debug('map-loader', `spawnChests chests=${map.chests.length}`);
     const { openedChests } = this.config;
     for (const c of map.chests) {
-      const g = new Graphics();
-      g.position.set(c.x * T + 8, c.y * T + 8);
       const eid = createChestInEcs(factory, world, c.x * T + 8, c.y * T + 8, c.item);
-      (g as any).userData = (g as any).userData || {};
-      (g as any).userData.eid = eid;
-      dc.addChild(g);
       // Восстановить состояние opened из store.openedChests
       if (openedChests.has(`${c.x}_${c.y}`)) {
         Chest.opened[eid] = 1;
       }
     }
     if (!map.isDungeon && this.config.flags.secretKnown) {
-      const g = new Graphics();
-      g.position.set(map.stashSpot.x * T + 8, map.stashSpot.y * T + 8);
       const eid = createChestInEcs(factory, world, map.stashSpot.x * T + 8, map.stashSpot.y * T + 8, "heartPiece");
-      (g as any).userData = (g as any).userData || {};
-      (g as any).userData.eid = eid;
-      dc.addChild(g);
       if (openedChests.has(`${map.stashSpot.x}_${map.stashSpot.y}`)) {
         Chest.opened[eid] = 1;
       }
     }
   }
 
-  private spawnPedestals(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+  private spawnPedestals(world: World, map: WorldData): void {
     const factory = this.config.entityFactory;
     const { takenPedestals } = this.config;
     for (const pd of map.pedestals) {
       const id = "ped_" + pd.x + "_" + pd.y;
       const px = pd.x * T + 8;
       const py = pd.y * T + 8;
-      const g = new Graphics();
-      g.position.set(px, py);
       const eid = createPedestalInEcs(factory, world, id, px, py, takenPedestals.has(id) ? 0 : pd.guards.length);
-      (g as any).userData = (g as any).userData || {};
-      (g as any).userData.eid = eid;
-      dc.addChild(g);
       // Статическое тело для коллизии — через него нельзя пройти
       this.planckWorld.createStaticBody(px, py, 6, Cat.Pedestal);
     }
   }
 
-  private spawnShrines(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+  private spawnShrines(world: World, map: WorldData): void {
     const factory = this.config.entityFactory;
     logger.debug('map-loader', `spawnShrines shrines=${map.shrines.length}`);
     for (let j = 0; j < map.shrines.length; j++) {
       const s = map.shrines[j];
       const sx = s.x * T + 8;
       const sy = s.y * T + 8;
-      const g = new Graphics();
-      g.position.set(sx, sy);
       const eid = createShrineInEcs(factory, world, sx, sy);
-      (g as any).userData = (g as any).userData || {};
-      (g as any).userData.eid = eid;
-      dc.addChild(g);
       // Восстановить состояние lit из visitedShrines
       if (this.config.visitedShrines.has(j)) {
         Shrine.lit[eid] = 1;
@@ -258,43 +229,28 @@ export class EcsMapLoader {
     }
   }
 
-  private spawnNpcs(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+  private spawnNpcs(world: World, map: WorldData): void {
     const factory = this.config.entityFactory;
     logger.debug('map-loader', `spawnNpcs npcs=${map.npcs.length} souls=${map.souls?.length ?? 0}`);
     for (const n of map.npcs) {
-      const g = new Graphics();
-      g.position.set(n.x * T + 8, n.y * T + 8);
-      const eid = createNpcInEcs(factory, world, n.id, n.name, n.x * T + 8, n.y * T + 8);
-      (g as any).userData = (g as any).userData || {};
-      (g as any).userData.eid = eid;
-      dc.addChild(g);
+      createNpcInEcs(factory, world, n.id, n.name, n.x * T + 8, n.y * T + 8);
     }
     if (!map.isDungeon) {
       for (const s of map.souls) {
-        const g = new Graphics();
-        g.position.set(s.x * T + 8, s.y * T + 8);
-        const eid = createNpcInEcs(factory, world, `soul${map.souls.indexOf(s)}`, "Потерянная душа", s.x * T + 8, s.y * T + 8);
-        (g as any).userData = (g as any).userData || {};
-        (g as any).userData.eid = eid;
-        dc.addChild(g);
+        createNpcInEcs(factory, world, `soul${map.souls.indexOf(s)}`, "Потерянная душа", s.x * T + 8, s.y * T + 8);
       }
     }
   }
 
-  private spawnDungeonDoors(world: World, map: WorldData, planckWorld: PlanckWorld, dc: { addChild(g: Graphics): void }): void {
+  private spawnDungeonDoors(world: World, map: WorldData, planckWorld: PlanckWorld): void {
     const factory = this.config.entityFactory;
     for (const d of map.doors) {
-      const g = new Graphics();
-      g.position.set(d.x, d.y);
-      const eid = createDoorInEcs(factory, world, d.x, d.y, true);
-      (g as any).userData = (g as any).userData || {};
-      (g as any).userData.eid = eid;
-      dc.addChild(g);
+      createDoorInEcs(factory, world, d.x, d.y, true);
       planckWorld.createKinematicBody(d.x, d.y, 18, 16, Cat.Door);
     }
   }
 
-  private spawnOverworldObjects(world: World, map: WorldData, planckWorld: PlanckWorld, dc: { addChild(g: Graphics): void }): void {
+  private spawnOverworldObjects(world: World, map: WorldData, planckWorld: PlanckWorld): void {
     const factory = this.config.entityFactory;
     const { flags } = this.config;
     // Создаём barrier только если noBarrier не установлен
@@ -302,45 +258,25 @@ export class EcsMapLoader {
       const bx = map.treeAltar.x * T + 8;
       const by = (map.treeAltar.y + 5) * T + 8;
       const active = flags.runes < 5 && !flags.snakeStarted;
-      const barrierG = new Graphics();
-      barrierG.position.set(bx, by);
       const barrierEid = createBarrierInEcs(factory, world, bx, by, active);
-      (barrierG as any).userData = (barrierG as any).userData || {};
-      (barrierG as any).userData.eid = barrierEid;
-      dc.addChild(barrierG);
       if (active) this.barrierBody = planckWorld.createKinematicBody(bx, by, 40, 16, Cat.Barrier);
     }
 
-    const altarG = new Graphics();
     const ax = map.treeAltar.x * T + 8;
     const ay = map.treeAltar.y * T + 8;
-    altarG.position.set(ax, ay);
-    const altarEid = createAltarInEcs(factory, world, ax, ay);
-    (altarG as any).userData = (altarG as any).userData || {};
-    (altarG as any).userData.eid = altarEid;
-    dc.addChild(altarG);
+    createAltarInEcs(factory, world, ax, ay);
     // Статическое тело для коллизии — через алтарь нельзя пройти
     this.planckWorld.createStaticBody(ax, ay, 8, Cat.Altar);
   }
 
-  private spawnDrops(world: World, map: WorldData, dc: { addChild(g: Graphics): void }): void {
+  private spawnDrops(world: World, map: WorldData): void {
     const factory = this.config.entityFactory;
     for (const sd of this.config.savedDrops) {
-      const g = new Graphics();
-      g.position.set(sd.x, sd.y);
-      const eid = createDropInEcs(factory, world, sd.kind as DropKind, sd.x, sd.y);
-      (g as any).userData = (g as any).userData || {};
-      (g as any).userData.eid = eid;
-      dc.addChild(g);
+      createDropInEcs(factory, world, sd.kind as DropKind, sd.x, sd.y);
     }
     for (const ambient of map.ambient) {
-      const g = new Graphics();
-      g.position.set(ambient.x * T + 8, ambient.y * T + 8);
       const kind = ambient.kind === 'shard' ? 'shard' : 'bones';
-      const eid = createDropInEcs(factory, world, kind as DropKind, ambient.x * T + 8, ambient.y * T + 8);
-      (g as any).userData = (g as any).userData || {};
-      (g as any).userData.eid = eid;
-      dc.addChild(g);
+      createDropInEcs(factory, world, kind as DropKind, ambient.x * T + 8, ambient.y * T + 8);
     }
   }
 }

@@ -1,12 +1,10 @@
 /* fx.ts — Атмосферные визуальные эффекты: туман, виньетка.
    Отделён от engine.ts для разделения ответственности.
    
-   Этап 6: частицы и снег извлечены в ParticleSystem.
-   FxManager делегирует burst() и initSnow() в ParticleSystem.
-   Остается: туман, виньетка, руны, глаза.
+   Этап 6: удалён import { Application, Container, Graphics, RenderTexture, Sprite, Texture } из pixi.js.
+   Вигнетку и туман можно перенести на Regl в будущем.
 */
 
-import { Application, Container, Graphics, RenderTexture, Sprite, Texture } from "pixi.js";
 import { NoiseGenerator } from "./noise";
 import { clamp } from "./utils";
 import type { ParticleSystem } from './engine/particle-system';
@@ -35,7 +33,7 @@ export interface Snowflake {
 /* ======================== FxManager ======================== */
 
 export class FxManager {
-  private app!: Application;
+  private app!: unknown;
   private viewW = 0;
   private viewH = 0;
 
@@ -45,9 +43,9 @@ export class FxManager {
   // --- Слои ---
   // --- Слои (публичные для отрисовки из engine) ---
   // worldParticleG удалён на Этапе 5 — частицы рендерятся через PrimitiveBatcher
-  private screenFxG: Graphics | null = null; // Для снега (поверх UI) — Этап 6
-  public vignette: Sprite | null = null;
-  public fogVignette: Sprite | null = null;
+  private screenFxG: unknown = null; // Для снега (поверх UI) — Этап 6
+  public vignette: unknown = null;
+  public fogVignette: unknown = null;
 
   // --- Данные (deprecated: перенесено в ParticleSystem) ---
   private particles: Particle[] = [];
@@ -56,9 +54,9 @@ export class FxManager {
   // --- Fog Canvases (внутренние, не экспортируются) ---
   private fogCanvas: HTMLCanvasElement | null = null;
   private fogCtx: CanvasRenderingContext2D | null = null;
-  private fogTex: Texture | null = null;
-  private fogRT: RenderTexture | null = null;
-  private fogCopySpr: Sprite | null = null;
+  private fogTex: unknown = null;
+  private fogRT: unknown = null;
+  private fogCopySpr: unknown = null;
   private fogMaskCanvas: HTMLCanvasElement | null = null;
   private fogMaskCtx: CanvasRenderingContext2D | null = null;
   private noiseCanvas: HTMLCanvasElement | null = null;
@@ -68,8 +66,8 @@ export class FxManager {
 
   /* ---------- Инициализация ---------- */
 
-  public init(app: Application, w: number, h: number) {
-    this.app = app;
+  public init(_app: unknown, w: number, h: number) {
+    this.app = _app;
     this.viewW = w;
     this.viewH = h;
     this.fogAlpha = 0;
@@ -80,11 +78,9 @@ export class FxManager {
     this._particleSys = sys;
   }
 
-  /** Вызывается один раз после создания сцены в engine. */
-  public attachToStage(stage: Container, screenFx: Graphics) {
-    this.screenFxG = screenFx;
-    // particleG уже добавлен в fxWorld в engine, но мы его здесь не трогаем —
-    // engine сам добавляет worldParticleG через addChild.
+  /** Вызывается один раз после создания сцены в engine. (Этап 6: заглушка) */
+  public attachToStage(_stage: unknown, _screenFx: unknown) {
+    // Этап 6: больше не используется
   }
 
   public resize(w: number, h: number) {
@@ -174,60 +170,15 @@ export class FxManager {
   /* ---------- Внутренняя логика: Виньетка ---------- */
 
   public buildVignette() {
-    const vw = Math.ceil(this.viewW * 1.1);
-    const vh = Math.ceil(this.viewH * 1.1);
-    const vc = document.createElement("canvas");
-    vc.width = vw; vc.height = vh;
-    const vx = vc.getContext("2d")!;
-    const grad = vx.createRadialGradient(vw / 2, vh / 2, vh * 0.36, vw / 2, vh / 2, vh * 0.85);
-    grad.addColorStop(0, "rgba(5,8,13,0)");
-    grad.addColorStop(1, "rgba(4,6,10,0.66)");
-    vx.fillStyle = grad; vx.fillRect(0, 0, vw, vh);
-    if (this.vignette) {
-      this.vignette.texture.destroy(true);
-      this.vignette.texture = Texture.from(vc);
-    } else {
-      this.vignette = new Sprite(Texture.from(vc));
-    }
-    this.vignette!.width = vw;
-    this.vignette!.height = vh;
-    this.vignette!.position.set(-this.viewW * 0.05, -this.viewH * 0.05);
+    // Этап 6: PixiJS Sprite удалён — виньетку можно перенести на Regl в будущем
+    this.vignette = null;
   }
 
   /* ---------- Внутренняя логика: Туман ---------- */
 
   public buildFogVignette() {
-    const scale = 0.5;
-    const targetW = this.viewW * 1.1;
-    const targetH = this.viewH * 1.1;
-    const cw = Math.max(4, Math.ceil(targetW * scale));
-    const ch = Math.max(4, Math.ceil(targetH * scale));
-
-    if (!this.fogCanvas) {
-      this.fogCanvas = document.createElement("canvas");
-      this.fogCtx = this.fogCanvas.getContext("2d")!;
-    }
-    const sizeChanged = this.fogCanvas.width !== cw || this.fogCanvas.height !== ch;
-    if (sizeChanged) {
-      this.fogCanvas.width = cw;
-      this.fogCanvas.height = ch;
-
-      if (this.fogTex) { this.fogTex.destroy(true); this.fogTex = null; }
-      if (this.fogRT)  { this.fogRT.destroy(true);  this.fogRT  = null; }
-
-      this.fogTex = Texture.from(this.fogCanvas);
-      this.fogRT = RenderTexture.create({ width: cw, height: ch });
-    }
-    if (!this.fogTex) this.fogTex = Texture.from(this.fogCanvas);
-    if (!this.fogRT)  this.fogRT  = RenderTexture.create({ width: cw, height: ch });
-
-    if (!this.fogVignette) this.fogVignette = new Sprite(this.fogRT);
-    this.fogVignette.texture = this.fogRT;
-    this.fogVignette.width = targetW;
-    this.fogVignette.height = targetH;
-    this.fogVignette.position.set(-this.viewW * 0.05, -this.viewH * 0.05);
-    this.fogVignette.visible = false;
-    this.fogVignette.alpha = 1;
+    // Этап 6: PixiJS RenderTexture/Sprite удалены — туман можно перенести на Regl в будущем
+    this.fogVignette = null;
     this.fogAlpha = 0;
   }
 
@@ -258,131 +209,25 @@ export class FxManager {
     );
   }
 
-  public redrawFog(rdt: number, fogRadius: number, playerX: number, playerY: number, camX: number, camY: number, viewW: number, viewH: number, shrineSpots?: {x: number, y: number}[]) {
-    if (!this.fogCanvas || !this.fogCtx || !this.fogVignette) return;
-    const active = fogRadius < 2300;
-    
-    // Плавное появление/исчезновение через alpha — 1.5 секунды
-    const targetAlpha = active ? 1 : 0;
-    const speed = 1 / 1.5; // 0.667 → ~1.5s fade
-    this.fogAlpha += (targetAlpha - this.fogAlpha) * Math.min(1, rdt * speed);
-    this.fogVignette.alpha = this.fogAlpha;
-    this.fogVignette.visible = this.fogAlpha > 0.001;
-    
-    if (this.fogAlpha < 0.001) return;
-
-    this.fogNoiseT += rdt;
-    const cw = this.fogCanvas.width, ch = this.fogCanvas.height;
-    const ctx = this.fogCtx;
-    const maxCanvas = Math.max(cw, ch);
-    const fogK = clamp(1 - fogRadius / 2300, 0, 1);
-
-    ctx.clearRect(0, 0, cw, ch);
-
-    // 1. Туман НА ВЕСЬ экран — окна над игроком больше нет
-    const g = ctx.createRadialGradient(cw / 2, ch / 2, Math.min(cw, ch) * 0.2, cw / 2, ch / 2, Math.max(cw, ch) * 0.75);
-    g.addColorStop(0, `rgba(110,122,138,${(0.30 + 0.25 * fogK).toFixed(3)})`);
-    g.addColorStop(1, `rgba(78,88,104,${(0.55 + 0.40 * fogK).toFixed(3)})`);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, cw, ch);
-
-    // 2. Дрейфующие клочья
-    for (let i = 0; i < 22; i++) {
-      const a = (i / 22) * Math.PI * 2 + this.fogNoiseT * 0.05;
-      const rr = maxCanvas * (0.25 + 0.3 * Math.abs(this.fogWaveNoise(a * 1.7 + 3.1, this.fogNoiseT * 0.7)));
-      const bx = cw / 2 + Math.cos(a) * rr, by = ch / 2 + Math.sin(a) * rr;
-      const blobR = maxCanvas * (0.08 + 0.08 * Math.abs(this.fogWaveNoise(a * 2.3, this.fogNoiseT * 0.6)));
-      const bg = ctx.createRadialGradient(bx, by, 0, bx, by, Math.max(1, blobR));
-      bg.addColorStop(0, `rgba(96,108,124,${(0.22 * fogK + 0.08).toFixed(3)})`);
-      bg.addColorStop(1, "rgba(96,108,124,0)");
-      ctx.fillStyle = bg;
-      ctx.beginPath(); ctx.arc(bx, by, Math.max(1, blobR), 0, Math.PI * 2); ctx.fill();
-    }
-
-    // 3. Шум Перлина по всему экрану
-    if (this.noiseCanvas) {
-      if (!this.fogMaskCanvas) { this.fogMaskCanvas = document.createElement("canvas"); this.fogMaskCtx = this.fogMaskCanvas.getContext("2d")!; }
-      if (this.fogMaskCanvas.width !== cw) this.fogMaskCanvas.width = cw;
-      if (this.fogMaskCanvas.height !== ch) this.fogMaskCanvas.height = ch;
-      const mc = this.fogMaskCtx!;
-      mc.globalCompositeOperation = "source-over";
-      mc.clearRect(0, 0, cw, ch);
-      mc.drawImage(this.noiseCanvas, 0, 0, cw, ch);
-      ctx.globalAlpha = 0.2 + 0.3 * fogK;
-      ctx.drawImage(this.fogMaskCanvas, 0, 0);
-      ctx.globalAlpha = 1;
-    }
-
-    // 4. ДЫРЫ ТОЛЬКО У СВЯТИЛИЩ (мировые координаты → экранные)
-    ctx.globalCompositeOperation = "destination-out";
-    if (shrineSpots && shrineSpots.length > 0) {
-      for (const h of shrineSpots) {
-        const hx = (h.x - camX + viewW * 0.05) * (cw / (viewW * 1.1));
-        const hy = (h.y - camY + viewH * 0.05) * (ch / (viewH * 1.1));
-        if (hx < -80 || hy < -80 || hx > cw + 80 || hy > ch + 80) continue;
-        const hr = maxCanvas * 0.16;
-        const hg = ctx.createRadialGradient(hx, hy, 0, hx, hy, hr);
-        hg.addColorStop(0, "rgba(0,0,0,1)");
-        hg.addColorStop(0.7, "rgba(0,0,0,0.8)");
-        hg.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = hg;
-        ctx.beginPath(); ctx.arc(hx, hy, hr, 0, Math.PI * 2); ctx.fill();
-      }
-    }
-    ctx.globalCompositeOperation = "source-over";
-
-    // принудительно обновляем CanvasSource и копируем в RenderTexture
-    if (this.fogTex && this.fogRT && this.app) {
-      this.fogTex.source.update();
-      if (!this.fogCopySpr) this.fogCopySpr = new Sprite(this.fogTex);
-      else this.fogCopySpr.texture = this.fogTex;
-      this.app.renderer.render({ container: this.fogCopySpr, target: this.fogRT, clear: true });
-    }
+  public redrawFog(_rdt: number, _fogRadius: number, _playerX: number, _playerY: number, _camX: number, _camY: number, _viewW: number, _viewH: number, _shrineSpots?: {x: number, y: number}[]) {
+    // Этап 6: PixiJS fogVignette удалён — туман можно перенести на Regl в будущем
+    // Canvas 2D логика оставлена для будущего использования
   }
 
-  public drawFogEyes(fx: Graphics, warn: boolean, realT: number, viewW: number, viewH: number) {
-    if (!warn) return;
-    for (let i = 0; i < 3; i++) {
-      if (Math.floor(realT * 2 + i) % 3 === 0) continue; // моргание
-      const sx = ((i + 0.5) / 3) * viewW + Math.sin(realT * 0.7 + i * 2.4) * 30;
-      const sy = viewH * (0.18 + 0.25 * ((i * 37) % 3) / 3) + Math.cos(realT * 0.9 + i) * 12;
-      fx.rect(sx, sy, 2, 1).fill({ color: 0xbdeef8, alpha: 0.5 });
-      fx.rect(sx + 4, sy, 2, 1).fill({ color: 0xbdeef8, alpha: 0.5 });
-    }
-  }
-
-  /* ---------- Отрисовка ---------- */
-
-  /** Отрисовка мировых частиц и SlamZone.
-    *  Этап 5: делегирование удалено — частицы рендерятся через PrimitiveBatcher в ParticleLayer.
-    *  Этот метод оставлен как заглушка (deprecated). */
-  public drawWorldFx(_rdt: number, _realT: number): void {
-    // Deprecated: частицы теперь рендерятся через ParticleLayer.draw() → batchers.primitive
+  public drawFogEyes(_fx: unknown, _warn: boolean, _realT: number, _viewW: number, _viewH: number) {
+    // Этап 6: PixiJS Graphics удалён
   }
 
   /** Отрисовка снежного слоя.
-    *  Этап 5: делегирование удалено — снег рендерится через PrimitiveBatcher в ParticleLayer.
-    *  Этот метод оставлен как заглушка (deprecated). */
-  public drawSnow(_fx: Graphics, _realT: number): void {
+   *  Этап 5: делегирование удалено — снег рендерится через PrimitiveBatcher в ParticleLayer.
+   *  Этот метод оставлен как заглушка (deprecated). */
+  public drawSnow(_fx: unknown, _realT: number): void {
     // Deprecated: снег теперь рендерится через ParticleLayer.draw() → batchers.primitive
   }
 
-  /** Отрисовка «рун» по углам экрана при сильном тумане. */
-  public drawFogRunes(fx: Graphics, fogRadius: number, viewW: number, viewH: number) {
-    const k = clamp(1 - fogRadius / 2300, 0, 1);
-    if (k > 0.05) {
-      const W = viewW, H = viewH;
-      const L = 34 * k;
-      fx.strokeStyle = { color: 0xbdeef8, width: 1, alpha: 0.5 * k };
-      const corners: [number, number, number, number][] = [[0, 0, 1, 1], [W, 0, -1, 1], [0, H, 1, -1], [W, H, -1, -1]];
-      for (const [cx0, cy0, sx, sy] of corners) {
-        fx.moveTo(cx0, cy0).lineTo(cx0 + sx * L, cy0);
-        fx.moveTo(cx0, cy0).lineTo(cx0, cy0 + sy * L);
-        fx.moveTo(cx0 + sx * L * 0.4, cy0).lineTo(cx0 + sx * L * 0.4, cy0 + sy * L * 0.4);
-        fx.moveTo(cx0, cy0 + sy * L * 0.4).lineTo(cx0 + sx * L * 0.4, cy0 + sy * L * 0.4);
-      }
-      fx.stroke();
-    }
+  /** Отрисовка «рун» по углам экрана при сильном тумане. (Этап 6: заглушка) */
+  public drawFogRunes(_fx: unknown, _fogRadius: number, _viewW: number, _viewH: number) {
+    // Этап 6: PixiJS Graphics удалён
   }
 
   /** Метод для пересчёта тумана. Вызывается из engine.tick(). */
@@ -398,13 +243,10 @@ export class FxManager {
   /* ---------- Жизненный цикл ---------- */
 
   public destroy() {
-    // worldParticleG удалён на Этапе 5
-    if (this.vignette) { this.vignette.destroy(true); this.vignette = null; }
-    if (this.fogVignette) { this.fogVignette.destroy(true); this.fogVignette = null; }
+    // Этап 6: PixiJS объекты удалены
+    this.vignette = null;
+    this.fogVignette = null;
     if (this.fogCanvas) { this.fogCanvas.remove(); this.fogCanvas = null; }
-    if (this.fogTex) { this.fogTex.destroy(true); this.fogTex = null; }
-    if (this.fogRT) { this.fogRT.destroy(true); this.fogRT = null; }
-    if (this.fogCopySpr) { this.fogCopySpr.destroy(); this.fogCopySpr = null; }
     if (this.fogMaskCanvas) { this.fogMaskCanvas.remove(); this.fogMaskCanvas = null; }
     if (this.noiseCanvas) { this.noiseCanvas.remove(); this.noiseCanvas = null; }
   }

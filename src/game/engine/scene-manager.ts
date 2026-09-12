@@ -1,91 +1,64 @@
-/* scene-manager.ts – Управление слоями сцены (PixiJS Containers) */
-
-import { Application, Container, Graphics } from "pixi.js";
+/* scene-manager.ts – Управление слоями сцены
+   Этап 6: удалён import { Application, Container, Graphics } из pixi.js.
+   Класс превращён в заглушку — слои больше не используются. */
 
 export class SceneManager {
-  readonly tileLayer = new Container();
-  readonly world = new Container();
-  readonly dynamic = new Container();
-  readonly fxWorld = new Container();
-  readonly floatLayer = new Container();
-  readonly fxScreen = new Graphics();
-  readonly fadeG = new Graphics();
+  /** @deprecated — Этап 6: tileLayer удалён */
+  readonly tileLayer = { addChild: () => {}, addChildAt: () => {}, removeChildren: () => {} };
+  /** @deprecated — Этап 6: world удалён */
+  readonly world = { addChild: () => {}, removeChildren: () => {} };
+  /** @deprecated — Этап 6: dynamic удалён */
+  readonly dynamic = { addChild: () => {}, removeChildren: () => {}, children: [] };
+  /** @deprecated — Этап 6: fxWorld удалён */
+  readonly fxWorld = { addChild: () => {}, removeChildren: () => {} };
+  /** @deprecated — Этап 6: floatLayer удалён */
+  readonly floatLayer = { addChild: () => {}, removeChildren: () => {} };
+  /** @deprecated — Этап 6: fxScreen удалён */
+  readonly fxScreen = {};
+  /** @deprecated — Этап 6: fadeG удалён */
+  readonly fadeG = {};
 
-  constructor(private app: Application) {
-    this.tileLayer.sortableChildren = true;
-    this.world.sortableChildren = true;
-    this.dynamic.sortableChildren = true;
+  constructor(_app: unknown) {
+    // Этап 6: Application больше не нужен
   }
 
-  /** Добавить все слои в stage приложения */
+  /** Добавить все слои в stage — заглушка (Этап 6) */
   attachToStage(): void {
-    this.world.addChild(this.tileLayer);
-    this.world.addChild(this.dynamic);
-    this.world.addChild(this.fxWorld);
-    this.world.addChild(this.floatLayer);
-    this.app.stage.addChild(this.world);
-    this.app.stage.addChild(this.fxScreen);
-    this.app.stage.addChild(this.fadeG);
+    // Этап 6: слои больше не добавляются в PixiJS stage
   }
 
-  /** Добавить FX-график в fxWorld */
-  addFxGraphics(g: Graphics): void {
-    this.fxWorld.addChild(g);
+  /** Добавить FX-график — заглушка (Этап 6) */
+  addFxGraphics(_g: unknown): void {
+    // Этап 6: FX графика через PrimitiveBatcher
   }
 
-  /** Добавить элемент на fxScreen (screen-space FX) */
-  addFxScreenChild(child: any): void {
-    this.fxScreen.addChild(child);
+  /** Добавить FX Screen Child — заглушка (Этап 6) */
+  addFxScreenChild(_child: unknown): void {
+    // Этап 6: FX screen больше не используется
   }
 
-  /** Очистить dynamic контейнер от уничтоженных спрайтов */
-  cleanupDestroyedSprites(dynamicContainer: { children: any[]; removeChild(child: any): void }): void {
-    const children = dynamicContainer.children;
-    for (let i = children.length - 1; i >= 0; i--) {
-      const child = children[i];
-      if (child && (child as any).destroyed) {
-        dynamicContainer.removeChild(child);
-        try { (child as any).destroy(); } catch {}
-      }
-    }
+  /** Очистить dynamic контейнер — заглушка (Этап 6) */
+  cleanupDestroyedSprites(_dc: { children: any[]; removeChild(child: any): void }): void {
+    // Этап 6: больше не нужно
   }
 
-  /** Очистить tileLayer и уничтожить все спрайты */
+  /** Очистить tileLayer — заглушка (Этап 6) */
   clearTiles(): void {
-    for (const child of this.tileLayer.children) {
-      if (child instanceof Container) {
-        child.destroy({ children: true, texture: true });
-      }
-    }
-    this.tileLayer.removeChildren();
+    // Этап 6: тайлы рендерятся через batchers
   }
 
-  /** Очистить dynamic контейнер, не уничтожая playerG */
-  clearDynamic(preservePlayerG?: Graphics): void {
-    for (const child of this.dynamic.children) {
-      // Не уничтожать спрайт игрока — он пересоздаётся при загрузке карты
-      if (preservePlayerG && child === preservePlayerG) continue;
-      // Текстуры кэшируются (wallCache, houseCache) — не уничтожаем их здесь
-      child.destroy({ children: true });
-    }
-    this.dynamic.removeChildren();
+  /** Очистить dynamic контейнер — заглушка (Этап 6) */
+  clearDynamic(_preservePlayerG?: unknown): void {
+    // Этап 6: больше не нужно
   }
 
-  /** Очистить floatLayer */
+  /** Очистить floatLayer — заглушка (Этап 6) */
   clearFloatLayer(): void {
-    for (const child of this.floatLayer.children) {
-      child.destroy({ children: true, texture: true });
-    }
-    this.floatLayer.removeChildren();
+    // Этап 6: больше не нужно
   }
 
-  /** Уничтожить все слои */
+  /** Уничтожить все слои — заглушка (Этап 6) */
   destroy(): void {
-    this.clearTiles();
-    this.clearDynamic();
-    this.clearFloatLayer();
-    this.fxWorld.removeChildren();
-    this.fxScreen.destroy({ texture: true });
-    this.fadeG.destroy({ texture: true });
+    // Этап 6: слои больше не используются
   }
 }

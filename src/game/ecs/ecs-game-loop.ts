@@ -50,7 +50,7 @@ import {
   ensureGhosts,
   type FogState,
 } from './ecs-systems/fog-system';
-import { Graphics, Container } from 'pixi.js';
+
 import { CameraController } from '../engine/camera-controller';
 import { SceneManager } from '../engine/scene-manager';
 import { RenderPipeline } from '../engine/render-pipeline';
@@ -83,7 +83,7 @@ import { type EntityFactory } from './entity-factory';
 import {
   Position, Velocity, PhysicsBody, Player, Direction, Health,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
-  Flashing, Enemy, EnemyState, Sprite, SpriteRegistry, Radius,
+  Flashing, Enemy, EnemyState, Radius,
   Shrine, Dead,
 } from './ecs-components';
 import type { InputSystem } from '../input/input-system';
@@ -92,7 +92,7 @@ import type { GameStore } from '../store';
 import { createEnemyInEcs } from './ecs-bridge';
 import { PlanckWorld, Cat } from '../physics/planck-world';
 import { ENEMY_STATS } from '../entities';
-import type { Application } from 'pixi.js';
+
 import type REGL from 'regl';
 import type { FxManager } from '../fx';
 import type { StateManager } from '../state/state-manager';
@@ -135,14 +135,13 @@ export interface EcsGameLoopConfig {
   bus: EventBus;
   store: GameStore;
   planckWorld: PlanckWorld;
-  app: Application;
   /** Этап 1: Regl-контекст (для миграции PixiJS → Regl) */
   regl?: REGL.Regl;
   /** Этап 1: Canvas Regl (для прямого доступа) */
   reglCanvas?: HTMLCanvasElement;
-  dynamic: Container;
   floatLayer: FloatTextLayer;
-  gameWorld: Container;
+  /** @deprecated — Этап 6: удалён */
+  gameWorld?: unknown;
   sceneManager: SceneManager;
   fx: FxManager;
   /** Этап 6: система частиц и снега (извлечение из FxManager) */
@@ -195,7 +194,7 @@ function getDropRegistry(): DropHandlerRegistry {
 /** Создать минимальный ECS Game Loop */
 export function createEcsGameLoop(config: EcsGameLoopConfig) {
   const {
-    world, bus, store, planckWorld, app, dynamic, floatLayer, gameWorld, sceneManager,
+    world, bus, store, planckWorld, floatLayer,
     input, state, cam, map, flags, playerEid: playerEidRef,
     playerDomain, playerHelpers, hud, quests, dialogue,
     dungeonBossDead, toast, float: addFloat, pushHud, startDialogue, npcSig,
@@ -224,17 +223,14 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   // CameraController — извлечён из render-system.ts (Этап 4)
   const cameraController = new CameraController({ cam, viewportW: viewW, viewportH: viewH });
 
-  // hintLayer — подсказка взаимодействия, на app.stage (не разрушается при смене сцены)
-  const hintLayer = new Container();
-  hintLayer.zIndex = 9999;
-  app.stage.addChild(hintLayer);
+  // hintLayer удалён на Этапе 6 — подсказка рисуется напрямую через PrimitiveBatcher в render-system
 
   // ── RenderPipeline (Этап 5-6) ──
   // Создаём слои пайплайна
   const entityLayer = new EntityLayer();
   const particleLayer = new ParticleLayer(particleSys); // Этап 6: извлечение из FxManager
   const fogLayer = new FogLayer(fx);
-  const overlayLayer = new OverlayLayer(hintLayer);
+  const overlayLayer = new OverlayLayer();
 
   // Создаём пайплайн и добавляем слои
   const pipeline = new RenderPipeline();
@@ -249,7 +245,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   }
 
   // Инициализируем пайплайн
-  pipeline.init(app, { dt: _stepT, time: _realT, world, regl, reglCanvas });
+  pipeline.init(null, { dt: _stepT, time: _realT, world, regl, reglCanvas });
 
   // Локальные копии для updateConfig
   let config_map = map;
@@ -292,13 +288,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     const peid = _playerEid;
     if (peid < 0) return;
     const eid = axeThrowSystem(
-      entityFactory, peid, store.flags.hasAxe, store.flags.axeUp, (eid: number) => {
-      // Спавн графики для топора
-        const g = new Graphics();
-        g.position.set(Position.x[eid], Position.y[eid]);
-        (g as any).userData = (g as any).userData || {};
-        (g as any).userData.eid = eid;
-        dynamic.addChild(g);
+      entityFactory, peid,       store.flags.hasAxe, store.flags.axeUp, (eid: number) => {
+      // Спавн графики для топора — удалён на Этапе 6 (ECS renderers handle visuals)
     });
     if (eid >= 0) {
       // Добавить физику для топора
@@ -314,11 +305,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       entityFactory, e.kind as any, e.x, e.y, e.vx, e.vy, e.dmg,
       lifetime,
       (eid: number) => {
-        const g = new Graphics();
-        g.position.set(e.x, e.y);
-        (g as any).userData = (g as any).userData || {};
-        (g as any).userData.eid = eid;
-        dynamic.addChild(g);
+        // Спавн графики для снаряда — удалён на Этапе 6 (ECS renderers handle visuals)
       }
     );
     if (eid >= 0) {
@@ -354,8 +341,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   // Обёртка для ensureGhosts — создаёт призрака через entityFactory (только ECS, без графики и физики)
   function spawnGhost(kind: string, x: number, y: number): number {
     const eid = entityFactory.createFogGhost(x, y);
-    // Добавить Sprite компонент для рендеринга
-    addComponent(world, eid, Sprite);
+    // Этап 6: Sprite компонент удалён — рендеринг через Renderable
     return eid;
   }
 
@@ -462,11 +448,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       config_flags.ghostBane,
       _planckWorld,
       (eid) => {
-        // onProjectileRemove: удалить Graphics + Planck body снаряда
-        const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
-        if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
-        spriteRef?.destroy();
-        Sprite.ref[eid] = 0;
+        // onProjectileRemove: удалить Planck body снаряда (Graphics + Sprite.ref удалены на Этапе 6)
         const pbIdx = PhysicsBody.body[eid];
         if (pbIdx > 0) {
           const body = PhysicsBodyRegistry[pbIdx - 1];
@@ -504,11 +486,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       store,
       bus,
       (eid: number) => {
-        // Удалить Graphics + Planck body дропа
-        const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
-        if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
-        spriteRef?.destroy();
-        Sprite.ref[eid] = 0;
+        // Удалить Planck body дропа (Graphics + Sprite.ref удалены на Этапе 6)
       },
       playerDomain,
       getDropRegistry()
@@ -526,16 +504,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       config_flags,
       bus,
       (kind: string, x: number, y: number) => {
-        // Создать врага-призрака
-        const g = new Graphics();
-        g.position.set(x, y);
+        // Создать врага-призрака (графика удалена — ECS renderers handle visuals)
         const eid = createEnemyInEcs(
           entityFactory, world, kind as any, x, y, _planckWorld,
           Cat.Ghost, Cat.Ghost | Cat.Player | Cat.Projectile
         );
-        (g as any).userData = (g as any).userData || {};
-        (g as any).userData.eid = eid;
-        dynamic.addChild(g);
         // Призрак — кинематическое тело (проходит сквозь стены)
         const body = PhysicsBodyRegistry[PhysicsBody.body[eid] - 1];
         if (body) {
@@ -560,9 +533,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // Проверить смерть игрока (lifeCheckSystem помечает Dead, но не эмитит player:died)
     if (peid >= 0 && !!Dead[peid] && !playerDomain?.isAlive()) {
       bus.emit("player:died", {});
-      // Удалить спрайт из display list (не destroy — render system всё ещё может обращаться)
-      const spriteRef = SpriteRegistry[Sprite.ref[peid] - 1];
-      if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
+      // Graphics удалены на Этапе 6 — рендеринг через ECS batchers
       // Уничтожить физ. тело
       const pbIdx = PhysicsBody.body[peid];
       if (pbIdx > 0) {

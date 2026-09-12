@@ -1,6 +1,6 @@
-/* viewport-controller.ts – Управление размерами viewport и камерой */
+/* viewport-controller.ts – Управление размерами viewport и камерой
+   Этап 6: удалён import { Application } из pixi.js */
 
-import type { Application } from "pixi.js";
 
 const ZOOM = 1.18;
 
@@ -20,7 +20,7 @@ export class ViewportController {
 
   constructor(
     private container: HTMLElement,
-    private app: Application | null,
+    private app: unknown,
     public readonly cam: Camera
   ) {}
 
@@ -51,13 +51,9 @@ export class ViewportController {
   }
 
   /** Применить изменения размеров к рендереру */
-  apply(renderer: Application["renderer"] | null): void {
-    const ow = this._viewW;
-    const oh = this._viewH;
+  apply(_renderer: unknown): void {
+    // Этап 6: renderer больше не используется — PixiJS удалён
     this.applyViewSize();
-    if ((this._viewW !== ow || this._viewH !== oh) && renderer) {
-      renderer.resize(this._viewW, this._viewH);
-    }
   }
 
   /** Вычислить позицию камеры для spawn-точки в пределах карты */

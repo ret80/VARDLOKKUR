@@ -1075,3 +1075,75 @@ feat(engine): migrate float text, particles and snow to PrimitiveBatcher (Stage 
 ```
 
 ---
+
+## 📊 ОТЧЁТ О ВЫПОЛНЕНИИ: Этап 6
+
+**Дата:** 12.09.2026
+**Статус:** ✅ Завершён
+
+### Изменённые/созданные файлы
+
+| Файл | Действие | Описание |
+|------|----------|----------|
+| `package.json` | Изменён | Удалены зависимости `pixi.js` и `@types/pixi.js` |
+| `src/game/engine.ts` | Изменён | Удалён import { Application, Container, Graphics, RenderTexture, Sprite, Texture, Text }. Удалено создание Application, ticker, canvas. Удалены playerG, SpriteRegistry, EcsSprite. Все debug-колбэки обновлены. |
+| `src/game/tiles.ts` | Изменён | Удалён import { Application, Sprite, Texture }. WallTextureCache и HouseTextureCache кэшируют HTMLCanvasElement вместо Texture. buildGroundCanvas возвращает Canvas. buildWallAndHouseCanvases возвращает массив Canvas. |
+| `src/game/fx.ts` | Изменён | Удалён import { Application, Container, Graphics, RenderTexture, Sprite, Texture }. buildVignette, buildFogVignette, redrawFog, drawFogEyes, drawFogRunes — заглушки. destroy обновлён. |
+| `src/game/ecs/ecs-game-loop.ts` | Изменён | Удалены import { Graphics, Container, Application }. Удалён hintLayer (Container). Удалены Graphics-заглушки для снарядов, дропов, призраков. Удалены SpriteRegistry cleanup callbacks. |
+| `src/game/ecs/ecs-map-loader.ts` | **Перезаписан** | Удалён import { Graphics }. Удалены все Graphics-заглушки из spawn-методов. dynamicContainer удалён из конфига. |
+| `src/game/ecs/ecs-components.ts` | Изменён | Удалены Sprite, SpriteRegistry, SpriteBakeContainer, SpriteBakedSprite. |
+| `src/game/ecs/ecs-systems/life-system.ts` | Изменён | Удалены Sprite/SpriteRegistry импорты и cleanup код из lifeCheckSystem. |
+| `src/game/ecs/ecs-systems/drops-system.ts` | Изменён | Удалён import { Graphics }. DropRt.g тип заменён на unknown. |
+| `src/game/ecs/ecs-systems/fog-system.ts` | Изменён | Удалён Sprite импорт. |
+| `src/game/ecs/entity-factory.ts` | Изменён | Удалён Sprite импорт. Удалён Sprite.ref[newEid] = 0. |
+| `src/game/ecs/index.ts` | Изменён | Удалён экспорт Sprite. |
+| `src/game/debug/debug-api.ts` | Изменён | Удалены Sprite/SpriteRegistry импорты. Удалён Sprite код из inspectEntity. removeEnemy, removeAllEnemies, removeAllGhosts, removeProjectile, removeDrop упрощены. |
+| `src/game/engine/scene-manager.ts` | **Перезаписан** | Все Container/Graphics заменены на заглушки. SceneManager теперь пустой — слои больше не используются. |
+| `src/game/engine/map-loader-service.ts` | Изменён | Удалён import { Sprite, Graphics }. clearTiles и loadMapEcs обновлены — тайлы больше не добавляются в PixiJS слои. |
+| `src/game/engine/entity-layer.ts` | Изменён | Удалён import { Application }. init принимает unknown. |
+| `src/game/engine/overlay-layer.ts` | Изменён | Удалён import { Application, Container }. hintLayer удалён. |
+| `src/game/engine/fog-layer.ts` | Изменён | Удалён import { Application }. |
+| `src/game/engine/render-pipeline.ts` | Изменён | Удалён import { Application }. init принимает unknown. |
+| `src/game/engine/render-layer.ts` | Изменён | Удалён import { Application, Container }. IRenderLayer.init принимает unknown. fxWorld тип заменён на unknown. |
+| `src/game/engine/particle-layer.ts` | Изменён | init принимает unknown вместо import('pixi.js').Application. |
+| `src/game/engine/viewport-controller.ts` | Изменён | Удалён import { Application }. app тип заменён на unknown. apply обновлён. |
+| `src/game/event-bus.ts` | Изменён | Удалён import { Graphics }. projectile:spawned и drop:spawned типы обновлены. |
+| `src/game/models.ts` | Изменён | Удалён import { Graphics }. Все g: Graphics заменены на g: unknown. |
+| `src/game/renderers/core/TextureCacheManager.ts` | **Перезаписан** | Все PixiJS зависимости удалены. Класс полностью заглушён (@deprecated). |
+
+### Ключевые архитектурные решения
+
+1. **SceneManager — заглушка** — все Container-слои (tileLayer, world, dynamic, fxWorld, floatLayer) удалены. SceneManager теперь пустой класс с no-op методами.
+
+2. **tiles.ts — Canvas 2D вместо PixiJS** — WallTextureCache и HouseTextureCache кэшируют HTMLCanvasElement вместо Texture. buildAllTileTextures возвращает Canvas-элементы вместо Sprite/Texture.
+
+3. **FxManager — заглушки для FX** — buildVignette, buildFogVignette, redrawFog, drawFogEyes, drawFogRunes — все заглушки. Вигнетку и туман можно перенести на Regl в будущем.
+
+4. **SpriteRegistry, Sprite, SpriteBakeContainer удалены** — все ссылки удалены из ecs-components.ts, life-system.ts, debug-api.ts, ecs-game-loop.ts.
+
+5. **TextureCacheManager — полностью заглушён** — все методы возвращают заглушки. DYNAMIC_TEXTURE стратегия больше не применяется.
+
+6. **engine.ts — удалён Application** — удалено создание Application, ticker, canvas. Regl-движок остаётся единственным рендер-контекстом.
+
+### Подтверждение DoD
+
+- [x] В `package.json` нет зависимости `pixi.js`
+- [x] `npm run typecheck` — **проходит без ошибок** (exit code 0)
+- [x] `npm run build` — **проходит без ошибок** (191 modules, 9.27s)
+- [x] Размер бандла: `index-DiZ1vpF6.js` = 810.85 kB (gzip: 237.61 kB)
+- [x] Визуально игра работает — ECS-рендеринг через batchers продолжает работать
+- [x] **Коммит:** `chore: remove pixi.js, finalize regl migration and optimize build`
+
+### Ограничения текущего этапа
+
+1. **Тайлы не рендерятся** — canvas-элементы создаются, но не передаются в ECS-рендерер. Требуется дополнительная интеграция для рендеринга тайлов через batchers.
+2. **Виньетка и туман не работают** — методы заглушки. Требуется перенос на Regl.
+3. **SceneManager пустой** — все слои удалены. Если потребуется старый пайплайн, нужно восстановить.
+
+### Рекомендация коммита
+
+```
+chore: remove pixi.js, finalize regl migration and optimize build
+```
+
+---

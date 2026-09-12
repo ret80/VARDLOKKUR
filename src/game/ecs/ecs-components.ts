@@ -259,32 +259,11 @@ export const Renderable = {
   visible: new Uint8Array(10000),
 } as const;
 
-/**
- * @deprecated Этап 4: заменён на Renderable.
- * Старый Sprite + SpriteRegistry — PixiJS-зависимые.
- * Оставлен для обратной совместимости на время миграции.
- */
-export const Sprite = {
-  ref: new Int32Array(10000),
-} as const;
-
-/**
- * @deprecated Этап 4: заменён на Renderable.
- * SpriteRegistry хранил PixiJS Graphics/Sprite объекты.
- */
-export const SpriteRegistry: any[] = [];
-
 /** Физические тела сущностей (Planck.js bodies) */
 export const PhysicsBodyRegistry: any[] = [];
 
 /** AI данные врагов */
 export const EnemyAIRegistry: any[] = [];
-
-/** Временный Container для запекания DYNAMIC_TEXTURE сущностей (переиспользуется) */
-export const SpriteBakeContainer: any[] = [];
-
-/** Baked Sprite для DYNAMIC_TEXTURE сущностей (вместо Graphics) */
-export const SpriteBakedSprite: any[] = [];
 
 export const PhysicsBody = {
   body: new Int32Array(10000),

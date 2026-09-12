@@ -1,6 +1,6 @@
-/* overlay-layer.ts — Слой оверлеев: подсказки взаимодействия, UI */
+/* overlay-layer.ts — Слой оверлеев: подсказки взаимодействия, UI
+   Этап 6: удалён import { Application, Container } из pixi.js */
 
-import type { Application, Container } from 'pixi.js';
 import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import type { CameraPosition } from './camera-controller';
@@ -16,17 +16,16 @@ import type { InteractableHit } from '../ecs/ecs-systems/interaction-system';
  * hintLayer находится на app.stage (не сдвигается камерой).
  */
 export class OverlayLayer implements IRenderLayer {
-  private hintLayer: Container | null = null;
   private nearestInteractable: InteractableHit | null | undefined = null;
   private cam!: CameraPosition;
   private time = 0;
 
-  constructor(hintLayer: Container) {
-    this.hintLayer = hintLayer;
+  constructor() {
+    // Этап 6: hintLayer удалён — подсказка рисуется через PrimitiveBatcher
   }
 
-  init(_app: Application, _ctx: RenderLayerContext): void {
-    // Stage 4: initInteractionHint removed - hint now drawn directly in render-system
+  init(_app: unknown, _ctx: RenderLayerContext): void {
+    // Этап 6: Application больше не нужен
   }
 
   update(_ctx: RenderLayerContext): void {
@@ -58,6 +57,6 @@ export class OverlayLayer implements IRenderLayer {
   }
 
   destroy(): void {
-    this.hintLayer = null;
+    // hintLayer удалён на Этапе 6
   }
 }

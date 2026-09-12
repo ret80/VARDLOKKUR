@@ -25,7 +25,6 @@ import {
   Door,
   Barrier,
   Altar,
-  Sprite,
   PhysicsBody,
 } from './ecs-components';
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
@@ -461,10 +460,9 @@ export class EntityFactory {
      // Декларативно копируем все остальные поля из префаба
      this.cloneComponentFields(prefabEid, newEid);
 
-     // ВАЖНО: Sprite.ref и PhysicsBody.body НЕ клонируются!
-     // Они обнуляются — графика и физика создаются в ecs-bridge.ts
-     Sprite.ref[newEid] = 0;
-     PhysicsBody.body[newEid] = 0;
+      // ВАЖНО: PhysicsBody.body НЕ клонируется!
+      // Он обнуляется — физика создаётся в ecs-bridge.ts
+      PhysicsBody.body[newEid] = 0;
 
      return newEid;
    }

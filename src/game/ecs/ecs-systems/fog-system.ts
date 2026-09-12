@@ -23,7 +23,6 @@ import {
   Hidden,
   Taken,
   Magnet,
-  Sprite,
   PhysicsBody,
   EnemyAI,
   poolAdd,

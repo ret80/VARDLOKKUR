@@ -19,8 +19,8 @@ export class ParticleLayer implements IRenderLayer {
     this.sys = sys;
   }
 
-  init(_app: import('pixi.js').Application, _ctx: RenderLayerContext): void {
-    // ParticleLayer не требует инициализации — sys уже создан в engine
+  init(_app: unknown, _ctx: RenderLayerContext): void {
+    // Этап 6: Application больше не нужен
   }
 
   update(ctx: RenderLayerContext): void {

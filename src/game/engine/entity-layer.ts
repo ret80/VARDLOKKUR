@@ -1,6 +1,6 @@
-/* entity-layer.ts — Слой отрисовки ECS-сущностей */
+/* entity-layer.ts — Слой отрисовки ECS-сущностей
+   Этап 6: удалён import { Application } из pixi.js */
 
-import type { Application } from 'pixi.js';
 import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import type { RenderSystemOptions } from '../ecs/ecs-systems/render-system';
@@ -21,7 +21,6 @@ import { RenderSystem } from '../ecs/ecs-systems/render-system';
  * НЕ вызывает app.render() — это делает RenderPipeline.
  */
 export class EntityLayer implements IRenderLayer {
-  private app: Application | null = null;
   private system = new RenderSystem();
   private opts: RenderSystemOptions | null = null;
 
@@ -32,8 +31,8 @@ export class EntityLayer implements IRenderLayer {
     this.opts = opts;
   }
 
-  init(app: Application, _ctx: RenderLayerContext): void {
-    this.app = app;
+  init(_app: unknown, _ctx: RenderLayerContext): void {
+    // Этап 6: Application больше не нужен
   }
 
   update(_ctx: RenderLayerContext): void {
@@ -51,7 +50,6 @@ export class EntityLayer implements IRenderLayer {
   }
 
   destroy(): void {
-    this.app = null;
     this.opts = null;
   }
 }

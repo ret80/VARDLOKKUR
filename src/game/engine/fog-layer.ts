@@ -1,7 +1,7 @@
-/* fog-layer.ts — Слой тумана, рун и глаз в тумане */
+/* fog-layer.ts — Слой тумана, рун и глаз в тумане
+   Этап 6: удалён import { Application } из pixi.js */
 
 import { query, hasComponent } from 'bitecs';
-import type { Application } from 'pixi.js';
 import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import type { FxManager } from '../fx';
@@ -58,8 +58,8 @@ export class FogLayer implements IRenderLayer {
     this.runesEnabled = enabled;
   }
 
-  init(_app: Application, _ctx: RenderLayerContext): void {
-    // FogLayer не требует инициализации — fx уже создан в engine
+  init(_app: unknown, _ctx: RenderLayerContext): void {
+    // Этап 6: Application больше не нужен
   }
 
   update(ctx: RenderLayerContext): void {

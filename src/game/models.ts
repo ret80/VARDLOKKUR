@@ -9,7 +9,6 @@
 
 import type { World } from "bitecs";
 import type { Body } from "planck-js";
-import type { Graphics } from "pixi.js";
 
 // ── Экраны ──────────────────────────────────────────────────────────────
 
@@ -86,7 +85,7 @@ export interface ChestRt {
   x: number; y: number;
   item: string;
   opened: boolean;
-  g: Graphics;
+  g: unknown;
 }
 
 export interface PedestalRt {
@@ -94,36 +93,36 @@ export interface PedestalRt {
   taken: boolean;
   guardsLeft: number;
   guardsSpawned: boolean;
-  g: Graphics;
+  g: unknown;
 }
 
 export interface ShrineRt {
   x: number; y: number;
-  g: Graphics;
+  g: unknown;
 }
 
 export interface NpcRt {
   id: string; name: string;
   x: number; y: number;
-  g: Graphics;
+  g: unknown;
 }
 
 export interface DoorRt {
   x: number; y: number;
   open: number;
   locked: boolean;
-  g: Graphics;
+  g: unknown;
 }
 
 export interface BarrierRt {
   x: number; y: number;
   active: boolean;
-  g: Graphics;
+  g: unknown;
 }
 
 export interface AltarRt {
   x: number; y: number;
-  g: Graphics;
+  g: unknown;
 }
 
 // ── Снаряды и дропы (для обратной совместимости) ────────────────────────
@@ -131,13 +130,13 @@ export interface AltarRt {
 export interface ProjectileRt {
   x: number; y: number; vx: number; vy: number;
   kind: string;
-  g: Graphics;
+  g: unknown;
 }
 
 export interface DropRt {
   x: number; y: number;
   kind: string;
-  g: Graphics;
+  g: unknown;
 }
 
 // ── Сервисы GameStore ───────────────────────────────────────────────────

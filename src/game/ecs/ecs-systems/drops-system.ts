@@ -16,7 +16,6 @@ import {
   StringPool,
 } from '../ecs-components';
 import type { DropKind } from '../../generators/types';
-import { Graphics } from 'pixi.js';
 import { DropHandlerRegistry } from '../../drop-handlers';
 import type { EntityFactory } from '../entity-factory';
 
@@ -31,7 +30,8 @@ export interface DropRt {
   t: number;
   taken: boolean;
   magnet: boolean;
-  g: Graphics;
+  /** @deprecated — Этап 6: Graphics удалён */
+  g?: unknown;
   life?: number;
   body?: any;
   ambientIdx?: number;

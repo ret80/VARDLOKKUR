@@ -1,7 +1,7 @@
-/* render-pipeline.ts — Единый конвейер рендеринга */
+/* render-pipeline.ts — Единый конвейер рендеринга
+   Этап 6: удалён import { Application } из pixi.js */
 
 import type { World } from 'bitecs';
-import type { Application } from 'pixi.js';
 import type REGL from 'regl';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import { createBatchers, type Batchers } from './batcher-types.js';
@@ -59,7 +59,7 @@ export class RenderPipeline {
   }
 
   /** Инициализировать все слои. Вызывается один раз при создании пайплайна. */
-  init(app: Application, ctx: RenderLayerContext): void {
+  init(_app: unknown, ctx: RenderLayerContext): void {
     // Добавляем regl в контекст если он доступен
     if (this.regl) {
       ctx.regl = this.regl;
@@ -72,7 +72,7 @@ export class RenderPipeline {
     }
 
     for (const layer of this.layers) {
-      layer.init(app, ctx);
+      layer.init(_app, ctx);
     }
     this.initialized = true;
   }

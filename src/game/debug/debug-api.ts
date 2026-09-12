@@ -16,8 +16,6 @@ import {
   Drop,
   Projectile,
   NPC,
-  Sprite,
-  SpriteRegistry,
   PhysicsBody,
   PhysicsBodyRegistry,
   EnemyAI,
@@ -438,12 +436,6 @@ export function inspectEntity(world: World, eid: number): DebugEntity | null {
     };
   }
   
-  if (hasComponent(world, Sprite as any, eid)) {
-    entity.components.push('Sprite');
-    const spriteIdx = Sprite.ref[eid];
-    entity.sprite = spriteIdx > 0 ? SpriteRegistry[spriteIdx - 1] : null;
-  }
-  
   if (hasComponent(world, PhysicsBody as any, eid)) {
     entity.components.push('PhysicsBody');
     const bodyIdx = PhysicsBody.body[eid];
@@ -528,27 +520,14 @@ export function killPlayer(world: World, playerEid: number): boolean {
   return true;
 }
 
-/** Удалить врага по ID (полная реализация) */
+/** Удалить врага по ID (Этап 6: SpriteRegistry удалён) */
 export function removeEnemy(
   world: World,
   eid: number,
-  onRemoveSprite?: (sprite: any) => void
+  _onRemoveSprite?: (sprite: any) => void
 ): boolean {
   if (eid < 0 || !hasComponent(world, Enemy as any, eid)) return false;
   if (Dead[eid]) return false;
-  
-  const spriteIdx = Sprite.ref[eid];
-  if (spriteIdx > 0) {
-    const sprite = SpriteRegistry[spriteIdx - 1];
-    if (sprite) {
-      if (onRemoveSprite) onRemoveSprite(sprite);
-      sprite?.destroy({ children: true });
-    }
-    SpriteRegistry.splice(spriteIdx - 1, 1);
-    for (const e of query(world, [Sprite])) {
-      if (Sprite.ref[e] > spriteIdx) Sprite.ref[e]--;
-    }
-  }
   
   const pbIdx = PhysicsBody.body[eid];
   if (pbIdx > 0) {
@@ -560,10 +539,10 @@ export function removeEnemy(
   return true;
 }
 
-/** Удалить всех врагов */
+/** Удалить всех врагов (Этап 6: SpriteRegistry удалён) */
 export function removeAllEnemies(
   world: World,
-  onRemoveSprite?: (sprite: any) => void
+  _onRemoveSprite?: (sprite: any) => void
 ): number {
   let count = 0;
   const toRemove: number[] = [];
@@ -576,25 +555,16 @@ export function removeAllEnemies(
   }
   
   for (const eid of toRemove) {
-    const spriteIdx = Sprite.ref[eid];
-    if (spriteIdx > 0) {
-      const sprite = SpriteRegistry[spriteIdx - 1];
-      if (sprite) {
-        if (onRemoveSprite) onRemoveSprite(sprite);
-        sprite?.destroy({ children: true });
-      }
-      SpriteRegistry.splice(spriteIdx - 1, 1);
-    }
     removeEntity(world, eid);
   }
   
   return count;
 }
 
-/** Удалить всех призраков */
+/** Удалить всех призраков (Этап 6: SpriteRegistry удалён) */
 export function removeAllGhosts(
   world: World,
-  onRemoveSprite?: (sprite: any) => void
+  _onRemoveSprite?: (sprite: any) => void
 ): number {
   let count = 0;
   const toRemove: number[] = [];
@@ -607,53 +577,22 @@ export function removeAllGhosts(
   }
   
   for (const eid of toRemove) {
-    const spriteIdx = Sprite.ref[eid];
-    if (spriteIdx > 0) {
-      const sprite = SpriteRegistry[spriteIdx - 1];
-      if (sprite) {
-        if (onRemoveSprite) onRemoveSprite(sprite);
-        sprite?.destroy({ children: true });
-      }
-      SpriteRegistry.splice(spriteIdx - 1, 1);
-    }
     removeEntity(world, eid);
   }
   
   return count;
 }
 
-/** Удалить снаряд по ID */
+/** Удалить снаряд по ID (Этап 6: SpriteRegistry удалён) */
 export function removeProjectile(world: World, eid: number): boolean {
   if (eid < 0 || !hasComponent(world, Projectile as any, eid)) return false;
-  
-  const spriteIdx = Sprite.ref[eid];
-  if (spriteIdx > 0) {
-    const sprite = SpriteRegistry[spriteIdx - 1];
-    if (sprite) sprite?.destroy({ children: true });
-    SpriteRegistry.splice(spriteIdx - 1, 1);
-    for (const e of query(world, [Sprite])) {
-      if (Sprite.ref[e] > spriteIdx) Sprite.ref[e]--;
-    }
-  }
-  
   removeEntity(world, eid);
   return true;
 }
 
-/** Удалить дроп по ID */
+/** Удалить дроп по ID (Этап 6: SpriteRegistry удалён) */
 export function removeDrop(world: World, eid: number): boolean {
   if (eid < 0 || !hasComponent(world, Drop as any, eid)) return false;
-  
-  const spriteIdx = Sprite.ref[eid];
-  if (spriteIdx > 0) {
-    const sprite = SpriteRegistry[spriteIdx - 1];
-    if (sprite) sprite?.destroy({ children: true });
-    SpriteRegistry.splice(spriteIdx - 1, 1);
-    for (const e of query(world, [Sprite])) {
-      if (Sprite.ref[e] > spriteIdx) Sprite.ref[e]--;
-    }
-  }
-  
   removeEntity(world, eid);
   return true;
 }

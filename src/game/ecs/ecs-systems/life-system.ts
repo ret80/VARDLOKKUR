@@ -16,8 +16,6 @@ import {
   Magnet,
   Position,
   Velocity,
-  Sprite,
-  SpriteRegistry,
 } from '../ecs-components';
 import { logger } from '../../debug/logger';
 
@@ -39,15 +37,7 @@ export function lifeCheckSystem(world: World): void {
     }
   }
 
-  // Очистить спрайт мёртвых врагов (физ. тело удалится в game loop)
-  for (const eid of query(world, [Dead, Enemy])) {
-    const spriteIdx = Sprite.ref[eid];
-    const spriteRef = SpriteRegistry[spriteIdx - 1];
-    if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
-    spriteRef?.destroy();
-    // Сбросить ссылку — иначе renderSprites попытается обратиться к уничтоженному спрайту
-    Sprite.ref[eid] = 0;
-  }
+  // Graphics удалены на Этапе 6 — рендеринг через ECS batchers
 }
 
 /** Удалить мёртвые сущности (кроме игрока — его Dead сбрасывается при респавне) */

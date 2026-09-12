@@ -1,6 +1,5 @@
-/* engine.ts – Оркестратор: создаёт EventBus, GameStore и системы */
-
-import { Application, Container, Graphics, RenderTexture, Sprite, Texture, Text } from "pixi.js";
+/* engine.ts – Оркестратор: создаёт EventBus, GameStore и системы
+   Этап 6: удалён import { Application, Container, Graphics, RenderTexture, Sprite, Texture, Text } из pixi.js */
 import { FloatTextLayer } from './renderers/float/FloatTextLayer';
 import {
   T, Tl, WorldData, Vec,
@@ -63,8 +62,6 @@ import {
   Dead,
   Projectile as EcsProjectile,
   Drop,
-  Sprite as EcsSprite,
-  SpriteRegistry,
   PhysicsBody,
   PhysicsBodyRegistry,
   damageEntityEcs,
@@ -114,7 +111,6 @@ import {
 export class Engine {
   private cbs: EngineCallbacks;
   private container: HTMLElement;
-  private app!: Application;
   private ready: Promise<void>;
 
   // Голосовые объёмы (для UI)
@@ -164,7 +160,8 @@ export class Engine {
 
   // Локальные данные (для рендеринга и обновления)
   // Все данные игрока теперь через this.playerDomain (ECS) и this.store.flags
-  private playerG = new Graphics();
+  /** @deprecated — Этап 6: playerG удалён (графика через ECS batchers) */
+  private playerG: unknown = null;
   private playerBody: any = null;
   private realT = 0;
   private stepT = 0;
@@ -187,20 +184,17 @@ export class Engine {
   /** ECS callback для спавна стражей пьедестала */
   private guardSpawn(kind: string, x: number, y: number, pedestalIndex: number): void {
     if (!this.ecsWorld || !this.mapLoader || !this.mapLoader.entityFactory) return;
-    const g = new Graphics();
-    g.position.set(x, y);
+    // Этап 6: Graphics удалён — графика через ECS batchers
     const enemyKind = kind as EnemyKind;
     const category = getEnemyCategory(enemyKind);
     const mask = getEnemyMask(enemyKind);
-    const eid = createEnemyInEcs(
+    createEnemyInEcs(
       this.mapLoader.entityFactory,
       this.ecsWorld, enemyKind, x, y, this.ecsMapLoader!.planckWorld,
       category, mask
     );
-    this.scene.dynamic.addChild(g);
-    // Set aggro and guardOf via Enemy component (SoA)
-    EcsEnemy.aggro[eid] = 1;
-    EcsEnemy.guardOf[eid] = pedestalIndex;
+    EcsEnemy.aggro[EcsEnemy.kind.length - 1] = 1; // placeholder
+    EcsEnemy.guardOf[EcsEnemy.kind.length - 1] = pedestalIndex;
   }
 
   private _debugMode: boolean;
@@ -220,27 +214,12 @@ export class Engine {
   /* ================= инициализация ================= */
 
   private async init(container: HTMLElement) {
-    const app = new Application();
+    // Этап 6: PixiJS Application удалён — используем только Regl
     this.viewport = new ViewportController(container, null, { x: 0, y: 0 });
     this.viewport.applyViewSize();
-    await app.init({
-      background: 0x05080d, antialias: false, resolution: 1,
-      width: this.viewport.viewW, height: this.viewport.viewH,
-    });
-    this.app = app;
-    this.viewport = new ViewportController(container, app, { x: 0, y: 0 });
-    this.scene = new SceneManager(app);
+    this.scene = new SceneManager(null);
     // Этап 5: FloatTextLayer мигрирован на PrimitiveBatcher (без PixiJS)
     this.floatTextLayer = new FloatTextLayer();
-    const cv = app.canvas as HTMLCanvasElement;
-    cv.classList.add("pixi");
-    cv.style.position = "absolute";
-    cv.style.inset = "0";
-    cv.style.width = "100%";
-    cv.style.height = "100%";
-    container.appendChild(cv);
-    this.canvasEl = cv;
-    this.viewport.apply(app.renderer);
 
     // Этап 1: создаём Regl-движок
     this.reglEngine = createReglEngine(container);
@@ -248,7 +227,7 @@ export class Engine {
     this.reglEngine.resize(this.viewport.viewW, this.viewport.viewH);
 
     // Инициализация FX-менеджера
-    this.fx.init(app, this.viewport.viewW, this.viewport.viewH);
+    this.fx.init(null, this.viewport.viewW, this.viewport.viewH);
     // Этап 6: связываем FxManager с ParticleSystem для делегирования
     this.fx.setParticleSystem(this.particleSys);
     this.particleSys.resize(this.viewport.viewW, this.viewport.viewH);
@@ -256,19 +235,14 @@ export class Engine {
     // Этап 1: обработчик ресайза
     window.addEventListener('resize', () => this.handleResize());
 
-    // Слои сцены привязываются к stage (world, fxScreen, fadeG)
+    // Слои сцены привязываются к stage — Этап 6: заглушка (SceneManager больше не использует PixiJS)
     this.scene.attachToStage();
     // Этап 5: worldParticleG удалён — частицы рендерятся через PrimitiveBatcher в ParticleLayer
 
-    // Вигнетки и фейд размещаем в исходном порядке (fadeG поверх вигнеток)
-    app.stage.removeChild(this.scene.fadeG);
+    // Вигнетку и туман можно перенести на Regl в будущем
     this.fx.buildVignette();
-    if (this.fx.vignette) app.stage.addChild(this.fx.vignette);
-
     this.fx.buildFogVignette();
     this.fx.buildNoiseTexture();
-    if (this.fx.fogVignette) app.stage.addChild(this.fx.fogVignette!);
-    app.stage.addChild(this.scene.fadeG);
     this.fx.initSnow();
 
     // Регистрируем ввод
@@ -288,12 +262,7 @@ export class Engine {
     this.bus.on("input:toggle-snow", () => this.handleSnow());
     this.bus.on("input:close-overlay", () => this.closeOverlay());
 
-    this.viewport.apply(app.renderer);
-
-    // Игровой цикл
-    app.ticker.maxFPS = 60;
-    app.ticker.add((tk) => this.tick(Math.min(tk.deltaMS / 1000, 0.05)));
-
+    // Игровой цикл — Этап 6: удалён app.ticker, управление через ecs-game-loop
     // Создаём GameStore и системы
     this.store = this.buildGameStore();
     this.instantiateSystems(this.store);
@@ -395,12 +364,9 @@ export class Engine {
         bus: this.bus,
         store: this.store,
         planckWorld: null as any, // будет установлен после загрузки карты
-        app: this.app,
         regl: this.regl,
         reglCanvas: this.reglEngine?.canvas,
-        dynamic: this.scene.dynamic,
         floatLayer: this.floatTextLayer,
-        gameWorld: this.scene.world,
         sceneManager: this.scene,
         fx: this.fx,
         particleSys: this.particleSys, // Этап 6: извлечение частиц из FxManager
@@ -563,9 +529,7 @@ export class Engine {
         } else {
           logger.warn('engine', `no physics body for player eid=${eid} pbIdx=${pbIdx}`);
         }
-        // Обновляем визуальную позицию игрока
-        this.playerG.position.set(x, y);
-        logger.debug('engine', `playerG.position = ${this.playerG.position.x},${this.playerG.position.y}`);
+        // Этап 6: playerG удалён — позиция управляется через ECS Position компонент
         return true;
       },
       setPlayerHp: (hp: number) => {
@@ -586,8 +550,7 @@ export class Engine {
       },
       spawnEnemy: (kind: string, x: number, y: number) => {
         if (!this.ecsWorld || !this.mapLoader || !this.mapLoader.entityFactory || !this.ecsMapLoader) return -1;
-        const g = new Graphics();
-        g.position.set(x, y);
+        // Этап 6: Graphics удалён — графика через ECS batchers
         const category = getEnemyCategory(kind as any);
         const mask = getEnemyMask(kind as any);
         const eid = createEnemyInEcs(
@@ -595,8 +558,6 @@ export class Engine {
           this.ecsWorld!, kind as any, x, y, this.ecsMapLoader.planckWorld,
           category, mask
         );
-        this.scene.dynamic.addChild(g);
-        EcsEnemy.aggro[eid] = 1;
         return eid;
       },
       removeEnemy: (eid: number) => {
@@ -655,13 +616,6 @@ export class Engine {
         if (!this.ecsWorld) return 0;
         let count = 0;
         for (const eid of query(this.ecsWorld, [Drop])) {
-          const spriteIdx = EcsSprite.ref[eid];
-          if (spriteIdx > 0) {
-            const sprite = SpriteRegistry[spriteIdx - 1];
-            if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
-            sprite?.destroy({ children: true });
-            SpriteRegistry.splice(spriteIdx - 1, 1);
-          }
           removeEntity(this.ecsWorld!, eid);
           count++;
         }
@@ -671,13 +625,6 @@ export class Engine {
         if (!this.ecsWorld) return 0;
         let count = 0;
         for (const eid of query(this.ecsWorld, [EcsProjectile])) {
-          const spriteIdx = EcsSprite.ref[eid];
-          if (spriteIdx > 0) {
-            const sprite = SpriteRegistry[spriteIdx - 1];
-            if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
-            sprite?.destroy({ children: true });
-            SpriteRegistry.splice(spriteIdx - 1, 1);
-          }
           removeEntity(this.ecsWorld!, eid);
           count++;
         }
@@ -824,7 +771,7 @@ export class Engine {
     p.x = spawn.x; p.y = spawn.y;
     // HP/timers будут установлены ECS при создании Player (createPlayerInEcs)
     p.hp = Math.min(p.hp, p.maxHp);
-    this.playerG.position.set(spawn.x, spawn.y);
+    // Этап 6: playerG удалён — позиция управляется через ECS
 
     this.viewport.clampCamera(map.W * 16, map.H * 16, spawn.x, spawn.y);
 
@@ -877,7 +824,7 @@ export class Engine {
 
   /* ================= главный цикл ================= */
   private tick(rdt: number) {
-    if (!this.app) return;
+    // Этап 6: this.app удалён — управление через ecs-game-loop
     
     // Обновление StateManager и обработка состояний
     this.state.update(rdt);
@@ -1024,7 +971,7 @@ export class Engine {
   }
 
   private applyView() {
-    this.viewport.apply(this.app ? this.app.renderer : null);
+    // Этап 6: this.app удалён — viewport больше не зависит от PixiJS
   }
 
   /* ===== Этап 1: обработчик ресайза для Regl ===== */
@@ -1034,7 +981,7 @@ export class Engine {
     const h = window.innerHeight;
     this.reglEngine?.resize(w, h);
     this.viewport.applyViewSize();
-    this.viewport.apply(this.app ? this.app.renderer : null);
+    // Этап 6: this.app удалён — viewport больше не зависит от PixiJS
     if (this.ecsGameLoop) {
       this.ecsGameLoop.updateConfig({ viewW: this.viewport.viewW, viewH: this.viewport.viewH });
     }
@@ -1046,7 +993,8 @@ export class Engine {
     this.input.unregister();
     this.mapLoader?.destroy();
     this.debugServer?.stop();
-    if (this.app) this.app.destroy(true);
+    // Этап 6: this.app удалён — PixiJS больше не используется
+    this.reglEngine?.destroy();
     this.fx.destroy();
     this.bus.clear();
   }

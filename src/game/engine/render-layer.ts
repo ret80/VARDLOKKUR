@@ -1,6 +1,6 @@
-/* render-layer.ts — Интерфейс слоя рендеринга для RenderPipeline */
+/* render-layer.ts — Интерфейс слоя рендеринга для RenderPipeline
+   Этап 6: удалён import { Application, Container } из pixi.js */
 
-import type { Application, Container } from 'pixi.js';
 import type REGL from 'regl';
 import type { World } from 'bitecs';
 import type { Batchers } from './batcher-types.js';
@@ -13,8 +13,8 @@ export interface RenderLayerContext {
   time: number;
   /** ECS-мир */
   world: World;
-  /** FX-контейнер для частиц и эффектов (Этап 6) */
-  fxWorld?: Container;
+  /** @deprecated — Этап 6: fxWorld удалён (частицы через PrimitiveBatcher) */
+  fxWorld?: unknown;
   /** Regl-контекст (Этап 1: добавлен для миграции PixiJS → Regl) */
   regl?: REGL.Regl;
   /** Canvas Regl (Этап 1: добавлен для прямого доступа к canvas) */
@@ -42,10 +42,10 @@ export interface RenderLayerContext {
 export interface IRenderLayer {
   /**
    * Инициализация слоя. Вызывается один раз при создании пайплайна.
-   * @param app — PixiJS Application (оставлен для совместимости, Этап 1)
+   * @param _app — удалён на Этапе 6 (Application больше не нужен)
    * @param ctx — контекст с regl, canvas, batchers и другими данными
    */
-  init(app: Application, ctx: RenderLayerContext): void;
+  init(_app: unknown, ctx: RenderLayerContext): void;
 
   /** Обновление состояния слоя. Вызывается каждый тик, ДО render(). */
   update(ctx: RenderLayerContext): void;
