@@ -156,6 +156,51 @@ export class TextureManager {
   }
 
   /**
+   * Синхронно загрузить HTMLCanvasElement в GPU.
+   * Используется для процедурно сгенерированных текстур (ground, walls, houses),
+   * которые уже отрисованы на Canvas 2D.
+   *
+   * @param name — уникальное имя текстуры (ключ в кэше)
+   * @param canvas — источник (Canvas 2D с пиксель-арт содержимым)
+   * @returns ID текстуры
+   */
+  loadFromCanvas(name: string, canvas: HTMLCanvasElement): number {
+    if (this.textures.has(name)) {
+      const existingId = [...this.idToName.entries()]
+        .find(([, n]) => n === name)?.[0];
+      if (existingId !== undefined) return existingId;
+    }
+
+    if (!this.regl) {
+      logger.warn('texture-manager', `loadFromCanvas() called before setRegl(), texture "${name}" will not be loaded`);
+      this.idToName.set(this.nextId, name);
+      return this.nextId++;
+    }
+
+    try {
+      const tex = this.regl.texture({
+        data: canvas,
+        width: canvas.width,
+        height: canvas.height,
+        mag: 'nearest' as const,
+        min: 'nearest' as const,
+        wrapS: 'clamp' as const,
+        wrapT: 'clamp' as const,
+      });
+
+      this.textures.set(name, tex);
+      this.idToName.set(this.nextId, name);
+
+      logger.debug('texture-manager', `Loaded canvas texture: "${name}" (${canvas.width}x${canvas.height})`);
+      return this.nextId++;
+    } catch (err) {
+      logger.error('texture-manager', `Failed to load canvas "${name}": ${err}`);
+      this.idToName.set(this.nextId, name);
+      return this.nextId++;
+    }
+  }
+
+  /**
    * Удалить текстуру из GPU и кэша.
    */
   delete(name: string): void {

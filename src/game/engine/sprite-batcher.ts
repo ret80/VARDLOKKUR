@@ -58,10 +58,35 @@ export class SpriteBatcher {
   private texIndices = new Float32Array(MAX_VERTICES);
   /** Предвычисленные индексы для квадов */
   private indices = new Uint32Array(MAX_INDICES);
+  /** GPU-буфер индексов */
+  private elements: REGL.Buffer | null = null;
+  /** Белая текстура-заглушка 1×1 для пустых слотов */
+  private whiteTexture: REGL.Texture2D;
   /** Текущее количество вершин */
   private vertexCount = 0;
   /** Текущее количество индексов */
   private indexCount = 0;
+
+  /** Текущий offset для translate (world → screen) */
+  private _offsetX = 0;
+  private _offsetY = 0;
+
+  /**
+   * Активные текстуры для следующего flush (до 8 слотов).
+   * Задаются через setTextures(); по умолчанию — белые заглушки.
+   */
+  private activeTextures: (REGL.Texture2D | null)[] = [];
+
+  /**
+   * Переиспользуемые GPU-буферы.
+   *
+   * ВАЖНО: regl на WebGL2 (VAO) НЕ поддерживает передачу нового Float32Array
+   * в атрибутах при каждом вызове — это вызывает INVALID_OPERATION (1282).
+   */
+  private posBuf: REGL.Buffer;
+  private uvBuf: REGL.Buffer;
+  private colBuf: REGL.Buffer;
+  private texIdxBuf: REGL.Buffer;
 
   /** REGL draw command */
   private drawCommand: REGL.DrawCommand | null = null;
@@ -69,6 +94,20 @@ export class SpriteBatcher {
 
   constructor(regl: REGL.Regl) {
     this.regl = regl;
+
+    // Белая текстура-заглушка 1×1 (для пустых слотов и pushRect без текстуры)
+    this.whiteTexture = regl.texture({
+      width: 1,
+      height: 1,
+      data: new Uint8Array([255, 255, 255, 255]),
+      mag: 'nearest',
+      min: 'nearest',
+    });
+
+    this.posBuf = regl.buffer({ data: this.positions, usage: 'dynamic' });
+    this.uvBuf = regl.buffer({ data: this.uvs, usage: 'dynamic' });
+    this.colBuf = regl.buffer({ data: this.colors, usage: 'dynamic' });
+    this.texIdxBuf = regl.buffer({ data: this.texIndices, usage: 'dynamic' });
 
     // Предвычисление индексов для квадов (triangle strip → 2 triangle)
     for (let i = 0; i < MAX_QUADS; i++) {
@@ -82,19 +121,24 @@ export class SpriteBatcher {
       this.indices[off + 5] = v + 3;
     }
 
+    // Создаём GPU-буфер индексов (статический, переиспользуется)
+    this.elements = regl.buffer({ data: this.indices, type: 'uint32', usage: 'static' });
+
     // Создаём draw command
     this.drawCommand = regl({
       vert: spriteVert,
       frag: spriteFrag,
 
       attributes: {
-        a_position: new Float32Array(0),
-        a_uv: new Float32Array(0),
-        a_color: new Float32Array(0),
-        a_textureIndex: new Float32Array(0),
+        a_position: { buffer: this.posBuf, size: 2 },
+        a_uv: { buffer: this.uvBuf, size: 2 },
+        a_color: { buffer: this.colBuf, size: 4 },
+        a_textureIndex: { buffer: this.texIdxBuf, size: 1 },
       },
 
-      count: 0,
+      // ВАЖНО: count ДОЛЖЕН быть пропом. Статический count:0 в спеке
+      // заставлял regl компилировать команду как no-op (ничего не рисовалось).
+      count: (regl as any).prop('count'),
 
       uniforms: {
         u_projection: (regl as any).prop('proj'),
@@ -170,8 +214,8 @@ export class SpriteBatcher {
       const ry = cy + c.dx * sin + c.dy * cos;
 
       const vi = this.vertexCount + i;
-      this.positions[vi * 2] = rx;
-      this.positions[vi * 2 + 1] = ry;
+      this.positions[vi * 2] = rx + this._offsetX;
+      this.positions[vi * 2 + 1] = ry + this._offsetY;
       this.uvs[vi * 2] = c.u;
       this.uvs[vi * 2 + 1] = c.v;
       this.colors[vi * 4] = r;
@@ -203,6 +247,29 @@ export class SpriteBatcher {
   }
 
   /**
+   * Установить offset для translate (world → screen).
+   * Все последующие push-методы добавляют (offsetX, offsetY) к координатам.
+   */
+  setOffset(x: number, y: number): void {
+    this._offsetX = x;
+    this._offsetY = y;
+  }
+
+  /** Сбросить offset в (0, 0) */
+  resetOffset(): void {
+    this._offsetX = 0;
+    this._offsetY = 0;
+  }
+
+  /**
+   * Задать активные текстуры для следующего flush (до 8 слотов).
+   * Индекс в массиве = textureIndex в push().
+   */
+  setTextures(textures: (REGL.Texture2D | null)[]): void {
+    this.activeTextures = textures;
+  }
+
+  /**
    * Отправить накопленные данные на GPU.
    */
   flush(proj?: { w: number; h: number }, view?: Float32Array): void {
@@ -222,18 +289,29 @@ export class SpriteBatcher {
     // Извлекаем подмассивы
     const vertCount = this.vertexCount;
 
+    // Обновляем GPU-буферы (переиспользуемые — см. комментарий в конструкторе)
+    this.posBuf({ data: this.positions.subarray(0, vertCount * 2) });
+    this.uvBuf({ data: this.uvs.subarray(0, vertCount * 2) });
+    this.colBuf({ data: this.colors.subarray(0, vertCount * 4) });
+    this.texIdxBuf({ data: this.texIndices.subarray(0, vertCount) });
+
+    // Собираем массив из ровно 8 текстур (шейдер ожидает u_textures[8]).
+    // Пустые слоты заполняем первой валидной текстурой (или белой заглушкой),
+    // чтобы regl не пытался биндить undefined.
+    const firstValid = this.activeTextures.find((t) => t != null) ?? this.whiteTexture;
+    const bound: REGL.Texture2D[] = [];
+    for (let i = 0; i < 8; i++) {
+      const t = this.activeTextures[i];
+      bound.push(t ?? firstValid ?? (this.whiteTexture as REGL.Texture2D));
+    }
+
     this.drawCommand({
-      attributes: {
-        a_position: this.positions.subarray(0, vertCount * 2),
-        a_uv: this.uvs.subarray(0, vertCount * 2),
-        a_color: this.colors.subarray(0, vertCount * 4),
-        a_textureIndex: this.texIndices.subarray(0, vertCount),
-      },
       count: this.indexCount,
+      elements: this.elements,
       // ВАЖНО: regl.prop при одиночном вызове читает ключи ВЕРХНЕГО уровня args
       proj: projMatrix,
       view: viewMatrix,
-      textures: [null!, undefined, undefined, undefined, undefined, undefined, undefined, undefined],
+      textures: bound,
     });
 
     // Сброс
@@ -265,14 +343,14 @@ export class SpriteBatcher {
   }
 
   private createProjectionMatrix(w: number, h: number): Float32Array {
-    // Orthographic: left=0, right=w, top=0, bottom=h, near=-1000, far=1000
+    // Ortho top-left origin (y вниз): y-масштаб отрицательный, ty = +1
     const rl = w;
     const tb = h;
     return new Float32Array([
       2 / rl, 0, 0, 0,
-      0, 2 / tb, 0, 0,
+      0, -2 / tb, 0, 0,
       0, 0, -2 / 2000, 0,
-      -1, -1, 0, 1,
+      -1, 1, 0, 1,
     ]);
   }
 }

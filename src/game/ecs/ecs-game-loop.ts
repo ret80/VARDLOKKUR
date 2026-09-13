@@ -55,6 +55,7 @@ import { CameraController } from '../engine/camera-controller';
 import { SceneManager } from '../engine/scene-manager';
 import { RenderPipeline } from '../engine/render-pipeline';
 import { EntityLayer } from '../engine/entity-layer';
+import { TileLayer } from '../engine/tile-layer';
 import { FogLayer } from '../engine/fog-layer';
 import { OverlayLayer } from '../engine/overlay-layer';
 import { ParticleLayer } from '../engine/particle-layer';
@@ -178,6 +179,8 @@ export interface EcsGameLoopConfig {
   guardSpawn?: GuardSpawnCallback;
   /** Фабрика чистых ECS-сущностей (без графики/физики) */
   entityFactory?: EntityFactory;
+  /** Слой отрисовки тайлов карты (создаётся в engine.ts, передаётся в MapLoaderService) */
+  tileLayer?: TileLayer;
 }
 
 /** Глобальный singleton registry дропов */
@@ -204,6 +207,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     fx,
     particleSys,
     entityFactory: configFactory,
+    tileLayer: configTileLayer,
     regl,
     reglCanvas,
   } = config;
@@ -227,13 +231,16 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   // ── RenderPipeline (Этап 5-6) ──
   // Создаём слои пайплайна
+  // TileLayer: если передан извне (engine.ts) — используем его, иначе создаём локальный
+  const tileLayer = configTileLayer ?? new TileLayer();
   const entityLayer = new EntityLayer();
   const particleLayer = new ParticleLayer(particleSys); // Этап 6: извлечение из FxManager
   const fogLayer = new FogLayer(fx);
   const overlayLayer = new OverlayLayer();
 
-  // Создаём пайплайн и добавляем слои
+  // Создаём пайплайн и добавляем слои (tileLayer — первый, под всеми)
   const pipeline = new RenderPipeline();
+  pipeline.addLayer(tileLayer);
   pipeline.addLayer(entityLayer);
   pipeline.addLayer(particleLayer);
   pipeline.addLayer(fogLayer);

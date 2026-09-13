@@ -9,6 +9,7 @@ import { EcsMapLoader } from "../ecs/ecs-map-loader";
 import { createEntityFactory, type EntityFactory } from "../ecs/entity-factory";
 import type { SceneManager } from "./scene-manager";
 import type { ViewportController } from "./viewport-controller";
+import type { TileLayer } from "./tile-layer";
 import type { PlayerDomain } from "../store/player-domain";
 import {
   buildAllTileTextures,
@@ -40,7 +41,8 @@ export class MapLoaderService {
     private store: GameStore,
     private viewport: ViewportController,
     private ecsWorld: World,
-    private prefabWorld: World
+    private prefabWorld: World,
+    private tileLayer?: TileLayer | null
   ) {
     // Фабрика создаётся ОДИН раз при инициализации сервиса
     this.entityFactory = createEntityFactory(this.ecsWorld, this.prefabWorld);
@@ -72,10 +74,23 @@ export class MapLoaderService {
       this._prevPlanckWorld = null;
     }
 
-    // Этап 6: тайлы рендерятся через Canvas 2D (не через PixiJS Sprites)
+    // Этап 6: тайлы рендерятся через Regl TileLayer (атлас + SpriteBatcher)
     const tileResult = buildAllTileTextures(map, this.store.roofSnow);
     this.wallCache = tileResult.wallCache;
     this.houseCache = tileResult.houseCache;
+
+    // Передаём данные карты в TileLayer (ground + стены/дома → GPU-атлас)
+    if (this.tileLayer) {
+      this.tileLayer.setMap({
+        groundCanvas: tileResult.groundCanvas,
+        walls: tileResult.wallCanvases.map((w) => ({
+          canvas: w.canvas,
+          x: w.x,
+          y: w.y,
+          zIndex: w.zIndex,
+        })),
+      });
+    }
 
     // Создаём ECS Map Loader (используется общий ECS-мир движка)
     const newPlanckWorld = new PlanckWorld();

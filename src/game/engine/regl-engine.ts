@@ -36,6 +36,9 @@ export function createReglEngine(container: HTMLElement): ReglEngine {
 
   logger.info('regl-engine', 'Regl context created successfully');
 
+  // DEBUG: доступ к regl из консоли браузера
+  (window as any).__regl = regl;
+
   const resize = (w: number, h: number): void => {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     canvas.width = Math.floor(w * dpr);

@@ -16,6 +16,7 @@ import {
 import { audio } from "./audio";
 import { FxManager } from "./fx";
 import { ParticleSystem } from "./engine/particle-system";
+import { TileLayer } from "./engine/tile-layer";
 import {
   HouseSpriteEntry,
   WallTextureCache,
@@ -150,6 +151,8 @@ export class Engine {
   private screenRouter!: ScreenRouter;
   private playerLifecycle!: PlayerLifecycle;
   private mapLoader!: MapLoaderService;
+  /** Слой отрисовки тайлов карты (Regl) — передаётся в game loop и MapLoaderService */
+  private tileLayer = new TileLayer();
 
   // Debug server (динамический импорт — Node.js API)
   private debugServer: any = null;
@@ -340,7 +343,7 @@ export class Engine {
       (msg) => this.cbs.onToast(msg),
       () => audio.uiClick()
     );
-    this.mapLoader = new MapLoaderService(this.scene, store, this.viewport, this.ecsWorld!, this.prefabWorld!);
+    this.mapLoader = new MapLoaderService(this.scene, store, this.viewport, this.ecsWorld!, this.prefabWorld!, this.tileLayer);
     this.playerLifecycle = new PlayerLifecycle(
       store, this.playerDomain, this.bus, this.hud,
       {
@@ -404,6 +407,7 @@ export class Engine {
         realTRef: this.realT,
         guardSpawn: (kind: string, x: number, y: number, idx: number) => this.guardSpawn(kind, x, y, idx),
         entityFactory: this.mapLoader?.entityFactory ?? undefined,
+        tileLayer: this.tileLayer,
       });
     }
 
