@@ -155,9 +155,10 @@ export class PixiJSRenderer implements IRenderer {
       this.worldContainer.addChild(sprite);
     }
 
-    const layerId = layer
+    // Определяем handle слоя для хранения во внутреннем объекте
+    const layerId: LayerHandle = options.layer
       ? (options.layer as LayerHandle)
-      : (this.layers.values().next().value?.container ? (this.layers.values().next().value as InternalLayer).container : (null as unknown as LayerHandle));
+      : ((this.layers.size > 0 ? this.layers.keys().next().value : 1) as LayerHandle);
 
     this.sprites.set(id, { pixiSprite: sprite, layer: layerId });
     return id as SpriteHandle;
@@ -385,12 +386,13 @@ export class PixiJSRenderer implements IRenderer {
     uniforms?: Record<string, unknown>
   ): ShaderHandle {
     const id = this._nextId++;
-    const filter = new Filter({
-      vertex: { source: vertex },
-      fragment: { source: fragment },
-      uniforms: uniforms ?? {},
+    // PixiJS v8: Filter.from() принимает { gl: { vertex, fragment }, resources }
+    const resources = uniforms ?? {};
+    const filter = Filter.from({
+      gl: { vertex, fragment },
+      resources,
     });
-    this.shaders.set(id, { filter, uniforms: uniforms ?? {} });
+    this.shaders.set(id, { filter, uniforms: resources });
     return id as ShaderHandle;
   }
 
@@ -405,7 +407,7 @@ export class PixiJSRenderer implements IRenderer {
 
     if (uniforms) {
       for (const [k, v] of Object.entries(uniforms)) {
-        (s.filter.uniforms as Record<string, unknown>)[k] = v;
+        (s.filter.resources as Record<string, unknown>)[k] = v;
       }
     }
     l.container.filters = [s.filter];
@@ -413,7 +415,7 @@ export class PixiJSRenderer implements IRenderer {
 
   setShaderUniform(shader: ShaderHandle, name: string, value: unknown): void {
     const s = this.shaders.get(shader as number);
-    if (s) (s.filter.uniforms as Record<string, unknown>)[name] = value;
+    if (s) (s.filter.resources as Record<string, unknown>)[name] = value;
   }
 
   destroyShader(handle: ShaderHandle): void {

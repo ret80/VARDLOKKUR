@@ -1217,3 +1217,64 @@ export class HudSystem {
 - Внутренних структур данных: 6 Map'ов (sprites, graphics, layers, textures, shaders, uiElements)
 
 **Следующий этап:** Этап 3 — Factory + DI-контейнер для рендерера
+
+---
+
+### Этап 3: Фабрика и DI-контейнер для рендерера — ВЫПОЛНЕН
+
+**Дата выполнения:** 2026-09-15
+
+**Созданные файлы:**
+- `src/game/renderer/RendererFactory.ts` — фабрика рендереров + глобальный DI-контейнер
+- `src/game/renderer/index.ts` — единый entry-point модуля рендерера
+
+**Что реализовано:**
+
+1. **RendererFactory — Factory Method паттерн:**
+   - `RendererFactory.create(type)` — статический метод создания рендерера
+   - `RendererType = 'pixi' | 'canvas' | 'headless'` — тип рендерера
+   - Заготовлены места для `CanvasRenderer` и `HeadlessRenderer` (TODO-комментарии)
+   - Логирование создания через проектный `logger`
+
+2. **Глобальный DI-контейнер:**
+   - `setGlobalRenderer(r)` — установка глобального рендерера (с защитой от повторной установки)
+   - `getRenderer()` — получение глобального рендерера (с проверкой инициализации и понятной ошибкой)
+   - `isRendererInitialized()` — проверка, инициализирован ли рендерер
+   - `resetGlobalRenderer()` — сброс глобального рендерера (для тестов / перезапуска)
+
+3. **Index file ( Barrel Export):**
+   - Переэкспорт всех публичных типов: `IRenderer`, `SpriteHandle`, `GraphicsHandle`, `LayerHandle`, `TextureHandle`, `ShaderHandle`, `UIElementHandle`, `SpriteCreateOptions`, `Vec2`, `Rect`, `Color`
+   - Переэкспорт классов: `PixiJSRenderer`, `RendererFactory`
+   - Переэкспорт DI-функций: `setGlobalRenderer`, `getRenderer`, `isRendererInitialized`, `resetGlobalRenderer`
+   - Тип `RendererType`
+
+**Архитектурные решения:**
+- **Глобальный singleton** — выбран для простоты миграции. В будущем можно заменить на настоящий DI-контейнер ( inversify, tsyringe и т.д.)
+- **Защита от повторной установки** — `setGlobalRenderer()` предупреждает через `logger.warn()` при повторном вызове
+- **HeadlessRenderer заготовлен** — TODO-комментарии с местами для реализации, чтобы не нарушить switch при добавлении нового типа
+
+**Принципы проектирования, применённые на этапе:**
+- **Factory Method:** Создание разных реализаций `IRenderer` через единый метод `create()`
+- **Singleton:** Глобальный доступ к рендереру через `getRenderer()`
+- **OCP (Open/Closed):** Добавление нового рендерера = новый case в switch + новый класс, без изменения вызывающего кода
+- **SRP (Single Responsibility):** Фабрика создаёт, DI хранит — каждая ответственность в своём месте
+
+**Результат проверки TypeScript:**
+- Файл `src/game/renderer/RendererFactory.ts` компилируется без ошибок
+- Файл `src/game/renderer/index.ts` компилируется без ошибок
+- Предсуществующие TS2307 ошибки (pixi.js) — не связаны с данным этапом
+
+**Статистика:**
+- `RendererFactory.ts`: 78 строк (с учётом пустых строк и комментариев)
+- `index.ts`: 26 строк
+- Экспортируемых функций DI: 4
+- Заготовок для будущих рендереров: 2 (Canvas, Headless)
+
+**Интеграция с будущими этапами:**
+- Этап 4-5 (типы и рендереры): будут использовать `getRenderer()` из `RendererFactory`
+- Этап 6 (RenderSystem): получит рендерер через `RendererFactory.create()` или глобальный DI
+- Этап 7 (TextureCacheManager): использует `getRenderer()`
+- Этап 8 (SceneManager → IRenderer): `engine.ts` создаст рендерер через `RendererFactory` и установит через `setGlobalRenderer()`
+- Этап 9 (Shaders + UI): все компоненты получат рендерер через `getRenderer()`
+
+**Следующий этап:** Этап 4 — Рефакторинг `types.ts` — новый контракт Renderer'а
