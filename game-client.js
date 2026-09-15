@@ -12,7 +12,9 @@
 (function () {
   'use strict';
 
-  var WS_URL = 'ws://localhost:3100?role=game';
+  // Подключаемся к debug-серверу только если в URL есть ?debug
+  var IS_DEBUG = window.location.search.indexOf('debug') !== -1;
+  var WS_URL = IS_DEBUG ? 'ws://localhost:3100?role=game' : null;
   var ws = null;
   var reconnectTimer = null;
   var connected = false;
@@ -37,6 +39,7 @@
   };
 
   function connect() {
+    if (!IS_DEBUG) return;
     if (ws && ws.readyState <= 1) return;
     
     console.log('[game-client] Connecting to debug server at', WS_URL);
@@ -174,6 +177,7 @@
 
   // Пушим состояние игры каждые 100ms (10 FPS)
   function pushState() {
+    if (!IS_DEBUG) return;
     if (!connected || !ws || ws.readyState !== WebSocket.OPEN) return;
     
     try {
@@ -198,6 +202,6 @@
   // Запускаем пуш состояния
   setInterval(pushState, 100);
 
-  // Подключаемся при загрузке
-  connect();
+  // Подключаемся к debug-серверу только в режиме отладки
+  if (IS_DEBUG) connect();
 })();

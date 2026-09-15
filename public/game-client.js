@@ -12,7 +12,9 @@
 (function () {
   'use strict';
 
-  var WS_URL = 'ws://localhost:3100?role=game';
+  // Подключаемся к debug-серверу только если в URL есть ?debug
+  var IS_DEBUG = window.location.search.indexOf('debug') !== -1;
+  var WS_URL = IS_DEBUG ? 'ws://localhost:3100?role=game' : null;
   var ws = null;
   var reconnectTimer = null;
   var connected = false;
@@ -48,6 +50,7 @@
   };
 
   function connect() {
+    if (!IS_DEBUG) return;
     if (ws && ws.readyState <= 1) return;
     
     console.log('[game-client] Connecting to debug server at', WS_URL);
