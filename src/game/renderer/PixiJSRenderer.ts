@@ -378,6 +378,24 @@ export class PixiJSRenderer implements IRenderer {
     }
   }
 
+  setUIPosition(handle: UIElementHandle, pos: Vec2): void {
+    const t = this.uiElements.get(handle as number);
+    if (t) {
+      t.x = pos.x;
+      t.y = pos.y;
+    }
+  }
+
+  setUIAlpha(handle: UIElementHandle, alpha: number): void {
+    const t = this.uiElements.get(handle as number);
+    if (t) t.alpha = alpha;
+  }
+
+  setUIVisible(handle: UIElementHandle, visible: boolean): void {
+    const t = this.uiElements.get(handle as number);
+    if (t) t.visible = visible;
+  }
+
   // === Shaders ===
 
   createShader(

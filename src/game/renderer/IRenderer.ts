@@ -132,6 +132,12 @@ export interface IRenderer {
   setTextStyle(handle: UIElementHandle, style: { fontSize?: number; color?: number }): void;
   /** Удалить UI-элемент */
   destroyUIElement(handle: UIElementHandle): void;
+  /** Установить позицию UI-элемента */
+  setUIPosition(handle: UIElementHandle, pos: Vec2): void;
+  /** Установить прозрачность UI-элемента (0..1) */
+  setUIAlpha(handle: UIElementHandle, alpha: number): void;
+  /** Включить/выключить видимость UI-элемента */
+  setUIVisible(handle: UIElementHandle, visible: boolean): void;
 
   // === Shaders ===
   /** Создать шейдер из vertex/fragment кода. Возвращает handle. */
