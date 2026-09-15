@@ -1,19 +1,17 @@
 /* renderers/objects/AltarRenderer.ts */
 
-import type { GraphicsHandle } from '../../renderer/IRenderer';
-import { getRenderer } from '../../renderer/RendererFactory';
+import type { DrawTarget } from '../../renderers/core/primitives';
 import type { Renderer, RenderContext } from "../core/types";
 import type { IAltarData } from "../../models";
-import { px } from "../core/primitives";
+import { px, ell, clearGraphics } from "../core/primitives";
 
 export class AltarRenderer implements Renderer<IAltarData> {
-  render(g: GraphicsHandle, data: IAltarData, ctx: RenderContext): void {
-    const r = getRenderer();
-    r.clearGraphics(g);
+  render(g: DrawTarget, data: IAltarData, ctx: RenderContext): void {
+    clearGraphics(g);
     const time = ctx.time;
-    r.drawEllipse(g, 0, 6, 8, 2, { r: 0x05 / 255, g: 0x08 / 255, b: 0x0d / 255, a: 0.45 });
+    ell(g, 0, 6, 8, 2, 0x05080d, 0.45);
     const eyeP = 0.7 + Math.sin(time * 2.5) * 0.3;
-    r.drawEllipse(g, 0, -11, 5, 5, { r: 0xe8 / 255, g: 0xc9 / 255, b: 0x79 / 255, a: 0.12 });
+    ell(g, 0, -11, 5, 5, 0xe8c979, 0.12);
     px(g, -6, 2, 12, 4, 0x241a10);
     px(g, -6, 2, 12, 1, 0x3a2c1c);
     for (let i = 0; i < 5; i++) {
@@ -40,7 +38,7 @@ export class AltarRenderer implements Renderer<IAltarData> {
     px(g, 3, 1, 3, 1, 0xeef6fc);
     if (data.runes >= 5) {
       const pulse = 0.6 + Math.sin(time * 4) * 0.4;
-      r.drawEllipse(g, 0, -4, 14, 14, { r: 0x63 / 255, g: 0xd8 / 255, b: 0xc8 / 255, a: pulse });
+      ell(g, 0, -4, 14, 14, 0x63d8c8, pulse);
     }
   }
 }

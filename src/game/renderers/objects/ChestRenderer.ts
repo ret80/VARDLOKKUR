@@ -1,16 +1,14 @@
 /* renderers/objects/ChestRenderer.ts */
 
-import type { GraphicsHandle } from '../../renderer/IRenderer';
-import { getRenderer } from '../../renderer/RendererFactory';
+import type { DrawTarget } from '../../renderers/core/primitives';
 import type { Renderer, RenderContext } from "../core/types";
 import type { IChestData } from "../../models";
-import { px } from "../core/primitives";
+import { px, ell, clearGraphics } from "../core/primitives";
 
 export class ChestRenderer implements Renderer<IChestData> {
-  render(g: GraphicsHandle, data: IChestData, _ctx: RenderContext): void {
-    const r = getRenderer();
-    r.clearGraphics(g);
-    r.drawEllipse(g, 0, 5, 7, 2.4, { r: 0x05 / 255, g: 0x08 / 255, b: 0x0d / 255, a: 0.5 });
+  render(g: DrawTarget, data: IChestData, _ctx: RenderContext): void {
+    clearGraphics(g);
+    ell(g, 0, 5, 7, 2.4, 0x05080d, 0.5);
     px(g, -6, -2, 12, 7, 0x5a4632);
     px(g, -6, -2, 12, 2, 0x6e5840);
     px(g, -6, 3, 12, 2, 0x463626);

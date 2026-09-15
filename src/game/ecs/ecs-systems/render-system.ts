@@ -322,8 +322,10 @@ export class RenderSystem {
     talkedSig?: Map<string, string>
   ): void {
     for (const eid of query(world, [SpriteComp, NPC])) {
-      const handle = getSpriteHandle(eid);
-      if (handle === undefined) continue;
+      const spriteIdx = SpriteComp.ref[eid];
+      if (spriteIdx <= 0 || spriteIdx > SpriteRegistry.length) continue;
+      const sprite = SpriteRegistry[spriteIdx - 1];
+      if (!sprite) continue;
 
       const npcId = poolGet(StringPool.npcIds, NPC.id[eid]);
       const mark = this.npcHasMark(npcId, getNpcSig, talkedSig);
@@ -332,9 +334,11 @@ export class RenderSystem {
       const npcCtx = { ...ctx, mark } as any;
       const renderer = npcRegistry.get(npcId as any) ?? npcRegistry.get("default" as any);
       if (renderer) {
-        // TODO: После полного перехода на handles — заменить на handle as any
-        // renderer.render(handle as any, data, npcCtx);
-        logger.debug('render', `NPC render skipped for eid=${eid} (needs handle conversion)`);
+        try {
+          (renderer as any).render(sprite, data, npcCtx);
+        } catch (err) {
+          logger.warn('render', `NPC render failed for eid=${eid}: ${err}`);
+        }
       }
     }
   }
@@ -344,10 +348,18 @@ export class RenderSystem {
     for (const config of this.OBJECT_QUERIES) {
       const renderer = objectRegistry.getOrThrow(config.key);
       for (const eid of query(world, config.components)) {
-        const handle = getSpriteHandle(eid);
-        if (handle === undefined) continue;
-        // TODO: После полного перехода на handles — заменить на handle as any
-        logger.debug('render', `Object render skipped for eid=${eid} (needs handle conversion)`);
+        const spriteIdx = SpriteComp.ref[eid];
+        if (spriteIdx <= 0 || spriteIdx > SpriteRegistry.length) continue;
+        // Legacy path: объекты используют PixiJS Graphics из SpriteRegistry
+        const sprite = SpriteRegistry[spriteIdx - 1];
+        if (!sprite) continue;
+        
+        const data = config.mapper(eid, world);
+        try {
+          (renderer as any).render(sprite, data, ctx);
+        } catch (err) {
+          logger.warn('render', `Object render failed for eid=${eid}: ${err}`);
+        }
       }
     }
   }
@@ -506,10 +518,19 @@ export class RenderSystem {
     }
 
     r.setSpriteVisible(handle as any, true);
-    
-    // TODO: После полного перехода на handles — заменить на playerRenderer.render(handle, ...)
-    // playerRenderer.render(handle, playerToRenderData(playerEid, ctx.time), ctx);
-    logger.debug('render', `Player render skipped for eid=${playerEid} (needs handle conversion)`);
+
+    // Рендерим игрока через PixiJS Graphics из SpriteRegistry
+    const spriteIdx = SpriteComp.ref[playerEid];
+    if (spriteIdx <= 0 || spriteIdx > SpriteRegistry.length) return;
+    const sprite = SpriteRegistry[spriteIdx - 1];
+    if (!sprite) return;
+
+    const { data, extra } = playerToRenderData(playerEid, ctx.time);
+    try {
+      playerRenderer.render(sprite, { data, extra }, ctx);
+    } catch (err) {
+      logger.warn('render', `Player render failed for eid=${playerEid}: ${err}`);
+    }
   }
 
   /** Универсальная диспетчеризация через реестр (DYNAMIC_TEXTURE для врагов) */
@@ -581,25 +602,52 @@ export class RenderSystem {
               // Скрываем старый Graphics-спрайт
               r!.setSpriteVisible(handle as any, false);
             } else {
-              // Bake не удался — fallback на Graphics
-              logger.warn('render', `Bake failed for enemy eid=${eid}, fallback to Graphics`);
-              // TODO: После полного перехода на handles — заменить на renderer.render(handle, ...)
+              // Bake не удался — fallback на прямой рендер в PixiJS Graphics
+              logger.warn('render', `Bake failed for enemy eid=${eid}, fallback to direct Graphics`);
+              const spriteIdx = SpriteComp.ref[eid];
+              if (spriteIdx > 0 && spriteIdx <= SpriteRegistry.length) {
+                const sprite = SpriteRegistry[spriteIdx - 1];
+                if (sprite) {
+                  try {
+                    (renderer as any).render(sprite, data, { time });
+                  } catch (e) {
+                    logger.warn('render', `Direct render fallback failed: ${e}`);
+                  }
+                }
+              }
             }
           } catch (err) {
             // Fallback: если TextureCacheManager не инициализирован — рисуем в Graphics
             logger.warn('render', `DYNAMIC_TEXTURE failed for enemy eid=${eid}, fallback: ${err}`);
-            // TODO: После полного перехода на handles — заменить на renderer.render(handle, ...)
+            const spriteIdx = SpriteComp.ref[eid];
+            if (spriteIdx > 0 && spriteIdx <= SpriteRegistry.length) {
+              const sprite = SpriteRegistry[spriteIdx - 1];
+              if (sprite) {
+                try {
+                  (renderer as any).render(sprite, data, { time });
+                } catch (e) {
+                  logger.warn('render', `Direct render fallback failed: ${e}`);
+                }
+              }
+            }
           }
 
           // Сохраняем prevData
           this.enemyPrevDataMap.set(eid, { ...data });
         }
       } else {
-        // Fallback: рисуем как раньше
-        const handle = this.getSpriteHandle(eid);
-        if (handle === undefined) continue;
-        // TODO: После полного перехода на handles — заменить на renderer.render(handle, ...)
-        logger.debug('render', `Renderer fallback skipped for eid=${eid} (needs handle conversion)`);
+        // Fallback: рисуем через PixiJS Graphics из SpriteRegistry
+        const spriteIdx = SpriteComp.ref[eid];
+        if (spriteIdx <= 0 || spriteIdx > SpriteRegistry.length) continue;
+        const sprite = SpriteRegistry[spriteIdx - 1];
+        if (!sprite) continue;
+
+        const data = mapper(eid);
+        try {
+          (renderer as any).render(sprite, data, { time });
+        } catch (err) {
+          logger.warn('render', `Fallback render failed for eid=${eid}: ${err}`);
+        }
       }
     }
   }

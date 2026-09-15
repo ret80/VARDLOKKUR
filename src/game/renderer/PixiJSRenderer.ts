@@ -107,8 +107,8 @@ export class PixiJSRenderer implements IRenderer {
     // Применяем камеру к worldContainer
     this.worldContainer.x = -this.cameraPos.x;
     this.worldContainer.y = -this.cameraPos.y;
-    // PixiJS рендерит автоматически через ticker,
-    // но можно вызвать this.app.render() для синхронного режима
+    // Рендерим stage — включает worldContainer + legacy Containers (tileLayer, dynamic, etc.)
+    this.app.render();
   }
 
   // === Layers ===

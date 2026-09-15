@@ -1,11 +1,10 @@
 /* renderers/player/PlayerRenderer.ts — отрисовка игрока (SRP) */
 
-import type { GraphicsHandle } from '../../renderer/IRenderer';
-import { getRenderer } from '../../renderer/RendererFactory';
+import type { DrawTarget } from '../../renderers/core/primitives';
 import { CacheStrategy } from "../core/types";
 import type { Renderer, RenderContext } from "../core/types";
 import type { IPlayerData, IPlayerExtra } from "../../models";
-import { px } from "../core/primitives";
+import { px, ell, clearGraphics } from "../core/primitives";
 
 export interface PlayerRenderData {
   data: IPlayerData;
@@ -28,16 +27,14 @@ interface PlayerVisualSnapshot {
 export class PlayerRenderer implements Renderer<PlayerRenderData> {
   readonly strategy: CacheStrategy = CacheStrategy.DYNAMIC_TEXTURE;
 
-  render(g: GraphicsHandle, data: PlayerRenderData, ctx: RenderContext): void {
-    const r = getRenderer();
-    r.clearGraphics(g);
+  render(g: DrawTarget, data: PlayerRenderData, ctx: RenderContext): void {
+    clearGraphics(g);
     this.drawBody(g, data);
   }
 
   /** Нужно ли обновлять текстуру? */
   needsTextureUpdate(data: PlayerRenderData, prevData: PlayerRenderData | null): boolean {
     if (!prevData) return true;
-
     const snap = this.snapshot(data);
     const prevSnap = this.snapshot(prevData);
 
@@ -55,7 +52,7 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
 
   // ── Рисование тела (общее для render и renderToContainer) ────────
 
-  private drawBody(g: GraphicsHandle, data: PlayerRenderData): void {
+  private drawBody(g: DrawTarget, data: PlayerRenderData): void {
     const p = data.data;
     const extra = data.extra;
     const time = (data as any).ctx?.time ?? data.data.animT;
@@ -64,9 +61,8 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
 
     const f = p.dir.x > 0.3 ? 1 : p.dir.x < -0.3 ? -1 : 0;
 
-    const r = getRenderer();
     // Тень
-    r.drawEllipse(g, 0, 5, 6, 2.4, { r: 0x05 / 255, g: 0x08 / 255, b: 0x0d / 255, a: 0.5 });
+    ell(g, 0, 5, 6, 2.4, 0x05080d, 0.5);
 
     px(g, -4, 1 + legSwing * 0.3, 3, 4, 0x2c3038, 1);
     px(g, 1, 1 - legSwing * 0.3, 3, 4, 0x2c3038, 1);
@@ -117,47 +113,15 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
       const sweep = baseA - 1.1 + prog * 2.2;
       const hx = Math.cos(sweep), hy = Math.sin(sweep);
       // Меч — полигон
-      r.drawPoly(g, [
-        hx * 5, -4 + bob + hy * 5,
-        hx * 13, -4 + bob + hy * 13,
-        hx * 13 + -hy * 2, -4 + bob + hy * 13 + hx * 2,
-        hx * 5 + -hy * 2, -4 + bob + hy * 5 + hx * 2
-      ], { r: 0xb9 / 255, g: 0xc2 / 255, b: 0xc9 / 255, a: 1 });
-      // Дуга замаха — аппроксимация эллипсом
-      const arcR = 14 * (1 - prog * 0.3);
-      r.drawEllipse(g, 0, -4 + bob, arcR, arcR, { r: 0xe8 / 255, g: 0xf4 / 255, b: 0xfc / 255, a: 0.5 * (1 - prog) });
-    } else if (extra.hasSword) {
-      if (f >= 0) {
-        px(g, 5, -10 + bob, 2, 8, 0xb9c2c9, 1);
-        px(g, 4, -4 + bob, 4, 1, 0x5a4632, 1);
-      } else {
-        px(g, -7, -10 + bob, 2, 8, 0xb9c2c9, 1);
-        px(g, -8, -4 + bob, 4, 1, 0x5a4632, 1);
-      }
-    }
-
-    if (extra.aiming) {
-      const a = Math.atan2(p.dir.y, p.dir.x);
-      // Прицел — аппроксимация эллипсом
-      r.drawEllipse(g, Math.cos(a) * 11, -4 + bob + Math.sin(a) * 11, 6, 6, { r: 0xe8 / 255, g: 0xc9 / 255, b: 0x79 / 255, a: 0.7 });
-      // Линия прицела — полигон
-      r.drawPoly(g, [
-        Math.cos(a) * 8, -4 + bob + Math.sin(a) * 8,
-        Math.cos(a) * 14, -4 + bob + Math.sin(a) * 14,
-        Math.cos(a) * 14 + -Math.sin(a) * 1.5, -4 + bob + Math.sin(a) * 14 + Math.cos(a) * 1.5
-      ], { r: 0xe8 / 255, g: 0xc9 / 255, b: 0x79 / 255, a: 0.9 });
-    }
-
-    if (p.slowT > 0) {
-      // Заморозка — аппроксимация эллипсом
-      r.drawEllipse(g, 0, -4 + bob, 9, 9, { r: 0x9f / 255, g: 0xe0 / 255, b: 0xee / 255, a: 0.5 });
+      const blade = f >= 0
+        ? [-3 + hx * 10, -14 + bob + hy * 10, -1 + hx * 10, -14 + bob + hy * 10, 0, -12 + bob]
+        : [-4 + hx * 10, -14 + bob + hy * 10, -2 + hx * 10, -14 + bob + hy * 10, -1, -12 + bob];
+      (g as any).poly(blade).fill({ color: 0xc8d3dc, alpha: 1 });
     }
   }
 
-  // ── Утилиты ─────────────────────────────────────────────────────
-
   private snapshot(data: PlayerRenderData): PlayerVisualSnapshot {
-    const p = data.data;
+    const { data: p, extra } = data;
     return {
       dirX: p.dir.x,
       dirY: p.dir.y,
@@ -166,9 +130,9 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
       swingT: p.swingT,
       hurtT: p.hurtT,
       slowT: p.slowT,
-      hasSword: data.extra.hasSword,
-      runes: data.extra.runes,
-      aiming: data.extra.aiming,
+      hasSword: extra.hasSword,
+      runes: extra.runes,
+      aiming: extra.aiming,
     };
   }
 }

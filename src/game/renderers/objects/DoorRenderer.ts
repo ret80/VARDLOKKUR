@@ -1,12 +1,12 @@
 /* renderers/objects/DoorRenderer.ts */
 
-import type { GraphicsHandle } from '../../renderer/IRenderer';
+import type { DrawTarget } from '../../renderers/core/primitives';
 import type { Renderer, RenderContext } from "../core/types";
 import type { IDoorData } from "../../models";
 import { px } from "../core/primitives";
 
 export class DoorRenderer implements Renderer<IDoorData> {
-  render(g: GraphicsHandle, data: IDoorData, _ctx: RenderContext): void {
+  render(g: DrawTarget, data: IDoorData, _ctx: RenderContext): void {
     const h = 14 * (1 - data.open);
     if (h <= 0.5) return;
     px(g, -8, -h, 16, h, data.locked ? 0x2c2420 : 0x39424e);
