@@ -1,13 +1,24 @@
 /* renderers/enemy/RavenRenderer.ts */
 
-import { Graphics } from "pixi.js";
+import type { GraphicsHandle } from '../../renderer/IRenderer';
+import { getRenderer } from '../../renderer/RendererFactory';
 import type { IEnemyData } from "../../models";
 import type { RenderContext } from "../core/types";
 import { px } from "../core/primitives";
 import { BaseEnemyRenderer } from "./BaseEnemyRenderer";
 
+/** Конвертация hex-цвета в Color {r, g, b, a} */
+function hexColor(hex: number, alpha: number = 1): { r: number; g: number; b: number; a: number } {
+  return {
+    r: ((hex >> 16) & 0xff) / 255,
+    g: ((hex >> 8) & 0xff) / 255,
+    b: (hex & 0xff) / 255,
+    a: alpha,
+  };
+}
+
 export class RavenRenderer extends BaseEnemyRenderer {
-  protected drawBody(g: Graphics, data: IEnemyData, ctx: RenderContext): void {
+  protected drawBody(g: GraphicsHandle, data: IEnemyData, ctx: RenderContext): void {
     const e = data;
     const { tint, a } = ctx as any;
     const bob = Math.sin(ctx.time * 3 + e.seed) * 0.8;
@@ -18,7 +29,12 @@ export class RavenRenderer extends BaseEnemyRenderer {
     px(g, -2, -6 + bob, 5, 4, (tint as any)(0x242c38), a);
     px(g, fx * 3, -5 + bob, 3 * fx, 2, 0xe8c979, a);
     px(g, fx * 2, -6 + bob, 1, 1, 0xe05050, a);
-    g.moveTo(-3, -2 + bob).lineTo(-9, -4 + bob - flap).lineTo(-4, 1 + bob).closePath().fill({ color: (tint as any)(0x161c24), alpha: a });
-    g.moveTo(3, -2 + bob).lineTo(9, -4 + bob - flap).lineTo(4, 1 + bob).closePath().fill({ color: (tint as any)(0x161c24), alpha: a });
+    
+    // Крылья — полигоны
+    const r = getRenderer();
+    const wingColor = (tint as any)(0x161c24);
+    const wc = typeof wingColor === 'number' ? hexColor(wingColor, a) : wingColor;
+    r.drawPoly(g, [-3, -2 + bob, -9, -4 + bob - flap, -4, 1 + bob], wc);
+    r.drawPoly(g, [3, -2 + bob, 9, -4 + bob - flap, 4, 1 + bob], wc);
   }
 }

@@ -1,13 +1,12 @@
 /* renderers/objects/DoorRenderer.ts */
 
-import { Graphics } from "pixi.js";
+import type { GraphicsHandle } from '../../renderer/IRenderer';
 import type { Renderer, RenderContext } from "../core/types";
 import type { IDoorData } from "../../models";
 import { px } from "../core/primitives";
 
 export class DoorRenderer implements Renderer<IDoorData> {
-  render(g: Graphics, data: IDoorData, _ctx: RenderContext): void {
-    g.clear();
+  render(g: GraphicsHandle, data: IDoorData, _ctx: RenderContext): void {
     const h = 14 * (1 - data.open);
     if (h <= 0.5) return;
     px(g, -8, -h, 16, h, data.locked ? 0x2c2420 : 0x39424e);

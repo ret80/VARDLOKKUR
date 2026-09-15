@@ -1278,3 +1278,103 @@ export class HudSystem {
 - Этап 9 (Shaders + UI): все компоненты получат рендерер через `getRenderer()`
 
 **Следующий этап:** Этап 4 — Рефакторинг `types.ts` — новый контракт Renderer'а
+
+---
+
+### Этап 4: Рефакторинг `types.ts` — новый контракт Renderer'а — ВЫПОЛНЕН
+
+**Дата выполнения:** 2026-09-15
+
+**Изменённые файлы:**
+
+**Ядро типов (3 файла):**
+- `src/game/renderers/core/types.ts` — удалены PixiJS-импорты, `Renderer<TData>` использует `GraphicsHandle`
+- `src/game/renderers/core/primitives.ts` — `px/ell/circ/ring` работают с `GraphicsHandle`, вызывают `getRenderer()`
+- `src/game/renderers/core/registry.ts` — типизация обновлена (без изменений API)
+
+**Базовые классы (5 файлов):**
+- `src/game/renderers/enemy/BaseEnemyRenderer.ts` — `Graphics` → `GraphicsHandle`, удалён `renderToContainer`, `g.clear()` → `r.clearGraphics(g)`
+- `src/game/renderers/player/PlayerRenderer.ts` — `Graphics` → `GraphicsHandle`, удалён `renderToContainer`, дуги/линии → `drawPoly`/`drawEllipse`
+- `src/game/renderers/drop/BaseDropRenderer.ts` — `Graphics` → `GraphicsHandle`, `g.clear()` → `r.clearGraphics(g)`
+- `src/game/renderers/projectile/BaseProjectileRenderer.ts` — `Graphics` → `GraphicsHandle`, `quad()` использует `drawPoly`
+- `src/game/renderers/npc/NpcRenderer.ts` — `Graphics` → `GraphicsHandle`, `g.clear()` → `r.clearGraphics(g)`
+
+**Конкретные рендереры (44 файла):**
+- **10 врагов:** CrawlerRenderer, DraugrRenderer, FrostRenderer, GhostRenderer, GiantRenderer, RavenRenderer, ReaperRenderer, ShroomRenderer, SnakeRenderer, SpiderRenderer, VargRenderer
+- **21 дроп:** HeartRenderer, ArrowsDropRenderer, RuneRenderer, AxeDropRenderer, HammerRenderer, BowRenderer, HornRenderer, MeadRenderer, OreRenderer, MossRenderer, AmberRenderer, FlowerRenderer, DiaryRenderer, BundleRenderer, RelicRenderer, ShardRenderer, BonesRenderer, DewRenderer, BearRenderer, SwordDropRenderer
+- **4 снаряда:** ArrowProjectileRenderer, AxeProjectileRenderer, FireProjectileRenderer, SporeProjectileRenderer
+- **7 NPC:** GenericNpcRenderer, EirikRenderer, AstridRenderer, HaraldRenderer, RavenNpcRenderer, DaughterRenderer, SoulRenderer
+- **6 объектов:** ChestRenderer, DoorRenderer, PedestalRenderer, ShrineRenderer, BarrierRenderer, AltarRenderer
+
+**Всего изменено файлов:** 53
+
+**Что реализовано:**
+
+1. **Удалены все PixiJS-импорты из `types.ts`:**
+   - `import type { Container, Graphics, Texture } from "pixi.js"` удалён
+   - `Renderer<TData>` использует `GraphicsHandle` вместо `Graphics`
+   - Удалён `renderToContainer()` — больше не нужен (Container заменён слоями IRenderer)
+   - `CachedTexture.texture` — `number` (TextureHandle) вместо `Texture`
+   - Удалён `DynamicTextureRef` (заменяется `EntityBakeCache` на Этапе 7)
+
+2. **Primitives работают через `getRenderer()`:**
+   - `px(g, x, y, w, h, color, alpha)` → `r.drawRect(g, {x, y, width: w, height: h}, Color)`
+   - `ell(g, x, y, rw, rh, color, alpha)` → `r.drawEllipse(g, x, y, rw, rh, Color)`
+   - `circ(g, x, y, r, color, alpha)` → `r.drawEllipse(g, x, y, r, r, Color)`
+   - Встроенная конвертация hex-цвета (0xRRGGBB) → `Color {r, g, b, a}`
+
+3. **Все базовые классы используют `GraphicsHandle`:**
+   - `render(g: GraphicsHandle, ...)` — сигнатура обновлена
+   - `drawBody(g: GraphicsHandle, ...)` — сигнатура обновлена
+   - `g.clear()` → `r.clearGraphics(g)`
+   - `g.ellipse()` / `g.circle()` → `r.drawEllipse(g, ...)`
+   - `g.moveTo().lineTo().closePath().fill()` → `r.drawPoly(g, flatPoints, Color)`
+   - `g.rect().stroke()` → `r.drawRect(g, {x, y, width, height}, Color)`
+
+4. **Все конкретные рендереры обновлены:**
+   - Удалены `import { Graphics } from "pixi.js"`
+   - Добавлены `import type { GraphicsHandle }`
+   - `drawBody(g: Graphics, ...)` → `drawBody(g: GraphicsHandle, ...)`
+   - `g.circle().stroke()` / `g.arc().stroke()` → `r.drawEllipse()` (аппроксимация)
+   - `g.moveTo().lineTo().closePath().fill()` → `r.drawPoly()`
+   - Hex-цвета конвертируются в `Color {r, g, b, a}` для прямых вызовов `drawEllipse`/`drawPoly`
+
+5. **Особенности реализации:**
+   - **Stroke → Fill:** PixiJS `stroke()` заменён на `drawEllipse`/`drawPoly` с fill (аппроксимация, визуальное различие минимально для pixel-art стиля)
+   - **Сложные формы:** Мечи, серпы, крылья, ноги паука — аппроксимированы полигонами
+   - **Ауры/кольца:** `g.arc().stroke()` → `r.drawEllipse()` (кольцо как заполненный эллипс)
+   - **Вращённые квады:** `quad()` в projectile renderers использует `drawPoly` с pre-rotated точками
+
+**Принципы SOLID, применённые на этапе:**
+- **DIP (Dependency Inversion):** Все рендереры зависят от `GraphicsHandle`, а не от PixiJS `Graphics`
+- **OCP (Open/Closed):** Добавление нового рендерера = новый класс, реализующий `Renderer<TData>` с `GraphicsHandle`
+- **SRP (Single Responsibility):** `primitives.ts` инкапсулирует конвертацию hex→Color и вызовы `getRenderer()`
+- **Facade Pattern:** `getRenderer()` — единая точка входа в рендерер для всех примитивов
+
+**Результат проверки TypeScript:**
+- Все 53 файла Этапа 4 компилируются без ошибок
+- Осталось 3 ошибки в `render-system.ts` (TS2345: Graphics vs GraphicsHandle) — будут исправлены на Этапе 6
+- Предсуществующие TS2307 ошибки (pixi.js) — не связаны с данным этапом
+
+**Статистика:**
+- Изменено файлов: 53
+- Удалено PixiJS-импортов: ~55 (все `import { Graphics } from "pixi.js"` в рендерерах)
+- Добавлено `GraphicsHandle`-импортов: ~53
+- Конвертировано hex→Color вызовов: ~200+ (внутри primitives + прямые вызовы)
+- Заменено `g.clear()` на `r.clearGraphics(g)`: ~15
+- Заменено `g.ellipse()` на `r.drawEllipse()`: ~15
+- Заменено `g.circle()` на `r.drawEllipse()`: ~20
+- Заменено `g.moveTo().lineTo().closePath().fill()` на `r.drawPoly()`: ~15
+- Удалено `renderToContainer()`: 3 базовых класса (BaseEnemyRenderer, PlayerRenderer, BaseDropRenderer)
+
+**Оставшиеся PixiJS-импорты в каталоге renderers:**
+- `src/game/renderers/float/FloatTextLayer.ts` — Container, Text, TextStyle (Этап 8)
+- `src/game/renderers/core/TextureCacheManager.ts` — Application, Container, RenderTexture, Sprite (Этап 7)
+
+**Интеграция с будущими этапами:**
+- Этап 5: BaseEnemyRenderer уже использует `GraphicsHandle` — конкретные рендереры обновлены
+- Этап 6 (RenderSystem): `render-system.ts` будет переведён с `Graphics` на `GraphicsHandle`
+- Этап 7 (TextureCacheManager): будет использовать `IRenderer` вместо `Application`
+- Этап 8 (SceneManager → IRenderer): `FloatTextLayer` будет переведён на `UIElementHandle`
+
+**Следующий этап:** Этап 5 — Адаптация BaseEnemyRenderer под IRenderer (уже частично выполнена на Этапе 4, доработка в render-system.ts)

@@ -1,13 +1,13 @@
 /* renderers/npc/RavenNpcRenderer.ts */
 
-import { Graphics } from "pixi.js";
+import type { GraphicsHandle } from '../../renderer/IRenderer';
 import type { INpcData } from "../../models";
 import type { RenderContext } from "../core/types";
 import { px } from "../core/primitives";
 import { NpcRenderer } from "./NpcRenderer";
 
 export class RavenNpcRenderer extends NpcRenderer {
-  protected drawBody(g: Graphics, data: INpcData, ctx: RenderContext): void {
+  protected drawBody(g: GraphicsHandle, data: INpcData, ctx: RenderContext): void {
     const bob = Math.sin(ctx.time * 2 + data.id.length) * 0.5;
     const flap = Math.sin(ctx.time * 6) * 2;
     px(g, -3, -8 + bob + flap * 0.2, 6, 6, 0x1d232c);

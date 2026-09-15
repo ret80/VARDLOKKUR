@@ -1,6 +1,7 @@
 /* renderers/npc/NpcRenderer.ts — общий скелет отрисовки NPC (SRP) */
 
-import { Graphics } from "pixi.js";
+import type { GraphicsHandle } from '../../renderer/IRenderer';
+import { getRenderer } from '../../renderer/RendererFactory';
 import type { Renderer, RenderContext } from "../core/types";
 import type { INpcData } from "../../models";
 import { px } from "../core/primitives";
@@ -10,14 +11,15 @@ import { px } from "../core/primitives";
  * Дочерние классы реализуют только тело через template method `drawBody`.
  */
 export abstract class NpcRenderer implements Renderer<INpcData> {
-  protected abstract drawBody(g: Graphics, data: INpcData, ctx: RenderContext): void;
+  protected abstract drawBody(g: GraphicsHandle, data: INpcData, ctx: RenderContext): void;
 
-  render(g: Graphics, data: INpcData, ctx: RenderContext): void {
-    g.clear();
+  render(g: GraphicsHandle, data: INpcData, ctx: RenderContext): void {
+    const r = getRenderer();
+    r.clearGraphics(g);
     const bob = Math.sin(ctx.time * 2 + data.id.length) * 0.5;
 
     // общая тень
-    g.ellipse(0, 5, 5, 2).fill({ color: 0x05080d, alpha: 0.5 });
+    r.drawEllipse(g, 0, 5, 5, 2, { r: 0x05 / 255, g: 0x08 / 255, b: 0x0d / 255, a: 0.5 });
 
     this.drawBody(g, data, ctx);
 

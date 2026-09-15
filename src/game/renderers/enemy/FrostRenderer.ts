@@ -1,19 +1,21 @@
 /* renderers/enemy/FrostRenderer.ts */
 
-import { Graphics } from "pixi.js";
+import type { GraphicsHandle } from '../../renderer/IRenderer';
+import { getRenderer } from '../../renderer/RendererFactory';
 import type { IEnemyData } from "../../models";
 import type { RenderContext } from "../core/types";
 import { px } from "../core/primitives";
 import { BaseEnemyRenderer } from "./BaseEnemyRenderer";
 
 export class FrostRenderer extends BaseEnemyRenderer {
-  protected drawBody(g: Graphics, data: IEnemyData, ctx: RenderContext): void {
+  protected drawBody(g: GraphicsHandle, data: IEnemyData, ctx: RenderContext): void {
     const e = data;
     const { tint, a } = ctx as any;
     const bob = Math.sin(ctx.time * 3 + e.seed) * 0.8;
     const step = Math.sin(e.t * 6) * 1.5;
 
-    g.ellipse(0, 6, 8, 2.6).fill({ color: 0x05080d, alpha: 0.5 * a });
+    const r = getRenderer();
+    r.drawEllipse(g, 0, 6, 8, 2.6, { r: 0x05 / 255, g: 0x08 / 255, b: 0x0d / 255, a: 0.5 * a });
     px(g, -5, 1 + step * 0.3, 4, 5, 0x3a4a5c, a);
     px(g, 1, 1 - step * 0.3, 4, 5, 0x3a4a5c, a);
     px(g, -6, -9 + bob, 12, 11, (tint as any)(0x4a6a84), a);

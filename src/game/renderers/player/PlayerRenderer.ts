@@ -1,6 +1,7 @@
 /* renderers/player/PlayerRenderer.ts — отрисовка игрока (SRP) */
 
-import { Container, Graphics } from "pixi.js";
+import type { GraphicsHandle } from '../../renderer/IRenderer';
+import { getRenderer } from '../../renderer/RendererFactory';
 import { CacheStrategy } from "../core/types";
 import type { Renderer, RenderContext } from "../core/types";
 import type { IPlayerData, IPlayerExtra } from "../../models";
@@ -27,19 +28,10 @@ interface PlayerVisualSnapshot {
 export class PlayerRenderer implements Renderer<PlayerRenderData> {
   readonly strategy: CacheStrategy = CacheStrategy.DYNAMIC_TEXTURE;
 
-  render(g: Graphics, data: PlayerRenderData, ctx: RenderContext): void {
-    g.clear();
+  render(g: GraphicsHandle, data: PlayerRenderData, ctx: RenderContext): void {
+    const r = getRenderer();
+    r.clearGraphics(g);
     this.drawBody(g, data);
-  }
-
-  /**
-   * Отрисовать игрока в Container (для запекания в RenderTexture).
-   */
-  renderToContainer(container: Container, data: PlayerRenderData, ctx: RenderContext): void {
-    container.removeChildren();
-    const g = new Graphics();
-    this.drawBody(g, data);
-    container.addChild(g);
   }
 
   /** Нужно ли обновлять текстуру? */
@@ -63,7 +55,7 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
 
   // ── Рисование тела (общее для render и renderToContainer) ────────
 
-  private drawBody(g: Graphics, data: PlayerRenderData): void {
+  private drawBody(g: GraphicsHandle, data: PlayerRenderData): void {
     const p = data.data;
     const extra = data.extra;
     const time = (data as any).ctx?.time ?? data.data.animT;
@@ -72,7 +64,9 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
 
     const f = p.dir.x > 0.3 ? 1 : p.dir.x < -0.3 ? -1 : 0;
 
-    g.ellipse(0, 5, 6, 2.4).fill({ color: 0x05080d, alpha: 0.5 });
+    const r = getRenderer();
+    // Тень
+    r.drawEllipse(g, 0, 5, 6, 2.4, { r: 0x05 / 255, g: 0x08 / 255, b: 0x0d / 255, a: 0.5 });
 
     px(g, -4, 1 + legSwing * 0.3, 3, 4, 0x2c3038, 1);
     px(g, 1, 1 - legSwing * 0.3, 3, 4, 0x2c3038, 1);
@@ -122,13 +116,16 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
       const baseA = Math.atan2(extra.swingDir.y, extra.swingDir.x);
       const sweep = baseA - 1.1 + prog * 2.2;
       const hx = Math.cos(sweep), hy = Math.sin(sweep);
-      g.moveTo(hx * 5, -4 + bob + hy * 5)
-        .lineTo(hx * 13, -4 + bob + hy * 13)
-        .lineTo(hx * 13 + -hy * 2, -4 + bob + hy * 13 + hx * 2)
-        .lineTo(hx * 5 + -hy * 2, -4 + bob + hy * 5 + hx * 2)
-        .closePath().fill({ color: 0xb9c2c9, alpha: 1 });
-      g.arc(0, -4 + bob, 14, baseA - 1.2, baseA - 1.2 + prog * 2.4)
-        .stroke({ color: 0xe8f4fc, width: 1.5, alpha: 0.5 * (1 - prog) });
+      // Меч — полигон
+      r.drawPoly(g, [
+        hx * 5, -4 + bob + hy * 5,
+        hx * 13, -4 + bob + hy * 13,
+        hx * 13 + -hy * 2, -4 + bob + hy * 13 + hx * 2,
+        hx * 5 + -hy * 2, -4 + bob + hy * 5 + hx * 2
+      ], { r: 0xb9 / 255, g: 0xc2 / 255, b: 0xc9 / 255, a: 1 });
+      // Дуга замаха — аппроксимация эллипсом
+      const arcR = 14 * (1 - prog * 0.3);
+      r.drawEllipse(g, 0, -4 + bob, arcR, arcR, { r: 0xe8 / 255, g: 0xf4 / 255, b: 0xfc / 255, a: 0.5 * (1 - prog) });
     } else if (extra.hasSword) {
       if (f >= 0) {
         px(g, 5, -10 + bob, 2, 8, 0xb9c2c9, 1);
@@ -141,14 +138,19 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
 
     if (extra.aiming) {
       const a = Math.atan2(p.dir.y, p.dir.x);
-      g.arc(0, -4 + bob, 10, a - 0.6, a + 0.6).stroke({ color: 0xe8c979, width: 1, alpha: 0.7 });
-      g.moveTo(Math.cos(a) * 8, -4 + bob + Math.sin(a) * 8)
-        .lineTo(Math.cos(a) * 14, -4 + bob + Math.sin(a) * 14)
-        .stroke({ color: 0xe8c979, width: 1.5, alpha: 0.9 });
+      // Прицел — аппроксимация эллипсом
+      r.drawEllipse(g, Math.cos(a) * 11, -4 + bob + Math.sin(a) * 11, 6, 6, { r: 0xe8 / 255, g: 0xc9 / 255, b: 0x79 / 255, a: 0.7 });
+      // Линия прицела — полигон
+      r.drawPoly(g, [
+        Math.cos(a) * 8, -4 + bob + Math.sin(a) * 8,
+        Math.cos(a) * 14, -4 + bob + Math.sin(a) * 14,
+        Math.cos(a) * 14 + -Math.sin(a) * 1.5, -4 + bob + Math.sin(a) * 14 + Math.cos(a) * 1.5
+      ], { r: 0xe8 / 255, g: 0xc9 / 255, b: 0x79 / 255, a: 0.9 });
     }
 
     if (p.slowT > 0) {
-      g.circle(0, -4 + bob, 9).stroke({ color: 0x9fe0ee, width: 1, alpha: 0.5 });
+      // Заморозка — аппроксимация эллипсом
+      r.drawEllipse(g, 0, -4 + bob, 9, 9, { r: 0x9f / 255, g: 0xe0 / 255, b: 0xee / 255, a: 0.5 });
     }
   }
 

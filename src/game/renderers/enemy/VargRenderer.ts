@@ -1,13 +1,13 @@
 /* renderers/enemy/VargRenderer.ts */
 
-import { Graphics } from "pixi.js";
+import type { GraphicsHandle } from '../../renderer/IRenderer';
 import type { IEnemyData } from "../../models";
 import type { RenderContext } from "../core/types";
 import { px } from "../core/primitives";
 import { BaseEnemyRenderer } from "./BaseEnemyRenderer";
 
 export class VargRenderer extends BaseEnemyRenderer {
-  protected drawBody(g: Graphics, data: IEnemyData, ctx: RenderContext): void {
+  protected drawBody(g: GraphicsHandle, data: IEnemyData, ctx: RenderContext): void {
     const e = data;
     const { tint, a } = ctx as any;
     const bob = Math.sin(ctx.time * 3 + e.seed) * 0.8;

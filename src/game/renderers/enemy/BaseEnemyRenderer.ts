@@ -1,6 +1,7 @@
 /* renderers/enemy/BaseEnemyRenderer.ts — общий скелет отрисовки врагов (SRP) */
 
-import { Container, Graphics } from "pixi.js";
+import type { GraphicsHandle } from '../../renderer/IRenderer';
+import { getRenderer } from '../../renderer/RendererFactory';
 import { CacheStrategy } from "../core/types";
 import type { Renderer, RenderContext } from "../core/types";
 import type { IEnemyData } from "../../models";
@@ -10,17 +11,16 @@ import { px } from "../core/primitives";
  * Базовый рендерер врагов: тень, bob, tint(flash/frozen), alpha(hidden*fade), hp-бар.
  * Дочерние классы реализуют только тело через template method `drawBody`.
  *
- * Поддерживает два режима:
- * - render(g) — рисует в Graphics (fallback для STATIC/REALTIME)
- * - renderToContainer(c) — рисует в Container для запекания в Sprite (DYNAMIC_TEXTURE)
+ * Использует GraphicsHandle — все детали PixiJS скрыты в IRenderer.
  */
 export abstract class BaseEnemyRenderer implements Renderer<IEnemyData> {
-  protected abstract drawBody(g: Graphics, data: IEnemyData, ctx: RenderContext): void;
+  protected abstract drawBody(g: GraphicsHandle, data: IEnemyData, ctx: RenderContext): void;
 
   readonly strategy: CacheStrategy = CacheStrategy.REALTIME_GRAPHICS;
 
-  render(g: Graphics, data: IEnemyData, ctx: RenderContext): void {
-    g.clear();
+  render(g: GraphicsHandle, data: IEnemyData, ctx: RenderContext): void {
+    const r = getRenderer();
+    r.clearGraphics(g);
     if (data.dead) return;
 
     const e = data;
@@ -30,7 +30,7 @@ export abstract class BaseEnemyRenderer implements Renderer<IEnemyData> {
     const a = (e.hidden ? 0.25 : 1) * e.fade;
 
     // общая тень
-    g.ellipse(0, 5, 6, 2.2).fill({ color: 0x05080d, alpha: 0.5 * a });
+    r.drawEllipse(g, 0, 5, 6, 2.2, { r: 0x05 / 255, g: 0x08 / 255, b: 0x0d / 255, a: 0.5 * a });
 
     this.drawBody(g, data, { ...ctx, tint, a });
 
@@ -40,33 +40,6 @@ export abstract class BaseEnemyRenderer implements Renderer<IEnemyData> {
       px(g, -wdt / 2, -e.r - 9, wdt, 2, 0x0a0f16, 0.8);
       px(g, -wdt / 2, -e.r - 9, wdt * (e.hp / e.maxHp), 2, 0xe05050, 0.9);
     }
-  }
-
-  /**
-   * Отрисовать тело + тень в Container (для запекания в RenderTexture).
-   * HP-бар НЕ рисуется — он меняется каждый кадр, рисуется поверх спрайта отдельно.
-   */
-  renderToContainer(container: Container, data: IEnemyData, ctx: RenderContext): void {
-    container.removeChildren();
-
-    if (data.dead) return;
-
-    const e = data;
-    const flash = e.flashT > 0;
-    const frozen = e.freezeT > 0;
-    const tint = (c: number) => (flash ? 0xffffff : frozen ? 0x9fd8e8 : c);
-    const a = (e.hidden ? 0.25 : 1) * e.fade;
-
-    // создаём временный Graphics внутри контейнера
-    const g = new Graphics();
-
-    // общая тень (можно запечь — статична относительно тела)
-    g.ellipse(0, 5, 6, 2.2).fill({ color: 0x05080d, alpha: 0.5 * a });
-
-    // тело (с tint и alpha через контекст)
-    this.drawBody(g, data, { ...ctx, tint, a });
-
-    container.addChild(g);
   }
 
   /**

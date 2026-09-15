@@ -1,6 +1,7 @@
 /* renderers/drop/BaseDropRenderer.ts — общий скелет отрисовки дропов (SRP) */
 
-import { Graphics } from "pixi.js";
+import type { GraphicsHandle } from '../../renderer/IRenderer';
+import { getRenderer } from '../../renderer/RendererFactory';
 import type { Renderer, RenderContext } from "../core/types";
 import type { IDropData } from "../../models";
 
@@ -9,10 +10,11 @@ import type { IDropData } from "../../models";
  * Дочерние классы реализуют только тело через template method `drawBody`.
  */
 export abstract class BaseDropRenderer implements Renderer<IDropData> {
-  protected abstract drawBody(g: Graphics, data: IDropData, ctx: RenderContext): void;
+  protected abstract drawBody(g: GraphicsHandle, data: IDropData, ctx: RenderContext): void;
 
-  render(g: Graphics, data: IDropData, ctx: RenderContext): void {
-    g.clear();
+  render(g: GraphicsHandle, data: IDropData, ctx: RenderContext): void {
+    const r = getRenderer();
+    r.clearGraphics(g);
     if (data.taken) return;
 
     const bob = Math.sin(ctx.time * 3 + data.t) * 1.5;
