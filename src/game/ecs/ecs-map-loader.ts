@@ -37,10 +37,30 @@ import {
 // Конфигурация Map Loader
 // ============================================================
 
+/**
+ * Абстрактный графический объект для динамического контейнера.
+ * Этап 8: заменил прямые зависимости от PixiJS Graphics на абстракцию.
+ */
+export interface DisplayObject {
+  position: { x: number; y: number };
+  zIndex?: number;
+  userData?: Record<string, any>;
+}
+
+/**
+ * Абстрактный динамический контейнер для добавления графических объектов.
+ * Этап 8: заменил прямые зависимости от PixiJS Container.
+ */
+export interface DynamicContainer {
+  addChild(child: DisplayObject): void;
+  removeChild(child: DisplayObject): void;
+  children: unknown[];
+}
+
 export interface EcsMapLoaderConfig {
   world: World;
   planckWorld: PlanckWorld;
-  dynamicContainer: { addChild(child: Graphics): void; removeChild(child: Graphics): void; children: unknown[] };
+  dynamicContainer: DynamicContainer;
   openedChests: Set<string>;
   takenPedestals: Set<string>;
   visitedShrines: Set<number>;
@@ -81,7 +101,7 @@ export class EcsMapLoader {
 
   /** Загрузить карту в ECS */
   loadMap(
-    playerG: Graphics,
+    playerG: DisplayObject,
     playerDomain: any,
     onPlayerCreated?: (eid: number) => void
   ): { playerEid: number; playerBody: any; cam: { x: number; y: number } } {
@@ -136,7 +156,7 @@ export class EcsMapLoader {
     return { playerEid: this.playerEid, playerBody: null, cam };
   }
 
-  private clearWorld(world: World, preservePlayerSprite?: Graphics): void {
+  private clearWorld(world: World, preservePlayerSprite?: DisplayObject): void {
     const registryBefore = SpriteRegistry.length;
 
     // Удалить ВСЕ сущности из ECS мира

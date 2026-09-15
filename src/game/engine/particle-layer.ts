@@ -1,13 +1,12 @@
 /* particle-layer.ts — Слой частиц и снега (Этап 6: извлечение из FxManager) */
 
-import type { Application } from 'pixi.js';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
+import type { IRenderer } from '../renderer/IRenderer';
 import type { ParticleSystem } from './particle-system';
 
 /**
  * ParticleLayer — слой частиц и снега.
  *
- * Этап 6: извлечён из FxManager.
  * Отвечает за:
  * - Обновление и отрисовку частиц (взрывы, урон, смерть)
  * - Обновление и отрисовку снега
@@ -24,7 +23,7 @@ export class ParticleLayer implements IRenderLayer {
     this.sys = sys;
   }
 
-  init(_app: Application, _ctx: RenderLayerContext): void {
+  init(_renderer: IRenderer, _ctx: RenderLayerContext): void {
     // ParticleLayer не требует инициализации — sys уже создан в engine
   }
 

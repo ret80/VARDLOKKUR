@@ -1,15 +1,14 @@
 /* entity-layer.ts — Слой отрисовки ECS-сущностей */
 
-import type { Application } from 'pixi.js';
 import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import type { RenderSystemOptions } from '../ecs/ecs-systems/render-system';
 import { RenderSystem } from '../ecs/ecs-systems/render-system';
+import { getRenderer, isRendererInitialized } from '../renderer/RendererFactory';
+import type { IRenderer } from '../renderer/IRenderer';
 
 /**
  * EntityLayer — слой отрисовки ECS-сущностей.
- *
- * Этап 6: владее RenderSystem instance вместо вызова функции.
  *
  * Обёртка над RenderSystem.render(), инкапсулирующая логику рендеринга:
  * - Слежение камеры за игроком
@@ -18,10 +17,7 @@ import { RenderSystem } from '../ecs/ecs-systems/render-system';
  * - Отрисовка сущностей: игрок, враги, дропы, снаряды, NPC, объекты
  * - Interaction hints
  *
- * НЕ вызывает app.render() — это делает RenderPipeline.
- *
- * Этап 6: init() принимает Application (legacy-путь).
- * Этап 8: init() будет принимать IRenderer (новый путь).
+ * НЕ вызывает renderer.render() — это делает RenderPipeline.
  */
 export class EntityLayer implements IRenderLayer {
   private system = new RenderSystem();
@@ -34,9 +30,9 @@ export class EntityLayer implements IRenderLayer {
     this.opts = opts;
   }
 
-  init(_app: Application, _ctx: RenderLayerContext): void {
-    // Инициализация RenderSystem произойдёт когда renderer будет доступен (Этап 8)
-    // Для legacy-пути renderer не требуется
+  init(renderer: IRenderer, _ctx: RenderLayerContext): void {
+    // Инициализируем RenderSystem с IRenderer
+    this.system.init(renderer);
   }
 
   update(_ctx: RenderLayerContext): void {
@@ -45,7 +41,7 @@ export class EntityLayer implements IRenderLayer {
 
   render(_ctx: RenderLayerContext): void {
     if (!this.opts) return;
-    // Delegating to RenderSystem instance — он не вызывает app.render() (это делает RenderPipeline)
+    // Delegating to RenderSystem instance — он не вызывает renderer.render() (это делает RenderPipeline)
     this.system.render(this.opts.world, this.opts);
   }
 

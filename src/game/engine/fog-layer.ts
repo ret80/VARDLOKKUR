@@ -1,9 +1,9 @@
 /* fog-layer.ts — Слой тумана, рун и глаз в тумане */
 
 import { query, hasComponent } from 'bitecs';
-import type { Application } from 'pixi.js';
 import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
+import type { IRenderer } from '../renderer/IRenderer';
 import type { FxManager } from '../fx';
 import { Shrine, Position } from '../ecs/ecs-components';
 import type { CameraPosition } from './camera-controller';
@@ -27,7 +27,7 @@ export interface FogState {
  * - Отрисовку рун при сильном тумане
  * - Отрисовку «глаз» в тумане
  *
- * Туман рендерится внутри пайплайна ДО app.render(),
+ * Туман рендерится внутри пайплайна ДО renderer.render(),
  * что устраняет 1-кадровый лаг.
  */
 export class FogLayer implements IRenderLayer {
@@ -58,7 +58,7 @@ export class FogLayer implements IRenderLayer {
     this.runesEnabled = enabled;
   }
 
-  init(_app: Application, _ctx: RenderLayerContext): void {
+  init(_renderer: IRenderer, _ctx: RenderLayerContext): void {
     // FogLayer не требует инициализации — fx уже создан в engine
   }
 

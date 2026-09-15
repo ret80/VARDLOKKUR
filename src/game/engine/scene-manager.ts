@@ -1,7 +1,17 @@
-/* scene-manager.ts – Управление слоями сцены (PixiJS Containers) */
+/* scene-manager.ts — УДАЛЁН (Этап 8)
+ * 
+ * ЗАМЕНЁН на: SceneLayers (src/game/engine/scene-layers.ts)
+ * 
+ * SceneLayers использует IRenderer вместо прямых PixiJS Container.
+ * 
+ * Этот файл оставлен только для обратной совместимости.
+ * НЕ ИСПОЛЬЗУЙТЕ его в новом коде.
+ */
 
+/* @deprecated Use SceneLayers instead */
 import { Application, Container, Graphics } from "pixi.js";
 
+/** @deprecated Use SceneLayers instead */
 export class SceneManager {
   readonly tileLayer = new Container();
   readonly world = new Container();

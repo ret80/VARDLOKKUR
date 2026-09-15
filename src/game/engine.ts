@@ -75,7 +75,7 @@ import {
 import { updateSpritePosition } from './ecs/ecs-systems/render-system';
 import { query, removeEntity } from 'bitecs';
 import { ViewportController } from './engine/viewport-controller';
-import { SceneManager } from './engine/scene-manager';
+import { SceneLayers } from './engine/scene-layers';
 import { ScreenRouter } from './engine/screen-router';
 import { PlayerLifecycle } from './engine/player-lifecycle';
 import { MapLoaderService } from './engine/map-loader-service';
@@ -110,6 +110,9 @@ import {
   BarrierRenderer,
   AltarRenderer,
 } from "./entities";
+
+// Импорты IRenderer
+import { RendererFactory, setGlobalRenderer, getRenderer } from './renderer';
 
 export class Engine {
   private cbs: EngineCallbacks;
@@ -148,7 +151,7 @@ export class Engine {
   private fx = new FxManager();
   private particleSys = new ParticleSystem(); // Этап 6: извлечение частиц из FxManager
   private canvasEl: HTMLCanvasElement | null = null;
-  private scene!: SceneManager;
+  private scene!: SceneLayers;
   private floatTextLayer!: FloatTextLayer;
   private viewport!: ViewportController;
   private screenRouter!: ScreenRouter;
@@ -224,9 +227,17 @@ export class Engine {
       width: this.viewport.viewW, height: this.viewport.viewH,
     });
     this.app = app;
-    this.viewport = new ViewportController(container, app, { x: 0, y: 0 });
-    this.scene = new SceneManager(app);
-    this.floatTextLayer = new FloatTextLayer(this.scene.floatLayer);
+
+    // Этап 6: создаём и устанавливаем глобальный IRenderer
+    const renderer = RendererFactory.create('pixi');
+    await renderer.init(container, this.viewport.viewW, this.viewport.viewH);
+    setGlobalRenderer(renderer);
+
+    this.viewport = new ViewportController(container, renderer, { x: 0, y: 0 });
+    this.scene = new SceneLayers();
+    // Этап 8: инициализация SceneLayers через IRenderer
+    this.scene.init(renderer, app);
+    this.floatTextLayer = new FloatTextLayer();
     const cv = app.canvas as HTMLCanvasElement;
     cv.classList.add("pixi");
     cv.style.position = "absolute";
@@ -235,7 +246,7 @@ export class Engine {
     cv.style.height = "100%";
     container.appendChild(cv);
     this.canvasEl = cv;
-    this.viewport.apply(app.renderer);
+    this.viewport.apply(renderer);
 
     // Инициализация FX-менеджера
     this.fx.init(app, this.viewport.viewW, this.viewport.viewH);
@@ -243,20 +254,18 @@ export class Engine {
     this.fx.setParticleSystem(this.particleSys);
     this.particleSys.resize(this.viewport.viewW, this.viewport.viewH);
 
-    // Слои сцены привязываются к stage (world, fxScreen, fadeG)
-    this.scene.attachToStage();
     // Этап 6: worldParticleG перемещён в ParticleSystem
     this.scene.addFxGraphics(this.particleSys.worldParticleG);
 
     // Вигнетки и фейд размещаем в исходном порядке (fadeG поверх вигнеток)
-    app.stage.removeChild(this.scene.fadeG);
+    app.stage.removeChild(this.scene.fadeG as any);
     this.fx.buildVignette();
     if (this.fx.vignette) app.stage.addChild(this.fx.vignette);
 
     this.fx.buildFogVignette();
     this.fx.buildNoiseTexture();
     if (this.fx.fogVignette) app.stage.addChild(this.fx.fogVignette!);
-    app.stage.addChild(this.scene.fadeG);
+    app.stage.addChild(this.scene.fadeG as any);
     this.fx.initSnow();
 
     // Регистрируем ввод
@@ -276,7 +285,7 @@ export class Engine {
     this.bus.on("input:toggle-snow", () => this.handleSnow());
     this.bus.on("input:close-overlay", () => this.closeOverlay());
 
-    this.viewport.apply(app.renderer);
+    this.viewport.apply();
 
     // Игровой цикл
     app.ticker.maxFPS = 60;
@@ -387,7 +396,8 @@ export class Engine {
         dynamic: this.scene.dynamic,
         floatLayer: this.floatTextLayer,
         gameWorld: this.scene.world,
-        sceneManager: this.scene,
+        sceneManager: this.scene as any, // deprecated: legacy compatibility
+        sceneLayers: this.scene,
         fx: this.fx,
         particleSys: this.particleSys, // Этап 6: извлечение частиц из FxManager
         input: this.input,
@@ -1005,7 +1015,12 @@ export class Engine {
   }
 
   private applyView() {
-    this.viewport.apply(this.app ? this.app.renderer : null);
+    // Этап 8: используем глобальный IRenderer вместо PixiJS Application
+    try {
+      this.viewport.apply(getRenderer());
+    } catch {
+      // Renderer не доступен — игнорируем
+    }
   }
 
   /* ===== Уничтожение ===== */

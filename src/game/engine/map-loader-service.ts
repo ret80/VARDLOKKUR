@@ -1,4 +1,4 @@
-/* map-loader-service.ts – Загрузка карт: тайлы, ECS-сущности, миникарта */
+/* map-loader-service.ts — Загрузка карт: тайлы, ECS-сущности, миникарта */
 
 import { Sprite, Graphics } from "pixi.js";
 import { PlanckWorld } from "../physics/planck-world";
@@ -7,7 +7,7 @@ import type { GameStore } from "../store";
 import type { World } from "bitecs";
 import { EcsMapLoader } from "../ecs/ecs-map-loader";
 import { createEntityFactory, type EntityFactory } from "../ecs/entity-factory";
-import type { SceneManager } from "./scene-manager";
+import type { SceneLayers } from "./scene-layers";
 import type { ViewportController } from "./viewport-controller";
 import type { PlayerDomain } from "../store/player-domain";
 import {
@@ -25,6 +25,12 @@ export interface LoadMapResult {
   playerEid: number;
 }
 
+/**
+ * MapLoaderService — загрузка и очистка карт.
+ * 
+ * Этап 8: принимает SceneLayers вместо SceneManager.
+ * Container-поля SceneLayers используются для обратной совместимости (Этап 9: удалить).
+ */
 export class MapLoaderService {
   wallCache = new WallTextureCache();
   houseCache = new HouseTextureCache();
@@ -36,7 +42,7 @@ export class MapLoaderService {
   entityFactory: EntityFactory;
 
   constructor(
-    private scene: SceneManager,
+    private scene: SceneLayers,
     private store: GameStore,
     private viewport: ViewportController,
     private ecsWorld: World,
@@ -51,7 +57,7 @@ export class MapLoaderService {
 
   /** Очистить tileLayer и dynamic контейнеры перед загрузкой новой карты */
   clearTiles(preservePlayerG?: Graphics): void {
-    // Сохраняем playerG перед очисткой dynamic — он может быть уничтожен clearDynamic()
+    // Сохраняем playerG перед очисткой dynamic — он мог быть уничтожен clearDynamic()
     // без этого playerG.destroy() вызовется и playerG.position станет null
     this.scene.clearTiles();
     this.scene.clearDynamic(preservePlayerG);

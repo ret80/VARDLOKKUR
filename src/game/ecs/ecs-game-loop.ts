@@ -53,6 +53,7 @@ import {
 import { Graphics, Container } from 'pixi.js';
 import { CameraController } from '../engine/camera-controller';
 import { SceneManager } from '../engine/scene-manager';
+import { SceneLayers } from '../engine/scene-layers';
 import { RenderPipeline } from '../engine/render-pipeline';
 import { EntityLayer } from '../engine/entity-layer';
 import { FogLayer } from '../engine/fog-layer';
@@ -142,6 +143,7 @@ export interface EcsGameLoopConfig {
   floatLayer: FloatTextLayer;
   gameWorld: Container;
   sceneManager: SceneManager;
+  sceneLayers: SceneLayers;
   fx: FxManager;
   /** Этап 6: система частиц и снега (извлечение из FxManager) */
   particleSys: import('../engine/particle-system').ParticleSystem;
@@ -193,7 +195,7 @@ function getDropRegistry(): DropHandlerRegistry {
 /** Создать минимальный ECS Game Loop */
 export function createEcsGameLoop(config: EcsGameLoopConfig) {
   const {
-    world, bus, store, planckWorld, app, dynamic, floatLayer, gameWorld, sceneManager,
+    world, bus, store, planckWorld, app, dynamic, floatLayer, gameWorld, sceneManager, sceneLayers,
     input, state, cam, map, flags, playerEid: playerEidRef,
     playerDomain, playerHelpers, hud, quests, dialogue,
     dungeonBossDead, toast, float: addFloat, pushHud, startDialogue, npcSig,
@@ -220,19 +222,16 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   // CameraController — извлечён из render-system.ts (Этап 4)
   const cameraController = new CameraController({ cam, viewportW: viewW, viewportH: viewH });
 
-  // hintLayer — подсказка взаимодействия, на app.stage (не разрушается при смене сцены)
-  // Этап 6: используем Container для legacy-пути, LayerHandle будет создан когда renderer инициализирован
-  const hintLayerContainer = new Container();
-  hintLayerContainer.zIndex = 9999;
-  app.stage.addChild(hintLayerContainer);
-  // initInteractionHint будет вызвана когда renderer инициализирован (Этап 8)
+  // hintLayer — подсказка взаимодействия, создаётся через IRenderer (Этап 8)
+  let hintLayerHandle: number | null = null;
+  // initInteractionHint будет вызвана когда renderer инициализирован
 
   // ── RenderPipeline (Этап 5-6) ──
   // Создаём слои пайплайна
   const entityLayer = new EntityLayer();
   const particleLayer = new ParticleLayer(particleSys); // Этап 6: извлечение из FxManager
   const fogLayer = new FogLayer(fx);
-  const overlayLayer = new OverlayLayer(hintLayerContainer);
+  const overlayLayer = new OverlayLayer();
 
   // Создаём пайплайн и добавляем слои
   const pipeline = new RenderPipeline();
@@ -241,8 +240,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   pipeline.addLayer(fogLayer);
   pipeline.addLayer(overlayLayer);
 
-  // Инициализируем пайплайн (legacy-путь, Этап 8 заменит на renderer)
-  pipeline.init(app, { dt: _stepT, time: _realT, world });
+  // Инициализируем пайплайн (Этап 8: IRenderer)
+  const renderer = getRenderer();
+  pipeline.init(renderer, { dt: _stepT, time: _realT, world });
 
   // Локальные копии для updateConfig
   let config_map = map;
@@ -620,11 +620,12 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       nearestInteractable,
     };
 
-    // Если renderer доступен — используем новый путь (Этап 6)
+    // Если renderer доступен — используем новый путь (Этап 8)
     if (renderer) {
-      // Создаём слои если ещё не созданы
+      // Создаём hintLayer если ещё не создан
       if (!hintLayerHandle) {
         hintLayerHandle = renderer.createLayer('hint', 9999);
+        overlayLayer.setHintLayer(hintLayerHandle as any);
       }
       if (!dynamicLayerHandle) {
         dynamicLayerHandle = renderer.createLayer('dynamic', 40);

@@ -1,6 +1,6 @@
-/* viewport-controller.ts – Управление размерами viewport и камерой */
+/* viewport-controller.ts — Управление размерами viewport и камерой */
 
-import type { Application } from "pixi.js";
+import type { IRenderer } from '../renderer/IRenderer';
 
 const ZOOM = 1.18;
 
@@ -14,13 +14,19 @@ export interface ViewportSize {
   h: number;
 }
 
+/**
+ * Контроллер вьюпорта и камеры.
+ * Этап 8: больше не зависит от PixiJS Application.
+ * Размер рендерера обновляется через IRenderer.resize().
+ */
 export class ViewportController {
   private _viewW = 480;
   private _viewH = 270;
 
   constructor(
     private container: HTMLElement,
-    private app: Application | null,
+    /** IRenderer для обновления размера (Этап 8: вместо Application) */
+    private renderer: IRenderer | null,
     public readonly cam: Camera
   ) {}
 
@@ -50,13 +56,14 @@ export class ViewportController {
     return { w: this._viewW, h: this._viewH };
   }
 
-  /** Применить изменения размеров к рендереру */
-  apply(renderer: Application["renderer"] | null): void {
+  /** Применить изменения размеров к рендереру (Этап 8: IRenderer вместо Application) */
+  apply(renderer?: IRenderer | null): void {
     const ow = this._viewW;
     const oh = this._viewH;
     this.applyViewSize();
-    if ((this._viewW !== ow || this._viewH !== oh) && renderer) {
-      renderer.resize(this._viewW, this._viewH);
+    const r = renderer ?? this.renderer;
+    if ((this._viewW !== ow || this._viewH !== oh) && r) {
+      r.resize(this._viewW, this._viewH);
     }
   }
 

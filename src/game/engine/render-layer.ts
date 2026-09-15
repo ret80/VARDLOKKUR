@@ -1,7 +1,7 @@
 /* render-layer.ts — Интерфейс слоя рендеринга для RenderPipeline */
 
-import type { Application } from 'pixi.js';
 import type { World } from 'bitecs';
+import type { IRenderer } from '../renderer/IRenderer';
 
 /** Контекст, передаваемый в update() и render() каждого слоя */
 export interface RenderLayerContext {
@@ -29,12 +29,11 @@ export interface RenderLayerContext {
  * 4. resize() — при изменении размера viewport
  * 5. destroy() — один раз при уничтожении пайплайна
  *
- * Этап 6: init() принимает Application (legacy-путь).
- * Этап 8: init() будет принимать IRenderer (новый путь).
+ * Этап 8: init() принимает IRenderer (новый путь).
  */
 export interface IRenderLayer {
   /** Инициализация слоя. Вызывается один раз при создании пайплайна. */
-  init(app: Application, ctx: RenderLayerContext): void;
+  init(renderer: IRenderer, ctx: RenderLayerContext): void;
 
   /** Обновление состояния слоя. Вызывается каждый тик, ДО render(). */
   update(ctx: RenderLayerContext): void;

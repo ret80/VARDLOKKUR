@@ -1,8 +1,8 @@
 /* render-pipeline.ts — Единый конвейер рендеринга */
 
-import type { Application } from 'pixi.js';
 import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
+import type { IRenderer } from '../renderer/IRenderer';
 
 /**
  * RenderPipeline — единый конвейер рендеринга игры.
@@ -13,7 +13,7 @@ import type { IRenderLayer, RenderLayerContext } from './render-layer';
  * 3. FogLayer — туман, руны, глаза в тумане
  * 4. OverlayLayer — UI, подсказки, плавающий текст
  *
- * После render() всех слоёв вызывается app.render() для финального вывода.
+ * После render() всех слоёв вызывается renderer.render() для финального вывода.
  *
  * Использование:
  *   const pipeline = new RenderPipeline();
@@ -21,7 +21,7 @@ import type { IRenderLayer, RenderLayerContext } from './render-layer';
  *   pipeline.addLayer(particleLayer);
  *   pipeline.addLayer(fogLayer);
  *   pipeline.addLayer(overlayLayer);
- *   pipeline.init(app, context);
+ *   pipeline.init(renderer, context);
  *
  *   // Каждый тик:
  *   pipeline.update(dt);
@@ -30,8 +30,7 @@ import type { IRenderLayer, RenderLayerContext } from './render-layer';
  *   // При уничтожении:
  *   pipeline.destroy();
  *
- * Этап 6: init() принимает Application (legacy-путь).
- * Этап 8: init() будет принимать IRenderer (новый путь).
+ * Этап 8: init() принимает IRenderer (новый путь).
  */
 export class RenderPipeline {
   private layers: IRenderLayer[] = [];
@@ -43,9 +42,9 @@ export class RenderPipeline {
   }
 
   /** Инициализировать все слои. Вызывается один раз при создании пайплайна. */
-  init(app: Application, ctx: RenderLayerContext): void {
+  init(renderer: IRenderer, ctx: RenderLayerContext): void {
     for (const layer of this.layers) {
-      layer.init(app, ctx);
+      layer.init(renderer, ctx);
     }
     this.initialized = true;
   }
