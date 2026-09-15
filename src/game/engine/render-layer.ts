@@ -1,6 +1,6 @@
 /* render-layer.ts — Интерфейс слоя рендеринга для RenderPipeline */
 
-import type { Application, Container } from 'pixi.js';
+import type { Application } from 'pixi.js';
 import type { World } from 'bitecs';
 
 /** Контекст, передаваемый в update() и render() каждого слоя */
@@ -11,8 +11,6 @@ export interface RenderLayerContext {
   time: number;
   /** ECS-мир */
   world: World;
-  /** FX-контейнер для частиц и эффектов (Этап 6) */
-  fxWorld?: Container;
 }
 
 /**
@@ -30,6 +28,9 @@ export interface RenderLayerContext {
  * 3. render() — каждый кадр, после update() всех слоёв
  * 4. resize() — при изменении размера viewport
  * 5. destroy() — один раз при уничтожении пайплайна
+ *
+ * Этап 6: init() принимает Application (legacy-путь).
+ * Этап 8: init() будет принимать IRenderer (новый путь).
  */
 export interface IRenderLayer {
   /** Инициализация слоя. Вызывается один раз при создании пайплайна. */

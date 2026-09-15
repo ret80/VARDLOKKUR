@@ -86,7 +86,7 @@ import {
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
   Flashing, Enemy, EnemyState, Sprite, SpriteRegistry, Radius,
   Shrine, Dead,
-} from './ecs-components';
+} from '../ecs/ecs-components';
 import type { InputSystem } from '../input/input-system';
 import type { EventBus } from '../event-bus';
 import type { GameStore } from '../store';
@@ -106,6 +106,8 @@ import type { QuestSystem } from '../quests/quest-system';
 import type { DialogueSystem } from '../dialogue/dialogue-system';
 import { dist2 } from '../utils';
 import { T } from '../world';
+import type { IRenderer } from '../renderer/IRenderer';
+import { getRenderer, isRendererInitialized } from '../renderer/RendererFactory';
 
 // ============================================================
 // Утилиты
@@ -219,17 +221,18 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   const cameraController = new CameraController({ cam, viewportW: viewW, viewportH: viewH });
 
   // hintLayer — подсказка взаимодействия, на app.stage (не разрушается при смене сцены)
-  const hintLayer = new Container();
-  hintLayer.zIndex = 9999;
-  app.stage.addChild(hintLayer);
-  initInteractionHint(hintLayer);
+  // Этап 6: используем Container для legacy-пути, LayerHandle будет создан когда renderer инициализирован
+  const hintLayerContainer = new Container();
+  hintLayerContainer.zIndex = 9999;
+  app.stage.addChild(hintLayerContainer);
+  // initInteractionHint будет вызвана когда renderer инициализирован (Этап 8)
 
   // ── RenderPipeline (Этап 5-6) ──
   // Создаём слои пайплайна
   const entityLayer = new EntityLayer();
   const particleLayer = new ParticleLayer(particleSys); // Этап 6: извлечение из FxManager
   const fogLayer = new FogLayer(fx);
-  const overlayLayer = new OverlayLayer(hintLayer);
+  const overlayLayer = new OverlayLayer(hintLayerContainer);
 
   // Создаём пайплайн и добавляем слои
   const pipeline = new RenderPipeline();
@@ -238,7 +241,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   pipeline.addLayer(fogLayer);
   pipeline.addLayer(overlayLayer);
 
-  // Инициализируем пайплайн
+  // Инициализируем пайплайн (legacy-путь, Этап 8 заменит на renderer)
   pipeline.init(app, { dt: _stepT, time: _realT, world });
 
   // Локальные копии для updateConfig
@@ -587,27 +590,56 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     deathCleanupSystem(world);
   }
 
-  /** Выполнить ECS рендеринг через RenderPipeline (Этап 5) */
+  /** Выполнить ECS рендеринг через RenderPipeline (Этап 5-6) */
   function render(rdt: number): void {
     const nearestInteractable = getNearestInteractable(world, _playerEid, store);
     
+    // Получаем IRenderer (если инициализирован)
+    let renderer: IRenderer | null = null;
+    let hintLayerHandle: number | null = null;
+    let dynamicLayerHandle: number | null = null;
+    
+    if (isRendererInitialized()) {
+      try {
+        renderer = getRenderer();
+      } catch {
+        // Renderer не доступен — используем legacy-путь
+      }
+    }
+
     // Обновляем параметры EntityLayer
-    entityLayer.setOptions({
+    const entityLayerOpts: any = {
       world,
       time: _realT,
       dt: rdt,
-      app,
       float: floatLayer,
       cameraController,
-      gameWorld,
-      dynamic,
-      sceneManager,
-      hintLayer,
       playerEid: _playerEid,
       getNpcSig: npcSig,
       talkedSig: talkedSig.value,
       nearestInteractable,
-    });
+    };
+
+    // Если renderer доступен — используем новый путь (Этап 6)
+    if (renderer) {
+      // Создаём слои если ещё не созданы
+      if (!hintLayerHandle) {
+        hintLayerHandle = renderer.createLayer('hint', 9999);
+      }
+      if (!dynamicLayerHandle) {
+        dynamicLayerHandle = renderer.createLayer('dynamic', 40);
+      }
+
+      entityLayerOpts.renderer = renderer;
+      entityLayerOpts.hintLayer = hintLayerHandle as any;
+      entityLayerOpts.dynamicLayer = dynamicLayerHandle as any;
+    } else {
+      // Legacy-путь: renderer ещё не инициализирован (Этап 8)
+      // TODO: После Этапа 8 удалить этот блок
+      logger.debug('game-loop', 'Renderer not initialized, using legacy path');
+    }
+
+    entityLayer.setOptions(entityLayerOpts);
 
     // Обновляем состояние FogLayer
     if (_fogState) {

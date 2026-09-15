@@ -1,11 +1,10 @@
 /* overlay-layer.ts — Слой оверлеев: подсказки взаимодействия, UI */
 
-import type { Application, Container } from 'pixi.js';
 import type { World } from 'bitecs';
+import type { Container } from 'pixi.js';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import type { CameraPosition } from './camera-controller';
 import type { InteractableHit } from '../ecs/ecs-systems/interaction-system';
-import { initInteractionHint } from '../ecs/ecs-systems/render-system';
 
 /**
  * OverlayLayer — слой оверлеев (screen-space UI).
@@ -15,6 +14,9 @@ import { initInteractionHint } from '../ecs/ecs-systems/render-system';
  * - Другие screen-space элементы UI (в будущем)
  *
  * hintLayer находится на app.stage (не сдвигается камерой).
+ * 
+ * Этап 6: использует Container для legacy-пути.
+ * Этап 8: будет использовать LayerHandle от IRenderer.
  */
 export class OverlayLayer implements IRenderLayer {
   private hintLayer: Container | null = null;
@@ -26,10 +28,9 @@ export class OverlayLayer implements IRenderLayer {
     this.hintLayer = hintLayer;
   }
 
-  init(_app: Application, _ctx: RenderLayerContext): void {
-    if (this.hintLayer) {
-      initInteractionHint(this.hintLayer);
-    }
+  init(_app: any, _ctx: RenderLayerContext): void {
+    // hintLayer уже создан и добавлен в stage в ecs-game-loop
+    // initInteractionHint будет вызвана когда renderer инициализирован (Этап 8)
   }
 
   update(_ctx: RenderLayerContext): void {

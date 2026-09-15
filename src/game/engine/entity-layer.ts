@@ -19,9 +19,11 @@ import { RenderSystem } from '../ecs/ecs-systems/render-system';
  * - Interaction hints
  *
  * НЕ вызывает app.render() — это делает RenderPipeline.
+ *
+ * Этап 6: init() принимает Application (legacy-путь).
+ * Этап 8: init() будет принимать IRenderer (новый путь).
  */
 export class EntityLayer implements IRenderLayer {
-  private app: Application | null = null;
   private system = new RenderSystem();
   private opts: RenderSystemOptions | null = null;
 
@@ -32,8 +34,9 @@ export class EntityLayer implements IRenderLayer {
     this.opts = opts;
   }
 
-  init(app: Application, _ctx: RenderLayerContext): void {
-    this.app = app;
+  init(_app: Application, _ctx: RenderLayerContext): void {
+    // Инициализация RenderSystem произойдёт когда renderer будет доступен (Этап 8)
+    // Для legacy-пути renderer не требуется
   }
 
   update(_ctx: RenderLayerContext): void {
@@ -51,7 +54,6 @@ export class EntityLayer implements IRenderLayer {
   }
 
   destroy(): void {
-    this.app = null;
     this.opts = null;
   }
 }

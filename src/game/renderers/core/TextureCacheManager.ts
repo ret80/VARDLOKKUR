@@ -1,24 +1,30 @@
 /* TextureCacheManager — управление RenderTexture для DYNAMIC_TEXTURE сущностей.
  *
- * Проблема: Graphics не рендерится в RenderTexture через generateTexture() или render().
- * Решение: используем Sprite напрямую (без bake), но кэшируем для предотвращения
- * лишних аллокаций. DYNAMIC_TEXTURE означает, что мы обновляем текстуру только
- * при изменениях, а не каждый кадр.
+ * Этап 6: заменён прямой импорт PixiJS (Application, Container, RenderTexture, Sprite)
+ * на абстракцию IRenderer. Все ресурсы управляются через handles.
  *
- * Но если Graphics не рендерится в текстуру — fallback на прямой render().
+ * Проблема: Graphics не рендерится в RenderTexture напрямую.
+ * Решение: используем IRenderer.renderToTexture() для запекания.
+ * DYNAMIC_TEXTURE означает, что текстура обновляется только при изменениях.
  */
 
-import { Application, Container, RenderTexture, Sprite } from "pixi.js";
+import type {
+  IRenderer,
+  GraphicsHandle,
+  TextureHandle,
+  SpriteHandle,
+} from '../../renderer/IRenderer';
+import { getRenderer } from '../../renderer/RendererFactory';
 import { logger } from '../../debug/logger';
 
 /** Кэш bake-объектов для одной сущности */
 export interface EntityBakeCache {
-  /** Временный контейнер для отрисовки тела (переиспользуется) */
-  container: Container;
-  /** Спрайт, отображающий запечённую текстуру */
-  sprite: Sprite;
-  /** RenderTexture — целевая текстура для запекания */
-  renderTexture: RenderTexture;
+  /** GraphicsHandle для отрисовки тела (переиспользуется) */
+  graphics: GraphicsHandle;
+  /** SpriteHandle, отображающий запечённую текстуру */
+  sprite: SpriteHandle;
+  /** TextureHandle — целевая текстура для запекания */
+  texture: TextureHandle;
   /** Ширина текстуры */
   width: number;
   /** Высота текстуры */
@@ -40,8 +46,8 @@ export class TextureCacheManager {
   /** Кэш bake-объектов по eid */
   private entityCache = new Map<number, EntityBakeCache>();
 
-  /** PIXI Application */
-  private app: Application | null = null;
+  /** IRenderer — внедряется через init() */
+  private renderer: IRenderer | null = null;
 
   /** Максимальный размер текстуры (пиксели) */
   private readonly maxTextureSize = 64;
@@ -49,41 +55,52 @@ export class TextureCacheManager {
   // ── Инициализация ───────────────────────────────────────────────
 
   get isInit(): boolean {
-    return this.app !== null;
+    return this.renderer !== null;
   }
 
-  init(app: Application): void {
-    if (this.app) return; // уже инициализирован
-    this.app = app;
+  /** Инициализация с внедрением рендерера (DIP) */
+  init(renderer: IRenderer): void {
+    if (this.renderer) return; // уже инициализирован
+    this.renderer = renderer;
   }
 
   // ── Получение/создание кэша сущности ────────────────────────────
 
   /**
    * Получить или создать bake-кэш для сущности.
+   * Создаёт: GraphicsHandle (для рисования), TextureHandle (для запекания),
+   * SpriteHandle (для отображения запечённой текстуры).
    */
   getOrCreate(eid: number, radius: number): EntityBakeCache {
     const existing = this.entityCache.get(eid);
     if (existing) return existing;
 
-    const app = this.app!;
-    const renderer = app.renderer;
+    const r = this.renderer!;
 
     // Размер текстуры: 2 * radius + padding
     const size = Math.min(this.maxTextureSize, Math.max(32, radius * 4 + 16));
 
-    // Создаём временный контейнер для отрисовки тела
-    const container = new Container();
-
     // Создаём RenderTexture для запекания
-    const renderTexture = RenderTexture.create({ width: size, height: size });
+    const texture = r.createRenderTexture(size, size);
+
+    // Создаём Graphics для отрисовки тела
+    const graphics = r.createGraphics();
 
     // Создаём Sprite из RenderTexture
-    const sprite = new Sprite(renderTexture);
-    sprite.anchor.set(0.5);
-    sprite.visible = true;
+    const sprite = r.createSprite({
+      texture,
+      anchor: { x: 0.5, y: 0.5 },
+      visible: true,
+    });
 
-    const cache: EntityBakeCache = { container, sprite, renderTexture, width: size, height: size, baked: false };
+    const cache: EntityBakeCache = {
+      graphics,
+      sprite,
+      texture,
+      width: size,
+      height: size,
+      baked: false,
+    };
     this.entityCache.set(eid, cache);
     return cache;
   }
@@ -91,63 +108,28 @@ export class TextureCacheManager {
   // ── Запекание ───────────────────────────────────────────────────
 
   /**
-    * Запечь контейнер сущности в RenderTexture и обновить спрайт.
-    *
-    * Проблема: Graphics не рендерится в RenderTexture когда Container
-    * не привязан к сцене (нет родителя). generateTexture() возвращает null.
-    *
-    * Решение: временно добавляем Container в сцену, рисуем в него Graphics,
-    * затем renderer.render({ target: renderTexture, container }) — это
-    * единственный надёжный способ запечь Graphics в текстуру.
-    *
-    * @returns true если успешно
-    */
+   * Запечь Graphics сущности в Texture и обновить спрайт.
+   *
+   * Использует IRenderer.renderToTexture() для запекания Graphics в RenderTexture.
+   *
+   * @returns true если успешно
+   */
   bake(eid: number): boolean {
     const entry = this.entityCache.get(eid);
     if (!entry) return false;
 
-    const app = this.app!;
-    const renderer = app.renderer;
-    const container = entry.container;
-    const stage = app.stage;
-
-    if (!stage) {
-      logger.warn('render', `stage is null for eid=${eid}, cannot bake`);
-      return false;
-    }
+    const r = this.renderer!;
 
     try {
-      // 1. Временно добавляем container в сцену
-      stage.addChild(container);
-      container.visible = true;
+      // Запекаем Graphics в RenderTexture через IRenderer
+      r.renderToTexture(entry.texture, entry.graphics);
 
-      logger.debug('render', `Bake eid=${eid} container.children=${container.children.length} size=${entry.width}x${entry.height} stage=${stage.children.length}`);
-
-      // 2. Рендерим container в renderTexture
-      renderer.render({
-        container: container,
-        target: entry.renderTexture,
-        clear: true,
-      });
-
-      // 3. Убираем container из сцены
-      container.visible = false;
-      stage.removeChild(container);
-
-      // 4. Обновляем текстуру спрайта
-      entry.sprite.texture = entry.renderTexture;
-      entry.sprite.visible = true;
+      // Спрайт уже использует эту текстуру (при создании был передан texture handle)
       entry.baked = true;
 
-      logger.debug('render', `Bake success eid=${eid} sprite.x=${entry.sprite.x} y=${entry.sprite.y} texture=${!!entry.sprite.texture} alpha=${entry.sprite.alpha}`);
+      logger.debug('render', `Bake success eid=${eid} sprite visible=${entry.sprite} texture=${entry.texture}`);
       return true;
     } catch (err) {
-      // Гарантированно убираем container из сцены при ошибке
-      try {
-        if (container.parent) container.parent.removeChild(container);
-      } catch {}
-      container.visible = false;
-
       logger.warn('render', `Bake failed eid=${eid}: ${err}`);
       entry.baked = false;
       return false;
@@ -169,12 +151,11 @@ export class TextureCacheManager {
     const entry = this.entityCache.get(eid);
     if (!entry) return;
 
+    const r = this.renderer!;
     try {
-      entry.container.destroy({ children: true });
-      if (entry.renderTexture) entry.renderTexture.destroy(true);
-      const tex = entry.sprite.texture;
-      if (tex) tex.destroy(true);
-      entry.sprite.destroy();
+      r.destroySprite(entry.sprite);
+      r.destroyTexture(entry.texture);
+      r.destroyGraphics(entry.graphics);
     } catch {}
 
     this.entityCache.delete(eid);
@@ -189,7 +170,7 @@ export class TextureCacheManager {
   /** Уничтожить менеджер и освободить всю память */
   destroy(): void {
     this.clearAll();
-    this.app = null;
+    this.renderer = null;
   }
 
   get size(): number {

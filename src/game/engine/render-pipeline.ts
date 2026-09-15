@@ -1,7 +1,7 @@
 /* render-pipeline.ts — Единый конвейер рендеринга */
 
-import type { World } from 'bitecs';
 import type { Application } from 'pixi.js';
+import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 
 /**
@@ -29,6 +29,9 @@ import type { IRenderLayer, RenderLayerContext } from './render-layer';
  *
  *   // При уничтожении:
  *   pipeline.destroy();
+ *
+ * Этап 6: init() принимает Application (legacy-путь).
+ * Этап 8: init() будет принимать IRenderer (новый путь).
  */
 export class RenderPipeline {
   private layers: IRenderLayer[] = [];
