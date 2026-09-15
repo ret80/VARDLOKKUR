@@ -50,7 +50,7 @@ import {
   ensureGhosts,
   type FogState,
 } from './ecs-systems/fog-system';
-import { Graphics, Container } from 'pixi.js';
+import { Container, Graphics } from 'pixi.js';
 import { CameraController } from '../engine/camera-controller';
 import { SceneManager } from '../engine/scene-manager';
 import { SceneLayers } from '../engine/scene-layers';
@@ -94,7 +94,7 @@ import type { GameStore } from '../store';
 import { createEnemyInEcs } from './ecs-bridge';
 import { PlanckWorld, Cat } from '../physics/planck-world';
 import { ENEMY_STATS } from '../entities';
-import type { Application } from 'pixi.js';
+
 import type { FxManager } from '../fx';
 import type { StateManager } from '../state/state-manager';
 import { audio } from '../audio';
@@ -109,6 +109,7 @@ import { dist2 } from '../utils';
 import { T } from '../world';
 import type { IRenderer } from '../renderer/IRenderer';
 import { getRenderer, isRendererInitialized } from '../renderer/RendererFactory';
+import type { SpriteFactory } from './ecs-map-loader';
 
 // ============================================================
 // Утилиты
@@ -138,7 +139,6 @@ export interface EcsGameLoopConfig {
   bus: EventBus;
   store: GameStore;
   planckWorld: PlanckWorld;
-  app: Application;
   dynamic: Container;
   floatLayer: FloatTextLayer;
   gameWorld: Container;
@@ -179,6 +179,8 @@ export interface EcsGameLoopConfig {
   guardSpawn?: GuardSpawnCallback;
   /** Фабрика чистых ECS-сущностей (без графики/физики) */
   entityFactory?: EntityFactory;
+  /** Фабрика графических объектов (Этап 9: заменила new Graphics()) */
+  spriteFactory?: SpriteFactory;
 }
 
 /** Глобальный singleton registry дропов */
@@ -195,7 +197,7 @@ function getDropRegistry(): DropHandlerRegistry {
 /** Создать минимальный ECS Game Loop */
 export function createEcsGameLoop(config: EcsGameLoopConfig) {
   const {
-    world, bus, store, planckWorld, app, dynamic, floatLayer, gameWorld, sceneManager, sceneLayers,
+    world, bus, store, planckWorld, dynamic, floatLayer, gameWorld, sceneManager, sceneLayers,
     input, state, cam, map, flags, playerEid: playerEidRef,
     playerDomain, playerHelpers, hud, quests, dialogue,
     dungeonBossDead, toast, float: addFloat, pushHud, startDialogue, npcSig,
@@ -205,7 +207,17 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     fx,
     particleSys,
     entityFactory: configFactory,
+    spriteFactory: configSpriteFactory,
   } = config;
+
+  /** Фабрика графических объектов (Этап 9: без new Graphics() в callbacks) */
+  const spriteFactory: SpriteFactory = configSpriteFactory ?? {
+    create: (x: number, y: number) => {
+      const g = new Graphics();
+      g.position.set(x, y);
+      return g;
+    },
+  };
 
   let _stepT = stepTRef;
   let _realT = realTRef;
@@ -286,12 +298,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     if (peid < 0) return;
     const eid = axeThrowSystem(
       entityFactory, peid, store.flags.hasAxe, store.flags.axeUp, (eid: number) => {
-      // Спавн графики для топора
-        const g = new Graphics();
-        g.position.set(Position.x[eid], Position.y[eid]);
+        const g = spriteFactory.create(Position.x[eid], Position.y[eid]);
         (g as any).userData = (g as any).userData || {};
         (g as any).userData.eid = eid;
-        dynamic.addChild(g);
+        dynamic.addChild(g as any);
     });
     if (eid >= 0) {
       // Добавить физику для топора
@@ -307,11 +317,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       entityFactory, e.kind as any, e.x, e.y, e.vx, e.vy, e.dmg,
       lifetime,
       (eid: number) => {
-        const g = new Graphics();
-        g.position.set(e.x, e.y);
+        const g = spriteFactory.create(e.x, e.y);
         (g as any).userData = (g as any).userData || {};
         (g as any).userData.eid = eid;
-        dynamic.addChild(g);
+        dynamic.addChild(g as any);
       }
     );
     if (eid >= 0) {
@@ -520,15 +529,14 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       bus,
       (kind: string, x: number, y: number) => {
         // Создать врага-призрака
-        const g = new Graphics();
-        g.position.set(x, y);
+        const g = spriteFactory.create(x, y);
         const eid = createEnemyInEcs(
-          entityFactory, world, kind as any, x, y, g, _planckWorld,
+          entityFactory, world, kind as any, x, y, g as any, _planckWorld,
           Cat.Ghost, Cat.Ghost | Cat.Player | Cat.Projectile
         );
         (g as any).userData = (g as any).userData || {};
         (g as any).userData.eid = eid;
-        dynamic.addChild(g);
+        dynamic.addChild(g as any);
         // Призрак — кинематическое тело (проходит сквозь стены)
         const body = PhysicsBodyRegistry[PhysicsBody.body[eid] - 1];
         if (body) {

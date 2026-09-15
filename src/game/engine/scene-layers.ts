@@ -18,9 +18,9 @@ import { logger } from '../debug/logger';
  * FX-уровень (fxScreen, fadeG) — screen-space элементы,
  * управляются напрямую через PixiJS (добавляются в app.stage).
  *
- * Этап 8: полная замена SceneManager.
- * MapLoaderService всё ещё использует addChild на Container-полях (legacy).
- * Этап 9: MapLoaderService будет переведён на IRenderer API.
+ * Этап 9: удалены методы addFxGraphics/clearTiles/clearDynamic/clearFloatLayer.
+ * Container-поля оставлены для обратной совместимости с MapLoaderService.
+ * TODO: Этап 10 — полностью удалить Container-поля и перевести MapLoaderService на IRenderer.
  */
 export class SceneLayers {
   private _renderer!: IRenderer;
@@ -33,7 +33,7 @@ export class SceneLayers {
   readonly floatLayerHandle: LayerHandle = -1 as LayerHandle;
 
   // Container-ссылки для обратной совместимости с MapLoaderService
-  // TODO: Этап 9 — заменить все addChild на IRenderer API
+  // @deprecated Этап 10 — удалить после миграции MapLoaderService на IRenderer
   private _tileLayer: Container | null = null;
   private _world: Container | null = null;
   private _dynamic: Container | null = null;
@@ -42,8 +42,8 @@ export class SceneLayers {
 
   // FX screen-space элементы — реальные PixiJS Graphics (добавляются в app.stage напрямую)
   // Эти объекты НЕ управляются через IRenderer, т.к. находятся на app.stage (screen-space)
-  readonly fxScreen: Graphics;
-  readonly fadeG: Graphics;
+  fxScreen!: Graphics;
+  fadeG!: Graphics;
 
   /** Инициализация слоёв через IRenderer */
   init(renderer: IRenderer, app: { stage: { addChild(child: any): void } }): void {
@@ -60,7 +60,7 @@ export class SceneLayers {
     this.fxScreen = new Graphics();
     this.fadeG = new Graphics();
 
-    // Legacy Container-слои для MapLoaderService (Этап 9: удалить)
+    // Legacy Container-слои для MapLoaderService (Этап 10: удалить)
     this._tileLayer = new Container();
     this._tileLayer.sortableChildren = true;
     this._world = new Container();
@@ -87,7 +87,7 @@ export class SceneLayers {
     return this._renderer;
   }
 
-  // === Legacy Container-геттеры (Этап 9: удалить) ===
+  // === Legacy Container-геттеры (Этап 10: удалить) ===
 
   /** Legacy: tileLayer Container для MapLoaderService */
   get tileLayer(): Container {
@@ -112,11 +112,6 @@ export class SceneLayers {
   /** Legacy: floatLayer Container для MapLoaderService */
   get floatLayer(): Container {
     return this._floatLayer!;
-  }
-
-  /** Legacy: добавить FX-графику в fxWorld */
-  addFxGraphics(g: Graphics): void {
-    this._fxWorld?.addChild(g);
   }
 
   /** Очистить tileLayer и уничтожить все спрайты */

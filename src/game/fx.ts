@@ -370,13 +370,11 @@ export class FxManager {
   }
 
   /** Отрисовка снежного слоя на screenFx. Вызывается в tick().
-   *  Этап 6: делегирует в ParticleSystem. */
+    *  Этап 9: ParticleSystem.drawSnow использует IRenderer API,
+    *  поэтому FxManager рисует снег самостоятельно (legacy-путь). */
   public drawSnow(fx: Graphics, _realT: number) {
-    if (this._particleSys) {
-      this._particleSys.drawSnow(fx);
-      return;
-    }
-    // Fallback (deprecated): старый путь через FxManager
+    // ParticleSystem теперь использует IRenderer API (GraphicsHandle),
+    // поэтому снег рисуется здесь через legacy PixiJS Graphics.
     for (const f of this.snow) {
       fx.rect(f.x, f.y, f.w, f.w).fill({ color: 0xc8d8e8, alpha: 0.4 });
     }

@@ -1,6 +1,8 @@
-/* particle-system.ts — Система частиц и снега (Этап 6: извлечение из FxManager) */
+/* particle-system.ts — Система частиц и снега (Этап 9: интеграция с IRenderer) */
 
-import { Graphics } from 'pixi.js';
+import type { GraphicsHandle } from '../renderer/IRenderer';
+import { getRenderer } from '../renderer/RendererFactory';
+import { logger } from '../debug/logger';
 
 /** Частица взрыва (урон, смерть, магия) */
 export interface Particle {
@@ -20,12 +22,10 @@ export interface Snowflake {
 /**
  * ParticleSystem — система частиц и снега.
  *
- * Извлечена из FxManager (Этап 6). Отвечает за:
- * - Создание взрывов частиц (burst)
- * - Обновление физики частиц
- * - Отрисовку частиц в Graphics
- * - Обновление и отрисовку снега
- * - Владение worldParticleG (Graphics для мировых частиц)
+ * Этап 9: полностью интегрирован с IRenderer.
+ * - worldParticleG — GraphicsHandle вместо PixiJS Graphics
+ * - drawWorldFx() — использует r.drawRect() вместо g.rect().fill()
+ * - drawSnow() — использует r.drawRect() вместо g.rect().fill()
  */
 export class ParticleSystem {
   private particles: Particle[] = [];
@@ -36,8 +36,27 @@ export class ParticleSystem {
   /** Максимальное количество частиц */
   private maxParticles = 420;
 
-  /** Graphics для отрисовки мировых частиц (перемещён из FxManager) */
-  public worldParticleG = new Graphics();
+  /** GraphicsHandle для отрисовки мировых частиц (Этап 9: IRenderer API) */
+  private _worldParticleG: GraphicsHandle = -1 as GraphicsHandle;
+  private _initialized = false;
+
+  /** Инициализация GraphicsHandle для частиц */
+  init(renderer: import('../renderer/IRenderer').IRenderer, layer?: import('../renderer/IRenderer').LayerHandle): void {
+    if (this._initialized) return;
+    this._worldParticleG = renderer.createGraphics(layer);
+    this._initialized = true;
+    logger.debug('particle-system', 'ParticleSystem initialized with IRenderer');
+  }
+
+  /** Получить GraphicsHandle для частиц */
+  get worldParticleG(): GraphicsHandle {
+    return this._worldParticleG;
+  }
+
+  /** Проверка инициализации */
+  get isInitialized(): boolean {
+    return this._initialized;
+  }
 
   /* ---------- Инициализация ---------- */
 
@@ -102,19 +121,35 @@ export class ParticleSystem {
     }
   }
 
-  /** Отрисовка мировых частиц. Вызывается в render(). */
+  /**
+   * Отрисовка мировых частиц. Вызывается в render().
+   * Этап 9: использует IRenderer API вместо PixiJS Graphics.
+   */
   public drawWorldFx(): void {
-    this.worldParticleG.clear();
+    const r = getRenderer();
+    r.clearGraphics(this._worldParticleG);
     for (const p of this.particles) {
-      this.worldParticleG.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size)
-        .fill({ color: p.color, alpha: p.alpha * (p.life / p.max) });
+      const half = p.size / 2;
+      // Конвертируем hex-цвет в {r, g, b, a}
+      const color = {
+        r: ((p.color >> 16) & 0xff) / 255,
+        g: ((p.color >> 8) & 0xff) / 255,
+        b: (p.color & 0xff) / 255,
+        a: p.alpha * (p.life / p.max),
+      };
+      r.drawRect(this._worldParticleG, { x: p.x - half, y: p.y - half, width: p.size, height: p.size }, color);
     }
   }
 
-  /** Отрисовка снежного слоя. */
-  public drawSnow(fx: Graphics): void {
+  /**
+   * Отрисовка снежного слоя.
+   * Этап 9: использует IRenderer API вместо PixiJS Graphics.
+   */
+  public drawSnow(g: GraphicsHandle): void {
+    const r = getRenderer();
     for (const f of this.snow) {
-      fx.rect(f.x, f.y, f.w, f.w).fill({ color: 0xc8d8e8, alpha: 0.4 });
+      const color = { r: 0xc8 / 255, g: 0xd8 / 255, b: 0xe8 / 255, a: 0.4 };
+      r.drawRect(g, { x: f.x, y: f.y, width: f.w, height: f.w }, color);
     }
   }
 

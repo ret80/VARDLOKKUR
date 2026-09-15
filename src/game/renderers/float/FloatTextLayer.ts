@@ -4,7 +4,6 @@
  * на абстракцию IRenderer. Все UI-элементы управляются через UIElementHandle.
  */
 
-import type { Container } from 'pixi.js';
 import type { IRenderer, UIElementHandle, Vec2 } from '../../renderer/IRenderer';
 import { getRenderer } from '../../renderer/RendererFactory';
 import { logger } from '../../debug/logger';
@@ -28,9 +27,9 @@ export class FloatTextLayer {
   private renderer: IRenderer | null = null;
   private texts: FloatingTextEntry[] = [];
 
-  /** Конструктор для legacy-совместимости (принимает Container, но игнорирует его) */
-  constructor(_hintLayer?: Container) {
-    // Container больше не используется — UI управляется через IRenderer
+  /** Конструктор — больше не требует параметров */
+  constructor() {
+    // UI управляется через IRenderer, Container больше не нужен
   }
 
   /** Инициализация с внедрением рендерера (DIP) */

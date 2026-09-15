@@ -5,7 +5,7 @@ import { PlanckWorld } from "../physics/planck-world";
 import type { WorldData, Vec } from "../world";
 import type { GameStore } from "../store";
 import type { World } from "bitecs";
-import { EcsMapLoader } from "../ecs/ecs-map-loader";
+import { EcsMapLoader, type SpriteFactory } from "../ecs/ecs-map-loader";
 import { createEntityFactory, type EntityFactory } from "../ecs/entity-factory";
 import type { SceneLayers } from "./scene-layers";
 import type { ViewportController } from "./viewport-controller";
@@ -27,9 +27,9 @@ export interface LoadMapResult {
 
 /**
  * MapLoaderService — загрузка и очистка карт.
- * 
+ *
  * Этап 8: принимает SceneLayers вместо SceneManager.
- * Container-поля SceneLayers используются для обратной совместимости (Этап 9: удалить).
+ * Этап 9: добавлена SpriteFactory для создания графических объектов без импорта Graphics.
  */
 export class MapLoaderService {
   wallCache = new WallTextureCache();
@@ -40,17 +40,31 @@ export class MapLoaderService {
   private _prevPlanckWorld: PlanckWorld | null = null;
   /** Фабрика чистых ECS-сущностей (без графики/физики) */
   entityFactory: EntityFactory;
+  /** Фабрика графических объектов (без импорта Graphics из pixi.js) */
+  private _spriteFactory: SpriteFactory;
 
   constructor(
     private scene: SceneLayers,
     private store: GameStore,
     private viewport: ViewportController,
     private ecsWorld: World,
-    private prefabWorld: World
+    private prefabWorld: World,
+    spriteFactory?: SpriteFactory
   ) {
     // Фабрика создаётся ОДИН раз при инициализации сервиса
     this.entityFactory = createEntityFactory(this.ecsWorld, this.prefabWorld);
-    this.entityFactory.initPrefabs();
+    this._spriteFactory = spriteFactory ?? {
+      create: (x: number, y: number) => {
+        const g = new Graphics();
+        g.position.set(x, y);
+        return g;
+      },
+    };
+  }
+
+  /** Фабрика графических объектов */
+  get spriteFactory(): SpriteFactory {
+    return this._spriteFactory;
   }
 
   get mmBase(): ImageData | null { return this._mmBase; }
@@ -121,6 +135,7 @@ export class MapLoaderService {
       openedChests: this.store.openedChests,
       takenPedestals: this.store.takenPedestals,
       visitedShrines: this.store.visitedShrines,
+      spriteFactory: this._spriteFactory,
       flags: {
         secretKnown: this.store.flags.secretKnown,
         shrineIdx: this.store.flags.shrineIdx,

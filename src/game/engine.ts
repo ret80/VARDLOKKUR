@@ -1,6 +1,6 @@
 /* engine.ts – Оркестратор: создаёт EventBus, GameStore и системы */
 
-import { Application, Container, Graphics, RenderTexture, Sprite, Texture, Text } from "pixi.js";
+import { Application, Graphics } from "pixi.js";
 import { FloatTextLayer } from './renderers/float/FloatTextLayer';
 import {
   T, Tl, WorldData, Vec,
@@ -255,7 +255,8 @@ export class Engine {
     this.particleSys.resize(this.viewport.viewW, this.viewport.viewH);
 
     // Этап 6: worldParticleG перемещён в ParticleSystem
-    this.scene.addFxGraphics(this.particleSys.worldParticleG);
+    // Этап 9: инициализация ParticleSystem через IRenderer
+    this.particleSys.init(renderer);
 
     // Вигнетки и фейд размещаем в исходном порядке (fadeG поверх вигнеток)
     app.stage.removeChild(this.scene.fadeG as any);
@@ -392,7 +393,6 @@ export class Engine {
         bus: this.bus,
         store: this.store,
         planckWorld: null as any, // будет установлен после загрузки карты
-        app: this.app,
         dynamic: this.scene.dynamic,
         floatLayer: this.floatTextLayer,
         gameWorld: this.scene.world,
@@ -429,6 +429,7 @@ export class Engine {
         realTRef: this.realT,
         guardSpawn: (kind: string, x: number, y: number, idx: number) => this.guardSpawn(kind, x, y, idx),
         entityFactory: this.mapLoader?.entityFactory ?? undefined,
+        spriteFactory: this.mapLoader?.spriteFactory,
       });
     }
 
