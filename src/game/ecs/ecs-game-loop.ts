@@ -614,6 +614,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       }
     }
 
+    // Renderer должен знать позицию камеры для viewport culling
+    if (renderer) {
+      renderer.setCameraPosition(cam);
+    }
+
     // Обновляем параметры EntityLayer
     const entityLayerOpts: any = {
       world,
