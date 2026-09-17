@@ -129,10 +129,9 @@ export class SceneLayers {
     this._tileLayer?.removeChildren();
   }
 
-  /** Очистить dynamic контейнер, не уничтожая playerG */
-  clearDynamic(preservePlayerG?: any): void {
+  /** Очистить dynamic контейнер (только legacy tile sprites, не ECS-сущности) */
+  clearDynamic(): void {
     for (const child of this._dynamic?.children ?? []) {
-      if (preservePlayerG && child === preservePlayerG) continue;
       if (typeof child?.destroy === 'function') {
         child.destroy({ children: true });
       }

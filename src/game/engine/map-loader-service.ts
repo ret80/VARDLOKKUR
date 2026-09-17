@@ -42,11 +42,11 @@ export class MapLoaderService {
   private _prevPlanckWorld: PlanckWorld | null = null;
   /** Фабрика чистых ECS-сущностей (без графики/физики) */
   entityFactory: EntityFactory;
-  /** Фабрика графических объектов (без импорта Graphics из pixi.js) */
+  /** Фабрика графических объектов (создаёт через IRenderer, не через legacy containers) */
   private _spriteFactory: SpriteFactory;
   /** IRenderer для создания спрайтов карты */
   private _renderer!: IRenderer;
-  /** Handle слоя dynamic для добавления спрайтов */
+  /** Handle слоя dynamic для добавления спрайтов (IRenderer layer, не legacy Container) */
   private _dynamicLayer!: LayerHandle;
 
   constructor(
@@ -59,13 +59,13 @@ export class MapLoaderService {
   ) {
     // Фабрика создаётся ОДИН раз при инициализации сервиса
     this.entityFactory = createEntityFactory(this.ecsWorld, this.prefabWorld);
-    // Фаза 3: default-фабрика не импортирует Graphics напрямую — реальный
-    // графический объект создаётся через IRenderer (this._renderer уже готов к
-    // моменту вызова create(), т.к. спрайты создаются только внутри loadMapEcs).
+    // Фаза 3/Регрессия: default-фабрика создаёт через IRenderer.createGraphics()
+    // и добавляет в dynamic layer (в worldContainer), а не в legacy Container.
+    // Это исправляет регрессию: ECS-сущности теперь двигаются с камерой.
     this._spriteFactory = spriteFactory ?? {
       create: (x: number, y: number) => {
-        const g = this._renderer.createDetachedGraphics();
-        g.position.set(x, y);
+        const g = this._renderer.createGraphics(this._dynamicLayer);
+        this._renderer.setGraphicsPosition(g, { x, y });
         return g;
       },
     };
@@ -85,11 +85,10 @@ export class MapLoaderService {
   get mmBase(): ImageData | null { return this._mmBase; }
 
   /** Очистить tileLayer и dynamic контейнеры перед загрузкой новой карты */
-  clearTiles(preservePlayerG?: any): void {
-    // Сохраняем playerG перед очисткой dynamic — он мог быть уничтожен clearDynamic()
-    // без этого playerG.destroy() вызовется и playerG.position станет null
+  clearTiles(preservePlayerG?: number): void {
+    // preservePlayerG — это GraphicsHandle, legacy dynamic Container не содержит ECS-сущности
     this.scene.clearTiles();
-    this.scene.clearDynamic(preservePlayerG);
+    this.scene.clearDynamic();
   }
 
   /** ECS загрузка карты: тайлы + сущности + миникарта */
@@ -97,7 +96,7 @@ export class MapLoaderService {
     map: WorldData,
     spawn: Vec,
     playerDomain: PlayerDomain,
-    playerG: any,
+    playerG: number,
     savedDrops: Array<{ kind: string; x: number; y: number; life: number; ambientIdx?: number }>,
     toast: (msg: string) => void,
     onPlayerCreated?: (eid: number) => void
@@ -167,7 +166,6 @@ export class MapLoaderService {
     this.ecsMapLoader = new EcsMapLoader({
       world: this.ecsWorld,
       planckWorld: newPlanckWorld,
-      dynamicContainer: this.scene.dynamic,
       openedChests: this.store.openedChests,
       takenPedestals: this.store.takenPedestals,
       visitedShrines: this.store.visitedShrines,

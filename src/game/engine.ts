@@ -113,6 +113,7 @@ import {
 
 // Импорты IRenderer
 import { RendererFactory, setGlobalRenderer, getRenderer } from './renderer';
+import type { GraphicsHandle } from './renderer/IRenderer';
 
 export class Engine {
   private cbs: EngineCallbacks;
@@ -163,7 +164,7 @@ export class Engine {
 
   // Локальные данные (для рендеринга и обновления)
   // Все данные игрока теперь через this.playerDomain (ECS) и this.store.flags
-  private playerG = new Graphics();
+  private playerG: number = 0; // GraphicsHandle для игрока
   private playerBody: any = null;
   private realT = 0;
   private stepT = 0;
@@ -186,8 +187,9 @@ export class Engine {
   /** ECS callback для спавна стражей пьедестала */
   private guardSpawn(kind: string, x: number, y: number, pedestalIndex: number): void {
     if (!this.ecsWorld || !this.mapLoader || !this.mapLoader.entityFactory) return;
-    const g = new Graphics();
-    g.position.set(x, y);
+    const renderer = getRenderer();
+    const g = renderer.createGraphics();
+    renderer.setGraphicsPosition(g, { x, y });
     const enemyKind = kind as EnemyKind;
     const category = getEnemyCategory(enemyKind);
     const mask = getEnemyMask(enemyKind);
@@ -196,7 +198,7 @@ export class Engine {
       this.ecsWorld, enemyKind, x, y, g, this.ecsMapLoader!.planckWorld,
       category, mask
     );
-    this.scene.dynamic.addChild(g);
+    // g уже в IRenderer layer
     // Set aggro and guardOf via Enemy component (SoA)
     EcsEnemy.aggro[eid] = 1;
     EcsEnemy.guardOf[eid] = pedestalIndex;
@@ -232,6 +234,10 @@ export class Engine {
     const renderer = RendererFactory.create('pixi');
     await renderer.init(container, this.viewport.viewW, this.viewport.viewH);
     setGlobalRenderer(renderer);
+
+    // Создаём playerG через IRenderer (GraphicsHandle)
+    this.playerG = renderer.createGraphics();
+    renderer.setGraphicsPosition(this.playerG as GraphicsHandle, { x: 0, y: 0 });
 
     this.viewport = new ViewportController(container, renderer, { x: 0, y: 0 });
     this.scene = new SceneLayers();
@@ -395,7 +401,6 @@ export class Engine {
         bus: this.bus,
         store: this.store,
         planckWorld: null as any, // будет установлен после загрузки карты
-        dynamic: this.scene.dynamic,
         floatLayer: this.floatTextLayer,
         gameWorld: this.scene.world,
         sceneManager: this.scene as any, // deprecated: legacy compatibility
@@ -562,9 +567,10 @@ export class Engine {
         } else {
           logger.warn('engine', `no physics body for player eid=${eid} pbIdx=${pbIdx}`);
         }
-        // Обновляем визуальную позицию игрока
-        this.playerG.position.set(x, y);
-        logger.debug('engine', `playerG.position = ${this.playerG.position.x},${this.playerG.position.y}`);
+        // Обновляем визуальную позицию игрока через IRenderer
+        const renderer = getRenderer();
+        renderer.setGraphicsPosition(this.playerG as GraphicsHandle, { x, y });
+        logger.debug('engine', `playerG position set to ${x},${y}`);
         return true;
       },
       setPlayerHp: (hp: number) => {
@@ -585,8 +591,9 @@ export class Engine {
       },
       spawnEnemy: (kind: string, x: number, y: number) => {
         if (!this.ecsWorld || !this.mapLoader || !this.mapLoader.entityFactory || !this.ecsMapLoader) return -1;
-        const g = new Graphics();
-        g.position.set(x, y);
+        const renderer = getRenderer();
+        const g = renderer.createGraphics();
+        renderer.setGraphicsPosition(g, { x, y });
         const category = getEnemyCategory(kind as any);
         const mask = getEnemyMask(kind as any);
         const eid = createEnemyInEcs(
@@ -594,7 +601,7 @@ export class Engine {
           this.ecsWorld!, kind as any, x, y, g, this.ecsMapLoader.planckWorld,
           category, mask
         );
-        this.scene.dynamic.addChild(g);
+        // g уже в IRenderer layer
         EcsEnemy.aggro[eid] = 1;
         return eid;
       },
@@ -823,7 +830,8 @@ export class Engine {
     p.x = spawn.x; p.y = spawn.y;
     // HP/timers будут установлены ECS при создании Player (createPlayerInEcs)
     p.hp = Math.min(p.hp, p.maxHp);
-    this.playerG.position.set(spawn.x, spawn.y);
+    // Обновляем позицию playerG через IRenderer
+    getRenderer().setGraphicsPosition(this.playerG as GraphicsHandle, { x: spawn.x, y: spawn.y });
 
     this.viewport.clampCamera(map.W * 16, map.H * 16, spawn.x, spawn.y);
 
