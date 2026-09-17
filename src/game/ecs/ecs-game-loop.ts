@@ -595,7 +595,12 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   /** Выполнить ECS рендеринг через RenderPipeline (Этап 5-6) */
   function render(rdt: number): void {
     const nearestInteractable = getNearestInteractable(world, _playerEid, store);
-    
+
+    // === Камера: следим за игроком ===
+    if (_playerEid >= 0 && Position.x.length > _playerEid) {
+      cameraController.trackPlayer(Position.x[_playerEid], Position.y[_playerEid]);
+    }
+
     // Получаем IRenderer (если инициализирован)
     let renderer: IRenderer | null = null;
     let hintLayerHandle: number | null = null;
@@ -615,8 +620,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       time: _realT,
       dt: rdt,
       float: floatLayer,
-      cameraController,
       playerEid: _playerEid,
+      cam,
       getNpcSig: npcSig,
       talkedSig: talkedSig.value,
       nearestInteractable,

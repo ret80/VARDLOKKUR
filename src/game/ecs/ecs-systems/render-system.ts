@@ -51,7 +51,7 @@ import type { RenderContext } from '../../renderers';
 import { FloatTextLayer } from '../../renderers/float/FloatTextLayer';
 import { logger } from '../../debug/logger';
 import { TextureCacheManager } from '../../renderers/core/TextureCacheManager';
-import { CameraController } from '../../engine/camera-controller';
+
 
 // ============================================================
 // Утилиты рендеринга (module-level private)
@@ -210,10 +210,10 @@ export interface RenderSystemOptions {
   dt: number;
   /** FloatTextLayer для плавающего текста */
   float: FloatTextLayer;
-  /** Контроллер камеры (только для cam.x/cam.y — позиция камеры) */
-  cameraController: CameraController;
   /** ID игрока */
   playerEid: number;
+  /** Позиция камеры (для screen-space элементов: hint-подсказки) */
+  cam: { x: number; y: number };
   /** Callback для получения сигнатуры NPC */
   getNpcSig?: (npcId: string) => string;
   /** Карта сигнатур диалогов */
@@ -390,14 +390,6 @@ export class RenderSystem {
       logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]} handle=${this.getSpriteHandle(playerEid)}`);
     }
 
-    // === Камера: следим за игроком через IRenderer (Этап 6) ===
-    if (playerEid >= 0 && Position.x.length > playerEid) {
-      r.setCameraPosition({
-        x: Position.x[playerEid],
-        y: Position.y[playerEid]
-      });
-    }
-
     // === Обновление позиций спрайтов (Этап 6) ===
     for (const eid of query(world, [Position, SpriteComp])) {
       const handle = this.getSpriteHandle(eid);
@@ -479,7 +471,7 @@ export class RenderSystem {
     float.update(dt);
 
     // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
-    this.renderInteractionHint(opts.cameraController.cam, nearestInteractable, time);
+    this.renderInteractionHint(opts.cam, nearestInteractable, time);
 
     // === Финальный рендер через IRenderer (Этап 6) ===
     r.render();
