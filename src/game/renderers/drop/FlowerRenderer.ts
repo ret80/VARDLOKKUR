@@ -8,11 +8,12 @@ import { BaseDropRenderer } from "./BaseDropRenderer";
 
 export class FlowerRenderer extends BaseDropRenderer {
   protected drawBody(g: GraphicsHandle, data: IDropData, ctx: RenderContext): void {
+    const r = ctx.renderer!;
     const bob = (ctx as any).bob;
-    px(g, -1, -1 + bob, 1, 4, 0x5a7a4a);
-    px(g, -3, -5 + bob, 2, 2, 0xc8d8e8);
-    px(g, 1, -5 + bob, 2, 2, 0xc8d8e8);
-    px(g, -1, -7 + bob, 2, 2, 0xc8d8e8);
-    px(g, -1, -5 + bob, 2, 2, 0xe8c979);
+    px(r, g, -1, -1 + bob, 1, 4, 0x5a7a4a);
+    px(r, g, -3, -5 + bob, 2, 2, 0xc8d8e8);
+    px(r, g, 1, -5 + bob, 2, 2, 0xc8d8e8);
+    px(r, g, -1, -7 + bob, 2, 2, 0xc8d8e8);
+    px(r, g, -1, -5 + bob, 2, 2, 0xe8c979);
   }
 }

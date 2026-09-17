@@ -5,7 +5,6 @@
  */
 
 import type { IRenderer, UIElementHandle, Vec2 } from '../../renderer/IRenderer';
-import { getRenderer } from '../../renderer/RendererFactory';
 import { logger } from '../../debug/logger';
 
 /** Конфигурация стиля плавающего текста */
@@ -49,7 +48,7 @@ export class FloatTextLayer {
       return;
     }
 
-    const r = getRenderer();
+    const r = this.renderer!;
     const handle = r.createText(text, {
       fontSize: style.fontSize ?? 4,
       color: style.fill ?? color,
@@ -70,7 +69,7 @@ export class FloatTextLayer {
   update(dt: number): void {
     if (!this.renderer) return;
 
-    const r = getRenderer();
+    const r = this.renderer!;
     const toRemove: number[] = [];
 
     for (let i = 0; i < this.texts.length; i++) {
@@ -107,7 +106,7 @@ export class FloatTextLayer {
 
   /** Очистить все плавающие тексты */
   clear(): void {
-    const r = getRenderer();
+    const r = this.renderer!;
     for (const entry of this.texts) {
       try {
         r.destroyUIElement(entry.handle);

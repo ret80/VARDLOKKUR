@@ -1,10 +1,12 @@
 /* renderers/core/types.ts — единый контракт всех рендереров (SOLID: DIP) */
 
-import type { GraphicsHandle } from '../../renderer/IRenderer';
+import type { GraphicsHandle, IRenderer } from '../../renderer/IRenderer';
 
 /** Контекст, общий для всех рендереров */
 export interface RenderContext {
   time: number;
+  /** IRenderer — передаётся RenderSystem для вызова примитивов (Фаза 6: DI Cleanup) */
+  renderer?: IRenderer;
   [key: string]: unknown;
 }
 

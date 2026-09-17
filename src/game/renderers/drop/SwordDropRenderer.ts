@@ -8,10 +8,11 @@ import { BaseDropRenderer } from "./BaseDropRenderer";
 
 export class SwordDropRenderer extends BaseDropRenderer {
   protected drawBody(g: GraphicsHandle, data: IDropData, ctx: RenderContext): void {
+    const r = ctx.renderer!;
     const bob = (ctx as any).bob;
-    px(g, -1, -6 + bob, 2, 8, 0xb9c2c9);
-    px(g, -1, -6 + bob, 1, 8, 0xd8e2ea);
-    px(g, -3, 1 + bob, 6, 1, 0x5a4632);
-    px(g, -1, 2 + bob, 2, 2, 0x3a3226);
+    px(r, g, -1, -6 + bob, 2, 8, 0xb9c2c9);
+    px(r, g, -1, -6 + bob, 1, 8, 0xd8e2ea);
+    px(r, g, -3, 1 + bob, 6, 1, 0x5a4632);
+    px(r, g, -1, 2 + bob, 2, 2, 0x3a3226);
   }
 }

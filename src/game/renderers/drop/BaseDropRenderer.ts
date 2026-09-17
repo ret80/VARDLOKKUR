@@ -1,7 +1,6 @@
 /* renderers/drop/BaseDropRenderer.ts — общий скелет отрисовки дропов (SRP) */
 
-import type { GraphicsHandle } from '../../renderer/IRenderer';
-import { getRenderer } from '../../renderer/RendererFactory';
+import type { GraphicsHandle, IRenderer } from '../../renderer/IRenderer';
 import type { Renderer, RenderContext } from "../core/types";
 import type { IDropData } from "../../models";
 
@@ -13,7 +12,7 @@ export abstract class BaseDropRenderer implements Renderer<IDropData> {
   protected abstract drawBody(g: GraphicsHandle, data: IDropData, ctx: RenderContext): void;
 
   render(g: GraphicsHandle, data: IDropData, ctx: RenderContext): void {
-    const r = getRenderer();
+    const r = ctx.renderer!;
     r.clearGraphics(g);
     if (data.taken) return;
 

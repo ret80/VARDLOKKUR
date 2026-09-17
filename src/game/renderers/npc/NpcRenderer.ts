@@ -1,7 +1,6 @@
 /* renderers/npc/NpcRenderer.ts — общий скелет отрисовки NPC (SRP) */
 
-import type { GraphicsHandle } from '../../renderer/IRenderer';
-import { getRenderer } from '../../renderer/RendererFactory';
+import type { GraphicsHandle, IRenderer } from '../../renderer/IRenderer';
 import type { Renderer, RenderContext } from "../core/types";
 import type { INpcData } from "../../models";
 import { px } from "../core/primitives";
@@ -14,7 +13,7 @@ export abstract class NpcRenderer implements Renderer<INpcData> {
   protected abstract drawBody(g: GraphicsHandle, data: INpcData, ctx: RenderContext): void;
 
   render(g: GraphicsHandle, data: INpcData, ctx: RenderContext): void {
-    const r = getRenderer();
+    const r = ctx.renderer!;
     r.clearGraphics(g);
     const bob = Math.sin(ctx.time * 2 + data.id.length) * 0.5;
 
@@ -27,8 +26,8 @@ export abstract class NpcRenderer implements Renderer<INpcData> {
     const mark = (ctx as any).mark;
     const blink = Math.floor(ctx.time * 2) % 2 === 0;
     if (mark && blink) {
-      px(g, -1, -20, 2, 4, 0xe8c979);
-      px(g, -1, -15, 2, 2, 0xe8c979);
+      px(r, g, -1, -20, 2, 4, 0xe8c979);
+      px(r, g, -1, -15, 2, 2, 0xe8c979);
     }
   }
 }

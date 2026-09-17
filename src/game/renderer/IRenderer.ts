@@ -99,6 +99,10 @@ export interface IRenderer {
   /** Получить внутренний PixiJS Sprite (только для прямой работы с legacy Container) */
   getSpritePixi(handle: SpriteHandle): any;
 
+  // === Screen-space (элементы поверх мира, не двигающиеся с камерой) ===
+  /** Создать спрайт в screen-space (добавляется поверх worldContainer, не сдвигается камерой) */
+  createScreenSprite(options: Omit<SpriteCreateOptions, 'layer'>): SpriteHandle;
+
   // === Graphics (примитивы: rect, ellipse, line, poly) ===
   /** Создать пустой Graphics. Опционально привязать к слою. */
   createGraphics(layer?: LayerHandle): GraphicsHandle;
@@ -118,6 +122,8 @@ export interface IRenderer {
   drawEllipse(handle: GraphicsHandle, cx: number, cy: number, rx: number, ry: number, color: Color): void;
   /** Нарисовать полигон (точки: [x1,y1, x2,y2, ...]) */
   drawPoly(handle: GraphicsHandle, points: number[], color: Color): void;
+  /** Нарисовать линию */
+  drawLine(handle: GraphicsHandle, x1: number, y1: number, x2: number, y2: number, color: Color, width?: number): void;
   /** Установить позицию Graphics */
   setGraphicsPosition(handle: GraphicsHandle, pos: Vec2): void;
   /** Включить/выключить видимость Graphics */
@@ -134,6 +140,8 @@ export interface IRenderer {
   renderToTexture(texture: TextureHandle, source: GraphicsHandle | SpriteHandle): void;
   /** Удалить текстуру */
   destroyTexture(handle: TextureHandle): void;
+  /** Отрендерить HTMLCanvasElement в RenderTexture (для тумана/шейдеров) */
+  renderCanvasToTexture(canvas: HTMLCanvasElement, target: TextureHandle): void;
 
   // === UI (текст и элементы интерфейса) ===
   /** Создать текстовый UI-элемент. Возвращает handle. */

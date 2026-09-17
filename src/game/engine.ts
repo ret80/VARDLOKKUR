@@ -249,7 +249,7 @@ export class Engine {
     this.viewport.apply(renderer);
 
     // Инициализация FX-менеджера
-    this.fx.init(app, this.viewport.viewW, this.viewport.viewH);
+    this.fx.init(renderer, this.viewport.viewW, this.viewport.viewH);
     // Этап 6: связываем FxManager с ParticleSystem для делегирования
     this.fx.setParticleSystem(this.particleSys);
     this.particleSys.resize(this.viewport.viewW, this.viewport.viewH);
@@ -261,11 +261,11 @@ export class Engine {
     // Вигнетки и фейд размещаем в исходном порядке (fadeG поверх вигнеток)
     app.stage.removeChild(this.scene.fadeG as any);
     this.fx.buildVignette();
-    if (this.fx.vignette) app.stage.addChild(this.fx.vignette);
+    // vignette теперь создаётся через IRenderer.createScreenSprite() — автоматически добавляется в stage
 
     this.fx.buildFogVignette();
     this.fx.buildNoiseTexture();
-    if (this.fx.fogVignette) app.stage.addChild(this.fx.fogVignette!);
+    // fogVignette теперь создаётся через IRenderer.createScreenSprite() — автоматически добавляется в stage
     app.stage.addChild(this.scene.fadeG as any);
     this.fx.initSnow();
 

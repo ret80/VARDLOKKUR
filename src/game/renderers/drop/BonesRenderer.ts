@@ -8,10 +8,11 @@ import { BaseDropRenderer } from "./BaseDropRenderer";
 
 export class BonesRenderer extends BaseDropRenderer {
   protected drawBody(g: GraphicsHandle, data: IDropData, ctx: RenderContext): void {
+    const r = ctx.renderer!;
     const bob = (ctx as any).bob;
-    px(g, -3, 0 + bob, 7, 1, 0xcdd6dc);
-    px(g, -4, -1 + bob, 2, 2, 0xcdd6dc);
-    px(g, 3, -1 + bob, 2, 2, 0xcdd6dc);
-    px(g, -1, -3 + bob, 4, 3, 0xb9c2c9);
+    px(r, g, -3, 0 + bob, 7, 1, 0xcdd6dc);
+    px(r, g, -4, -1 + bob, 2, 2, 0xcdd6dc);
+    px(r, g, 3, -1 + bob, 2, 2, 0xcdd6dc);
+    px(r, g, -1, -3 + bob, 4, 3, 0xb9c2c9);
   }
 }

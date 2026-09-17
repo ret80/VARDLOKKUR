@@ -229,6 +229,33 @@ export class PixiJSRenderer implements IRenderer {
     return s?.pixiSprite ?? null;
   }
 
+  // === Screen-space ===
+
+  createScreenSprite(options: Omit<SpriteCreateOptions, 'layer'>): SpriteHandle {
+    const id = this._nextId++;
+    let tex: Texture;
+    if (typeof options.texture === 'string') {
+      tex = Texture.from(options.texture);
+    } else {
+      tex = this.textures.get(options.texture as number) || Texture.EMPTY;
+    }
+
+    const sprite = new Sprite(tex);
+    sprite.x = options.x ?? 0;
+    sprite.y = options.y ?? 0;
+    if (options.anchor) sprite.anchor.set(options.anchor.x, options.anchor.y);
+    if (options.scale) sprite.scale.set(options.scale.x, options.scale.y);
+    if (options.alpha !== undefined) sprite.alpha = options.alpha;
+    if (options.tint !== undefined) sprite.tint = options.tint;
+    sprite.visible = options.visible ?? true;
+
+    // Добавляем напрямую в stage (не в worldContainer) — screen-space элемент
+    this.app.stage.addChild(sprite);
+
+    this.sprites.set(id, { pixiSprite: sprite, layer: -1 as LayerHandle });
+    return id as SpriteHandle;
+  }
+
   // === Graphics ===
 
   createGraphics(layer?: LayerHandle): GraphicsHandle {
@@ -306,6 +333,13 @@ export class PixiJSRenderer implements IRenderer {
     g.pixiGraphics.poly(points).fill({ color: c, alpha: color.a });
   }
 
+  drawLine(handle: GraphicsHandle, x1: number, y1: number, x2: number, y2: number, color: Color, width = 1): void {
+    const g = this.graphics.get(handle as number);
+    if (!g) return;
+    const c = (color.r << 16) | (color.g << 8) | color.b;
+    g.pixiGraphics.moveTo(x1, y1).lineTo(x2, y2).stroke({ color: c, alpha: color.a, width });
+  }
+
   setGraphicsPosition(handle: GraphicsHandle, pos: Vec2): void {
     const g = this.graphics.get(handle as number);
     if (g) {
@@ -366,6 +400,15 @@ export class PixiJSRenderer implements IRenderer {
       t.destroy(true);
       this.textures.delete(handle as number);
     }
+  }
+
+  renderCanvasToTexture(canvas: HTMLCanvasElement, target: TextureHandle): void {
+    const tex = this.textures.get(target as number);
+    if (!tex) return;
+    // Create a temporary sprite from canvas and render it to target RenderTexture
+    const tmpSprite = new Sprite(Texture.from(canvas));
+    this.app.renderer.render({ container: tmpSprite, target: tex as RenderTexture, clear: true });
+    tmpSprite.destroy();
   }
 
   // === UI (Text) ===

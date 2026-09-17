@@ -2,7 +2,6 @@
 
 import { query, hasComponent, type World } from 'bitecs';
 import type { IRenderer, GraphicsHandle, LayerHandle, Vec2 } from '../../renderer/IRenderer';
-import { getRenderer } from '../../renderer/RendererFactory';
 import {
   Position,
   Player,
@@ -85,19 +84,18 @@ type ObjectQueryConfig = {
 };
 
 /** Обновить позицию спрайта из Position компонента */
-export function updateSpritePosition(world: World, eid: number): void {
+export function updateSpritePosition(world: World, eid: number, renderer: IRenderer): void {
   const { x: px, y: py } = Position;
   
   if (eid < 0 || eid >= SpriteComp.ref.length) return;
   const handle = getSpriteHandle(eid);
   if (handle === undefined) return;
   
-  const r = getRenderer();
-  r.setSpritePosition(handle as any, { x: px[eid], y: py[eid] });
+  renderer.setSpritePosition(handle as any, { x: px[eid], y: py[eid] });
 }
 
 /** Обновить все спрайты */
-export function renderSprites(world: World): void {
+export function renderSprites(world: World, renderer: IRenderer): void {
   const { x: px, y: py } = Position;
 
   const matched = [...query(world, [Position, SpriteComp])];
@@ -105,12 +103,11 @@ export function renderSprites(world: World): void {
     // console.log('[renderSprites] query found', matched.length, 'entities with [Position, Sprite]');
   }
 
-  const r = getRenderer();
   for (const eid of matched) {
     const handle = getSpriteHandle(eid);
     if (handle === undefined) continue;
     
-    r.setSpritePosition(handle as any, { x: px[eid], y: py[eid] });
+    renderer.setSpritePosition(handle as any, { x: px[eid], y: py[eid] });
   }
 }
 
@@ -135,10 +132,10 @@ export const ENTITY_LAYER: Record<string, number> = {
 /** Выполнить сортировка всех спрайтов по z-index на основе слоя и Y */
 export function renderSortSystem(
   world: World,
-  playerEid: number
+  playerEid: number,
+  renderer: IRenderer
 ): void {
   const { x: px, y: py } = Position;
-  const r = getRenderer();
 
   for (const eid of query(world, [SpriteComp])) {
     const handle = getSpriteHandle(eid);
@@ -153,7 +150,7 @@ export function renderSortSystem(
 
     // zIndex = layer + rounded Y (для сортировки по глубине)
     const zIndex = layer + Math.round(py[eid]);
-    r.setSpriteZIndex(handle as any, zIndex);
+    renderer.setSpriteZIndex(handle as any, zIndex);
   }
 }
 
@@ -161,11 +158,11 @@ export function renderSortSystem(
 export function renderVisibilitySystem(
   world: World,
   playerEid: number,
-  time: number
+  time: number,
+  renderer: IRenderer
 ): void {
   const dead = Dead;
   const hidden = Hidden;
-  const r = getRenderer();
 
   for (const eid of query(world, [SpriteComp])) {
     const handle = getSpriteHandle(eid);
@@ -175,31 +172,30 @@ export function renderVisibilitySystem(
     // через removeEntity при смерти, и их eid может переиспользоваться,
     // что приведёт к ложному скрытию (например, святилища не зажигаются).
     if (eid === playerEid && dead[eid]) {
-      r.setSpriteAlpha(handle as any, 0);
+      renderer.setSpriteAlpha(handle as any, 0);
     } else if (hidden[eid]) {
-      r.setSpriteAlpha(handle as any, 0.25);
+      renderer.setSpriteAlpha(handle as any, 0.25);
     } else if (Player.hurtT[eid] > 0 && Math.floor(time * 14) % 2 === 0) {
       // hurt-мигание для игрока
-      r.setSpriteAlpha(handle as any, 0.35);
+      renderer.setSpriteAlpha(handle as any, 0.35);
     } else {
-      r.setSpriteAlpha(handle as any, 1);
+      renderer.setSpriteAlpha(handle as any, 1);
     }
   }
 }
 
 /** Обновить мигание (получение урона врагов) */
-export function renderFlashSystem(world: World, time: number): void {
+export function renderFlashSystem(world: World, time: number, renderer: IRenderer): void {
   const flashing = Flashing;
-  const r = getRenderer();
 
   for (const eid of query(world, [SpriteComp, Flashing])) {
     const handle = getSpriteHandle(eid);
     if (handle === undefined) continue;
     
     if (Math.floor(time * 14) % 2 === 0) {
-      r.setSpriteAlpha(handle as any, 0.35);
+      renderer.setSpriteAlpha(handle as any, 0.35);
     } else {
-      r.setSpriteAlpha(handle as any, 1);
+      renderer.setSpriteAlpha(handle as any, 1);
     }
   }
 }
@@ -437,7 +433,7 @@ export class RenderSystem {
     }
 
     // === Диспетчеризация через реестры ===
-    const ctx: RenderContext = { time };
+    const ctx: RenderContext = { time, renderer: r };
 
     // Игрок
     this.renderPlayerEcs(world, playerEid, ctx, opts);
@@ -586,7 +582,7 @@ export class RenderSystem {
             const cache = TextureCacheManager.instance.getOrCreate(eid, radius);
 
             // Рисуем тело в GraphicsHandle
-            (renderer as any).render(cache.graphics, data, { time });
+            (renderer as any).render(cache.graphics, data, { time, renderer: r! });
 
             // Запекаем в текстуру
             const baked = TextureCacheManager.instance.bake(eid);
@@ -609,7 +605,7 @@ export class RenderSystem {
                 const sprite = SpriteRegistry[spriteIdx - 1];
                 if (sprite) {
                   try {
-                    (renderer as any).render(sprite, data, { time });
+                    (renderer as any).render(sprite, data, { time, renderer: r! });
                   } catch (e) {
                     logger.warn('render', `Direct render fallback failed: ${e}`);
                   }
@@ -624,7 +620,7 @@ export class RenderSystem {
               const sprite = SpriteRegistry[spriteIdx - 1];
               if (sprite) {
                 try {
-                  (renderer as any).render(sprite, data, { time });
+                  (renderer as any).render(sprite, data, { time, renderer: r! });
                 } catch (e) {
                   logger.warn('render', `Direct render fallback failed: ${e}`);
                 }
@@ -644,7 +640,7 @@ export class RenderSystem {
 
         const data = mapper(eid);
         try {
-          (renderer as any).render(sprite, data, { time });
+          (renderer as any).render(sprite, data, { time, renderer: r! });
         } catch (err) {
           logger.warn('render', `Fallback render failed for eid=${eid}: ${err}`);
         }

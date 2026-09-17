@@ -2,14 +2,15 @@
    Отделён от engine.ts для разделения ответственности.
    
    Этап 6: частицы и снег извлечены в ParticleSystem.
-   FxManager делегирует burst() и initSnow() в ParticleSystem.
-   Остается: туман, виньетка, руны, глаза.
+   Фаза 5: удалён import pixi.js, все типы заменены на Handle,
+   использование IRenderer для создания vignette/fogVignette.
 */
 
-import { Application, Container, Graphics, RenderTexture, Sprite, Texture } from "pixi.js";
 import { NoiseGenerator } from "./noise";
 import { clamp } from "./utils";
 import type { ParticleSystem } from './engine/particle-system';
+import type { IRenderer, SpriteHandle, TextureHandle } from './renderer';
+// getRenderer удалён в Фаза 6 — используется this._renderer
 
 /* ======================== Интерфейсы ======================== */
 
@@ -35,7 +36,7 @@ export interface Snowflake {
 /* ======================== FxManager ======================== */
 
 export class FxManager {
-  private app!: Application;
+  private _renderer!: IRenderer;
   private viewW = 0;
   private viewH = 0;
 
@@ -44,10 +45,10 @@ export class FxManager {
 
   // --- Слои ---
   // --- Слои (публичные для отрисовки из engine) ---
-  public worldParticleG = new Graphics();
-  private screenFxG: Graphics | null = null; // Для снега (поверх UI)
-  public vignette: Sprite | null = null;
-  public fogVignette: Sprite | null = null;
+  // worldParticleG удалён в Этап 6 — перемещён в ParticleSystem
+  private screenFxG: any = null; // Для снега (поверх UI) — GraphicsHandle
+  public vignette: SpriteHandle | null = null;
+  public fogVignette: SpriteHandle | null = null;
 
   // --- Данные (deprecated: перенесено в ParticleSystem) ---
   private particles: Particle[] = [];
@@ -56,9 +57,9 @@ export class FxManager {
   // --- Fog Canvases (внутренние, не экспортируются) ---
   private fogCanvas: HTMLCanvasElement | null = null;
   private fogCtx: CanvasRenderingContext2D | null = null;
-  private fogTex: Texture | null = null;
-  private fogRT: RenderTexture | null = null;
-  private fogCopySpr: Sprite | null = null;
+  private fogTex: TextureHandle | null = null;
+  private fogRT: TextureHandle | null = null;
+  private fogCopySpr: SpriteHandle | null = null;
   private fogMaskCanvas: HTMLCanvasElement | null = null;
   private fogMaskCtx: CanvasRenderingContext2D | null = null;
   private noiseCanvas: HTMLCanvasElement | null = null;
@@ -68,8 +69,8 @@ export class FxManager {
 
   /* ---------- Инициализация ---------- */
 
-  public init(app: Application, w: number, h: number) {
-    this.app = app;
+  public init(renderer: IRenderer, w: number, h: number) {
+    this._renderer = renderer;
     this.viewW = w;
     this.viewH = h;
     this.fogAlpha = 0;
@@ -81,7 +82,7 @@ export class FxManager {
   }
 
   /** Вызывается один раз после создания сцены в engine. */
-  public attachToStage(stage: Container, screenFx: Graphics) {
+  public attachToStage(_stage: any, screenFx: any) {
     this.screenFxG = screenFx;
     // particleG уже добавлен в fxWorld в engine, но мы его здесь не трогаем —
     // engine сам добавляет worldParticleG через addChild.
@@ -183,15 +184,23 @@ export class FxManager {
     grad.addColorStop(0, "rgba(5,8,13,0)");
     grad.addColorStop(1, "rgba(4,6,10,0.66)");
     vx.fillStyle = grad; vx.fillRect(0, 0, vw, vh);
-    if (this.vignette) {
-      this.vignette.texture.destroy(true);
-      this.vignette.texture = Texture.from(vc);
+    
+    const texHandle = this._renderer.createTextureFromCanvas(vc);
+    if (this.vignette !== null) {
+      // Обновляем существующий спрайт (пересоздаём с новой текстурой)
+      this._renderer.destroySprite(this.vignette);
+      this.vignette = this._renderer.createScreenSprite({
+        texture: texHandle,
+        x: -this.viewW * 0.05,
+        y: -this.viewH * 0.05,
+      });
     } else {
-      this.vignette = new Sprite(Texture.from(vc));
+      this.vignette = this._renderer.createScreenSprite({
+        texture: texHandle,
+        x: -this.viewW * 0.05,
+        y: -this.viewH * 0.05,
+      });
     }
-    this.vignette!.width = vw;
-    this.vignette!.height = vh;
-    this.vignette!.position.set(-this.viewW * 0.05, -this.viewH * 0.05);
   }
 
   /* ---------- Внутренняя логика: Туман ---------- */
@@ -212,22 +221,38 @@ export class FxManager {
       this.fogCanvas.width = cw;
       this.fogCanvas.height = ch;
 
-      if (this.fogTex) { this.fogTex.destroy(true); this.fogTex = null; }
-      if (this.fogRT)  { this.fogRT.destroy(true);  this.fogRT  = null; }
+      if (this.fogTex !== null) {
+        this._renderer.destroyTexture(this.fogTex);
+        this.fogTex = null;
+      }
+      if (this.fogRT !== null) {
+        this._renderer.destroyTexture(this.fogRT);
+        this.fogRT = null;
+      }
 
-      this.fogTex = Texture.from(this.fogCanvas);
-      this.fogRT = RenderTexture.create({ width: cw, height: ch });
+      this.fogTex = this._renderer.createTextureFromCanvas(this.fogCanvas);
+      this.fogRT = this._renderer.createRenderTexture(cw, ch);
     }
-    if (!this.fogTex) this.fogTex = Texture.from(this.fogCanvas);
-    if (!this.fogRT)  this.fogRT  = RenderTexture.create({ width: cw, height: ch });
+    if (this.fogTex === null) this.fogTex = this._renderer.createTextureFromCanvas(this.fogCanvas);
+    if (this.fogRT === null) this.fogRT = this._renderer.createRenderTexture(cw, ch);
 
-    if (!this.fogVignette) this.fogVignette = new Sprite(this.fogRT);
-    this.fogVignette.texture = this.fogRT;
-    this.fogVignette.width = targetW;
-    this.fogVignette.height = targetH;
-    this.fogVignette.position.set(-this.viewW * 0.05, -this.viewH * 0.05);
-    this.fogVignette.visible = false;
-    this.fogVignette.alpha = 1;
+    if (this.fogVignette === null) {
+      this.fogVignette = this._renderer.createScreenSprite({
+        texture: this.fogRT!,
+      });
+    } else {
+      // Обновляем текстуру существующего спрайта
+      this._renderer.destroySprite(this.fogVignette);
+      this.fogVignette = this._renderer.createScreenSprite({
+        texture: this.fogRT!,
+      });
+    }
+    this._renderer.setSpritePosition(this.fogVignette, {
+      x: -this.viewW * 0.05,
+      y: -this.viewH * 0.05,
+    });
+    this._renderer.setSpriteVisible(this.fogVignette, false);
+    this._renderer.setSpriteAlpha(this.fogVignette, 1);
     this.fogAlpha = 0;
   }
 
@@ -259,15 +284,15 @@ export class FxManager {
   }
 
   public redrawFog(rdt: number, fogRadius: number, playerX: number, playerY: number, camX: number, camY: number, viewW: number, viewH: number, shrineSpots?: {x: number, y: number}[]) {
-    if (!this.fogCanvas || !this.fogCtx || !this.fogVignette) return;
+    if (!this.fogCanvas || !this.fogCtx || this.fogVignette === null) return;
     const active = fogRadius < 2300;
     
     // Плавное появление/исчезновение через alpha — 1.5 секунды
     const targetAlpha = active ? 1 : 0;
     const speed = 1 / 1.5; // 0.667 → ~1.5s fade
     this.fogAlpha += (targetAlpha - this.fogAlpha) * Math.min(1, rdt * speed);
-    this.fogVignette.alpha = this.fogAlpha;
-    this.fogVignette.visible = this.fogAlpha > 0.001;
+    this._renderer.setSpriteAlpha(this.fogVignette, this.fogAlpha);
+    this._renderer.setSpriteVisible(this.fogVignette, this.fogAlpha > 0.001);
     
     if (this.fogAlpha < 0.001) return;
 
@@ -332,22 +357,22 @@ export class FxManager {
     ctx.globalCompositeOperation = "source-over";
 
     // принудительно обновляем CanvasSource и копируем в RenderTexture
-    if (this.fogTex && this.fogRT && this.app) {
-      this.fogTex.source.update();
-      if (!this.fogCopySpr) this.fogCopySpr = new Sprite(this.fogTex);
-      else this.fogCopySpr.texture = this.fogTex;
-      this.app.renderer.render({ container: this.fogCopySpr, target: this.fogRT, clear: true });
+    if (this.fogTex !== null && this.fogRT !== null) {
+      // Рендерим canvas в render texture через IRenderer
+      this._renderer.renderCanvasToTexture(this.fogCanvas!, this.fogRT!);
     }
   }
 
-  public drawFogEyes(fx: Graphics, warn: boolean, realT: number, viewW: number, viewH: number) {
+  public drawFogEyes(g: any, warn: boolean, realT: number, viewW: number, viewH: number) {
     if (!warn) return;
+    const r = this._renderer;
     for (let i = 0; i < 3; i++) {
       if (Math.floor(realT * 2 + i) % 3 === 0) continue; // моргание
       const sx = ((i + 0.5) / 3) * viewW + Math.sin(realT * 0.7 + i * 2.4) * 30;
       const sy = viewH * (0.18 + 0.25 * ((i * 37) % 3) / 3) + Math.cos(realT * 0.9 + i) * 12;
-      fx.rect(sx, sy, 2, 1).fill({ color: 0xbdeef8, alpha: 0.5 });
-      fx.rect(sx + 4, sy, 2, 1).fill({ color: 0xbdeef8, alpha: 0.5 });
+      // Рисуем два маленьких прямоугольника (глаза)
+      r.drawRect(g, { x: sx, y: sy, width: 2, height: 1 }, { r: 0xbd / 255, g: 0xee / 255, b: 0xf8 / 255, a: 0.5 });
+      r.drawRect(g, { x: sx + 4, y: sy, width: 2, height: 1 }, { r: 0xbd / 255, g: 0xee / 255, b: 0xf8 / 255, a: 0.5 });
     }
   }
 
@@ -361,40 +386,48 @@ export class FxManager {
       return;
     }
     // Fallback (deprecated): старый путь через FxManager
-    const g = this.worldParticleG;
-    g.clear();
+    const r = this._renderer;
+    r.clearGraphics(this.screenFxG as any);
     for (const p of this.particles) {
-      g.rect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size)
-        .fill({ color: p.color, alpha: p.alpha * (p.life / p.max) });
+      const half = p.size / 2;
+      r.drawRect(this.screenFxG as any, { x: p.x - half, y: p.y - half, width: p.size, height: p.size }, {
+        r: ((p.color >> 16) & 0xff) / 255,
+        g: ((p.color >> 8) & 0xff) / 255,
+        b: (p.color & 0xff) / 255,
+        a: p.alpha * (p.life / p.max),
+      });
     }
   }
 
   /** Отрисовка снежного слоя на screenFx. Вызывается в tick().
-    *  Этап 9: ParticleSystem.drawSnow использует IRenderer API,
-    *  поэтому FxManager рисует снег самостоятельно (legacy-путь). */
-  public drawSnow(fx: Graphics, _realT: number) {
+     *  Этап 9: ParticleSystem.drawSnow использует IRenderer API,
+     *  поэтому FxManager рисует снег самостоятельно (legacy-путь). */
+  public drawSnow(g: any, _realT: number) {
     // ParticleSystem теперь использует IRenderer API (GraphicsHandle),
-    // поэтому снег рисуется здесь через legacy PixiJS Graphics.
+    // поэтому снег рисуется здесь через IRenderer.
+    const r = this._renderer;
     for (const f of this.snow) {
-      fx.rect(f.x, f.y, f.w, f.w).fill({ color: 0xc8d8e8, alpha: 0.4 });
+      r.drawRect(g, { x: f.x, y: f.y, width: f.w, height: f.w }, {
+        r: 0xc8 / 255, g: 0xd8 / 255, b: 0xe8 / 255, a: 0.4,
+      });
     }
   }
 
   /** Отрисовка «рун» по углам экрана при сильном тумане. */
-  public drawFogRunes(fx: Graphics, fogRadius: number, viewW: number, viewH: number) {
+  public drawFogRunes(g: any, fogRadius: number, viewW: number, viewH: number) {
+    const r = this._renderer;
     const k = clamp(1 - fogRadius / 2300, 0, 1);
     if (k > 0.05) {
       const W = viewW, H = viewH;
       const L = 34 * k;
-      fx.strokeStyle = { color: 0xbdeef8, width: 1, alpha: 0.5 * k };
+      const color = { r: 0xbd / 255, g: 0xee / 255, b: 0xf8 / 255, a: 0.5 * k };
       const corners: [number, number, number, number][] = [[0, 0, 1, 1], [W, 0, -1, 1], [0, H, 1, -1], [W, H, -1, -1]];
       for (const [cx0, cy0, sx, sy] of corners) {
-        fx.moveTo(cx0, cy0).lineTo(cx0 + sx * L, cy0);
-        fx.moveTo(cx0, cy0).lineTo(cx0, cy0 + sy * L);
-        fx.moveTo(cx0 + sx * L * 0.4, cy0).lineTo(cx0 + sx * L * 0.4, cy0 + sy * L * 0.4);
-        fx.moveTo(cx0, cy0 + sy * L * 0.4).lineTo(cx0 + sx * L * 0.4, cy0 + sy * L * 0.4);
+        r.drawLine(g, cx0, cy0, cx0 + sx * L, cy0, color);
+        r.drawLine(g, cx0, cy0, cx0, cy0 + sy * L, color);
+        r.drawLine(g, cx0 + sx * L * 0.4, cy0, cx0 + sx * L * 0.4, cy0 + sy * L * 0.4, color);
+        r.drawLine(g, cx0, cy0 + sy * L * 0.4, cx0 + sx * L * 0.4, cy0 + sy * L * 0.4, color);
       }
-      fx.stroke();
     }
   }
 
@@ -407,18 +440,28 @@ export class FxManager {
 
   /* ---------- Геттеры для слоёв ---------- */
 
-  public get worldParticleGraphics(): Graphics { return this.worldParticleG; }
+  // worldParticleGraphics удалён — перемещён в ParticleSystem
 
   /* ---------- Жизненный цикл ---------- */
 
   public destroy() {
-    this.worldParticleG.destroy();
-    if (this.vignette) { this.vignette.destroy(true); this.vignette = null; }
-    if (this.fogVignette) { this.fogVignette.destroy(true); this.fogVignette = null; }
+    if (this.vignette !== null) {
+      this._renderer.destroySprite(this.vignette);
+      this.vignette = null;
+    }
+    if (this.fogVignette !== null) {
+      this._renderer.destroySprite(this.fogVignette);
+      this.fogVignette = null;
+    }
+    if (this.fogTex !== null) {
+      this._renderer.destroyTexture(this.fogTex);
+      this.fogTex = null;
+    }
+    if (this.fogRT !== null) {
+      this._renderer.destroyTexture(this.fogRT);
+      this.fogRT = null;
+    }
     if (this.fogCanvas) { this.fogCanvas.remove(); this.fogCanvas = null; }
-    if (this.fogTex) { this.fogTex.destroy(true); this.fogTex = null; }
-    if (this.fogRT) { this.fogRT.destroy(true); this.fogRT = null; }
-    if (this.fogCopySpr) { this.fogCopySpr.destroy(); this.fogCopySpr = null; }
     if (this.fogMaskCanvas) { this.fogMaskCanvas.remove(); this.fogMaskCanvas = null; }
     if (this.noiseCanvas) { this.noiseCanvas.remove(); this.noiseCanvas = null; }
   }

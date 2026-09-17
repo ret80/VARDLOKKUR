@@ -1,7 +1,6 @@
 /* particle-system.ts — Система частиц и снега (Этап 9: интеграция с IRenderer) */
 
-import type { GraphicsHandle } from '../renderer/IRenderer';
-import { getRenderer } from '../renderer/RendererFactory';
+import type { GraphicsHandle, IRenderer } from '../renderer/IRenderer';
 import { logger } from '../debug/logger';
 
 /** Частица взрыва (урон, смерть, магия) */
@@ -38,12 +37,14 @@ export class ParticleSystem {
 
   /** GraphicsHandle для отрисовки мировых частиц (Этап 9: IRenderer API) */
   private _worldParticleG: GraphicsHandle = -1 as GraphicsHandle;
+  private _renderer: IRenderer | null = null;
   private _initialized = false;
 
   /** Инициализация GraphicsHandle для частиц */
   init(renderer: import('../renderer/IRenderer').IRenderer, layer?: import('../renderer/IRenderer').LayerHandle): void {
     if (this._initialized) return;
     this._worldParticleG = renderer.createGraphics(layer);
+    this._renderer = renderer;
     this._initialized = true;
     logger.debug('particle-system', 'ParticleSystem initialized with IRenderer');
   }
@@ -126,7 +127,7 @@ export class ParticleSystem {
    * Этап 9: использует IRenderer API вместо PixiJS Graphics.
    */
   public drawWorldFx(): void {
-    const r = getRenderer();
+    const r = this._renderer!;
     r.clearGraphics(this._worldParticleG);
     for (const p of this.particles) {
       const half = p.size / 2;
@@ -146,7 +147,7 @@ export class ParticleSystem {
    * Этап 9: использует IRenderer API вместо PixiJS Graphics.
    */
   public drawSnow(g: GraphicsHandle): void {
-    const r = getRenderer();
+    const r = this._renderer!;
     for (const f of this.snow) {
       const color = { r: 0xc8 / 255, g: 0xd8 / 255, b: 0xe8 / 255, a: 0.4 };
       r.drawRect(g, { x: f.x, y: f.y, width: f.w, height: f.w }, color);

@@ -1,6 +1,5 @@
 /* renderers/enemy/GhostRenderer.ts */
 import type { GraphicsHandle } from '../../renderer/IRenderer';
-import { getRenderer } from '../../renderer/RendererFactory';
 import type { IEnemyData } from "../../models";
 import type { RenderContext } from "../core/types";
 import { px } from "../core/primitives";
@@ -19,6 +18,7 @@ function hexColor(hex: number, alpha: number = 1): { r: number; g: number; b: nu
 export class GhostRenderer extends BaseEnemyRenderer {
   protected drawBody(g: GraphicsHandle, data: IEnemyData, ctx: RenderContext): void {
     const e = data;
+    const r = ctx.renderer!;
     const time = ctx.time;
     const { a } = ctx as any;
     
@@ -47,89 +47,89 @@ export class GhostRenderer extends BaseEnemyRenderer {
 
     // Тело по направлениям
     if (isBack) {
-      px(g, -2, -12 + floatY, 4, 1, HI, a);
-      px(g, -3, -11 + floatY, 6, 1, BODY, a);
-      px(g, -4, -10 + floatY, 8, 2, BODY, a);
-      px(g, -4, -8 + floatY, 8, 7, BODY, a);
-      px(g, -4, -8 + floatY, 1, 7, HI, a);
-      px(g, 3, -8 + floatY, 1, 7, DK, a);
-      px(g, -1, -9 + floatY, 2, 3, DK, a);
+      px(r, g, -2, -12 + floatY, 4, 1, HI, a);
+      px(r, g, -3, -11 + floatY, 6, 1, BODY, a);
+      px(r, g, -4, -10 + floatY, 8, 2, BODY, a);
+      px(r, g, -4, -8 + floatY, 8, 7, BODY, a);
+      px(r, g, -4, -8 + floatY, 1, 7, HI, a);
+      px(r, g, 3, -8 + floatY, 1, 7, DK, a);
+      px(r, g, -1, -9 + floatY, 2, 3, DK, a);
       if (aggr) {
-        px(g, -5, -6 + floatY, 1, 2, BODY, a);
-        px(g, 4, -6 + floatY, 1, 2, BODY, a);
+        px(r, g, -5, -6 + floatY, 1, 2, BODY, a);
+        px(r, g, 4, -6 + floatY, 1, 2, BODY, a);
       } else {
-        px(g, -5, -6 + floatY, 1, 3, BODY, a);
-        px(g, 4, -6 + floatY, 1, 3, BODY, a);
+        px(r, g, -5, -6 + floatY, 1, 3, BODY, a);
+        px(r, g, 4, -6 + floatY, 1, 3, BODY, a);
       }
     } 
     else if (isLeft) {
-      px(g, -2, -12 + floatY, 4, 1, HI, a);
-      px(g, -3, -11 + floatY, 6, 1, BODY, a);
-      px(g, -4, -10 + floatY, 8, 2, BODY, a);
-      px(g, -4, -8 + floatY, 8, 7, BODY, a);
-      px(g, -4, -8 + floatY, 1, 7, HI, a);
-      px(g, 3, -8 + floatY, 1, 7, DK, a);
-      px(g, -3, -9 + floatY, 4, 3, FACE, a);
-      px(g, -3, -8 + floatY, 1, 1, eye, a);
-      px(g, -1, -8 + floatY, 1, 1, eye, a);
-      if (aggr) px(g, -2, -7 + floatY, 2, 1, FACE, a);
+      px(r, g, -2, -12 + floatY, 4, 1, HI, a);
+      px(r, g, -3, -11 + floatY, 6, 1, BODY, a);
+      px(r, g, -4, -10 + floatY, 8, 2, BODY, a);
+      px(r, g, -4, -8 + floatY, 8, 7, BODY, a);
+      px(r, g, -4, -8 + floatY, 1, 7, HI, a);
+      px(r, g, 3, -8 + floatY, 1, 7, DK, a);
+      px(r, g, -3, -9 + floatY, 4, 3, FACE, a);
+      px(r, g, -3, -8 + floatY, 1, 1, eye, a);
+      px(r, g, -1, -8 + floatY, 1, 1, eye, a);
+      if (aggr) px(r, g, -2, -7 + floatY, 2, 1, FACE, a);
       if (aggr) {
-        px(g, -7, -7 + floatY, 1, 2, BODY, a);
-        px(g, -6, -6 + floatY, 4, 1, BODY, a);
-        px(g, -4, -6 + floatY, 1, 2, DK, a);
-        px(g, -3, -5 + floatY, 4, 1, DK, a);
+        px(r, g, -7, -7 + floatY, 1, 2, BODY, a);
+        px(r, g, -6, -6 + floatY, 4, 1, BODY, a);
+        px(r, g, -4, -6 + floatY, 1, 2, DK, a);
+        px(r, g, -3, -5 + floatY, 4, 1, DK, a);
       } else {
-        px(g, -5, -6 + floatY, 1, 3, BODY, a);
-        px(g, 4, -6 + floatY, 1, 3, BODY, a);
+        px(r, g, -5, -6 + floatY, 1, 3, BODY, a);
+        px(r, g, 4, -6 + floatY, 1, 3, BODY, a);
       }
     } 
     else if (isRight) {
-      px(g, -2, -12 + floatY, 4, 1, HI, a);
-      px(g, -3, -11 + floatY, 6, 1, BODY, a);
-      px(g, -4, -10 + floatY, 8, 2, BODY, a);
-      px(g, -4, -8 + floatY, 8, 7, BODY, a);
-      px(g, -4, -8 + floatY, 1, 7, HI, a);
-      px(g, 3, -8 + floatY, 1, 7, DK, a);
-      px(g, -1, -9 + floatY, 4, 3, FACE, a);
-      px(g, 0, -8 + floatY, 1, 1, eye, a);
-      px(g, 2, -8 + floatY, 1, 1, eye, a);
-      if (aggr) px(g, 0, -7 + floatY, 2, 1, FACE, a);
+      px(r, g, -2, -12 + floatY, 4, 1, HI, a);
+      px(r, g, -3, -11 + floatY, 6, 1, BODY, a);
+      px(r, g, -4, -10 + floatY, 8, 2, BODY, a);
+      px(r, g, -4, -8 + floatY, 8, 7, BODY, a);
+      px(r, g, -4, -8 + floatY, 1, 7, HI, a);
+      px(r, g, 3, -8 + floatY, 1, 7, DK, a);
+      px(r, g, -1, -9 + floatY, 4, 3, FACE, a);
+      px(r, g, 0, -8 + floatY, 1, 1, eye, a);
+      px(r, g, 2, -8 + floatY, 1, 1, eye, a);
+      if (aggr) px(r, g, 0, -7 + floatY, 2, 1, FACE, a);
       if (aggr) {
-        px(g, 6, -7 + floatY, 1, 2, BODY, a);
-        px(g, 2, -6 + floatY, 4, 1, BODY, a);
-        px(g, 4, -6 + floatY, 1, 2, DK, a);
-        px(g, 1, -5 + floatY, 4, 1, DK, a);
+        px(r, g, 6, -7 + floatY, 1, 2, BODY, a);
+        px(r, g, 2, -6 + floatY, 4, 1, BODY, a);
+        px(r, g, 4, -6 + floatY, 1, 2, DK, a);
+        px(r, g, 1, -5 + floatY, 4, 1, DK, a);
       } else {
-        px(g, -5, -6 + floatY, 1, 3, BODY, a);
-        px(g, 4, -6 + floatY, 1, 3, BODY, a);
+        px(r, g, -5, -6 + floatY, 1, 3, BODY, a);
+        px(r, g, 4, -6 + floatY, 1, 3, BODY, a);
       }
     } 
     else {
-      px(g, -2, -12 + floatY, 4, 1, HI, a);
-      px(g, -3, -11 + floatY, 6, 1, BODY, a);
-      px(g, -4, -10 + floatY, 8, 2, BODY, a);
-      px(g, -4, -8 + floatY, 8, 7, BODY, a);
-      px(g, -4, -8 + floatY, 1, 7, HI, a);
-      px(g, 3, -8 + floatY, 1, 7, DK, a);
-      px(g, -2, -9 + floatY, 4, 3, FACE, a);
-      px(g, -2, -8 + floatY, 1, 1, eye, a);
-      px(g, 1, -8 + floatY, 1, 1, eye, a);
-      if (aggr) px(g, -1, -7 + floatY, 2, 1, FACE, a);
+      px(r, g, -2, -12 + floatY, 4, 1, HI, a);
+      px(r, g, -3, -11 + floatY, 6, 1, BODY, a);
+      px(r, g, -4, -10 + floatY, 8, 2, BODY, a);
+      px(r, g, -4, -8 + floatY, 8, 7, BODY, a);
+      px(r, g, -4, -8 + floatY, 1, 7, HI, a);
+      px(r, g, 3, -8 + floatY, 1, 7, DK, a);
+      px(r, g, -2, -9 + floatY, 4, 3, FACE, a);
+      px(r, g, -2, -8 + floatY, 1, 1, eye, a);
+      px(r, g, 1, -8 + floatY, 1, 1, eye, a);
+      if (aggr) px(r, g, -1, -7 + floatY, 2, 1, FACE, a);
       if (aggr) {
-        px(g, -6, -7 + floatY, 1, 2, BODY, a);
-        px(g, -5, -6 + floatY, 2, 1, BODY, a);
-        px(g, 5, -7 + floatY, 1, 2, BODY, a);
-        px(g, 3, -6 + floatY, 2, 1, BODY, a);
+        px(r, g, -6, -7 + floatY, 1, 2, BODY, a);
+        px(r, g, -5, -6 + floatY, 2, 1, BODY, a);
+        px(r, g, 5, -7 + floatY, 1, 2, BODY, a);
+        px(r, g, 3, -6 + floatY, 2, 1, BODY, a);
       } else {
-        px(g, -5, -6 + floatY, 1, 3, BODY, a);
-        px(g, 4, -6 + floatY, 1, 3, BODY, a);
+        px(r, g, -5, -6 + floatY, 1, 3, BODY, a);
+        px(r, g, 4, -6 + floatY, 1, 3, BODY, a);
       }
     }
 
     // Бахрома
-    px(g, -4 + swayL, -1 + floatY, 2, 2, DK, a);
-    px(g, -1 + swayC, -1 + floatY, 2, 3, DK, a);
-    px(g, 2 + swayR, -1 + floatY, 2, 2, DK, a);
-    px(g, -1 + swayB, 2 + floatY, 2, 1, DK, a * 0.7);
+    px(r, g, -4 + swayL, -1 + floatY, 2, 2, DK, a);
+    px(r, g, -1 + swayC, -1 + floatY, 2, 3, DK, a);
+    px(r, g, 2 + swayR, -1 + floatY, 2, 2, DK, a);
+    px(r, g, -1 + swayB, 2 + floatY, 2, 1, DK, a * 0.7);
   }
 }

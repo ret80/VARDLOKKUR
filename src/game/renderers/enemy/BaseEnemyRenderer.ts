@@ -1,7 +1,6 @@
 /* renderers/enemy/BaseEnemyRenderer.ts — общий скелет отрисовки врагов (SRP) */
 
-import type { GraphicsHandle } from '../../renderer/IRenderer';
-import { getRenderer } from '../../renderer/RendererFactory';
+import type { GraphicsHandle, IRenderer } from '../../renderer/IRenderer';
 import { CacheStrategy } from "../core/types";
 import type { Renderer, RenderContext } from "../core/types";
 import type { IEnemyData } from "../../models";
@@ -19,7 +18,7 @@ export abstract class BaseEnemyRenderer implements Renderer<IEnemyData> {
   readonly strategy: CacheStrategy = CacheStrategy.REALTIME_GRAPHICS;
 
   render(g: GraphicsHandle, data: IEnemyData, ctx: RenderContext): void {
-    const r = getRenderer();
+    const r = ctx.renderer!;
     r.clearGraphics(g);
     if (data.dead) return;
 
@@ -37,8 +36,8 @@ export abstract class BaseEnemyRenderer implements Renderer<IEnemyData> {
     // общий hp-бар (кроме snake)
     if (e.hp < e.maxHp && e.kind !== "snake") {
       const wdt = e.r * 2;
-      px(g, -wdt / 2, -e.r - 9, wdt, 2, 0x0a0f16, 0.8);
-      px(g, -wdt / 2, -e.r - 9, wdt * (e.hp / e.maxHp), 2, 0xe05050, 0.9);
+      px(r, g, -wdt / 2, -e.r - 9, wdt, 2, 0x0a0f16, 0.8);
+      px(r, g, -wdt / 2, -e.r - 9, wdt * (e.hp / e.maxHp), 2, 0xe05050, 0.9);
     }
   }
 

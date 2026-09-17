@@ -8,10 +8,11 @@ import { BaseDropRenderer } from "./BaseDropRenderer";
 
 export class DiaryRenderer extends BaseDropRenderer {
   protected drawBody(g: GraphicsHandle, data: IDropData, ctx: RenderContext): void {
+    const r = ctx.renderer!;
     const bob = (ctx as any).bob;
-    px(g, -3, -4 + bob, 6, 6, 0x6a5238);
-    px(g, -3, -4 + bob, 1, 6, 0x4a3826);
-    px(g, -1, -3 + bob, 3, 1, 0xc9a684);
-    px(g, -1, -1 + bob, 3, 1, 0xc9a684);
+    px(r, g, -3, -4 + bob, 6, 6, 0x6a5238);
+    px(r, g, -3, -4 + bob, 1, 6, 0x4a3826);
+    px(r, g, -1, -3 + bob, 3, 1, 0xc9a684);
+    px(r, g, -1, -1 + bob, 3, 1, 0xc9a684);
   }
 }

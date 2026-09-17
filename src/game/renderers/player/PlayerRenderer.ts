@@ -1,6 +1,6 @@
 /* renderers/player/PlayerRenderer.ts — отрисовка игрока (SRP) */
 
-import type { GraphicsHandle } from '../../renderer/IRenderer';
+import type { GraphicsHandle, IRenderer } from '../../renderer/IRenderer';
 import { CacheStrategy } from "../core/types";
 import type { Renderer, RenderContext } from "../core/types";
 import type { IPlayerData, IPlayerExtra } from "../../models";
@@ -28,7 +28,8 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
   readonly strategy: CacheStrategy = CacheStrategy.DYNAMIC_TEXTURE;
 
   render(g: GraphicsHandle, data: PlayerRenderData, ctx: RenderContext): void {
-    clearGraphics(g);
+    const r = ctx.renderer!;
+    clearGraphics(r, g);
     this.drawBody(g, data);
   }
 
@@ -53,6 +54,8 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
   // ── Рисование тела (общее для render и renderToContainer) ────────
 
   private drawBody(g: GraphicsHandle, data: PlayerRenderData): void {
+    const r = (data as any).ctx?.renderer;
+    if (!r) return;
     const p = data.data;
     const extra = data.extra;
     const time = (data as any).ctx?.time ?? data.data.animT;
@@ -62,49 +65,49 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
     const f = p.dir.x > 0.3 ? 1 : p.dir.x < -0.3 ? -1 : 0;
 
     // Тень
-    ell(g, 0, 5, 6, 2.4, 0x05080d, 0.5);
+    ell(r, g, 0, 5, 6, 2.4, 0x05080d, 0.5);
 
-    px(g, -4, 1 + legSwing * 0.3, 3, 4, 0x2c3038, 1);
-    px(g, 1, 1 - legSwing * 0.3, 3, 4, 0x2c3038, 1);
+    px(r, g, -4, 1 + legSwing * 0.3, 3, 4, 0x2c3038, 1);
+    px(r, g, 1, 1 - legSwing * 0.3, 3, 4, 0x2c3038, 1);
 
     const cape = Math.sin(time * 3) * 1;
     if (f >= 0) {
-      px(g, -6 + cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, 1);
-      px(g, -5 + cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, 1);
+      px(r, g, -6 + cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, 1);
+      px(r, g, -5 + cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, 1);
     } else {
-      px(g, 2 - cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, 1);
-      px(g, 3 - cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, 1);
+      px(r, g, 2 - cape * 0.3, -8 + bob, 4, 11, 0x3d4a5c, 1);
+      px(r, g, 3 - cape * 0.3, -8 + bob, 2, 11, 0x4a5a70, 1);
     }
 
-    px(g, -4, -8 + bob, 8, 9, 0x4e5a68, 1);
-    px(g, -4, -8 + bob, 8, 2, 0x5c6875, 1);
-    px(g, -4, -1 + bob, 8, 2, 0x3a3226, 1);
-    if (extra.runes > 0) px(g, -3, -1 + bob, Math.min(6, extra.runes * 2), 1, 0x63d8c8, 1);
+    px(r, g, -4, -8 + bob, 8, 9, 0x4e5a68, 1);
+    px(r, g, -4, -8 + bob, 8, 2, 0x5c6875, 1);
+    px(r, g, -4, -1 + bob, 8, 2, 0x3a3226, 1);
+    if (extra.runes > 0) px(r, g, -3, -1 + bob, Math.min(6, extra.runes * 2), 1, 0x63d8c8, 1);
 
     if (f >= 0) {
-      px(g, -3, -14 + bob, 7, 6, 0xc8a88a, 1);
-      px(g, -4, -15 + bob, 9, 3, 0x2c3038, 1);
-      px(g, -4, -13 + bob, 1, 4, 0x2c3038, 1);
+      px(r, g, -3, -14 + bob, 7, 6, 0xc8a88a, 1);
+      px(r, g, -4, -15 + bob, 9, 3, 0x2c3038, 1);
+      px(r, g, -4, -13 + bob, 1, 4, 0x2c3038, 1);
     } else {
-      px(g, -4, -14 + bob, 7, 6, 0xc8a88a, 1);
-      px(g, -5, -15 + bob, 9, 3, 0x2c3038, 1);
-      px(g, 3, -13 + bob, 1, 4, 0x2c3038, 1);
+      px(r, g, -4, -14 + bob, 7, 6, 0xc8a88a, 1);
+      px(r, g, -5, -15 + bob, 9, 3, 0x2c3038, 1);
+      px(r, g, 3, -13 + bob, 1, 4, 0x2c3038, 1);
     }
     if (f >= 0) {
-      px(g, -2, -9 + bob, 5, 2, 0x8a7a62, 1);
+      px(r, g, -2, -9 + bob, 5, 2, 0x8a7a62, 1);
     } else {
-      px(g, -3, -9 + bob, 5, 2, 0x8a7a62, 1);
+      px(r, g, -3, -9 + bob, 5, 2, 0x8a7a62, 1);
     }
     const ex = p.dir.x > 0.3 ? 1 : p.dir.x < -0.3 ? -1 : 0;
     if (ex > 0) {
-      px(g, 0, -12 + bob, 1, 1, 0x0d1218, 1);
-      px(g, 3, -12 + bob, 1, 1, 0x0d1218, 1);
+      px(r, g, 0, -12 + bob, 1, 1, 0x0d1218, 1);
+      px(r, g, 3, -12 + bob, 1, 1, 0x0d1218, 1);
     } else if (ex < 0) {
-      px(g, -3, -12 + bob, 1, 1, 0x0d1218, 1);
-      px(g, 0, -12 + bob, 1, 1, 0x0d1218, 1);
+      px(r, g, -3, -12 + bob, 1, 1, 0x0d1218, 1);
+      px(r, g, 0, -12 + bob, 1, 1, 0x0d1218, 1);
     } else {
-      px(g, -1, -12 + bob, 1, 1, 0x0d1218, 1);
-      px(g, 2, -12 + bob, 1, 1, 0x0d1218, 1);
+      px(r, g, -1, -12 + bob, 1, 1, 0x0d1218, 1);
+      px(r, g, 2, -12 + bob, 1, 1, 0x0d1218, 1);
     }
 
     if (extra.hasSword && p.swingT > 0) {
@@ -116,7 +119,7 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
       const blade = f >= 0
         ? [-3 + hx * 10, -14 + bob + hy * 10, -1 + hx * 10, -14 + bob + hy * 10, 0, -12 + bob]
         : [-4 + hx * 10, -14 + bob + hy * 10, -2 + hx * 10, -14 + bob + hy * 10, -1, -12 + bob];
-      drawPoly(g, blade, { r: 200 / 255, g: 211 / 255, b: 220 / 255, a: 1 });
+      drawPoly(r, g, blade, { r: 200 / 255, g: 211 / 255, b: 220 / 255, a: 1 });
     }
   }
 

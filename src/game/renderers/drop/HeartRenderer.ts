@@ -8,11 +8,12 @@ import { BaseDropRenderer } from "./BaseDropRenderer";
 
 export class HeartRenderer extends BaseDropRenderer {
   protected drawBody(g: GraphicsHandle, data: IDropData, ctx: RenderContext): void {
+    const r = ctx.renderer!;
     const bob = (ctx as any).bob;
-    px(g, -3, -3 + bob, 2, 2, 0xe05070);
-    px(g, 1, -3 + bob, 2, 2, 0xe05070);
-    px(g, -3, -1 + bob, 6, 2, 0xe05070);
-    px(g, -2, 1 + bob, 4, 1, 0xe05070);
-    px(g, -1, 2 + bob, 2, 1, 0xe05070);
+    px(r, g, -3, -3 + bob, 2, 2, 0xe05070);
+    px(r, g, 1, -3 + bob, 2, 2, 0xe05070);
+    px(r, g, -3, -1 + bob, 6, 2, 0xe05070);
+    px(r, g, -2, 1 + bob, 4, 1, 0xe05070);
+    px(r, g, -1, 2 + bob, 2, 1, 0xe05070);
   }
 }

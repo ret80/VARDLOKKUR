@@ -1,10 +1,9 @@
 /* renderers/npc/DaughterRenderer.ts */
 
-import type { GraphicsHandle } from '../../renderer/IRenderer';
-import { getRenderer } from '../../renderer/RendererFactory';
+import type { GraphicsHandle, IRenderer } from '../../renderer/IRenderer';
 import type { INpcData } from "../../models";
 import type { RenderContext } from "../core/types";
-import { px } from "../core/primitives";
+import { drawPoly, px } from "../core/primitives";
 import { NpcRenderer } from "./NpcRenderer";
 
 export class DaughterRenderer extends NpcRenderer {
@@ -12,12 +11,12 @@ export class DaughterRenderer extends NpcRenderer {
     const bob = Math.sin(ctx.time * 2 + data.id.length) * 0.5;
     const time = ctx.time;
     const a = 0.6 + Math.sin(time * 2.5) * 0.15;
-    const r = getRenderer();
+    const r: IRenderer = ctx.renderer!;
     // Платье — полигон
-    r.drawPoly(g, [-4, 4 + bob, -3, -8 + bob, 3, -8 + bob, 4, 4 + bob], { r: 0x8f / 255, g: 0xb0 / 255, b: 0xc8 / 255, a: a * 0.5 });
-    px(g, -3, -13 + bob, 7, 6, 0xc8d8e8, a);
-    px(g, -3, -14 + bob, 7, 3, 0x4a3e5c, a);
-    px(g, -1, -11 + bob, 1, 1, 0x2a3444, a);
-    px(g, 1, -11 + bob, 1, 1, 0x2a3444, a);
+    drawPoly(r, g, [-4, 4 + bob, -3, -8 + bob, 3, -8 + bob, 4, 4 + bob], { r: 0x8f / 255, g: 0xb0 / 255, b: 0xc8 / 255, a: a * 0.5 });
+    px(r, g, -3, -13 + bob, 7, 6, 0xc8d8e8, a);
+    px(r, g, -3, -14 + bob, 7, 3, 0x4a3e5c, a);
+    px(r, g, -1, -11 + bob, 1, 1, 0x2a3444, a);
+    px(r, g, 1, -11 + bob, 1, 1, 0x2a3444, a);
   }
 }

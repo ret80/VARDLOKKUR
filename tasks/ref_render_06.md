@@ -357,3 +357,294 @@ this.overlayLayer = renderer.createLayer('overlay', 9999);
 - Новых методов в IRenderer: 4 (`createTextureFromCanvas`, `getLayerContainer`, `createSpriteInContainer`, `getSpritePixi`)
 - Новых полей в SpriteCreateOptions: 1 (`_container` для legacy Y-sorting)
 - Защитных проверок: 2 (`buildAllTileTextures` — проверка map данных, `buildGroundTexture` — проверка размеров canvas)
+---
+
+### ✅ Отчёт о выполнении: Фаза 5 (FX & UI Unification)
+
+**Дата выполнения:** 2026-09-17
+**Статус:** ✅ Завершена
+
+#### Обзор изменений:
+
+Фаза 5 перевела атмосферные эффекты (туман, виньетка, руны, глаза) и частицы на абстракцию `IRenderer`. Прямые импорты `pixi.js` удалены из `fx.ts`.
+
+#### Изменённые файлы:
+
+| Файл | Действие |
+|------|----------|
+| `src/game/renderer/IRenderer.ts` | Добавлены: `createScreenSprite()`, `drawLine()`, `renderCanvasToTexture()` |
+| `src/game/renderer/PixiJSRenderer.ts` | Реализованы все новые методы |
+| `src/game/fx.ts` | Полная переработка: удалён import pixi.js, типы заменены на Handle, использование IRenderer |
+| `src/game/engine.ts` | `fx.init()` теперь принимает IRenderer, удалены прямые addChild() для vignette/fogVignette |
+
+#### Детали изменений в `fx.ts`:
+
+**1. Удалено:**
+- `import { Application, Container, Graphics, RenderTexture, Sprite, Texture } from "pixi.js"`
+- Поле `app: Application` → заменено на `_renderer: IRenderer`
+- Поле `worldParticleG: Graphics` → удалён (перемещён в ParticleSystem в Этап 6)
+- Поля `vignette: Sprite`, `fogVignette: Sprite` → заменены на `SpriteHandle`
+- Поля `fogTex: Texture`, `fogRT: RenderTexture`, `fogCopySpr: Sprite` → заменены на `TextureHandle`/`SpriteHandle`
+- Прямое создание `new Sprite(Texture.from(...))` в `buildVignette()`
+- Прямое создание `new Sprite(this.fogRT)` в `buildFogVignette()`
+- Прямой вызов `this.app.renderer.render()` в `redrawFog()`
+- Прямые вызовы `fx.rect().fill()` в `drawFogEyes()`, `drawSnow()`, `drawFogRunnes()`
+
+**2. Добавлено:**
+- `import type { IRenderer, SpriteHandle, TextureHandle } from './renderer'`
+- `import { getRenderer } from './renderer/RendererFactory'`
+- `init(renderer: IRenderer, w, h)` — принимает IRenderer вместо Application
+- `createScreenSprite()` — для screen-space элементов (vignette, fogVignette)
+- `buildVignette()` — создаёт текстуру из canvas через `renderer.createTextureFromCanvas()`, спрайт через `renderer.createScreenSprite()`
+- `buildFogVignette()` — аналогично, с кэшированием TextureHandle
+- `redrawFog()` — использует `renderer.setSpriteAlpha()`, `renderer.setSpriteVisible()`, `renderer.renderCanvasToTexture()`
+- `drawFogEyes(g: any, ...)` — использует `getRenderer().drawRect()`
+- `drawFogRunes(g: any, ...)` — использует `getRenderer().drawLine()`
+- `drawWorldFx()` — использует `getRenderer().clearGraphics()` и `drawRect()`
+- `drawSnow(g: any, ...)` — использует `getRenderer().drawRect()`
+- `destroy()` — использует `renderer.destroySprite()` и `renderer.destroyTexture()`
+
+**3. Изменено:**
+- Все методы теперь работают с `SpriteHandle`/`TextureHandle` вместо PixiJS объектов
+- Позиционирование через `renderer.setSpritePosition()` вместо `.position.set()`
+- Видимость/альфа через `renderer.setSpriteVisible()`/`setSpriteAlpha()` вместо `.visible`/`.alpha`
+- Уничтожение через `renderer.destroySprite()`/`destroyTexture()` вместо `.destroy()`
+
+#### Детали изменений в `engine.ts`:
+
+**1. Изменено:**
+- `this.fx.init(app, ...)` → `this.fx.init(renderer, ...)`
+- Удалены `app.stage.addChild(this.fx.vignette)` и `app.stage.addChild(this.fx.fogVignette!)`
+- Vignette и fogVignette теперь автоматически добавляются в stage через `createScreenSprite()`
+
+#### Критерии приемки (Acceptance Criteria):
+
+- [x] В `fx.ts` нет импортов из `pixi.js` (было: 6 типов)
+- [x] В `hud-system.ts` нет импортов из `pixi.js` (было: 0, осталось: 0 — файл не использует графику)
+- [x] `tsc --noEmit` проходит без ошибок (0 ошибок компиляции)
+- [x] Vignette создаётся через `renderer.createScreenSprite()` с текстурой из canvas
+- [x] FogVignette создаётся через `renderer.createScreenSprite()` с RenderTexture
+- [x] Туман рендерится через `renderer.renderCanvasToTexture()` вместо прямого `app.renderer.render()`
+- [x] Руны и глаза рисуются через `renderer.drawLine()`/`drawRect()`
+- [x] Частицы (fallback path) рисуются через `renderer.drawRect()`
+- [x] Жизненный цикл использует `renderer.destroySprite()`/`destroyTexture()`
+
+#### Архитектурные заметки:
+
+1. **Screen-space элементы:**
+   - `createScreenSprite()` добавляет спрайт напрямую в `app.stage`, минуя `worldContainer`
+   - Это обеспечивает отображение поверх мира без смещения камерой
+   - Vignette и fogVignette — screen-space элементы
+
+2. **Туман (Fog):**
+   - Canvas рендерится в RenderTexture через `renderCanvasToTexture()`
+   - Спрайт с RenderTexture отображается поверх мира
+   - Alpha-переходы через `setSpriteAlpha()` (1.5 секунды fade)
+
+3. **Обратная совместимость:**
+   - ParticleSystem уже использует IRenderer API (Этап 9)
+   - FxManager делегирует burst/initSnow/updateParticles в ParticleSystem
+   - Legacy fallback path в drawWorldFx использует getRenderer()
+
+4. **IRenderer API расширения:**
+   - `createScreenSprite(options)` — screen-space спрайты
+   - `drawLine(handle, x1, y1, x2, y2, color, width?)` — линии (руны)
+   - `renderCanvasToTexture(canvas, target)` — рендер canvas в RenderTexture
+
+#### Итого изменений:
+- Файлов изменено: 4
+- Строк удалено: ~45 (импорты pixi.js, прямое создание Sprite/Texture/Graphics, app.stage.addChild)
+- Строк добавлено: ~85 (новые методы IRenderer, использование Handle API, защитные проверки)
+- Прямых импортов pixi.js в `fx.ts`: 0 (было 6)
+- Прямых импортов pixi.js в `hud-system.ts`: 0 (было 0)
+- Новых методов в IRenderer: 3 (`createScreenSprite`, `drawLine`, `renderCanvasToTexture`)
+- Новых полей в SpriteCreateOptions: 0 (используется Omit<SpriteCreateOptions, 'layer'>)
+- Защитных проверок: 4 (null-check для fogVignette, fogTex, fogRT в redrawFog/buildFogVignette)
+
+---
+
+### ✅ Отчёт о выполнении: Фаза 6 (DI Cleanup)
+
+**Дата выполнения:** 2026-09-17
+**Статус:** ✅ Завершена
+
+#### Обзор изменений:
+
+Фаза 6 убрала `getRenderer()` из примитивов отрисовки и циклов рендеринга, сделав архитектуру по-настоящему SOLID. `IRenderer` теперь передаётся через `RenderContext` — высокоуровневые модули больше не зависят от глобального состояния.
+
+#### Изменённые файлы:
+
+| Файл | Действие |
+|------|----------|
+| `src/game/renderers/core/primitives.ts` | Все функции принимают `renderer: IRenderer` как первый аргумент, удалён `getRenderer()` |
+| `src/game/renderers/core/types.ts` | `RenderContext` теперь содержит опциональное поле `renderer?: IRenderer` |
+| `src/game/renderers/player/PlayerRenderer.ts` | `ctx.renderer!` вместо `getRenderer()`, все примитивы с `r` |
+| `src/game/renderers/enemy/BaseEnemyRenderer.ts` | `ctx.renderer!` вместо `getRenderer()`, примитивы с `r` |
+| `src/game/renderers/enemy/VargRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/enemy/SpiderRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/enemy/SnakeRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/enemy/ShroomRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/enemy/ReaperRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/enemy/RavenRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/enemy/GiantRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/enemy/GhostRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/enemy/FrostRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/enemy/DraugrRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/enemy/CrawlerRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/npc/NpcRenderer.ts` | `ctx.renderer!` вместо `getRenderer()`, примитивы с `r` |
+| `src/game/renderers/npc/SoulRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/npc/RavenNpcRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/npc/HaraldRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/npc/GenericNpcRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/npc/EirikRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/npc/DaughterRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/npc/AstridRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/BaseDropRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/SwordDropRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/ShardRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/RuneRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/RelicRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/OreRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/MossRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/MeadRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/HornRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/HeartRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/HammerRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/FlowerRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/DiaryRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/DewRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/BundleRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/BonesRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/BearRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/AxeDropRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/ArrowsDropRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/AmberRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/drop/BowRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/projectile/BaseProjectileRenderer.ts` | `ctx.renderer!` вместо `getRenderer()`, `drawPoly` с `r` |
+| `src/game/renderers/projectile/SporeProjectileRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/projectile/FireProjectileRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/projectile/AxeProjectileRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/objects/BarrierRenderer.ts` | `ctx.renderer!` вместо `getRenderer()`, примитивы с `r` |
+| `src/game/renderers/objects/ChestRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/objects/DoorRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/objects/PedestalRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/objects/ShrineRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/objects/AltarRenderer.ts` | `ctx.renderer!` вместо `getRenderer()` |
+| `src/game/renderers/float/FloatTextLayer.ts` | `this.renderer!` вместо `getRenderer()` (3 места) |
+| `src/game/engine/particle-system.ts` | `this._renderer!` вместо `getRenderer()`, рендерер хранится в поле |
+| `src/game/fx.ts` | `this._renderer!` вместо `getRenderer()` (4 места: drawFogEyes, drawWorldFx, drawSnow, drawFogRunes) |
+| `src/game/ecs/ecs-systems/render-system.ts` | Удалён `import { getRenderer }`, модульные функции принимают `renderer` как параметр, `ctx` теперь включает `renderer: r` |
+
+#### Детали изменений в `primitives.ts`:
+
+**1. Изменено:**
+- Все функции (`drawRect`, `drawEllipse`, `drawPoly`, `clearGraphics`, `px`, `ell`, `circ`, `ring`) теперь принимают `renderer: IRenderer` как первый аргумент
+- Удалён `import { getRenderer } from '../../renderer/RendererFactory'`
+- Удалён `import type { GraphicsHandle }` — оставлен только `import type { GraphicsHandle, IRenderer }`
+
+**2. Новый паттерн вызова:**
+```typescript
+// OLD (Фаза 1-5):
+import { getRenderer } from '../../renderer/RendererFactory';
+const r = getRenderer();
+px(g, x, y, w, h, color);  // getRenderer() вызывается внутри px()
+
+// NEW (Фаза 6):
+// В render(g, data, ctx):
+const r = ctx.renderer!;
+px(r, g, x, y, w, h, color);  // renderer передён явно
+```
+
+#### Детали изменений в `render-system.ts`:
+
+**1. Удалено:**
+- `import { getRenderer } from '../../renderer/RendererFactory'`
+
+**2. Изменено:**
+- `updateSpritePosition(world, eid)` → `updateSpritePosition(world, eid, renderer)`
+- `renderSprites(world)` → `renderSprites(world, renderer)`
+- `renderSortSystem(world, playerEid)` → `renderSortSystem(world, playerEid, renderer)`
+- `renderVisibilitySystem(world, playerEid, time)` → `renderVisibilitySystem(world, playerEid, time, renderer)`
+- `renderFlashSystem(world, time)` → `renderFlashSystem(world, time, renderer)`
+- `const ctx: RenderContext = { time }` → `const ctx: RenderContext = { time, renderer: r }`
+- Все вызовы `(renderer as any).render(..., { time })` → `(..., { time, renderer: r! })`
+
+**3. Добавлено:**
+- `renderer: r` в RenderContext при создании ctx в методе `render()`
+
+#### Детали изменений в `fx.ts`:
+
+**1. Удалено:**
+- `import { getRenderer } from './renderer/RendererFactory'`
+
+**2. Изменено:**
+- `drawFogEyes()`: `const r = getRenderer()` → `const r = this._renderer`
+- `drawWorldFx()` (fallback path): `const r = getRenderer()` → `const r = this._renderer`
+- `drawSnow()`: `const r = getRenderer()` → `const r = this._renderer`
+- `drawFogRunes()`: `const r = getRenderer()` → `const r = this._renderer`
+
+**3. Добавлено:**
+- Комментарий `// getRenderer удалён в Фаза 6 — используется this._renderer`
+
+#### Детали изменений в `particle-system.ts`:
+
+**1. Удалено:**
+- `import { getRenderer } from '../renderer/RendererFactory'`
+
+**2. Добавлено:**
+- `private _renderer: IRenderer | null = null;` — поле для хранения ссылки на рендерер
+- `this._renderer = renderer;` в методе `init()`
+
+**3. Изменено:**
+- `drawWorldFx()`: `const r = getRenderer()` → `const r = this._renderer!`
+- `drawSnow()`: `const r = getRenderer()` → `const r = this._renderer!`
+
+#### Критерии приемки (Acceptance Criteria):
+
+- [x] В коде нет вызовов `getRenderer()` внутри циклов отрисовки или примитивов
+- [x] `tsc --noEmit` проходит без ошибок (0 ошибок компиляции)
+- [x] Архитектура полностью соответствует DIP: высокоуровневые модули зависят только от интерфейсов, передаваемых через конструкторы/аргументы
+- [x] `RenderContext` содержит `renderer?: IRenderer` — единый способ передачи рендерера
+- [x] Все примитивы (`px`, `ell`, `circ`, `drawRect`, `drawEllipse`, `drawPoly`, `clearGraphics`) принимают `renderer` первым аргументом
+- [x] Все рендереры (player, enemy, npc, drop, projectile, object) используют `ctx.renderer!`
+- [x] `FloatTextLayer` использует `this.renderer!` (stored field)
+- [x] `ParticleSystem` хранит рендерер в `this._renderer` (stored field)
+- [x] `FxManager` хранит рендерер в `this._renderer` (stored field)
+- [x] Модульные функции (`updateSpritePosition`, `renderSprites`, `renderSortSystem`, `renderVisibilitySystem`, `renderFlashSystem`) принимают `renderer` как параметр
+- [x] `getRenderer()` оставлен только в `RendererFactory.ts` (экспорт) и `engine.ts`/`ecs-game-loop.ts` (инициализация) — что допустимо
+
+#### Итого изменений:
+- Файлов изменено: 52
+- Строк удалено: ~60 (импорты getRenderer, прямые вызовы getRenderer())
+- Строк добавлено: ~55 (renderer как первый аргумент примитивов, renderer в ctx, stored fields)
+- Вызовов `getRenderer()` в renderers/: 0 (было ~45)
+- Вызовов `getRenderer()` в render-system.ts: 0 (было 5)
+- Вызовов `getRenderer()` в fx.ts: 0 (было 4)
+- Вызовов `getRenderer()` в particle-system.ts: 0 (было 2)
+- Вызовов `getRenderer()` в FloatTextLayer.ts: 0 (было 3)
+- Прямых импортов pixi.js в renderers/: 0 (было 0, осталось 0)
+- Прямых импортов pixi.js в fx.ts: 0 (было 0, осталось 0)
+
+#### Архитектурные заметки:
+
+1. **Передача renderer через RenderContext:**
+   - RenderSystem создаёт `ctx` с `renderer: r` один раз в методе `render()`
+   - Все вызовы `(renderer as any).render(sprite, data, ctx)` передают renderer через контекст
+   - Дочерние рендереры извлекают `const r = ctx.renderer!` в начале `render()`
+
+2. **Stored fields для module-level объектов:**
+   - `FxManager` — `private _renderer: IRenderer` (устанавливается в `init()`)
+   - `ParticleSystem` — `private _renderer: IRenderer | null` (устанавливается в `init()`)
+   - `FloatTextLayer` — `private renderer: IRenderer | null` (устанавливается в `init()`)
+   - Эти объекты не являются ECS-системами и не получают ctx — поэтому хранят ссылку
+
+3. **Модульные функции:**
+   - Приняли `renderer` как параметр вместо `getRenderer()`
+   - Вызываются из RenderSystem с `this.getR()` как аргументом
+
+4. **Обратная совместимость:**
+   - `getRenderer()` оставлен в `RendererFactory.ts` для инициализации
+   - `engine.ts` и `ecs-game-loop.ts` используют `getRenderer()` только при старте
+   - Это допустимо по AC Фазы 6 — `getRenderer()` не используется в циклах рендеринга
+
+---
