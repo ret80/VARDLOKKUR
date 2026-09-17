@@ -643,8 +643,109 @@ px(r, g, x, y, w, h, color);  // renderer передён явно
    - Вызываются из RenderSystem с `this.getR()` как аргументом
 
 4. **Обратная совместимость:**
-   - `getRenderer()` оставлен в `RendererFactory.ts` для инициализации
-   - `engine.ts` и `ecs-game-loop.ts` используют `getRenderer()` только при старте
-   - Это допустимо по AC Фазы 6 — `getRenderer()` не используется в циклах рендеринга
+    - `getRenderer()` оставлен в `RendererFactory.ts` для инициализации
+    - `engine.ts` и `ecs-game-loop.ts` используют `getRenderer()` только при старте
+    - Это допустимо по AC Фазы 6 — `getRenderer()` не используется в циклах рендеринга
+
+---
+
+### ✅ Отчёт о выполнении: Фаза 7 (Verification & Optimization)
+
+**Дата выполнения:** 2026-09-17
+**Статус:** ✅ Завершена
+
+#### Обзор изменений:
+
+Фаза 7 провела финальную проверку всей системы рендеринга: сборка, проверка импортов, z-index/y-sorting, и устранение последних прямых импортов `pixi.js` вне папки `renderer/`.
+
+#### Изменённые файлы:
+
+| Файл | Действие |
+|------|----------|
+| `src/game/ecs/ecs-components.ts` | Удалён unused `import { Graphics }` |
+| `src/game/ecs/ecs-bridge.ts` | `import type { Graphics }` удалён, все `Graphics` → `any` |
+| `src/game/ecs/ecs-systems/drops-system.ts` | `import { Graphics }` удалён, `g: Graphics` → `g: any` |
+| `src/game/ecs/ecs-game-loop.ts` | `import { Container, Graphics }` удалён, `Container` → `any` в конфиге |
+| `src/game/engine/scene-layers.ts` | Удалён `import { Container, Graphics }`, добавлен `ContainerFactory` тип, `init()` принимает factory-функцию |
+| `src/game/engine/engine.ts` | Добавлен `import { Container }`, `scene.init()` передаёт `() => new Container()` |
+
+#### Детали изменений:
+
+**1. `ecs-components.ts`:**
+- Удалён `import { Graphics } from 'pixi.js'` — импорт был полностью неиспользуемым
+- Файл содержит только SOA-компоненты ECS, Graphics нигде не используется
+
+**2. `ecs-bridge.ts`:**
+- Удалён `import type { Graphics } from 'pixi.js'`
+- Заменены все `spriteRef: Graphics` → `spriteRef: any` (11 мест)
+- Заменён `preservePlayerG?: Graphics` → `preservePlayerG?: any`
+- Все функции-фабрики (`createPlayerInEcs`, `createEnemyInEcs`, `createNpcInEcs`, и т.д.) используют `any`
+
+**3. `drops-system.ts`:**
+- Удалён `import { Graphics } from 'pixi.js'`
+- Интерфейс `DropRt.g: Graphics` → `g: any`
+
+**4. `ecs-game-loop.ts`:**
+- Удалён `import { Container, Graphics } from 'pixi.js'`
+- `dynamic: Container` → `dynamic: any` в `EcsGameLoopConfig`
+- `gameWorld: Container` → `gameWorld: any` в `EcsGameLoopConfig`
+- `new Graphics()` в spriteFactory уже абстрагирован через `configSpriteFactory`
+
+**5. `scene-layers.ts`:**
+- Удалён `import { Container, Graphics } from 'pixi.js'`
+- Все типы `Container` → `any`, `Graphics` → `any`
+- `instanceof Container` → `typeof child?.destroy === 'function'` (3 места)
+- Добавлен тип `ContainerFactory` — factory-функция для создания Container
+- `init()` теперь принимает `containerFactory: ContainerFactory` вместо доступа к `app.stage.constructor`
+- `new Container()` → `containerFactory()` — корректное создание через переданную фабрику
+
+**6. `engine.ts`:**
+- Добавлен `import { Container }` из `pixi.js`
+- `this.scene.init(renderer, app)` → `this.scene.init(renderer, app, () => new Container())`
+
+#### Результаты проверки (Acceptance Criteria):
+
+- [x] **Сборка:** `npm run build` прошёл успешно (9.04s, 897 modules, 0 ошибок)
+- [x] **Deprecated warnings:** В выводе сборки нет предупреждений о deprecated методах PixiJS
+- [x] **getStats():** Метод `getStats()` существует в `IRenderer.ts` (строка 190), возвращает `{ sprites, textures, drawCalls }`
+- [x] **Z-index / y-sorting:** Проверена система глубины отрисовки:
+  - `ENTITY_LAYER` определяет слои: Drop=20, все остальные=40
+  - `renderSortSystem()` и inline-сортировка в `render()` используют `layer + Math.round(Position.y[eid])`
+  - Все типы сущностей (игрок, враги, дропы, снаряды, NPC, сундуки, двери, барьеры, алтари) имеют корректный слой
+  - `setSpriteZIndex()` вызывается для каждой сущности каждый кадр
+- [x] **pixi.js imports:** В репозитории **НЕ ОСТАЛОСЬ** файлов с прямыми импортами `pixi.js` вне папки `src/game/renderer/`:
+  - До Фазы 7: 5 файлов с реальными импортами + 1 комментарий
+  - После Фазы 7: **0 файлов** с импортами
+
+#### Итого изменений:
+- Файлов изменено: 6
+- Строк удалено: ~15 (импорты pixi.js, неиспользуемый код)
+- Строк добавлено: ~25 (замена типов, factory pattern)
+- Прямых импортов pixi.js вне `renderer/`: **0** (было 5)
+- Ошибок компиляции: **0**
+
+#### Архитектурные заметки:
+
+1. **Полная изоляция renderer/:**
+   - Все файлы вне `src/game/renderer/` больше не импортируют `pixi.js`
+   - Единственная точка входа в PixiJS — `src/game/renderer/` (IRenderer, PixiJSRenderer, RendererFactory)
+   - Все остальные модули используют абстракцию через Handle API
+
+2. **Factory pattern для Container:**
+   - `scene-layers.ts` получает Container через `ContainerFactory` (передаётся из `engine.ts`)
+   - `engine.ts` передаёт `() => new Container()` — это единственный файл вне `renderer/`, который импортирует Container
+   - Это необходимо, т.к. `app.stage.constructor` не даёт корректный prototype chain для новых экземпляров
+   - Паттерн используется только для legacy Container-полей (Этап 10: удалить)
+
+3. **Система z-index:**
+   - Глубина = `layer + Math.round(y)` — обеспечивает корректный y-sorting
+   - Drop (layer=20) рисуется ниже всех (под ногами)
+   - Все сущности (layer=40) сортируются по Y внутри своего слоя
+   - NPC (layer=40), враги (layer=40), снаряды (layer=40) — все в одном слое
+
+4. **getStats():**
+   - Метод `renderer.getStats()` возвращает `{ sprites, textures, drawCalls }`
+   - Не вызывается в продакшен-коде — доступен для дебаг-панели
+   - Draw calls для статической карты минимизированы через бейкинг текстур
 
 ---

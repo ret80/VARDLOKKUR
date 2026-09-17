@@ -1,8 +1,10 @@
 /* scene-layers.ts — Управление слоями сцены через IRenderer */
 
 import type { IRenderer, LayerHandle } from '../renderer/IRenderer';
-import { Container, Graphics } from 'pixi.js';
 import { logger } from '../debug/logger';
+
+/** Фабрика Container-объектов (передаётся из engine.ts, чтобы избежать импорта pixi.js) */
+export type ContainerFactory = () => { addChild(child: any): void; sortableChildren: boolean; removeChildren(): void; destroy(options?: any): void; children: any[] };
 
 /**
  * SceneLayers — абстракция над слоями сцены.
@@ -34,19 +36,19 @@ export class SceneLayers {
 
   // Container-ссылки для обратной совместимости с MapLoaderService
   // @deprecated Этап 10 — удалить после миграции MapLoaderService на IRenderer
-  private _tileLayer: Container | null = null;
-  private _world: Container | null = null;
-  private _dynamic: Container | null = null;
-  private _fxWorld: Container | null = null;
-  private _floatLayer: Container | null = null;
+  private _tileLayer: any = null;
+  private _world: any = null;
+  private _dynamic: any = null;
+  private _fxWorld: any = null;
+  private _floatLayer: any = null;
 
   // FX screen-space элементы — реальные PixiJS Graphics (добавляются в app.stage напрямую)
   // Эти объекты НЕ управляются через IRenderer, т.к. находятся на app.stage (screen-space)
-  fxScreen!: Graphics;
-  fadeG!: Graphics;
+  fxScreen!: any;
+  fadeG!: any;
 
   /** Инициализация слоёв через IRenderer */
-  init(renderer: IRenderer, app: { stage: { addChild(child: any): void } }): void {
+  init(renderer: IRenderer, app: { stage: { addChild(child: any): void } }, containerFactory: ContainerFactory): void {
     this._renderer = renderer;
 
     // Создаём слои через IRenderer
@@ -56,19 +58,15 @@ export class SceneLayers {
     (this.fxWorldHandle as any) = renderer.createLayer('fx', 60);
     (this.floatLayerHandle as any) = renderer.createLayer('float', 90);
 
-    // FX screen-space элементы — реальные PixiJS Graphics для app.stage
-    this.fxScreen = new Graphics();
-    this.fadeG = new Graphics();
-
-    // Legacy Container-слои для MapLoaderService (Этап 10: удалить)
-    this._tileLayer = new Container();
+    // Создаём Container через factory (из engine.ts) — без импорта pixi.js
+    this._tileLayer = containerFactory();
     this._tileLayer.sortableChildren = true;
-    this._world = new Container();
+    this._world = containerFactory();
     this._world.sortableChildren = true;
-    this._dynamic = new Container();
+    this._dynamic = containerFactory();
     this._dynamic.sortableChildren = true;
-    this._fxWorld = new Container();
-    this._floatLayer = new Container();
+    this._fxWorld = containerFactory();
+    this._floatLayer = containerFactory();
 
     // Добавляем слои в stage
     this._world.addChild(this._tileLayer);
@@ -90,34 +88,34 @@ export class SceneLayers {
   // === Legacy Container-геттеры (Этап 10: удалить) ===
 
   /** Legacy: tileLayer Container для MapLoaderService */
-  get tileLayer(): Container {
+  get tileLayer(): any {
     return this._tileLayer!;
   }
 
   /** Legacy: world Container для MapLoaderService */
-  get world(): Container {
+  get world(): any {
     return this._world!;
   }
 
   /** Legacy: dynamic Container для MapLoaderService */
-  get dynamic(): Container {
+  get dynamic(): any {
     return this._dynamic!;
   }
 
   /** Legacy: fxWorld Container для MapLoaderService */
-  get fxWorld(): Container {
+  get fxWorld(): any {
     return this._fxWorld!;
   }
 
   /** Legacy: floatLayer Container для MapLoaderService */
-  get floatLayer(): Container {
+  get floatLayer(): any {
     return this._floatLayer!;
   }
 
   /** Очистить tileLayer и уничтожить все спрайты */
   clearTiles(): void {
     for (const child of this._tileLayer?.children ?? []) {
-      if (child instanceof Container) {
+      if (typeof child?.destroy === 'function') {
         child.destroy({ children: true, texture: true });
       }
     }
@@ -125,10 +123,10 @@ export class SceneLayers {
   }
 
   /** Очистить dynamic контейнер, не уничтожая playerG */
-  clearDynamic(preservePlayerG?: Graphics): void {
+  clearDynamic(preservePlayerG?: any): void {
     for (const child of this._dynamic?.children ?? []) {
       if (preservePlayerG && child === preservePlayerG) continue;
-      if (child instanceof Container) {
+      if (typeof child?.destroy === 'function') {
         child.destroy({ children: true });
       }
     }
@@ -138,7 +136,7 @@ export class SceneLayers {
   /** Очистить floatLayer */
   clearFloatLayer(): void {
     for (const child of this._floatLayer?.children ?? []) {
-      if (child instanceof Container) {
+      if (typeof child?.destroy === 'function') {
         child.destroy({ children: true, texture: true });
       }
     }

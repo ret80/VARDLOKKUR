@@ -1,6 +1,6 @@
 /* engine.ts – Оркестратор: создаёт EventBus, GameStore и системы */
 
-import { Application, Graphics } from "pixi.js";
+import { Application, Container, Graphics } from "pixi.js";
 import { FloatTextLayer } from './renderers/float/FloatTextLayer';
 import {
   T, Tl, WorldData, Vec,
@@ -236,7 +236,7 @@ export class Engine {
     this.viewport = new ViewportController(container, renderer, { x: 0, y: 0 });
     this.scene = new SceneLayers();
     // Этап 8: инициализация SceneLayers через IRenderer
-    this.scene.init(renderer, app);
+    this.scene.init(renderer, app, () => new Container());
     this.floatTextLayer = new FloatTextLayer();
     const cv = app.canvas as HTMLCanvasElement;
     cv.classList.add("pixi");

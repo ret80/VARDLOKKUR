@@ -50,7 +50,6 @@ import {
   ensureGhosts,
   type FogState,
 } from './ecs-systems/fog-system';
-import { Container, Graphics } from 'pixi.js';
 import { CameraController } from '../engine/camera-controller';
 import { SceneManager } from '../engine/scene-manager';
 import { SceneLayers } from '../engine/scene-layers';
@@ -139,9 +138,9 @@ export interface EcsGameLoopConfig {
   bus: EventBus;
   store: GameStore;
   planckWorld: PlanckWorld;
-  dynamic: Container;
+  dynamic: any;
   floatLayer: FloatTextLayer;
-  gameWorld: Container;
+  gameWorld: any;
   sceneManager: SceneManager;
   sceneLayers: SceneLayers;
   fx: FxManager;

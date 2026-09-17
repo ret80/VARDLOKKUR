@@ -1,7 +1,6 @@
 /* ecs-components.ts — все компоненты для bitECS */
 
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
-import { Graphics } from 'pixi.js';
 
 // ============================================================
 // 1. SOA КОМПОНЕНТЫ (Structure of Arrays — hot path)
