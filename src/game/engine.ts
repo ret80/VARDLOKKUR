@@ -236,7 +236,7 @@ export class Engine {
     this.viewport = new ViewportController(container, renderer, { x: 0, y: 0 });
     this.scene = new SceneLayers();
     // Этап 8: инициализация SceneLayers через IRenderer
-    this.scene.init(renderer, app, () => new Container());
+    this.scene.init(renderer, app, () => new Container(), () => new Graphics());
     this.floatTextLayer = new FloatTextLayer();
     const cv = app.canvas as HTMLCanvasElement;
     cv.classList.add("pixi");

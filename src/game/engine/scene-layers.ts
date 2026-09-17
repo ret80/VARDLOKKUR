@@ -6,6 +6,9 @@ import { logger } from '../debug/logger';
 /** Фабрика Container-объектов (передаётся из engine.ts, чтобы избежать импорта pixi.js) */
 export type ContainerFactory = () => { addChild(child: any): void; sortableChildren: boolean; removeChildren(): void; destroy(options?: any): void; children: any[] };
 
+/** Фабрика Graphics-объектов (передаётся из engine.ts, чтобы избежать импорта pixi.js) */
+export type GraphicsFactory = () => { destroy(options?: any): void };
+
 /**
  * SceneLayers — абстракция над слоями сцены.
  * Заменяет SceneManager (PixiJS Containers) на IRenderer LayerHandle.
@@ -48,7 +51,7 @@ export class SceneLayers {
   fadeG!: any;
 
   /** Инициализация слоёв через IRenderer */
-  init(renderer: IRenderer, app: { stage: { addChild(child: any): void } }, containerFactory: ContainerFactory): void {
+  init(renderer: IRenderer, app: { stage: { addChild(child: any): void } }, containerFactory: ContainerFactory, graphicsFactory: GraphicsFactory): void {
     this._renderer = renderer;
 
     // Создаём слои через IRenderer
@@ -67,6 +70,10 @@ export class SceneLayers {
     this._dynamic.sortableChildren = true;
     this._fxWorld = containerFactory();
     this._floatLayer = containerFactory();
+
+    // FX screen-space элементы — PixiJS Graphics для app.stage
+    this.fxScreen = graphicsFactory();
+    this.fadeG = graphicsFactory();
 
     // Добавляем слои в stage
     this._world.addChild(this._tileLayer);
