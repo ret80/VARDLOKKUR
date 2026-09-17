@@ -1,12 +1,12 @@
 /* renderers/objects/ShrineRenderer.ts */
 
-import type { DrawTarget } from '../../renderers/core/primitives';
+import type { GraphicsHandle } from '../../renderer/IRenderer';
 import type { Renderer, RenderContext } from "../core/types";
 import type { IShrineData } from "../../models";
 import { px, ell, clearGraphics } from "../core/primitives";
 
 export class ShrineRenderer implements Renderer<IShrineData> {
-  render(g: DrawTarget, data: IShrineData, ctx: RenderContext): void {
+  render(g: GraphicsHandle, data: IShrineData, ctx: RenderContext): void {
     clearGraphics(g);
     const time = ctx.time;
     ell(g, 0, 4, 6, 1.5, 0x05080d, 0.5);

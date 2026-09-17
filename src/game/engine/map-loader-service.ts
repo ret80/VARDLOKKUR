@@ -1,6 +1,5 @@
 /* map-loader-service.ts — Загрузка карт: тайлы, ECS-сущности, миникарта */
 
-import { Sprite, Graphics } from "pixi.js";
 import { PlanckWorld } from "../physics/planck-world";
 import type { WorldData, Vec } from "../world";
 import type { GameStore } from "../store";
@@ -18,6 +17,8 @@ import {
 } from "../tiles";
 import { buildMinimapBase } from "../map-display";
 import { T } from "../world";
+import type { IRenderer, LayerHandle } from "../renderer";
+import { logger } from "../debug/logger";
 
 /** Результат ECS-загрузки карты */
 export interface LoadMapResult {
@@ -30,6 +31,7 @@ export interface LoadMapResult {
  *
  * Этап 8: принимает SceneLayers вместо SceneManager.
  * Этап 9: добавлена SpriteFactory для создания графических объектов без импорта Graphics.
+ * Фаза 3: работает через IRenderer, без прямых импортов pixi.js.
  */
 export class MapLoaderService {
   wallCache = new WallTextureCache();
@@ -42,6 +44,10 @@ export class MapLoaderService {
   entityFactory: EntityFactory;
   /** Фабрика графических объектов (без импорта Graphics из pixi.js) */
   private _spriteFactory: SpriteFactory;
+  /** IRenderer для создания спрайтов карты */
+  private _renderer!: IRenderer;
+  /** Handle слоя dynamic для добавления спрайтов */
+  private _dynamicLayer!: LayerHandle;
 
   constructor(
     private scene: SceneLayers,
@@ -53,13 +59,22 @@ export class MapLoaderService {
   ) {
     // Фабрика создаётся ОДИН раз при инициализации сервиса
     this.entityFactory = createEntityFactory(this.ecsWorld, this.prefabWorld);
+    // Фаза 3: default-фабрика не импортирует Graphics напрямую — реальный
+    // графический объект создаётся через IRenderer (this._renderer уже готов к
+    // моменту вызова create(), т.к. спрайты создаются только внутри loadMapEcs).
     this._spriteFactory = spriteFactory ?? {
       create: (x: number, y: number) => {
-        const g = new Graphics();
+        const g = this._renderer.createDetachedGraphics();
         g.position.set(x, y);
         return g;
       },
     };
+  }
+
+  /** Инициализация с IRenderer (вызывается один раз при загрузке карты) */
+  init(renderer: IRenderer): void {
+    this._renderer = renderer;
+    this._dynamicLayer = (this.scene as any).dynamicHandle as LayerHandle;
   }
 
   /** Фабрика графических объектов */
@@ -70,7 +85,7 @@ export class MapLoaderService {
   get mmBase(): ImageData | null { return this._mmBase; }
 
   /** Очистить tileLayer и dynamic контейнеры перед загрузкой новой карты */
-  clearTiles(preservePlayerG?: Graphics): void {
+  clearTiles(preservePlayerG?: any): void {
     // Сохраняем playerG перед очисткой dynamic — он мог быть уничтожен clearDynamic()
     // без этого playerG.destroy() вызовется и playerG.position станет null
     this.scene.clearTiles();
@@ -96,32 +111,53 @@ export class MapLoaderService {
     // Очищаем старые тайлы перед построением новых, сохраняем playerG
     this.clearTiles(playerG);
 
-    // Строим текстуры — ground как фон, стены/дома в tileLayer
-    const tileResult = buildAllTileTextures(map, this.store.roofSnow);
+    // Фаза 3: строим текстуры через IRenderer
+    const tileResult = buildAllTileTextures(map, this.store.roofSnow, this._renderer);
 
-    const groundSprite = new Sprite(tileResult.groundTexture);
-    groundSprite.position.set(0, 0);
-    groundSprite.zIndex = 0;
-    this.scene.tileLayer.addChildAt(groundSprite, 0);
+    // Получаем Container для legacy tileLayer (Y-sorting через userData)
+    const tileLayerContainer = this.scene.tileLayer;
+    const dynamicContainer = this.scene.dynamic;
+
+    // Ground — создаём спрайт напрямую в tileLayer (не через createSprite — он добавляет в worldContainer)
+    const groundHandle = this._renderer.createSprite({
+      texture: tileResult.groundTexture,
+      x: 0,
+      y: 0,
+      _container: tileLayerContainer,
+    });
+    this._renderer.setSpriteZIndex(groundHandle, 0);
 
     // Переносим дома, ёлки, камни, монументы в dynamic — сортируются по layer + bottomY
-    // sprite.height может быть 0 (Texture.from асинхронный), поэтому используем фиксированные высоты
-    const WALL_H = 44;
     for (const ws of tileResult.wallSprites) {
-      (ws as any).userData = (ws as any).userData || {};
-      (ws as any).userData.layer = 40;
-      // ws.position.y = Y - 20, значит Y = ws.position.y + 20
-      // bottomY = Y + T/2 = ws.position.y + 20 + 8 = ws.position.y + 28
-      (ws as any).userData.y = ws.position.y + 28;
-      this.scene.dynamic.addChild(ws);
+      const spriteHandle = this._renderer.createSprite({
+        texture: ws.textureHandle,
+        x: ws.x,
+        y: ws.y,
+        _container: dynamicContainer,
+      });
+      this._renderer.setSpriteZIndex(spriteHandle, ws.zIndex);
+      const spritePixi = this._renderer.getSpritePixi(spriteHandle);
+      if (spritePixi) {
+        (spritePixi as any).userData = (spritePixi as any).userData || {};
+        (spritePixi as any).userData.layer = 40;
+        (spritePixi as any).userData.y = ws.y + 28;
+      }
     }
     for (const hs of tileResult.houseSprites) {
-      (hs.spr as any).userData = (hs.spr as any).userData || {};
-      (hs.spr as any).userData.layer = 40;
-      const m = houseMetrics(hs.hw, hs.hh);
-      // bottomY = y*T + hh*T (нижняя точка дома)
-      (hs.spr as any).userData.y = hs.spr.position.y + m.wallTop + m.wallH + m.foundH - 1;
-      this.scene.dynamic.addChild(hs.spr);
+      const spriteHandle = this._renderer.createSprite({
+        texture: hs.textureHandle,
+        x: hs.x,
+        y: hs.y,
+        _container: dynamicContainer,
+      });
+      this._renderer.setSpriteZIndex(spriteHandle, hs.zIndex);
+      const spritePixi = this._renderer.getSpritePixi(spriteHandle);
+      if (spritePixi) {
+        (spritePixi as any).userData = (spritePixi as any).userData || {};
+        (spritePixi as any).userData.layer = 40;
+        const m = houseMetrics(hs.hw, hs.hh);
+        (spritePixi as any).userData.y = hs.y + m.wallTop + m.wallH + m.foundH - 1;
+      }
     }
     this.wallCache = tileResult.wallCache;
     this.houseCache = tileResult.houseCache;

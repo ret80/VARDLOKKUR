@@ -1,12 +1,12 @@
 /* renderers/objects/AltarRenderer.ts */
 
-import type { DrawTarget } from '../../renderers/core/primitives';
+import type { GraphicsHandle } from '../../renderer/IRenderer';
 import type { Renderer, RenderContext } from "../core/types";
 import type { IAltarData } from "../../models";
 import { px, ell, clearGraphics } from "../core/primitives";
 
 export class AltarRenderer implements Renderer<IAltarData> {
-  render(g: DrawTarget, data: IAltarData, ctx: RenderContext): void {
+  render(g: GraphicsHandle, data: IAltarData, ctx: RenderContext): void {
     clearGraphics(g);
     const time = ctx.time;
     ell(g, 0, 6, 8, 2, 0x05080d, 0.45);

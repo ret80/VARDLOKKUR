@@ -1,9 +1,11 @@
 /* tiles.ts — Вся процедурная генерация тайловых текстур.
    Не знает про Engine, не хранит игровое состояние.
-   Принимает WorldData + параметры → возвращает текстуры/спрайты. */
+   Принимает WorldData + параметры → возвращает текстуры/спрайты.
+   Этапа 3: работает через IRenderer, без прямых импортов pixi.js. */
 
-import { Application, Sprite, Texture } from "pixi.js";
 import { T, Tl, WorldData } from "./world";
+import type { IRenderer, SpriteHandle, TextureHandle } from "./renderer";
+import { logger } from "./debug/logger";
 
 /* ================== типы ================== */
 
@@ -31,8 +33,20 @@ export interface HouseMetrics {
   canvasH: number;
 }
 
+/** Данные для создания спрайта стены/объекта, возвращаемые из tiles.ts */
+export interface WallSpriteData {
+  textureHandle: TextureHandle;
+  x: number;
+  y: number;
+  zIndex: number;
+}
+
+/** Данные для создания спрайта дома, возвращаемые из tiles.ts */
 export interface HouseSpriteEntry {
-  spr: Sprite;
+  textureHandle: TextureHandle;
+  x: number;
+  y: number;
+  zIndex: number;
   hw: number;
   hh: number;
   v: number;
@@ -40,8 +54,8 @@ export interface HouseSpriteEntry {
 }
 
 export interface TileBuildResult {
-  groundTexture: Texture;
-  wallSprites: (Sprite | import("pixi.js").Graphics)[];
+  groundTexture: TextureHandle;
+  wallSprites: WallSpriteData[];
   houseSprites: HouseSpriteEntry[];
   wallCache: WallTextureCache;
   houseCache: HouseTextureCache;
@@ -435,9 +449,14 @@ export function paintHouse(ctx: CanvasRenderingContext2D, hw: number, hh: number
 /* ================== кэш текстур стен ================== */
 
 export class WallTextureCache {
-  private cache = new Map<string, Texture>();
+  private cache = new Map<string, TextureHandle>();
+  private renderer!: IRenderer;
 
-  getSprite(t: number, r1: number, r2: number, dungeonId: number): Sprite {
+  init(renderer: IRenderer): void {
+    this.renderer = renderer;
+  }
+
+  getTexture(t: number, r1: number, r2: number, dungeonId: number): TextureHandle {
     let v = 0;
     if (t === Tl.TREE) v = (r2 > 0.5 ? 1 : 0) | (r2 > 0.7 ? 2 : 0);
     else if (t === Tl.ROCK) v = r1 > 0.5 ? 1 : 0;
@@ -448,22 +467,27 @@ export class WallTextureCache {
       const c = document.createElement("canvas");
       c.width = 32; c.height = 44;
       paintWall(c.getContext("2d")!, t, v, dungeonId);
-      tex = Texture.from(c);
+      tex = this.renderer.createTextureFromCanvas(c);
       this.cache.set(key, tex);
     }
-    return new Sprite(tex);
+    return tex;
   }
 
   invalidate() { this.cache.clear(); }
-  destroy() { this.cache.forEach((t) => t.destroy(true)); this.cache.clear(); }
+  destroy() { this.cache.forEach((h) => this.renderer.destroyTexture(h)); this.cache.clear(); }
 }
 
 /* ================== кэш текстур домов ================== */
 
 export class HouseTextureCache {
-  private cache = new Map<string, Texture>();
+  private cache = new Map<string, TextureHandle>();
+  private renderer!: IRenderer;
 
-  getTexture(hw: number, hh: number, v: number, ruined: boolean, roofSnow: boolean): Texture {
+  init(renderer: IRenderer): void {
+    this.renderer = renderer;
+  }
+
+  getTexture(hw: number, hh: number, v: number, ruined: boolean, roofSnow: boolean): TextureHandle {
     const key = `house_${hw}x${hh}_v${v}_r${ruined ? 1 : 0}_snow${roofSnow ? 1 : 0}`;
     let tex = this.cache.get(key);
     if (!tex) {
@@ -471,21 +495,24 @@ export class HouseTextureCache {
       const c = document.createElement("canvas");
       c.width = m.canvasW; c.height = m.canvasH;
       paintHouse(c.getContext("2d")!, hw, hh, v, ruined, roofSnow);
-      tex = Texture.from(c);
+      tex = this.renderer.createTextureFromCanvas(c);
       this.cache.set(key, tex);
     }
     return tex;
   }
 
   invalidate() { this.cache.clear(); }
-  destroy() { this.cache.forEach((t) => t.destroy(true)); this.cache.clear(); }
+  destroy() { this.cache.forEach((h) => this.renderer.destroyTexture(h)); this.cache.clear(); }
 }
 
 /* ================== buildGroundTexture ================== */
 
-function buildGroundTexture(map: WorldData): Texture {
+function buildGroundTexture(map: WorldData): HTMLCanvasElement {
   const { W, H } = map;
-  const gc = document.createElement("canvas"); gc.width = W * T; gc.height = H * T;
+  // Защита от NaN размеров
+  const width = Math.max(1, W * T);
+  const height = Math.max(1, H * T);
+  const gc = document.createElement("canvas"); gc.width = width; gc.height = height;
   const gx = gc.getContext("2d")!;
 
   const pals: Record<number, { f: [string, string, string]; w: [string, string] }> = {
@@ -555,7 +582,7 @@ function buildGroundTexture(map: WorldData): Texture {
         gx.fillRect(X, Y, T, T);
     }
   }
-  return Texture.from(gc);
+  return gc;
 }
 
 /* ================== buildWallAndHouseSprites ================== */
@@ -566,9 +593,9 @@ function buildWallAndHouseSprites(
   houseCache: HouseTextureCache,
   ruinedTiles: Set<number>,
   roofSnow: boolean
-): { wallSprites: (Sprite | import("pixi.js").Graphics)[]; houseSprites: HouseSpriteEntry[] } {
+): { wallSprites: WallSpriteData[]; houseSprites: HouseSpriteEntry[] } {
   const { W, H } = map;
-  const wallSprites: (Sprite | import("pixi.js").Graphics)[] = [];
+  const wallSprites: WallSpriteData[] = [];
   const houseSprites: HouseSpriteEntry[] = [];
 
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -578,10 +605,13 @@ function buildWallAndHouseSprites(
       t === Tl.TREE || t === Tl.ROCK || t === Tl.PALISADE ||
       t === Tl.COLUMN || t === Tl.DWALL || t === Tl.CAVEWALL
     ) {
-      const ws = wallCache.getSprite(t, rnd(x, y, 11), rnd(x, y, 13), map.dungeonId);
-      ws.position.set(X - 8, Y - 20);
-      ws.zIndex = Y + T;
-      wallSprites.push(ws);
+      const tex = wallCache.getTexture(t, rnd(x, y, 11), rnd(x, y, 13), map.dungeonId);
+      wallSprites.push({
+        textureHandle: tex,
+        x: X - 8,
+        y: Y - 20,
+        zIndex: Y + T,
+      });
     }
   }
 
@@ -611,11 +641,14 @@ function buildWallAndHouseSprites(
     const isRuined = ruinedTiles.has(y * W + x);
     const v = (rnd(x, y, 13) > 0.5 ? 1 : 0) | (rnd(x, y, 11) > 0.6 ? 2 : 0);
     const tex = houseCache.getTexture(hw, hh, v, isRuined, roofSnow);
-    const ws = new Sprite(tex);
-    ws.position.set(x * T - m.marginX, y * T + hh * T + 1 - (m.wallTop + m.wallH + m.foundH));
-    ws.zIndex = y * T + hh * T;
-    wallSprites.push(ws);
-    houseSprites.push({ spr: ws, hw, hh, v, ruined: isRuined });
+    const spriteY = y * T + hh * T + 1 - (m.wallTop + m.wallH + m.foundH);
+    houseSprites.push({
+      textureHandle: tex,
+      x: x * T - m.marginX,
+      y: spriteY,
+      zIndex: y * T + hh * T,
+      hw, hh, v, ruined: isRuined,
+    });
   }
 
   return { wallSprites, houseSprites };
@@ -623,17 +656,37 @@ function buildWallAndHouseSprites(
 
 /* ================== фасадная функция ================== */
 
-export function buildAllTileTextures(map: WorldData, roofSnow: boolean): TileBuildResult {
+export function buildAllTileTextures(
+  map: WorldData,
+  roofSnow: boolean,
+  renderer: IRenderer
+): TileBuildResult {
+  // Защита от undefined данных карты
+  if (!map?.tiles || !map?.W || !map?.H) {
+    logger.error('tiles', `Invalid map data: tiles=${!!map?.tiles}, W=${map?.W}, H=${map?.H}`);
+    return {
+      groundTexture: -1 as any,
+      wallSprites: [],
+      houseSprites: [],
+      wallCache: new WallTextureCache(),
+      houseCache: new HouseTextureCache(),
+    };
+  }
+
   const wallCache = new WallTextureCache();
+  wallCache.init(renderer);
   const houseCache = new HouseTextureCache();
+  houseCache.init(renderer);
 
   // ruinedTiles — для house-level (целые блоки домов)
   const ruinedTiles = new Set<number>();
-  for (const r of map.ruinedHouses)
+  const ruinedHouses = map.ruinedHouses ?? [];
+  for (const r of ruinedHouses)
     for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++)
       ruinedTiles.add((r.y + dy) * map.W + (r.x + dx));
 
-  const groundTexture = buildGroundTexture(map);
+  const groundCanvas = buildGroundTexture(map);
+  const groundTexture = renderer.createTextureFromCanvas(groundCanvas);
   const { wallSprites, houseSprites } = buildWallAndHouseSprites(map, wallCache, houseCache, ruinedTiles, roofSnow);
 
   return { groundTexture, wallSprites, houseSprites, wallCache, houseCache };

@@ -365,6 +365,8 @@ export class Engine {
       () => audio.uiClick()
     );
     this.mapLoader = new MapLoaderService(this.scene, store, this.viewport, this.ecsWorld!, this.prefabWorld!);
+    // Фаза 3: инициализируем MapLoaderService с IRenderer
+    this.mapLoader.init(getRenderer());
     this.playerLifecycle = new PlayerLifecycle(
       store, this.playerDomain, this.bus, this.hud,
       {
@@ -773,7 +775,7 @@ export class Engine {
       this.pushHud(true);
     } catch (e) {
       this.starting = false;
-      logger.error('engine', `Сбой загрузки мира: ${e}`);
+      logger.error('engine', `Сбой загрузки мира: ${e}\n${e instanceof Error ? e.stack : ''}`);
       this.setScreen("title");
       throw e;
     }

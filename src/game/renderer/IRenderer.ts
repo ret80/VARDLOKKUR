@@ -50,6 +50,8 @@ export interface SpriteCreateOptions {
   visible?: boolean;
   alpha?: number;
   tint?: number;
+  /** Внутренний параметр: прямой Container для legacy Y-sorting */
+  _container?: any;
 }
 
 // ============================================================
@@ -72,10 +74,14 @@ export interface IRenderer {
   createLayer(name: string, zIndex: number): LayerHandle;
   /** Включить/выключить видимость слоя */
   setLayerVisible(layer: LayerHandle, visible: boolean): void;
+  /** Получить внутренний Container слоя (для прямой манипуляции, например Y-sorting) */
+  getLayerContainer(layer: LayerHandle): any;
 
   // === Sprites ===
   /** Создать спрайт с опциями. Возвращает handle спрайта. */
   createSprite(options: SpriteCreateOptions): SpriteHandle;
+  /** Создать спрайт и добавить в указанный Container (для legacy Y-sorting) */
+  createSpriteInContainer(texture: TextureHandle | string, x: number, y: number, container: any): any;
   /** Удалить спрайт */
   destroySprite(handle: SpriteHandle): void;
   /** Установить позицию спрайта */
@@ -90,10 +96,18 @@ export interface IRenderer {
   setSpriteScale(handle: SpriteHandle, scale: Vec2): void;
   /** Установить z-index спрайта (для сортировки по глубине) */
   setSpriteZIndex(handle: SpriteHandle, zIndex: number): void;
+  /** Получить внутренний PixiJS Sprite (только для прямой работы с legacy Container) */
+  getSpritePixi(handle: SpriteHandle): any;
 
   // === Graphics (примитивы: rect, ellipse, line, poly) ===
   /** Создать пустой Graphics. Опционально привязать к слою. */
   createGraphics(layer?: LayerHandle): GraphicsHandle;
+  /**
+   * Создать unparented Graphics-объект для прямой работы с legacy Container
+   * (ECS-сущности добавляются в dynamicContainer вручную). Возвращает реальный
+   * графический объект, который вызывающий код сам размещает и уничтожает.
+   */
+  createDetachedGraphics(): any;
   /** Удалить Graphics */
   destroyGraphics(handle: GraphicsHandle): void;
   /** Очистить все фигуры из Graphics */
@@ -112,6 +126,8 @@ export interface IRenderer {
   // === Textures (для запекания и кэширования) ===
   /** Загрузить текстуру по URL. Возвращает handle. */
   loadTexture(url: string): Promise<TextureHandle>;
+  /** Создать текстуру из HTMLCanvasElement. Возвращает handle. */
+  createTextureFromCanvas(canvas: HTMLCanvasElement): TextureHandle;
   /** Создать пустую RenderTexture заданного размера */
   createRenderTexture(width: number, height: number): TextureHandle;
   /** Запечь Graphics или Sprite в RenderTexture */

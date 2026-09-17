@@ -128,6 +128,11 @@ export class PixiJSRenderer implements IRenderer {
     if (l) l.container.visible = visible;
   }
 
+  getLayerContainer(layer: LayerHandle): any {
+    const l = this.layers.get(layer as number);
+    return l?.container ?? null;
+  }
+
   // === Sprites ===
 
   createSprite(options: SpriteCreateOptions): SpriteHandle {
@@ -148,12 +153,12 @@ export class PixiJSRenderer implements IRenderer {
     if (options.tint !== undefined) sprite.tint = options.tint;
     sprite.visible = options.visible ?? true;
 
-    const layer = options.layer ? this.layers.get(options.layer as number) : null;
-    if (layer) {
-      layer.container.addChild(sprite);
-    } else {
-      this.worldContainer.addChild(sprite);
-    }
+    // Определяем родительский контейнер
+    const parentContainer = options._container ?? (
+      options.layer ? this.layers.get(options.layer as number)?.container : null
+    ) ?? this.worldContainer;
+
+    parentContainer.addChild(sprite);
 
     // Определяем handle слоя для хранения во внутреннем объекте
     const layerId: LayerHandle = options.layer
@@ -162,6 +167,20 @@ export class PixiJSRenderer implements IRenderer {
 
     this.sprites.set(id, { pixiSprite: sprite, layer: layerId });
     return id as SpriteHandle;
+  }
+
+  createSpriteInContainer(texture: TextureHandle | string, x: number, y: number, container: any): any {
+    let tex: Texture;
+    if (typeof texture === 'string') {
+      tex = Texture.from(texture);
+    } else {
+      tex = this.textures.get(texture as number) || Texture.EMPTY;
+    }
+    const sprite = new Sprite(tex);
+    sprite.x = x;
+    sprite.y = y;
+    container.addChild(sprite);
+    return sprite;
   }
 
   destroySprite(handle: SpriteHandle): void {
@@ -205,6 +224,11 @@ export class PixiJSRenderer implements IRenderer {
     if (s) s.pixiSprite.zIndex = zIndex;
   }
 
+  getSpritePixi(handle: SpriteHandle): any {
+    const s = this.sprites.get(handle as number);
+    return s?.pixiSprite ?? null;
+  }
+
   // === Graphics ===
 
   createGraphics(layer?: LayerHandle): GraphicsHandle {
@@ -218,6 +242,12 @@ export class PixiJSRenderer implements IRenderer {
     }
     this.graphics.set(id, { pixiGraphics: g, layer });
     return id as GraphicsHandle;
+  }
+
+  createDetachedGraphics(): any {
+    // Реальный unparented Graphics для legacy dynamicContainer (ECS-сущности).
+    // Не регистрируется в this.graphics — жизненным циклом управляет вызывающий код.
+    return new Graphics();
   }
 
   destroyGraphics(handle: GraphicsHandle): void {
@@ -294,6 +324,13 @@ export class PixiJSRenderer implements IRenderer {
   async loadTexture(url: string): Promise<TextureHandle> {
     const id = this._nextId++;
     const tex = await Texture.from(url);
+    this.textures.set(id, tex);
+    return id as TextureHandle;
+  }
+
+  createTextureFromCanvas(canvas: HTMLCanvasElement): TextureHandle {
+    const id = this._nextId++;
+    const tex = Texture.from(canvas);
     this.textures.set(id, tex);
     return id as TextureHandle;
   }

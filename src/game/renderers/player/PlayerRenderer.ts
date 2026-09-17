@@ -1,10 +1,10 @@
 /* renderers/player/PlayerRenderer.ts — отрисовка игрока (SRP) */
 
-import type { DrawTarget } from '../../renderers/core/primitives';
+import type { GraphicsHandle } from '../../renderer/IRenderer';
 import { CacheStrategy } from "../core/types";
 import type { Renderer, RenderContext } from "../core/types";
 import type { IPlayerData, IPlayerExtra } from "../../models";
-import { px, ell, clearGraphics } from "../core/primitives";
+import { px, ell, clearGraphics, drawPoly } from "../core/primitives";
 
 export interface PlayerRenderData {
   data: IPlayerData;
@@ -27,7 +27,7 @@ interface PlayerVisualSnapshot {
 export class PlayerRenderer implements Renderer<PlayerRenderData> {
   readonly strategy: CacheStrategy = CacheStrategy.DYNAMIC_TEXTURE;
 
-  render(g: DrawTarget, data: PlayerRenderData, ctx: RenderContext): void {
+  render(g: GraphicsHandle, data: PlayerRenderData, ctx: RenderContext): void {
     clearGraphics(g);
     this.drawBody(g, data);
   }
@@ -52,7 +52,7 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
 
   // ── Рисование тела (общее для render и renderToContainer) ────────
 
-  private drawBody(g: DrawTarget, data: PlayerRenderData): void {
+  private drawBody(g: GraphicsHandle, data: PlayerRenderData): void {
     const p = data.data;
     const extra = data.extra;
     const time = (data as any).ctx?.time ?? data.data.animT;
@@ -116,7 +116,7 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
       const blade = f >= 0
         ? [-3 + hx * 10, -14 + bob + hy * 10, -1 + hx * 10, -14 + bob + hy * 10, 0, -12 + bob]
         : [-4 + hx * 10, -14 + bob + hy * 10, -2 + hx * 10, -14 + bob + hy * 10, -1, -12 + bob];
-      (g as any).poly(blade).fill({ color: 0xc8d3dc, alpha: 1 });
+      drawPoly(g, blade, { r: 200 / 255, g: 211 / 255, b: 220 / 255, a: 1 });
     }
   }
 

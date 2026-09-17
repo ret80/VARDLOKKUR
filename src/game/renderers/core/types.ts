@@ -1,9 +1,6 @@
 /* renderers/core/types.ts — единый контракт всех рендереров (SOLID: DIP) */
 
 import type { GraphicsHandle } from '../../renderer/IRenderer';
-import type { DrawTarget } from './primitives';
-
-export type { DrawTarget } from './primitives';
 
 /** Контекст, общий для всех рендереров */
 export interface RenderContext {
@@ -29,13 +26,12 @@ export enum CacheStrategy {
  * Оркестратор (RenderSystem) зависит только от этого интерфейса и реестра,
  * а не от конкретных классов.
  *
- * Использует DrawTarget — поддерживает и GraphicsHandle (IRenderer path)
- * и PixiJS Graphics (legacy path для объектов окружения).
+ * Использует GraphicsHandle — строго через IRenderer API.
  * Все детали PixiJS скрыты в PixiJSRenderer.
  */
 export interface Renderer<TData> {
   /** Основная metoda отрисовки (для REALTIME_GRAPHICS) */
-  render(g: DrawTarget, data: TData, ctx: RenderContext): void;
+  render(g: GraphicsHandle, data: TData, ctx: RenderContext): void;
 
   /**
    * Нужно ли обновлять текстуру в этом кадре? (для DYNAMIC_TEXTURE).

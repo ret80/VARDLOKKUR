@@ -1,12 +1,12 @@
 /* renderers/objects/PedestalRenderer.ts */
 
-import type { DrawTarget } from '../../renderers/core/primitives';
+import type { GraphicsHandle } from '../../renderer/IRenderer';
 import type { Renderer, RenderContext } from "../core/types";
 import type { IPedestalData } from "../../models";
 import { px, ell, clearGraphics } from "../core/primitives";
 
 export class PedestalRenderer implements Renderer<IPedestalData> {
-  render(g: DrawTarget, data: IPedestalData, ctx: RenderContext): void {
+  render(g: GraphicsHandle, data: IPedestalData, ctx: RenderContext): void {
     clearGraphics(g);
     const time = ctx.time;
     ell(g, 0, 7, 8, 2.6, 0x05080d, 0.5);

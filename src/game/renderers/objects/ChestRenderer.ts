@@ -1,12 +1,12 @@
 /* renderers/objects/ChestRenderer.ts */
 
-import type { DrawTarget } from '../../renderers/core/primitives';
+import type { GraphicsHandle } from '../../renderer/IRenderer';
 import type { Renderer, RenderContext } from "../core/types";
 import type { IChestData } from "../../models";
 import { px, ell, clearGraphics } from "../core/primitives";
 
 export class ChestRenderer implements Renderer<IChestData> {
-  render(g: DrawTarget, data: IChestData, _ctx: RenderContext): void {
+  render(g: GraphicsHandle, data: IChestData, _ctx: RenderContext): void {
     clearGraphics(g);
     ell(g, 0, 5, 7, 2.4, 0x05080d, 0.5);
     px(g, -6, -2, 12, 7, 0x5a4632);
