@@ -502,8 +502,7 @@ export class RenderSystem {
     // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
     this.renderInteractionHint(opts.cam, nearestInteractable, time);
 
-    // === Финальный рендер через IRenderer (Этап 6) ===
-    r.render();
+    // Финальный рендер вызывается RenderPipeline.render() после всех слоёв
   }
 
   /** Рендеринг игрока (ECS) — viewport culling + Graphics render */

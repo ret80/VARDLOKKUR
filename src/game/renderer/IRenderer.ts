@@ -61,7 +61,7 @@ export interface SpriteCreateOptions {
 export interface IRenderer {
   // === Lifecycle ===
   /** Инициализация рендерера. container — DOM-элемент для canvas. */
-  init(container: HTMLElement, width: number, height: number): Promise<void>;
+  init(container: HTMLElement, width: number, height: number, existingApp?: any): Promise<void>;
   /** Очистка ресурсов */
   destroy(): void;
   /** Изменение размера canvas */

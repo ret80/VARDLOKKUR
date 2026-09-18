@@ -62,16 +62,25 @@ export class PixiJSRenderer implements IRenderer {
 
   // === Lifecycle ===
 
-  async init(container: HTMLElement, width: number, height: number): Promise<void> {
-    this.app = new Application();
-    await this.app.init({
-      background: 0x05080d,
-      antialias: false,
-      resolution: 1,
-      width,
-      height,
-    });
-    container.appendChild(this.app.canvas);
+  async init(container: HTMLElement, width: number, height: number, existingApp?: any): Promise<void> {
+    if (existingApp) {
+      this.app = existingApp;
+      // Canvas уже инициализирован — добавляем в контейнер
+      const cv = this.app.canvas as HTMLCanvasElement;
+      if (cv.parentElement !== container) {
+        container.appendChild(cv);
+      }
+    } else {
+      this.app = new Application();
+      await this.app.init({
+        background: 0x05080d,
+        antialias: false,
+        resolution: 1,
+        width,
+        height,
+      });
+      container.appendChild(this.app.canvas);
+    }
 
     // Корневой контейнер мира (сдвигается камерой)
     this.worldContainer = new Container();

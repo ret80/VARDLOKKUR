@@ -232,7 +232,7 @@ export class Engine {
 
     // Этап 6: создаём и устанавливаем глобальный IRenderer
     const renderer = RendererFactory.create('pixi');
-    await renderer.init(container, this.viewport.viewW, this.viewport.viewH);
+    await renderer.init(container, this.viewport.viewW, this.viewport.viewH, app);
     setGlobalRenderer(renderer);
 
     // Создаём playerG через IRenderer (GraphicsHandle)
@@ -244,13 +244,13 @@ export class Engine {
     // Этап 8: инициализация SceneLayers через IRenderer
     this.scene.init(renderer, app, () => new Container(), () => new Graphics());
     this.floatTextLayer = new FloatTextLayer();
+    // Canvas добавлен в контейнер через PixiJSRenderer.init(existingApp)
     const cv = app.canvas as HTMLCanvasElement;
     cv.classList.add("pixi");
     cv.style.position = "absolute";
     cv.style.inset = "0";
     cv.style.width = "100%";
     cv.style.height = "100%";
-    container.appendChild(cv);
     this.canvasEl = cv;
     this.viewport.apply(renderer);
 

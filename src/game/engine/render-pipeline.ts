@@ -35,6 +35,7 @@ import type { IRenderer } from '../renderer/IRenderer';
 export class RenderPipeline {
   private layers: IRenderLayer[] = [];
   private initialized = false;
+  private renderer: IRenderer | null = null;
 
   /** Добавить слой в пайплайн. Слои вызываются в порядке добавления. */
   addLayer(layer: IRenderLayer): void {
@@ -43,6 +44,7 @@ export class RenderPipeline {
 
   /** Инициализировать все слои. Вызывается один раз при создании пайплайна. */
   init(renderer: IRenderer, ctx: RenderLayerContext): void {
+    this.renderer = renderer;
     for (const layer of this.layers) {
       layer.init(renderer, ctx);
     }
@@ -63,6 +65,8 @@ export class RenderPipeline {
     for (const layer of this.layers) {
       layer.render(ctx);
     }
+    // Финальный рендер через IRenderer (вызывается после всех слоёв)
+    this.renderer?.render();
   }
 
   /** Обновить размеры viewport во всех слоях. Вызывается при ресайзе. */
