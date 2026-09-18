@@ -336,7 +336,7 @@ export class PixiJSRenderer implements IRenderer {
   ): void {
     const g = this.graphics.get(handle as number);
     if (!g) return;
-    const c = (color.r << 16) | (color.g << 8) | color.b;
+    const c = ((Math.round(color.r * 255) & 0xff) << 16) | ((Math.round(color.g * 255) & 0xff) << 8) | (Math.round(color.b * 255) & 0xff);
     // Отладка: проверить контекст
     if (handle === 3) {
       console.log(`[drawRect DEBUG] handle=${handle} context=${g.pixiGraphics.context?.constructor.name}`);
@@ -364,7 +364,7 @@ export class PixiJSRenderer implements IRenderer {
   ): void {
     const g = this.graphics.get(handle as number);
     if (!g) return;
-    const c = (color.r << 16) | (color.g << 8) | color.b;
+    const c = ((Math.round(color.r * 255) & 0xff) << 16) | ((Math.round(color.g * 255) & 0xff) << 8) | (Math.round(color.b * 255) & 0xff);
     const ctx = g.pixiGraphics.context;
     ctx.setFillStyle({ color: c, alpha: color.a });
     ctx.ellipse(cx, cy, rx, ry);
@@ -374,7 +374,7 @@ export class PixiJSRenderer implements IRenderer {
   drawPoly(handle: GraphicsHandle, points: number[], color: Color): void {
     const g = this.graphics.get(handle as number);
     if (!g) return;
-    const c = (color.r << 16) | (color.g << 8) | color.b;
+    const c = ((Math.round(color.r * 255) & 0xff) << 16) | ((Math.round(color.g * 255) & 0xff) << 8) | (Math.round(color.b * 255) & 0xff);
     const ctx = g.pixiGraphics.context;
     ctx.setFillStyle({ color: c, alpha: color.a });
     ctx.poly(points);
@@ -384,7 +384,7 @@ export class PixiJSRenderer implements IRenderer {
   drawLine(handle: GraphicsHandle, x1: number, y1: number, x2: number, y2: number, color: Color, width = 1): void {
     const g = this.graphics.get(handle as number);
     if (!g) return;
-    const c = (color.r << 16) | (color.g << 8) | color.b;
+    const c = ((Math.round(color.r * 255) & 0xff) << 16) | ((Math.round(color.g * 255) & 0xff) << 8) | (Math.round(color.b * 255) & 0xff);
     const ctx = g.pixiGraphics.context;
     ctx.setStrokeStyle({ width, color: c, alpha: color.a });
     ctx.moveTo(x1, y1).lineTo(x2, y2);

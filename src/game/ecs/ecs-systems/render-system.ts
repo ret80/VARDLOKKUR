@@ -542,6 +542,7 @@ export class RenderSystem {
     if (!sprite) return;
 
     const { data, extra } = playerToRenderData(playerEid, ctx.time);
+    logger.info('render', `  player render: sprite=${sprite} ctx.renderer=${!!ctx.renderer} ctx.time=${ctx.time}`);
     try {
       playerRenderer.render(sprite, { data, extra }, ctx);
     } catch (err) {

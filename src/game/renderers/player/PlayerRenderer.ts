@@ -5,6 +5,7 @@ import { CacheStrategy } from "../core/types";
 import type { Renderer, RenderContext } from "../core/types";
 import type { IPlayerData, IPlayerExtra } from "../../models";
 import { px, ell, clearGraphics, drawPoly } from "../core/primitives";
+import { logger } from '../../debug/logger';
 
 export interface PlayerRenderData {
   data: IPlayerData;
@@ -30,7 +31,7 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
   render(g: GraphicsHandle, data: PlayerRenderData, ctx: RenderContext): void {
     const r = ctx.renderer!;
     clearGraphics(r, g);
-    this.drawBody(g, data);
+    this.drawBody(g, data, ctx);
   }
 
   /** Нужно ли обновлять текстуру? */
@@ -53,12 +54,15 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
 
   // ── Рисование тела (общее для render и renderToContainer) ────────
 
-  private drawBody(g: GraphicsHandle, data: PlayerRenderData): void {
-    const r = (data as any).ctx?.renderer;
-    if (!r) return;
+  private drawBody(g: GraphicsHandle, data: PlayerRenderData, ctx: RenderContext): void {
+    const r = ctx.renderer;
+    if (!r) {
+      logger.warn('player-render', `drawBody: ctx.renderer is undefined, skipping`);
+      return;
+    }
     const p = data.data;
     const extra = data.extra;
-    const time = (data as any).ctx?.time ?? data.data.animT;
+    const time = ctx.time ?? data.data.animT;
     const bob = p.moving ? Math.sin(p.animT * 12) * 1.2 : Math.sin(time * 2) * 0.4;
     const legSwing = p.moving ? Math.sin(p.animT * 12) * 2.5 : 0;
 
