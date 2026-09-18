@@ -76,6 +76,12 @@ export interface IRenderer {
   setLayerVisible(layer: LayerHandle, visible: boolean): void;
   /** Получить внутренний Container слоя (для прямой манипуляции, например Y-sorting) */
   getLayerContainer(layer: LayerHandle): any;
+  /** Получить корневой Container мира (сдвигается камерой) */
+  getWorldContainer(): any;
+  /** Получить PixiJS Graphics по handle */
+  getGraphicsPixi(handle: GraphicsHandle): any;
+  /** Сбросить счётчик ID (вызывать при очистке карты) */
+  resetNextId(): void;
 
   // === Sprites ===
   /** Создать спрайт с опциями. Возвращает handle спрайта. */
@@ -106,12 +112,6 @@ export interface IRenderer {
   // === Graphics (примитивы: rect, ellipse, line, poly) ===
   /** Создать пустой Graphics. Опционально привязать к слою. */
   createGraphics(layer?: LayerHandle): GraphicsHandle;
-  /**
-   * Создать unparented Graphics-объект для прямой работы с legacy Container
-   * (ECS-сущности добавляются в dynamicContainer вручную). Возвращает реальный
-   * графический объект, который вызывающий код сам размещает и уничтожает.
-   */
-  createDetachedGraphics(): any;
   /** Удалить Graphics */
   destroyGraphics(handle: GraphicsHandle): void;
   /** Очистить все фигуры из Graphics */
@@ -128,6 +128,10 @@ export interface IRenderer {
   setGraphicsPosition(handle: GraphicsHandle, pos: Vec2): void;
   /** Включить/выключить видимость Graphics */
   setGraphicsVisible(handle: GraphicsHandle, visible: boolean): void;
+  /** Установить прозрачность Graphics (0..1) */
+  setGraphicsAlpha(handle: GraphicsHandle, alpha: number): void;
+  /** Установить z-index Graphics (для сортировки по глубине) */
+  setGraphicsZIndex(handle: GraphicsHandle, zIndex: number): void;
 
   // === Textures (для запекания и кэширования) ===
   /** Загрузить текстуру по URL. Возвращает handle. */

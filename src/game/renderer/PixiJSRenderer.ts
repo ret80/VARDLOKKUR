@@ -79,6 +79,7 @@ export class PixiJSRenderer implements IRenderer {
     this.app.stage.addChild(this.worldContainer);
 
     logger.info('renderer', `PixiJSRenderer initialized: ${width}x${height}`);
+    logger.info('renderer', `  stage.children=${this.app.stage.children.length}, worldContainer=${this.worldContainer.constructor.name}`);
   }
 
   destroy(): void {
@@ -107,6 +108,16 @@ export class PixiJSRenderer implements IRenderer {
     // Применяем камеру к worldContainer
     this.worldContainer.x = -this.cameraPos.x;
     this.worldContainer.y = -this.cameraPos.y;
+    // Отладка: проверить worldContainer
+    console.log(`[render DEBUG] worldContainer.children=${this.worldContainer.children.length}`);
+    for (const child of this.worldContainer.children) {
+      console.log(`  child: ${child.constructor.name} visible=${child.visible} alpha=${child.alpha} x=${child.x} y=${child.y}`);
+      if (child.children) {
+        for (const sub of child.children) {
+          console.log(`    sub: ${sub.constructor.name} visible=${sub.visible} alpha=${sub.alpha} x=${sub.x} y=${sub.y}`);
+        }
+      }
+    }
     // Рендерим stage — включает worldContainer + legacy Containers (tileLayer, dynamic, etc.)
     this.app.render();
   }
@@ -120,6 +131,7 @@ export class PixiJSRenderer implements IRenderer {
     container.zIndex = zIndex;
     this.worldContainer.addChild(container);
     this.layers.set(id, { container, zIndex, name });
+    logger.debug('renderer', `createLayer: name=${name} id=${id} zIndex=${zIndex} parent=worldContainer`);
     return id as LayerHandle;
   }
 
@@ -131,6 +143,20 @@ export class PixiJSRenderer implements IRenderer {
   getLayerContainer(layer: LayerHandle): any {
     const l = this.layers.get(layer as number);
     return l?.container ?? null;
+  }
+
+  getWorldContainer(): any {
+    return this.worldContainer;
+  }
+
+  getGraphicsPixi(handle: GraphicsHandle): any {
+    const g = this.graphics.get(handle as number);
+    return g?.pixiGraphics ?? null;
+  }
+
+  resetNextId(): void {
+    // Только сбросить счётчик — Graphics удаляются через destroyGraphics в teardownWorld
+    this._nextId = 1;
   }
 
   // === Sprites ===
@@ -263,18 +289,20 @@ export class PixiJSRenderer implements IRenderer {
     const g = new Graphics();
     if (layer) {
       const l = this.layers.get(layer as number);
-      if (l) l.container.addChild(g);
+      if (l) {
+        l.container.addChild(g);
+        logger.debug('renderer', `createGraphics: added to layer container id=${id} layer=${layer} container=${l.container.constructor.name}`);
+      } else {
+        this.worldContainer.addChild(g);
+        logger.debug('renderer', `createGraphics: layer not found, added to worldContainer id=${id}`);
+      }
     } else {
       this.worldContainer.addChild(g);
+      logger.debug('renderer', `createGraphics: no layer, added to worldContainer id=${id}`);
     }
     this.graphics.set(id, { pixiGraphics: g, layer });
+    logger.debug('renderer', `createGraphics: registered in this.graphics id=${id} total=${this.graphics.size} context=${g.context?.constructor.name}`);
     return id as GraphicsHandle;
-  }
-
-  createDetachedGraphics(): any {
-    // Реальный unparented Graphics для legacy dynamicContainer (ECS-сущности).
-    // Не регистрируется в this.graphics — жизненным циклом управляет вызывающий код.
-    return new Graphics();
   }
 
   destroyGraphics(handle: GraphicsHandle): void {
@@ -300,15 +328,20 @@ export class PixiJSRenderer implements IRenderer {
     const g = this.graphics.get(handle as number);
     if (!g) return;
     const c = (color.r << 16) | (color.g << 8) | color.b;
+    // Отладка: проверить контекст
+    if (handle === 3) {
+      console.log(`[drawRect DEBUG] handle=${handle} context=${g.pixiGraphics.context?.constructor.name}`);
+    }
+    const ctx = g.pixiGraphics.context;
     if (fill) {
-      g.pixiGraphics.rect(rect.x, rect.y, rect.width, rect.height).fill({ color: c, alpha: color.a });
+      ctx.setFillStyle({ color: c, alpha: color.a });
+      ctx.rect(rect.x, rect.y, rect.width, rect.height);
+      ctx.fill();
     }
     if (strokeWidth > 0) {
-      g.pixiGraphics.rect(rect.x, rect.y, rect.width, rect.height).stroke({
-        color: c,
-        alpha: color.a,
-        width: strokeWidth,
-      });
+      ctx.setStrokeStyle({ width: strokeWidth, color: c, alpha: color.a });
+      ctx.rect(rect.x, rect.y, rect.width, rect.height);
+      ctx.stroke();
     }
   }
 
@@ -323,21 +356,30 @@ export class PixiJSRenderer implements IRenderer {
     const g = this.graphics.get(handle as number);
     if (!g) return;
     const c = (color.r << 16) | (color.g << 8) | color.b;
-    g.pixiGraphics.ellipse(cx, cy, rx, ry).fill({ color: c, alpha: color.a });
+    const ctx = g.pixiGraphics.context;
+    ctx.setFillStyle({ color: c, alpha: color.a });
+    ctx.ellipse(cx, cy, rx, ry);
+    ctx.fill();
   }
 
   drawPoly(handle: GraphicsHandle, points: number[], color: Color): void {
     const g = this.graphics.get(handle as number);
     if (!g) return;
     const c = (color.r << 16) | (color.g << 8) | color.b;
-    g.pixiGraphics.poly(points).fill({ color: c, alpha: color.a });
+    const ctx = g.pixiGraphics.context;
+    ctx.setFillStyle({ color: c, alpha: color.a });
+    ctx.poly(points);
+    ctx.fill();
   }
 
   drawLine(handle: GraphicsHandle, x1: number, y1: number, x2: number, y2: number, color: Color, width = 1): void {
     const g = this.graphics.get(handle as number);
     if (!g) return;
     const c = (color.r << 16) | (color.g << 8) | color.b;
-    g.pixiGraphics.moveTo(x1, y1).lineTo(x2, y2).stroke({ color: c, alpha: color.a, width });
+    const ctx = g.pixiGraphics.context;
+    ctx.setStrokeStyle({ width, color: c, alpha: color.a });
+    ctx.moveTo(x1, y1).lineTo(x2, y2);
+    ctx.stroke();
   }
 
   setGraphicsPosition(handle: GraphicsHandle, pos: Vec2): void {
@@ -345,12 +387,25 @@ export class PixiJSRenderer implements IRenderer {
     if (g) {
       g.pixiGraphics.x = pos.x;
       g.pixiGraphics.y = pos.y;
+    } else {
+      console.warn(`[PixiJSRenderer] setGraphicsPosition: Graphics not found for handle=${handle}`);
+      console.warn(`[PixiJSRenderer] graphics Map size=${this.graphics.size}, keys=[${Array.from(this.graphics.keys()).slice(-10).join(',')}]`);
     }
   }
 
   setGraphicsVisible(handle: GraphicsHandle, visible: boolean): void {
     const g = this.graphics.get(handle as number);
     if (g) g.pixiGraphics.visible = visible;
+  }
+
+  setGraphicsAlpha(handle: GraphicsHandle, alpha: number): void {
+    const g = this.graphics.get(handle as number);
+    if (g) g.pixiGraphics.alpha = alpha;
+  }
+
+  setGraphicsZIndex(handle: GraphicsHandle, zIndex: number): void {
+    const g = this.graphics.get(handle as number);
+    if (g) g.pixiGraphics.zIndex = zIndex;
   }
 
   // === Textures ===
@@ -381,17 +436,22 @@ export class PixiJSRenderer implements IRenderer {
     source: GraphicsHandle | SpriteHandle
   ): void {
     const tex = this.textures.get(texture as number);
-    if (!tex) return;
+    if (!tex) {
+      logger.warn('renderer', `renderToTexture: texture not found handle=${texture}`);
+      return;
+    }
 
     const g = this.graphics.get(source as number);
     const s = this.sprites.get(source as number);
     const src = g?.pixiGraphics || s?.pixiSprite;
-    if (!src) return;
+    if (!src) {
+      logger.warn('renderer', `renderToTexture: source not found handle=${source}`);
+      return;
+    }
 
-    // Временно добавляем в сцену для корректного bake
-    this.worldContainer.addChild(src);
+    // src уже в worldContainer (создан через createGraphics без layer)
+    // Рендерим напрямую — addChild/removeChild не нужны
     this.app.renderer.render({ container: src, target: tex as RenderTexture, clear: true });
-    src.parent?.removeChild(src);
   }
 
   destroyTexture(handle: TextureHandle): void {
