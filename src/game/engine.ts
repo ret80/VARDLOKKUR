@@ -72,7 +72,7 @@ import {
   fullHealEntityEcs,
   increaseMaxHpEcs,
 } from './ecs/ecs-components';
-import { updateSpritePosition } from './ecs/ecs-systems/render-system';
+import { updateGraphicsPosition } from './ecs/ecs-systems/render-system';
 import { query, removeEntity } from 'bitecs';
 import { ViewportController } from './engine/viewport-controller';
 import { SceneLayers } from './engine/scene-layers';

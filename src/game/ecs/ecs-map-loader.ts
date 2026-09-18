@@ -19,6 +19,7 @@ import {
   createPlayerInEcs,
   teardownWorld,
 } from './ecs-bridge';
+import { getRenderer } from '../renderer/RendererFactory';
 import type { EntityFactory } from './entity-factory';
 import { EventBus } from '../event-bus';
 import { logger } from '../debug/logger';
@@ -95,6 +96,9 @@ export class EcsMapLoader {
     onPlayerCreated?: (eid: number) => void
   ): { playerEid: number; playerBody: any; cam: { x: number; y: number } } {
     const { world, planckWorld, map, spawn, viewW, viewH, flags } = this.config;
+
+    logger.info('map-loader', `=== MAP INFO: W=${map.W}, H=${map.H}, isDungeon=${map.isDungeon}, spawn=${JSON.stringify(spawn)} ===`);
+    logger.info('map-loader', `=== MAP SIZE in pixels: ${(map.W * 16)}x${(map.H * 16)}, VIEW: ${viewW}x${viewH} ===`);
 
     // 1. Сохранить playerG перед очисткой
     const savedPlayerG = playerG;
@@ -174,6 +178,13 @@ export class EcsMapLoader {
       SpriteRegistry.push(playerG);
     }
 
+    // Сбросить счётчик ID рендерера — иначе новые Graphics получат ID,
+    // которые не совпадают с тем, что хранится в SpriteRegistry
+    try {
+      const renderer = getRenderer();
+      renderer.resetNextId();
+    } catch {}
+
     // Очистить другие реестры
     EnemyAIRegistry.length = 0;
     PhysicsBodyRegistry.length = 0;
@@ -221,8 +232,11 @@ export class EcsMapLoader {
     logger.debug('map-loader', `spawnChests chests=${map.chests.length}`);
     const { openedChests } = this.config;
     for (const c of map.chests) {
-      const g = sf.create(c.x * T + 8, c.y * T + 8);
-      const eid = createChestInEcs(factory, world, c.x * T + 8, c.y * T + 8, c.item, g);
+      const cx = c.x * T + 8;
+      const cy = c.y * T + 8;
+      logger.info('map-loader', `  Chest at tile(${c.x},${c.y}) -> pixel(${cx},${cy})`);
+      const g = sf.create(cx, cy);
+      const eid = createChestInEcs(factory, world, cx, cy, c.item, g);
       // Восстановить состояние opened из store.openedChests
       if (openedChests.has(`${c.x}_${c.y}`)) {
         Chest.opened[eid] = 1;

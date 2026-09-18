@@ -48,6 +48,8 @@ export class MapLoaderService {
   private _renderer!: IRenderer;
   /** Handle слоя dynamic для добавления спрайтов (IRenderer layer, не legacy Container) */
   private _dynamicLayer!: LayerHandle;
+  /** Handle слоя tiles для добавления ground-спрайтов (IRenderer layer) */
+  private _tileLayerHandle!: LayerHandle;
 
   constructor(
     private scene: SceneLayers,
@@ -75,6 +77,7 @@ export class MapLoaderService {
   init(renderer: IRenderer): void {
     this._renderer = renderer;
     this._dynamicLayer = (this.scene as any).dynamicHandle as LayerHandle;
+    this._tileLayerHandle = (this.scene as any).tileLayerHandle as LayerHandle;
   }
 
   /** Фабрика графических объектов */
@@ -86,9 +89,32 @@ export class MapLoaderService {
 
   /** Очистить tileLayer и dynamic контейнеры перед загрузкой новой карты */
   clearTiles(preservePlayerG?: number): void {
-    // preservePlayerG — это GraphicsHandle, legacy dynamic Container не содержит ECS-сущности
+    // preservePlayerG — это GraphicsHandle, legacy dynamic Container не содержит ECS-сущность
     this.scene.clearTiles();
     this.scene.clearDynamic();
+  }
+
+  /** Очистить ECS layer контейнеры от старых map sprites (только Sprite с __isMapSprite) */
+  private clearEcsLayerContainers(): void {
+    const tileContainer = this._renderer.getLayerContainer(this._tileLayerHandle);
+    const dynamicContainer = this._renderer.getLayerContainer(this._dynamicLayer);
+
+    // Очищаем ТОЛЬКО map sprites (помечены __isMapSprite), не трогаем ECS-сущности (Graphics)
+    for (const child of tileContainer?.children ?? []) {
+      if ((child as any).__isMapSprite === true && typeof child?.destroy === 'function') {
+        child.destroy({ children: true, texture: true });
+        // Удаляем из контейнера после уничтожения
+        tileContainer.removeChild(child);
+      }
+    }
+
+    for (const child of dynamicContainer?.children ?? []) {
+      if ((child as any).__isMapSprite === true && typeof child?.destroy === 'function') {
+        child.destroy({ children: true });
+        // Удаляем из контейнера после уничтожения
+        dynamicContainer.removeChild(child);
+      }
+    }
   }
 
   /** ECS загрузка карты: тайлы + сущности + миникарта */
@@ -110,56 +136,9 @@ export class MapLoaderService {
     // Очищаем старые тайлы перед построением новых, сохраняем playerG
     this.clearTiles(playerG);
 
-    // Фаза 3: строим текстуры через IRenderer
-    const tileResult = buildAllTileTextures(map, this.store.roofSnow, this._renderer);
-
-    // Получаем Container для legacy tileLayer (Y-sorting через userData)
-    const tileLayerContainer = this.scene.tileLayer;
-    const dynamicContainer = this.scene.dynamic;
-
-    // Ground — создаём спрайт напрямую в tileLayer (не через createSprite — он добавляет в worldContainer)
-    const groundHandle = this._renderer.createSprite({
-      texture: tileResult.groundTexture,
-      x: 0,
-      y: 0,
-      _container: tileLayerContainer,
-    });
-    this._renderer.setSpriteZIndex(groundHandle, 0);
-
-    // Переносим дома, ёлки, камни, монументы в dynamic — сортируются по layer + bottomY
-    for (const ws of tileResult.wallSprites) {
-      const spriteHandle = this._renderer.createSprite({
-        texture: ws.textureHandle,
-        x: ws.x,
-        y: ws.y,
-        _container: dynamicContainer,
-      });
-      this._renderer.setSpriteZIndex(spriteHandle, ws.zIndex);
-      const spritePixi = this._renderer.getSpritePixi(spriteHandle);
-      if (spritePixi) {
-        (spritePixi as any).userData = (spritePixi as any).userData || {};
-        (spritePixi as any).userData.layer = 40;
-        (spritePixi as any).userData.y = ws.y + 28;
-      }
-    }
-    for (const hs of tileResult.houseSprites) {
-      const spriteHandle = this._renderer.createSprite({
-        texture: hs.textureHandle,
-        x: hs.x,
-        y: hs.y,
-        _container: dynamicContainer,
-      });
-      this._renderer.setSpriteZIndex(spriteHandle, hs.zIndex);
-      const spritePixi = this._renderer.getSpritePixi(spriteHandle);
-      if (spritePixi) {
-        (spritePixi as any).userData = (spritePixi as any).userData || {};
-        (spritePixi as any).userData.layer = 40;
-        const m = houseMetrics(hs.hw, hs.hh);
-        (spritePixi as any).userData.y = hs.y + m.wallTop + m.wallH + m.foundH - 1;
-      }
-    }
-    this.wallCache = tileResult.wallCache;
-    this.houseCache = tileResult.houseCache;
+    // Очищаем ECS layer контейнеры от старых map sprites ПЕРЕД созданием новой карты
+    // (иначе уничтожатся ECS-сущности новой карты, созданные loadMap)
+    this.clearEcsLayerContainers();
 
     // Создаём ECS Map Loader (используется общий ECS-мир движка)
     const newPlanckWorld = new PlanckWorld();
@@ -188,7 +167,65 @@ export class MapLoaderService {
     // Сохраняем для уничтожения при следующей загрузке карты
     this._prevPlanckWorld = newPlanckWorld;
 
+    // Загружаем карту в ECS (teardownWorld уничтожает ECS-сущности старой карты)
     const result = this.ecsMapLoader.loadMap(playerG, playerDomain, onPlayerCreated);
+
+    // Фаза 3: строим текстуры через IRenderer
+    const tileResult = buildAllTileTextures(map, this.store.roofSnow, this._renderer);
+
+    // Используем ECS layer containers вместо legacy Containers
+    const tileLayerContainer = this._renderer.getLayerContainer(this._tileLayerHandle);
+    const dynamicContainer = this._renderer.getLayerContainer(this._dynamicLayer);
+
+    // Ground — создаём спрайт напрямую в tileLayer (не через createSprite — он добавляет в worldContainer)
+    const groundHandle = this._renderer.createSprite({
+      texture: tileResult.groundTexture,
+      x: 0,
+      y: 0,
+      _container: tileLayerContainer,
+    });
+    this._renderer.setSpriteZIndex(groundHandle, 0);
+    // Помечаем map sprites флагом, чтобы clearEcsLayerContainers не уничтожал ECS-сущности
+    const groundPixi = this._renderer.getSpritePixi(groundHandle);
+    if (groundPixi) (groundPixi as any).__isMapSprite = true;
+
+    // Переносим дома, ёлки, камни, монументы в dynamic — сортируются по layer + bottomY
+    for (const ws of tileResult.wallSprites) {
+      const spriteHandle = this._renderer.createSprite({
+        texture: ws.textureHandle,
+        x: ws.x,
+        y: ws.y,
+        _container: dynamicContainer,
+      });
+      this._renderer.setSpriteZIndex(spriteHandle, ws.zIndex);
+      const spritePixi = this._renderer.getSpritePixi(spriteHandle);
+      if (spritePixi) {
+        (spritePixi as any).__isMapSprite = true;
+        (spritePixi as any).userData = (spritePixi as any).userData || {};
+        (spritePixi as any).userData.layer = 40;
+        (spritePixi as any).userData.y = ws.y + 28;
+      }
+    }
+    for (const hs of tileResult.houseSprites) {
+      const spriteHandle = this._renderer.createSprite({
+        texture: hs.textureHandle,
+        x: hs.x,
+        y: hs.y,
+        _container: dynamicContainer,
+      });
+      this._renderer.setSpriteZIndex(spriteHandle, hs.zIndex);
+      const spritePixi = this._renderer.getSpritePixi(spriteHandle);
+      if (spritePixi) {
+        (spritePixi as any).__isMapSprite = true;
+        (spritePixi as any).userData = (spritePixi as any).userData || {};
+        (spritePixi as any).userData.layer = 40;
+        const m = houseMetrics(hs.hw, hs.hh);
+        (spritePixi as any).userData.y = hs.y + m.wallTop + m.wallH + m.foundH - 1;
+      }
+    }
+    this.wallCache = tileResult.wallCache;
+    this.houseCache = tileResult.houseCache;
+
     this._mmBase = buildMinimapBase(map);
     return result;
   }

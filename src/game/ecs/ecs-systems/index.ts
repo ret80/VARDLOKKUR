@@ -69,8 +69,8 @@ export {
 } from './interaction-system';
 
 export {
-  updateSpritePosition,
-  renderSprites,
+  updateGraphicsPosition,
+  renderGraphics,
   renderVisibilitySystem,
   renderFlashSystem,
   renderSystem,

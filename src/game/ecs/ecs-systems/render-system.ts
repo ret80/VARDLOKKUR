@@ -22,6 +22,7 @@ import {
   Taken,
   SpriteRegistry,
   Radius,
+  RenderLayer,
   poolGet,
   StringPool,
 } from '../ecs-components';
@@ -60,15 +61,14 @@ import { TextureCacheManager } from '../../renderers/core/TextureCacheManager';
 /** Map eid → SpriteHandle для быстрого доступа */
 const eidToSpriteHandle = new Map<number, number>();
 
-/** Получить SpriteHandle из registry по eid */
+/** Получить GraphicsHandle из SpriteRegistry по eid */
 function getSpriteHandle(eid: number): number | undefined {
   const idx = SpriteComp.ref[eid];
   if (idx <= 0 || idx > SpriteRegistry.length) {
     return undefined;
   }
-  // Registry индекс 1-based, массив 0-based
-  const handle = idx - 1;
-  return handle;
+  // SpriteRegistry хранит реальные GraphicsHandle (id от createGraphics)
+  return SpriteRegistry[idx - 1];
 }
 
 /** Зарегистрировать SpriteHandle для eid */
@@ -83,31 +83,31 @@ type ObjectQueryConfig = {
   mapper: (eid: number, world: World) => any;
 };
 
-/** Обновить позицию спрайта из Position компонента */
-export function updateSpritePosition(world: World, eid: number, renderer: IRenderer): void {
+/** Обновить позицию Graphics из Position компонента */
+export function updateGraphicsPosition(world: World, eid: number, renderer: IRenderer): void {
   const { x: px, y: py } = Position;
   
   if (eid < 0 || eid >= SpriteComp.ref.length) return;
   const handle = getSpriteHandle(eid);
   if (handle === undefined) return;
   
-  renderer.setSpritePosition(handle as any, { x: px[eid], y: py[eid] });
+  renderer.setGraphicsPosition(handle as any, { x: px[eid], y: py[eid] });
 }
 
-/** Обновить все спрайты */
-export function renderSprites(world: World, renderer: IRenderer): void {
+/** Обновить все Graphics */
+export function renderGraphics(world: World, renderer: IRenderer): void {
   const { x: px, y: py } = Position;
 
   const matched = [...query(world, [Position, SpriteComp])];
   if (matched.length > 0) {
-    // console.log('[renderSprites] query found', matched.length, 'entities with [Position, Sprite]');
+    // console.log('[renderGraphics] query found', matched.length, 'entities with [Position, Sprite]');
   }
 
   for (const eid of matched) {
     const handle = getSpriteHandle(eid);
     if (handle === undefined) continue;
     
-    renderer.setSpritePosition(handle as any, { x: px[eid], y: py[eid] });
+    renderer.setGraphicsPosition(handle as any, { x: px[eid], y: py[eid] });
   }
 }
 
@@ -150,7 +150,7 @@ export function renderSortSystem(
 
     // zIndex = layer + rounded Y (для сортировки по глубине)
     const zIndex = layer + Math.round(py[eid]);
-    renderer.setSpriteZIndex(handle as any, zIndex);
+    renderer.setGraphicsZIndex(handle as any, zIndex);
   }
 }
 
@@ -172,14 +172,14 @@ export function renderVisibilitySystem(
     // через removeEntity при смерти, и их eid может переиспользоваться,
     // что приведёт к ложному скрытию (например, святилища не зажигаются).
     if (eid === playerEid && dead[eid]) {
-      renderer.setSpriteAlpha(handle as any, 0);
+      renderer.setGraphicsAlpha(handle as any, 0);
     } else if (hidden[eid]) {
-      renderer.setSpriteAlpha(handle as any, 0.25);
+      renderer.setGraphicsAlpha(handle as any, 0.25);
     } else if (Player.hurtT[eid] > 0 && Math.floor(time * 14) % 2 === 0) {
       // hurt-мигание для игрока
-      renderer.setSpriteAlpha(handle as any, 0.35);
+      renderer.setGraphicsAlpha(handle as any, 0.35);
     } else {
-      renderer.setSpriteAlpha(handle as any, 1);
+      renderer.setGraphicsAlpha(handle as any, 1);
     }
   }
 }
@@ -193,9 +193,9 @@ export function renderFlashSystem(world: World, time: number, renderer: IRendere
     if (handle === undefined) continue;
     
     if (Math.floor(time * 14) % 2 === 0) {
-      renderer.setSpriteAlpha(handle as any, 0.35);
+      renderer.setGraphicsAlpha(handle as any, 0.35);
     } else {
-      renderer.setSpriteAlpha(handle as any, 1);
+      renderer.setGraphicsAlpha(handle as any, 1);
     }
   }
 }
@@ -341,18 +341,45 @@ export class RenderSystem {
 
   /** Единый диспетчер отрисовки объектов окружения */
   private renderObjectsEcs(world: World, ctx: RenderContext): void {
+    // Отладка: проверить все сущности в world
+    const allEntities = [...query(world, [])];
+    const withSprite = [...query(world, [SpriteComp])];
+    logger.debug('render', `Total entities in world: ${allEntities.length}, with Sprite: ${withSprite.length}`);
+    if (withSprite.length > 0 && withSprite.length < 10) {
+      logger.debug('render', `Entities with Sprite: [${withSprite.join(',')}]`);
+    }
+    
     for (const config of this.OBJECT_QUERIES) {
       const renderer = objectRegistry.getOrThrow(config.key);
-      for (const eid of query(world, config.components)) {
+      const matches = [...query(world, config.components)];
+      logger.debug('render', `renderObjectsEcs: ${config.key} found ${matches.length} entities`);
+      for (const eid of matches) {
         const spriteIdx = SpriteComp.ref[eid];
         if (spriteIdx <= 0 || spriteIdx > SpriteRegistry.length) continue;
         // Legacy path: объекты используют PixiJS Graphics из SpriteRegistry
         const sprite = SpriteRegistry[spriteIdx - 1];
         if (!sprite) continue;
         
+        // Обновить позицию и zIndex Graphics
+        const r = ctx.renderer!;
+        if (!r) {
+          logger.error('render', `renderObjectsEcs: ctx.renderer is undefined for ${config.key} eid=${eid}`);
+          continue;
+        }
+        const px = Position.x[eid];
+        const py = Position.y[eid];
+        logger.info('render', `  ${config.key} eid=${eid} pos=(${px},${py}) tile=(${Math.round(px/16)},${Math.round(py/16)}) handle=${sprite} SpriteRegistry[${spriteIdx-1}]`);
+        r.setGraphicsPosition(sprite as any, { x: px, y: py });
+        r.setGraphicsZIndex(sprite as any, RenderLayer.value[eid] + Math.round(py));
+        
         const data = config.mapper(eid, world);
         try {
           (renderer as any).render(sprite, data, ctx);
+          // Проверка после рендеринга
+          const g = r.getGraphicsPixi(sprite as any);
+          if (g) {
+            logger.debug('render', `  ${config.key} after render: visible=${g.visible} alpha=${g.alpha} x=${g.x} y=${g.y} graphicsData=${g.graphicsData?.length ?? 'N/A'}`);
+          }
         } catch (err) {
           logger.warn('render', `Object render failed for eid=${eid}: ${err}`);
         }
@@ -390,11 +417,11 @@ export class RenderSystem {
       logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]} handle=${this.getSpriteHandle(playerEid)}`);
     }
 
-    // === Обновление позиций спрайтов (Этап 6) ===
+    // === Обновление позиций Graphics (Этап 6) ===
     for (const eid of query(world, [Position, SpriteComp])) {
       const handle = this.getSpriteHandle(eid);
       if (handle !== undefined) {
-        r.setSpritePosition(handle as any, { x: Position.x[eid], y: Position.y[eid] });
+        r.setGraphicsPosition(handle as any, { x: Position.x[eid], y: Position.y[eid] });
       }
     }
 
@@ -407,12 +434,12 @@ export class RenderSystem {
         { x: Position.x[eid], y: Position.y[eid] }, 
         Radius.value[eid] || 8
       );
-      r.setSpriteVisible(handle as any, visible);
+      r.setGraphicsVisible(handle as any, visible);
       
       // Альфа для Dead/Hidden
-      if (Dead[eid]) r.setSpriteAlpha(handle as any, 0);
-      else if (Hidden[eid]) r.setSpriteAlpha(handle as any, 0.25);
-      else r.setSpriteAlpha(handle as any, 1);
+      if (Dead[eid]) r.setGraphicsAlpha(handle as any, 0);
+      else if (Hidden[eid]) r.setGraphicsAlpha(handle as any, 0.25);
+      else r.setGraphicsAlpha(handle as any, 1);
     }
 
     // === Сортировка (через zIndex) (Этап 6) ===
@@ -420,7 +447,7 @@ export class RenderSystem {
       const handle = this.getSpriteHandle(eid);
       if (handle !== undefined) {
         const layer = this.getLayer(world, eid);
-        r.setSpriteZIndex(handle as any, layer + Math.round(Position.y[eid]));
+        r.setGraphicsZIndex(handle as any, layer + Math.round(Position.y[eid]));
       }
     }
 
@@ -448,7 +475,8 @@ export class RenderSystem {
       StringPool.projectileKinds,
       projectileRegistry,
       (eid) => eidToProjectileData(eid, world),
-      time
+      time,
+      opts
     );
 
     // Дропы
@@ -458,7 +486,8 @@ export class RenderSystem {
       StringPool.dropKinds,
       dropRegistry,
       (eid) => eidToDropData(eid, world),
-      time
+      time,
+      opts
     );
 
     // NPC
@@ -501,11 +530,11 @@ export class RenderSystem {
     }
 
     if (!visible) {
-      r.setSpriteVisible(handle as any, false);
+      r.setGraphicsVisible(handle as any, false);
       return;
     }
 
-    r.setSpriteVisible(handle as any, true);
+    r.setGraphicsVisible(handle as any, true);
 
     // Рендерим игрока через PixiJS Graphics из SpriteRegistry
     const spriteIdx = SpriteComp.ref[playerEid];
@@ -558,11 +587,11 @@ export class RenderSystem {
 
         // Viewport culling — через IRenderer.isVisibleInViewport (Этап 6)
         if (!r!.isVisibleInViewport({ x: enemyX, y: enemyY }, radius)) {
-          r!.setSpriteVisible(handle as any, false);
+          r!.setGraphicsVisible(handle as any, false);
           continue;
         }
 
-        r!.setSpriteVisible(handle as any, true);
+        r!.setGraphicsVisible(handle as any, true);
 
         const data = mapper(eid) as any;
         const needsUpdate = (renderer as any).needsTextureUpdate
@@ -585,10 +614,10 @@ export class RenderSystem {
               r!.setSpriteZIndex(cache.sprite, 40);
 
               // Alpha для призраков: (hidden ? 0.25 : 1) * fade
-              r!.setSpriteAlpha(cache.sprite, (data.hidden ? 0.25 : 1) * data.fade);
+              r!.setGraphicsAlpha(cache.sprite as any, (data.hidden ? 0.25 : 1) * data.fade);
 
               // Скрываем старый Graphics-спрайт
-              r!.setSpriteVisible(handle as any, false);
+              r!.setGraphicsVisible(handle as any, false);
             } else {
               // Bake не удался — fallback на прямой рендер в PixiJS Graphics
               logger.warn('render', `Bake failed for enemy eid=${eid}, fallback to direct Graphics`);

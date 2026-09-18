@@ -80,11 +80,16 @@ export class SceneLayers {
     this._world.addChild(this._dynamic);
     this._world.addChild(this._fxWorld);
     this._world.addChild(this._floatLayer);
-    app.stage.addChild(this._world);
+
+    // Legacy-контейнеры НЕ добавляются в stage.
+    // Всё рендерится через ECS layers (tileLayerHandle, dynamicHandle и т.д.),
+    // которые создаются через IRenderer.createLayer() и добавляются в worldContainer.
+    // Legacy Containers оставлены только для обратной совместимости (Этап 10 — удалить).
+    // Если нужно добавить legacy-контейнеры позже — использовать renderer.getWorldContainer().addChild().
     app.stage.addChild(this.fxScreen);
     app.stage.addChild(this.fadeG);
 
-    logger.info('scene-layers', `SceneLayers initialized: 5 layers + 2 FX graphics`);
+    logger.info('scene-layers', `SceneLayers initialized: 5 ECS layers + 2 FX graphics (legacy containers not added to stage)`);
   }
 
   /** Получить рендерер */

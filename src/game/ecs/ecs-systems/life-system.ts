@@ -45,7 +45,7 @@ export function lifeCheckSystem(world: World): void {
     const spriteRef = SpriteRegistry[spriteIdx - 1];
     if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
     spriteRef?.destroy();
-    // Сбросить ссылку — иначе renderSprites попытается обратиться к уничтоженному спрайту
+    // Сбросить ссылку — иначе renderGraphics попытается обратиться к уничтоженному Graphics
     Sprite.ref[eid] = 0;
   }
 }
