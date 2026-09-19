@@ -206,20 +206,19 @@ export class FxManager {
   /* ---------- Внутренняя логика: Туман ---------- */
 
   public buildFogVignette() {
-    const scale = 0.5;
-    const targetW = this.viewW * 1.1;
-    const targetH = this.viewH * 1.1;
-    const cw = Math.max(4, Math.ceil(targetW * scale));
-    const ch = Math.max(4, Math.ceil(targetH * scale));
+    // Полное разрешение экрана (как в buildVignette) — без оптимизации scale=0.5,
+    // которая вызывает проблемы с рендерингом RenderTexture + sprite scale
+    const targetW = Math.ceil(this.viewW * 1.1);
+    const targetH = Math.ceil(this.viewH * 1.1);
 
     if (!this.fogCanvas) {
       this.fogCanvas = document.createElement("canvas");
       this.fogCtx = this.fogCanvas.getContext("2d")!;
     }
-    const sizeChanged = this.fogCanvas.width !== cw || this.fogCanvas.height !== ch;
+    const sizeChanged = this.fogCanvas.width !== targetW || this.fogCanvas.height !== targetH;
     if (sizeChanged) {
-      this.fogCanvas.width = cw;
-      this.fogCanvas.height = ch;
+      this.fogCanvas.width = targetW;
+      this.fogCanvas.height = targetH;
 
       if (this.fogTex !== null) {
         this._renderer.destroyTexture(this.fogTex);
@@ -231,10 +230,10 @@ export class FxManager {
       }
 
       this.fogTex = this._renderer.createTextureFromCanvas(this.fogCanvas);
-      this.fogRT = this._renderer.createRenderTexture(cw, ch);
+      this.fogRT = this._renderer.createRenderTexture(targetW, targetH);
     }
     if (this.fogTex === null) this.fogTex = this._renderer.createTextureFromCanvas(this.fogCanvas);
-    if (this.fogRT === null) this.fogRT = this._renderer.createRenderTexture(cw, ch);
+    if (this.fogRT === null) this.fogRT = this._renderer.createRenderTexture(targetW, targetH);
 
     if (this.fogVignette === null) {
       this.fogVignette = this._renderer.createScreenSprite({

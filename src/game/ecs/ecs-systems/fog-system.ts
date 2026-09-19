@@ -112,13 +112,24 @@ export function fogUpdateSystem(
   const ay = map.treeAltar.y * T + 8;
   const nearAltar = !f.snakeStarted && dist2(px, py, ax, ay) < 240 * 240;
   
+  // Проверка зажжённых святилищ — безопасная зона
+  const shrines = map.shrines || [];
+  let nearShrine = false;
+  for (let j = 0; j < shrines.length; j++) {
+    const s = shrines[j];
+    if (s.lit && dist2(px, py, s.x * T + 8, s.y * T + 8) < 240 * 240) {
+      nearShrine = true;
+      break;
+    }
+  }
+  
   if (inVillage) {
     if (fogState.fogActive) endWave(fogState, true, bus, getRunes, f);
     fogState.fogRadius += (2600 - fogState.fogRadius) * Math.min(1, rdt * 0.8);
     return;
   }
   
-  if (nearAltar) {
+  if (nearAltar && !nearShrine) {
     logger.info('fog', `NEAR ALTAR: fogActive=${fogState.fogActive} fogAmbient=${fogState.fogAmbient} px=${px} py=${py}`);
     if (!fogState.fogActive) {
       fogState.fogActive = true;
@@ -132,9 +143,19 @@ export function fogUpdateSystem(
     return;
   }
   
-  // Игрок ушёл от алтаря — призраки исчезают
+  // Игрок рядом с зажжённым святилищем — безопасная зона, туман отключён
+  if (nearShrine) {
+    logger.info('fog', `NEAR SHRINE: fogActive=${fogState.fogActive} px=${px} py=${py}`);
+    if (fogState.fogActive) {
+      endWave(fogState, true, bus, getRunes, f);
+    }
+    fogState.fogRadius += (600 - fogState.fogRadius) * Math.min(1, rdt * 0.6);
+    return;
+  }
+  
+  // Игрок ушёл от алтаря и святилищ — призраки исчезают
   if (fogState.fogAmbient) {
-    logger.info('fog', 'ALTAR LEAVE: emitting fog:altarLeave');
+    logger.info('fog', 'ALTAR/SHRINE LEAVE: emitting fog:altarLeave');
     bus.emit('fog:altarLeave', {});
     endWave(fogState, true, bus, getRunes, f);
   }
