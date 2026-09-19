@@ -341,18 +341,15 @@ export class RenderSystem {
 
   /** Единый диспетчер отрисовки объектов окружения */
   private renderObjectsEcs(world: World, ctx: RenderContext): void {
-    // Отладка: проверить все сущности в world
-    const allEntities = [...query(world, [])];
-    const withSprite = [...query(world, [SpriteComp])];
-    logger.debug('render', `Total entities in world: ${allEntities.length}, with Sprite: ${withSprite.length}`);
-    if (withSprite.length > 0 && withSprite.length < 10) {
-      logger.debug('render', `Entities with Sprite: [${withSprite.join(',')}]`);
+    const r = ctx.renderer!;
+    if (!r) {
+      logger.error('render', 'renderObjectsEcs: ctx.renderer is undefined');
+      return;
     }
     
     for (const config of this.OBJECT_QUERIES) {
       const renderer = objectRegistry.getOrThrow(config.key);
       const matches = [...query(world, config.components)];
-      logger.debug('render', `renderObjectsEcs: ${config.key} found ${matches.length} entities`);
       for (const eid of matches) {
         const spriteIdx = SpriteComp.ref[eid];
         if (spriteIdx <= 0 || spriteIdx > SpriteRegistry.length) continue;
@@ -360,26 +357,22 @@ export class RenderSystem {
         const sprite = SpriteRegistry[spriteIdx - 1];
         if (!sprite) continue;
         
-        // Обновить позицию и zIndex Graphics
-        const r = ctx.renderer!;
-        if (!r) {
-          logger.error('render', `renderObjectsEcs: ctx.renderer is undefined for ${config.key} eid=${eid}`);
-          continue;
-        }
         const px = Position.x[eid];
         const py = Position.y[eid];
-        logger.info('render', `  ${config.key} eid=${eid} pos=(${px},${py}) tile=(${Math.round(px/16)},${Math.round(py/16)}) handle=${sprite} SpriteRegistry[${spriteIdx-1}]`);
+        const radius = Radius.value[eid] || 8;
+        
+        // Viewport culling — не рендерим объекты за пределами экрана
+        if (!r.isVisibleInViewport({ x: px, y: py }, radius)) {
+          continue;
+        }
+        
+        // Обновить позицию и zIndex Graphics
         r.setGraphicsPosition(sprite as any, { x: px, y: py });
         r.setGraphicsZIndex(sprite as any, RenderLayer.value[eid] + Math.round(py));
         
         const data = config.mapper(eid, world);
         try {
           (renderer as any).render(sprite, data, ctx);
-          // Проверка после рендеринга
-          const g = r.getGraphicsPixi(sprite as any);
-          if (g) {
-            logger.debug('render', `  ${config.key} after render: visible=${g.visible} alpha=${g.alpha} x=${g.x} y=${g.y} graphicsData=${g.graphicsData?.length ?? 'N/A'}`);
-          }
         } catch (err) {
           logger.warn('render', `Object render failed for eid=${eid}: ${err}`);
         }
@@ -417,38 +410,30 @@ export class RenderSystem {
       logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]} handle=${this.getSpriteHandle(playerEid)}`);
     }
 
-    // === Обновление позиций Graphics (Этап 6) ===
+    // === Единый проход: позиция + видимость + z-index (оптимизация) ===
     for (const eid of query(world, [Position, SpriteComp])) {
-      const handle = this.getSpriteHandle(eid);
-      if (handle !== undefined) {
-        r.setGraphicsPosition(handle as any, { x: Position.x[eid], y: Position.y[eid] });
-      }
-    }
-
-    // === Видимость: проверяем через IRenderer.isVisibleInViewport (Этап 6) ===
-    for (const eid of query(world, [SpriteComp])) {
       const handle = this.getSpriteHandle(eid);
       if (handle === undefined) continue;
       
-      const visible = r.isVisibleInViewport(
-        { x: Position.x[eid], y: Position.y[eid] }, 
-        Radius.value[eid] || 8
-      );
+      const px = Position.x[eid];
+      const py = Position.y[eid];
+      const radius = Radius.value[eid] || 8;
+      
+      // Позиция
+      r.setGraphicsPosition(handle as any, { x: px, y: py });
+      
+      // Видимость через viewport culling
+      const visible = r.isVisibleInViewport({ x: px, y: py }, radius);
       r.setGraphicsVisible(handle as any, visible);
       
       // Альфа для Dead/Hidden
       if (Dead[eid]) r.setGraphicsAlpha(handle as any, 0);
       else if (Hidden[eid]) r.setGraphicsAlpha(handle as any, 0.25);
       else r.setGraphicsAlpha(handle as any, 1);
-    }
-
-    // === Сортировка (через zIndex) (Этап 6) ===
-    for (const eid of query(world, [SpriteComp])) {
-      const handle = this.getSpriteHandle(eid);
-      if (handle !== undefined) {
-        const layer = this.getLayer(world, eid);
-        r.setGraphicsZIndex(handle as any, layer + Math.round(Position.y[eid]));
-      }
+      
+      // Z-index
+      const layer = this.getLayer(world, eid);
+      r.setGraphicsZIndex(handle as any, layer + Math.round(py));
     }
 
     // === Диспетчеризация через реестры ===

@@ -5,6 +5,14 @@ import { GameStore } from "../store";
 import { FlagDomain } from "../store/flag-domain";
 import { PlayerDomain } from "../store/player-domain";
 import { query } from "bitecs";
+import {
+  Enemy,
+  Dead,
+  Position,
+  Pedestal,
+  poolGet,
+  StringPool,
+} from "../ecs/ecs-components";
 
 /** Контекст для резолвера цели квеста. */
 interface TargetContext {
@@ -105,7 +113,6 @@ const RESOLVERS: Record<string, TargetResolver> = {
     // Ищем босса змея (Ёрмунганд) через ECS
     const world = ctx.store.ecsWorld;
     if (world) {
-      const { Enemy, Dead, Position, poolGet, StringPool } = require('../ecs/ecs-components');
       for (const eid of query(world, [Enemy])) {
         if (!Dead[eid] && poolGet(StringPool.enemyKinds, Enemy.kind[eid]) === 'snake') {
           return { x: Position.x[eid], y: Position.y[eid] };

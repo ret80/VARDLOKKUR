@@ -15,6 +15,15 @@ import type { Screen, EngineCallbacks, EngineServices, GameActions } from "../mo
 import type { Player } from "../entities";
 import type { World } from "bitecs";
 import type { WorldStore } from "./world-store";
+import { query } from "bitecs";
+import {
+  Enemy,
+  Dead,
+  Pedestal,
+  Position,
+  poolGet,
+  StringPool,
+} from "../ecs/ecs-components";
 import { logger } from "../debug/logger";
 
 /** Мутации игрока (минимальный интерфейс для обратной совместимости) */
@@ -194,8 +203,6 @@ export class GameStore {
   /** Получить все enemy entity IDs из ECS world */
   get enemyEids(): number[] {
     if (!this._state.ecsWorld) return [];
-    const { Enemy, Dead } = require('../ecs/ecs-components');
-    const { query } = require('bitecs');
     const result: number[] = [];
     for (const eid of query(this._state.ecsWorld!, [Enemy])) {
       if (!Dead[eid]) result.push(eid);
@@ -206,11 +213,9 @@ export class GameStore {
   /** Получить все pedestal entity IDs из ECS world */
   get pedestalEids(): number[] {
     if (!this._state.ecsWorld) return [];
-    const { Pedestal } = require('../ecs/ecs-components');
-    const { query } = require('bitecs');
     const result: number[] = [];
     for (const eid of query(this._state.ecsWorld!, [Pedestal])) {
-      if (!Pedestal[eid].taken) result.push(eid);
+      if (!Pedestal.taken[eid]) result.push(eid);
     }
     return result;
   }
@@ -218,7 +223,6 @@ export class GameStore {
   /** Получить Enemy component для entity ID */
   getEnemy(eid: number): unknown {
     if (!this._state.ecsWorld || eid < 0) return null;
-    const { Enemy, poolGet, StringPool } = require('../ecs/ecs-components');
     if (eid >= Enemy.kind.length) return null;
     return {
       kind: poolGet(StringPool.enemyKinds, Enemy.kind[eid]),
@@ -232,7 +236,6 @@ export class GameStore {
   /** Получить Position для entity ID */
   getPos(eid: number): { x: number; y: number } | null {
     if (!this._state.ecsWorld || eid < 0) return null;
-    const { Position } = require('../ecs/ecs-components');
     return { x: Position.x[eid], y: Position.y[eid] };
   }
 
