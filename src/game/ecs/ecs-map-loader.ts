@@ -19,7 +19,6 @@ import {
   createPlayerInEcs,
   teardownWorld,
 } from './ecs-bridge';
-import { getRenderer } from '../renderer/RendererFactory';
 import type { EntityFactory } from './entity-factory';
 import { EventBus } from '../event-bus';
 import { logger } from '../debug/logger';
@@ -177,13 +176,6 @@ export class EcsMapLoader {
     if (playerG) {
       SpriteRegistry.push(playerG);
     }
-
-    // Сбросить счётчик ID рендерера — иначе новые Graphics получат ID,
-    // которые не совпадают с тем, что хранится в SpriteRegistry
-    try {
-      const renderer = getRenderer();
-      renderer.resetNextId();
-    } catch {}
 
     // Очистить другие реестры
     EnemyAIRegistry.length = 0;
