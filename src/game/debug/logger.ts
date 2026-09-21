@@ -54,8 +54,8 @@ class LogBuffer {
   sessionStart = performance.now();
 
   estimateBytes(entry: LogEntry): number {
-    // approximate UTF-8 size
-    return new TextEncoder().encode(JSON.stringify(entry)).length;
+    // Грубая оценка: 2 байта на символ (UTF-8) без дорогого JSON.stringify + TextEncoder
+    return (entry.message.length + entry.module.length + 64) * 2;
   }
 
   addEntry(level: LogLevel, module: string, message: string): LogEntry {
@@ -132,7 +132,7 @@ const SERVER_DEDUP_MS = 1000; // Don't send same message to server within 1 seco
 export class DebugLogger {
   private buffer = new LogBuffer();
   private enabled = true;
-  private minLevel: LogLevel = 'debug';
+  private minLevel: LogLevel = (import.meta as any).env?.VITE_LOG_LEVEL || 'warn';
 
   // Dedup: last message sent to server + timestamp
   private lastServerMsg = '';

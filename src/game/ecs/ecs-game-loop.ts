@@ -54,6 +54,7 @@ import { CameraController } from '../engine/camera-controller';
 import { SceneManager } from '../engine/scene-manager';
 import { SceneLayers } from '../engine/scene-layers';
 import { RenderPipeline } from '../engine/render-pipeline';
+import { TextureCacheManager } from '../renderers/core/TextureCacheManager';
 import { EntityLayer } from '../engine/entity-layer';
 import { FogLayer } from '../engine/fog-layer';
 import { OverlayLayer } from '../engine/overlay-layer';
@@ -67,6 +68,8 @@ import {
 import {
   renderSystem,
   initInteractionHint,
+  unregisterSpriteHandle,
+  cleanupRenderedEnemy,
 } from './ecs-systems/render-system';
 import {
   updatePlayerInput,
@@ -236,6 +239,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   // hintLayer — подсказка взаимодействия, создаётся через IRenderer (Этап 8)
   let hintLayerHandle: number | null = null;
+  let dynamicLayerHandle: number | null = null;
   // initInteractionHint будет вызвана когда renderer инициализирован
 
   // ── RenderPipeline (Этап 5-6) ──
@@ -585,6 +589,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
           PhysicsBodyRegistry[pbIdx - 1] = null as any;
         }
       }
+      // Очистить кэш текстуры (GPU), данные рендера (CPU), handle спрайта
+      TextureCacheManager.instance.destroyEntity(eid);
+      cleanupRenderedEnemy(eid);
+      unregisterSpriteHandle(eid);
       // Удалить из ECS
       removeEntity(world, eid);
     }
@@ -603,9 +611,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
     // Получаем IRenderer (если инициализирован)
     let renderer: IRenderer | null = null;
-    let hintLayerHandle: number | null = null;
-    let dynamicLayerHandle: number | null = null;
-    
+
     if (isRendererInitialized()) {
       try {
         renderer = getRenderer();

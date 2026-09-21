@@ -117,16 +117,6 @@ export class PixiJSRenderer implements IRenderer {
     // Применяем камеру к worldContainer
     this.worldContainer.x = -this.cameraPos.x;
     this.worldContainer.y = -this.cameraPos.y;
-    // Отладка: проверить worldContainer
-    console.log(`[render DEBUG] worldContainer.children=${this.worldContainer.children.length}`);
-    for (const child of this.worldContainer.children) {
-      console.log(`  child: ${child.constructor.name} visible=${child.visible} alpha=${child.alpha} x=${child.x} y=${child.y}`);
-      if (child.children) {
-        for (const sub of child.children) {
-          console.log(`    sub: ${sub.constructor.name} visible=${sub.visible} alpha=${sub.alpha} x=${sub.x} y=${sub.y}`);
-        }
-      }
-    }
     // Рендерим stage — включает worldContainer + legacy Containers (tileLayer, dynamic, etc.)
     this.app.render();
   }
@@ -337,10 +327,6 @@ export class PixiJSRenderer implements IRenderer {
     const g = this.graphics.get(handle as number);
     if (!g) return;
     const c = ((Math.round(color.r * 255) & 0xff) << 16) | ((Math.round(color.g * 255) & 0xff) << 8) | (Math.round(color.b * 255) & 0xff);
-    // Отладка: проверить контекст
-    if (handle === 3) {
-      console.log(`[drawRect DEBUG] handle=${handle} context=${g.pixiGraphics.context?.constructor.name}`);
-    }
     const ctx = g.pixiGraphics.context;
     if (fill) {
       ctx.setFillStyle({ color: c, alpha: color.a });

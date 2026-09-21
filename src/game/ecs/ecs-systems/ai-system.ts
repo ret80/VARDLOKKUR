@@ -41,6 +41,19 @@ const GHOST_SLOW_DURATION = 2.0; // призрак замедляет игрок
 const SHRINE_PROTECT_RADIUS = 80; // радиус защиты святилища (в пикселях)
 
 // ============================================================
+// Кэш для isPlayerNearLitShrine — вычисляется один раз за кадр
+// ============================================================
+let _cachedNearLitShrine: boolean | null = null;
+
+/** Вычислить и закешировать результат isPlayerNearLitShrine на текущий кадр */
+function cachedIsPlayerNearLitShrine(world: World, playerX: number, playerY: number, radius: number): boolean {
+  if (_cachedNearLitShrine === null) {
+    _cachedNearLitShrine = isPlayerNearLitShrine(world, playerX, playerY, radius);
+  }
+  return _cachedNearLitShrine;
+}
+
+// ============================================================
 // Базовое обновление AI
 // ============================================================
 
@@ -57,6 +70,9 @@ export function aiUpdateSystem(
   fogActive?: boolean
 ): void {
   if (playerEid < 0 || !map) return;
+
+  // Сброс кэша nearLitShrine — будет вычислен один раз за кадр
+  _cachedNearLitShrine = null;
 
   const { x: px, y: py } = Position;
   const { x: vx, y: vy } = Velocity;
@@ -99,7 +115,7 @@ export function aiUpdateSystem(
       if (d2 < minDist * minDist && Enemy.contactCd[enemyEid] <= 0) {
         // Призрак не наносит урон, если игрок рядом со зажжённым святилищем
         if (ek === 'ghost') {
-          const nearLitShrine = isPlayerNearLitShrine(world, playerX, playerY, SHRINE_PROTECT_RADIUS);
+          const nearLitShrine = cachedIsPlayerNearLitShrine(world, playerX, playerY, SHRINE_PROTECT_RADIUS);
           if (nearLitShrine) {
             Enemy.contactCd[enemyEid] = 0.5;
             Enemy.flashT[enemyEid] = 0.12;
@@ -432,7 +448,7 @@ function updateGhost(
   const ATTACK_RADIUS = Enemy.radius[eid] + 5 + 3; // радиус урона при атаке
 
   // --- Проверка: игрок рядом со зажжённым святилищем ---
-  const nearLitShrine = isPlayerNearLitShrine(world, playerX, playerY, SHRINE_PROTECT_RADIUS);
+  const nearLitShrine = cachedIsPlayerNearLitShrine(world, playerX, playerY, SHRINE_PROTECT_RADIUS);
   
   // Обновляем флаг nearLitShrine для рендеринга
   Enemy.nearLitShrine[eid] = nearLitShrine ? 1 : 0;

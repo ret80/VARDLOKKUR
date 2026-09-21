@@ -826,6 +826,9 @@ export class Engine {
     this.map = map;
     this.store.setMap(map);
 
+    // Очистить плавающий текст при смене карты
+    this.floatTextLayer.clear();
+
     const p = this.store.player;
     p.x = spawn.x; p.y = spawn.y;
     // HP/timers будут установлены ECS при создании Player (createPlayerInEcs)

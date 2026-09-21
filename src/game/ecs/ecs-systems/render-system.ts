@@ -76,6 +76,11 @@ export function registerSpriteHandle(eid: number, handle: number): void {
   eidToSpriteHandle.set(eid, handle);
 }
 
+/** Удалить SpriteHandle для eid (при удалении сущности) */
+export function unregisterSpriteHandle(eid: number): void {
+  eidToSpriteHandle.delete(eid);
+}
+
 /** Конфигурация диспетчера объектов окружения */
 type ObjectQueryConfig = {
   components: any[];
@@ -308,6 +313,11 @@ export class RenderSystem {
     const sig = getNpcSig ? getNpcSig(npcId) : "";
     if (!sig) return false;
     return talkedSig?.get(npcId) !== sig;
+  }
+
+  /** Очистить все данные рендера для удалённой сущности */
+  cleanupEnemy(eid: number): void {
+    this.enemyPrevDataMap.delete(eid);
   }
 
   /** Рендеринг NPC (ECS) */
@@ -714,4 +724,9 @@ export function renderSystem(
 /** Инициализировать подсказку — вызывается один раз (обёртка над RenderSystem) */
 export function initInteractionHint(layer: LayerHandle): void {
   _renderSystemInstance.initInteractionHint(layer);
+}
+
+/** Очистить данные рендера для удалённой сущности (обёртка над RenderSystem) */
+export function cleanupRenderedEnemy(eid: number): void {
+  _renderSystemInstance.cleanupEnemy(eid);
 }
