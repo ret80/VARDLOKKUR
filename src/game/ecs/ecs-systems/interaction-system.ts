@@ -24,6 +24,14 @@ import {
 } from '../ecs-components';
 import { dist2 } from '../../utils';
 import { T, Tl, tileAt, solidTileAt } from '../../world';
+import {
+  InteractionHandlerRegistry,
+  ChestItemHandlerRegistry,
+  DungeonUnlockRegistry,
+  createInteractionRegistry,
+  createChestItemRegistry,
+  createDungeonUnlockRegistry,
+} from './interaction-handlers';
 
 // ============================================================
 // Конфигурация
@@ -45,7 +53,10 @@ export function tryInteract(
   store: GameStore,
   bus: EventBus,
   onDialogue: (id: string) => void,
-  onGuardSpawn?: GuardSpawnCallback
+  onGuardSpawn?: GuardSpawnCallback,
+  interactionRegistry?: InteractionHandlerRegistry,
+  chestItemRegistry?: ChestItemHandlerRegistry,
+  dungeonUnlockRegistry?: DungeonUnlockRegistry
 ): boolean {
   if (playerEid < 0 || !store.map) return false;
 
@@ -58,31 +69,21 @@ export function tryInteract(
 
   audio.uiClick();
 
-  switch (hit.kind) {
-    case 'npc':
-      onDialogue(hit.ref.id);
-      return true;
-    case 'chest':
-      openChestEcs(world, hit.eid, hit.ref, store, bus);
-      return true;
-    case 'pedestal':
-      takePedestalEcs(world, hit.eid, hit.ref, store, bus, onGuardSpawn);
-      return true;
-    case 'shrine':
-      useShrineEcs(world, hit.eid, hit.ref.i, store, bus);
-      return true;
-    case 'altar':
-      bus.emit('boss:spawned', { kind: 'snake' as any, id: -1 });
-      return true;
-    case 'oldAltar':
-      atoneEcs(store, bus);
-      return true;
-    case 'stairs':
-      enterDungeonOrExitEcs(store, bus, playerEid);
-      return true;
-  }
+  // Делегирование в Strategy Pattern registry
+  const registry = interactionRegistry ?? createInteractionRegistry();
+  const ctx: import('./interaction-handlers').InteractionContext = { 
+    world, 
+    store, 
+    bus, 
+    onDialogue, 
+    onGuardSpawn,
+    dungeonRegistry: dungeonUnlockRegistry,
+    chestItemRegistry,
+    playerX,
+    playerY
+  };
 
-  return false;
+  return registry.interact(hit, ctx);
 }
 
 export interface InteractableHit {
@@ -157,188 +158,6 @@ function findNearest(world: World, playerEid: number, store: GameStore): Interac
   }
 
   return best;
-}
-
-/** Открыть сундук */
-function openChestEcs(world: World, chestEid: number, _chest: any, store: GameStore, bus: EventBus): void {
-  Chest.opened[chestEid] = 1;
-  const m = store.map!;
-  const cx = Math.round((Position.x[chestEid] - 8) / T);
-  const cy = Math.round((Position.y[chestEid] - 8) / T);
-  store.openedChests.add(`${cx}_${cy}`);
-  audio.chest();
-
-  const f = store.flags;
-  switch (poolGet(StringPool.chestItems, Chest.item[chestEid])) {
-    case 'bow':
-      f.setFlag('hasBow', true);
-      bus.emit('toast', { msg: 'Лук Сумерек [удерживай L] — время замирает, стрела летит' });
-      break;
-    case 'sword':
-      f.setFlag('hasSword', true);
-      bus.emit('toast', { msg: 'Меч Одина получен!' });
-      audio.rune();
-      break;
-    case 'arrows':
-      f.incrementFlag('arrows', 10);
-      bus.emit('toast', { msg: '+10 стрел' });
-      break;
-    case 'heartPiece': {
-      store.playerDomain!.increaseMaxHp(2);
-      bus.emit('toast', { msg: 'Осколок жизни: максимальное здоровье +2' });
-      audio.rune();
-      break;
-    }
-    case 'key':
-      f.setFlag('hasKey', true);
-      bus.emit('toast', { msg: 'Ключ стража. Дверь впереди ждёт' });
-      break;
-  }
-  bus.emit('hud:dirty', {});
-}
-
-/** Взять предмет с пьедестала */
-function takePedestalEcs(
-  world: World, pedestalEid: number, _pd: any, store: GameStore, bus: EventBus, onGuardSpawn?: GuardSpawnCallback
-): void {
-  const m = store.map!;
-  if (Pedestal.guardsLeft[pedestalEid] > 0) {
-    audio.locked();
-    bus.emit('toast', { msg: 'Печать крепка' });
-    if (!Pedestal.guardsSpawned[pedestalEid]) {
-      Pedestal.guardsSpawned[pedestalEid] = 1;
-      // Спавн стражей через callback — передаём pedestalEid напрямую, а не индекс
-      if (onGuardSpawn) {
-        const px = Position.x[pedestalEid];
-        const py = Position.y[pedestalEid];
-        // Определяем определение пьедестала по позиции
-        const pdDef = m.pedestals?.find((p: { x: number; y: number }) => p.x * T + 8 === px && p.y * T + 8 === py);
-        if (pdDef) {
-          for (const k of pdDef.guards) {
-            const a = Math.random() * Math.PI * 2;
-            const gx = px + Math.cos(a) * 26;
-            const gy = py + Math.sin(a) * 26;
-            onGuardSpawn(k, gx, gy, pedestalEid);
-          }
-          bus.emit('toast', { msg: 'Стражи пьедестала восстали!' });
-          audio.horn();
-        }
-      }
-    }
-    return;
-  }
-
-  Pedestal.taken[pedestalEid] = 1;
-  store.takenPedestals.add(poolGet(StringPool.pedestalIds, Pedestal.id[pedestalEid]));
-  audio.chime();
-  bus.emit('drop:spawn', { kind: 'rune' as any, x: Position.x[pedestalEid], y: Position.y[pedestalEid] - 6 });
-  const pedestalIndex = getPedestalIndex(world, pedestalEid);
-  if (pedestalIndex >= 0) {
-    bus.emit('pedestal:unsealed', { pedestalIndex });
-  }
-}
-
-function getPedestalIndex(world: World, pedestalEid: number): number {
-  let idx = 0;
-  for (const eid of query(world, [Position, Pedestal])) {
-    if (eid === pedestalEid) return idx;
-    idx++;
-  }
-  return -1;
-}
-
-/** Использовать святилище */
-function useShrineEcs(world: World, shrineEid: number, _i: number, store: GameStore, bus: EventBus): void {
-  const m = store.map!;
-  // _i — это ECS entity ID, нужно найти индекс в map.shrines по позиции
-  let shrineIdx = -1;
-  if (m.shrines) {
-    const sx = Position.x[shrineEid];
-    const sy = Position.y[shrineEid];
-    for (let j = 0; j < m.shrines.length; j++) {
-      const s = m.shrines[j];
-      if (s.x * T + 8 === sx && s.y * T + 8 === sy) {
-        shrineIdx = j;
-        break;
-      }
-    }
-  }
-  // Святилища работают только в оверворлде
-  if (!m.isDungeon && shrineIdx >= 0) {
-    store.flags.setFlag('shrineIdx', shrineIdx);
-  }
-  const firstVisit = !m.isDungeon && !store.visitedShrines.has(shrineIdx);
-  if (firstVisit) {
-    store.visitedShrines.add(shrineIdx);
-    bus.emit('quest:reveal', { id: 's_shrines' });
-  }
-  // Пометить святилище как зажжённое — создаёт дырку в тумане
-  Shrine.lit[shrineEid] = 1;
-  // Full heal via PlayerDomain (delegates to ECS)
-  store.playerDomain!.fullHeal();
-  audio.chime();
-  audio.heal();
-  bus.emit('toast', { msg: 'Святилище запомнило тебя. Раны затянулись' });
-  bus.emit('hud:dirty', {});
-}
-
-/** Искупление у старого алтаря */
-function atoneEcs(store: GameStore, bus: EventBus): void {
-  const f = store.flags;
-  if (!f.relic || f.atoneDone) return;
-  f.setFlag('relic', false);
-  f.setFlag('atoneDone', true);
-  f.setFlag('nornsFavor', true);
-  store.playerDomain!.increaseMaxHp(2);
-  audio.rune();
-  bus.emit('toast', { msg: 'Норны приняли дар: пьедесталы Рун видны на карте' });
-  bus.emit('hud:dirty', {});
-}
-
-/** Войти в подземелье или выйти */
-function enterDungeonOrExitEcs(store: GameStore, bus: EventBus, playerEid: number): void {
-  const m = store.map!;
-  const f = store.flags;
-  if (m.isDungeon) {
-    bus.emit('engine:exit-dungeon', { spawn: m.exitSpot });
-    return;
-  }
-  if (f.snakeStarted && !f.snakeDead) return;
-  const entry = nearestDungeonEntry(store, playerEid);
-  if (!entry) return;
-  const gate = dungeonUnlocked(entry.id, f);
-  if (!gate.ok) {
-    audio.locked();
-    bus.emit('toast', { msg: gate.req });
-    return;
-  }
-  bus.emit('engine:enter-dungeon', { dungeonId: entry.id, name: entry.name });
-}
-
-function nearestDungeonEntry(store: GameStore, playerEid: number): { id: number; name: string } | null {
-  if (playerEid < 0) return null;
-  let best: { id: number; name: string } | null = null;
-  let bd = 40 * 40;
-  const ow = store.ow!;
-  const { x: px, y: py } = Position;
-  const playerX = px[playerEid];
-  const playerY = py[playerEid];
-
-  for (const en of ow.dungeonEntries) {
-    const d2 = dist2(en.x * T + 8, en.y * T + 8, playerX, playerY);
-    if (d2 < bd) {
-      bd = d2;
-      best = { id: en.id, name: en.name };
-    }
-  }
-  return best;
-}
-
-function dungeonUnlocked(id: number, f: any): { ok: boolean; req: string } {
-  if (id === 0) return { ok: f.hasItem('sword'), req: 'Эйрик должен вручить тебе клинок' };
-  if (id === 1) return { ok: f.hasItem('axe'), req: 'Путь преграждают корни — нужна Ледяная Секира' };
-  const runes = f.getRunes();
-  return { ok: runes >= 5, req: `Крепость запечатана — нужно ещё ${5 - runes} Рун` };
 }
 
 /** Получить ближайший интерактивный объект (для рендеринга подсказки) */

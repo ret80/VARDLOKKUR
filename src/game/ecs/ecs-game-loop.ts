@@ -66,6 +66,12 @@ import {
   type GuardSpawnCallback,
 } from './ecs-systems/interaction-system';
 import {
+  createChestItemRegistry,
+  createDungeonUnlockRegistry,
+  type ChestItemHandlerRegistry,
+  type DungeonUnlockRegistry,
+} from './ecs-systems/interaction-handlers';
+import {
   renderSystem,
   initInteractionHint,
   unregisterSpriteHandle,
@@ -189,6 +195,20 @@ let _dropRegistry: DropHandlerRegistry | null = null;
 function getDropRegistry(): DropHandlerRegistry {
   if (!_dropRegistry) _dropRegistry = new DropHandlerRegistry();
   return _dropRegistry;
+}
+
+/** Глобальный singleton registry предметов в сундуках */
+let _chestItemRegistry: ChestItemHandlerRegistry | null = null;
+function getChestItemRegistry(): ChestItemHandlerRegistry {
+  if (!_chestItemRegistry) _chestItemRegistry = createChestItemRegistry();
+  return _chestItemRegistry;
+}
+
+/** Глобальный singleton registry разблокировки подземелий */
+let _dungeonUnlockRegistry: DungeonUnlockRegistry | null = null;
+function getDungeonUnlockRegistry(): DungeonUnlockRegistry {
+  if (!_dungeonUnlockRegistry) _dungeonUnlockRegistry = createDungeonUnlockRegistry();
+  return _dungeonUnlockRegistry;
 }
 
 // ============================================================
@@ -403,7 +423,14 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     
     // ===== 3. Обработка действий =====
     processActions(input, bus, () => {
-      tryInteract(world, peid, store, bus, (id: string) => startDialogue(id), guardSpawn);
+      tryInteract(
+        world, peid, store, bus,
+        (id: string) => startDialogue(id),
+        guardSpawn,
+        undefined, // interactionRegistry (создаётся внутри tryInteract по умолчанию)
+        getChestItemRegistry(),
+        getDungeonUnlockRegistry()
+      );
     }, inputState);
 
     // ===== 4. Лук =====
