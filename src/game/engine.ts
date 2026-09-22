@@ -185,7 +185,7 @@ export class Engine {
   private starting = false;
 
   /** ECS callback для спавна стражей пьедестала */
-  private guardSpawn(kind: string, x: number, y: number, pedestalIndex: number): void {
+  private guardSpawn(kind: string, x: number, y: number, pedestalEid: number): void {
     if (!this.ecsWorld || !this.mapLoader || !this.mapLoader.entityFactory) return;
     const renderer = getRenderer();
     const g = renderer.createGraphics();
@@ -199,9 +199,10 @@ export class Engine {
       category, mask
     );
     // g уже в IRenderer layer
-    // Set aggro and guardOf via Enemy component (SoA)
+    // Set aggro и прямую ссылку на пьедестал (не индекс!)
     EcsEnemy.aggro[eid] = 1;
-    EcsEnemy.guardOf[eid] = pedestalIndex;
+    EcsEnemy.guardOf[eid] = 1; // 1 = guard spawned
+    EcsEnemy.guardPedestalEid[eid] = pedestalEid;
   }
 
   private _debugMode: boolean;
@@ -855,6 +856,7 @@ export class Engine {
         logger.debug('engine', `onPlayerCreated eid=${eid} ecsGameLoop=${!!this.ecsGameLoop}`);
         if (this.ecsGameLoop) {
           this.ecsGameLoop.setPlayerEid(eid);
+          this.ecsPlayerEid = eid;
           this.playerDomain.setEid(eid);
           logger.debug('engine', `setPlayerEid done, playerDomain._eid=${(this.playerDomain as any)._eid}`);
         }

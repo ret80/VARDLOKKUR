@@ -16,17 +16,22 @@
 
 const http = require('http');
 const { WebSocketServer } = require('ws');
+const crypto = require('crypto');
 
 const PORT = 3100;
 const MAX_LOG_BYTES = 10 * 1024 * 1024; // 10 MB
 const MAX_LOG_ENTRIES = 50000;
 
-// Храним состояние, полученное от игры
-let gameState = null;
+// ============================================================
+// Сессии — поддержка нескольких запущенных игр одновременно
+// ============================================================
+// sessionId → { ws, gameState, connectedAt, label }
+const sessions = new Map();
 
 // Клиенты
-let gameClient = null; // Один game client (браузер)
 const panelClients = new Set(); // Множество panel clients (DebugPanel)
+// panel → { ws, selectedSessionId }
+const panelSessionMap = new Map();
 
 // ============================================================
 // Серверный буфер логов (кольцевой, 10 MB)
@@ -41,12 +46,13 @@ function trimLogs() {
   }
 }
 
-function pushLog(level, module, message) {
+function pushLog(level, module, message, sessionId) {
   const entry = {
     time: Date.now(),
     level,
     module,
     message,
+    sessionId,
   };
   // Estimate bytes
   entry._bytes = Buffer.byteLength(JSON.stringify(entry));
@@ -72,6 +78,9 @@ function getLogs(filters) {
     }
     if (filters.before) {
       result = result.filter(e => e.time < parseInt(filters.before));
+    }
+    if (filters.sessionId) {
+      result = result.filter(e => e.sessionId === filters.sessionId);
     }
   }
   if (filters && filters.limit && result.length > filters.limit) {
@@ -111,10 +120,71 @@ const server = http.createServer((req, res) => {
 
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
-  // GET /debug/state — получить текущее состояние
+  // GET /debug/state — получить состояние последней сессии (legacy)
   if (req.method === 'GET' && url.pathname === '/debug/state') {
+    const lastSession = sessions.size > 0 ? Array.from(sessions.values()).pop() : null;
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify(gameState));
+    return res.end(JSON.stringify(lastSession?.gameState || null));
+  }
+
+  // GET /debug/sessions — список всех активных сессий
+  if (req.method === 'GET' && url.pathname === '/debug/sessions') {
+    const list = Array.from(sessions.entries()).map(([id, s]) => {
+      const gs = s.gameState;
+      return {
+        id,
+        connectedAt: s.connectedAt,
+        label: s.label || null,
+        player: gs?.player || null,
+        enemyCount: gs?.enemies?.length || 0,
+        dropCount: gs?.drops?.length || 0,
+        projectileCount: gs?.projectiles?.length || 0,
+      };
+    });
+    return res.writeHead(200, { 'Content-Type': 'application/json' })
+      .end(JSON.stringify({ sessions: list, total: list.length }));
+  }
+
+  // GET /debug/sessions/:id/state — состояние конкретной сессии
+  if (req.method === 'GET' && url.pathname.startsWith('/debug/sessions/')) {
+    const parts = url.pathname.split('/');
+    // /debug/sessions/:id/state
+    if (parts.length >= 5 && parts[4] === 'state') {
+      const sessionId = parts[3];
+      const session = sessions.get(sessionId);
+      if (!session) {
+        return res.writeHead(404).end('Session not found');
+      }
+      return res.writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify(session.gameState));
+    }
+    // /debug/sessions/:id/logs
+    if (parts.length >= 5 && parts[4] === 'logs') {
+      const sessionId = parts[3];
+      const filters = {
+        level: url.searchParams.get('level') || undefined,
+        module: url.searchParams.get('module') || undefined,
+        search: url.searchParams.get('search') || undefined,
+        before: url.searchParams.get('before') || undefined,
+        limit: url.searchParams.get('limit') || undefined,
+        sessionId,
+      };
+      const logs = getLogs(filters);
+      return res.writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ logs, stats: { count: logBuffer.length, bytes: logBufferBytes } }));
+    }
+    // /debug/sessions/:id — DELETE
+    if (parts.length === 4 && req.method === 'DELETE') {
+      const sessionId = parts[3];
+      const session = sessions.get(sessionId);
+      if (session) {
+        session.ws.close(1000, 'Session closed by admin');
+        sessions.delete(sessionId);
+        log(`Session ${sessionId} closed by admin`);
+      }
+      return res.writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ success: true }));
+    }
   }
 
   // GET /debug/health — проверка работоспособности
@@ -122,16 +192,16 @@ const server = http.createServer((req, res) => {
     return res.writeHead(200, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({
         status: 'ok',
-        gameConnected: !!gameClient,
+        sessionCount: sessions.size,
         panelConnected: panelClients.size > 0,
       }));
   }
 
-  // GET /debug/clients — список подключённых клиентов
+  // GET /debug/clients — список подключённых клиентов (legacy)
   if (req.method === 'GET' && url.pathname === '/debug/clients') {
     return res.writeHead(200, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({
-        gameConnected: !!gameClient,
+        sessionCount: sessions.size,
         panelClients: panelClients.size,
       }));
   }
@@ -142,9 +212,10 @@ const server = http.createServer((req, res) => {
       .end('привет мир');
   }
 
-  // GET /debug/world-dump — полный дамп мира
+  // GET /debug/world-dump — полный дамп мира (из последней сессии)
   if (req.method === 'GET' && url.pathname === '/debug/world-dump') {
-    const state = gameState;
+    const lastSession = sessions.size > 0 ? Array.from(sessions.values()).pop() : null;
+    const state = lastSession?.gameState;
     return res.writeHead(200, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({
         entities: state?.enemies?.map(e => ({
@@ -174,10 +245,11 @@ const server = http.createServer((req, res) => {
       .end(JSON.stringify({ queries: [], totalTime: '0ms' }));
   }
 
-  // GET /debug/inspect?eid=N — инспекция сущности
+  // GET /debug/inspect?eid=N — инспекция сущности (из последней сессии)
   if (req.method === 'GET' && url.pathname === '/debug/inspect') {
     const eid = parseInt(url.searchParams.get('eid') || '0');
-    const state = gameState;
+    const lastSession = sessions.size > 0 ? Array.from(sessions.values()).pop() : null;
+    const state = lastSession?.gameState;
     const entity = state?.enemies?.find(e => e.eid === eid) || null;
     return res.writeHead(200, { 'Content-Type': 'application/json' })
       .end(JSON.stringify(entity));
@@ -195,12 +267,6 @@ const server = http.createServer((req, res) => {
     const logs = getLogs(filters);
     return res.writeHead(200, { 'Content-Type': 'application/json' })
       .end(JSON.stringify({ logs, stats: { count: logBuffer.length, bytes: logBufferBytes } }));
-  }
-
-  // GET /debug/logs-stats — статистика логов
-  if (req.method === 'GET' && url.pathname === '/debug/logs-stats') {
-    return res.writeHead(200, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ count: logBuffer.length, bytes: logBufferBytes }));
   }
 
   // POST /debug/logs-clear — очистить логи
@@ -223,33 +289,56 @@ wss.on('connection', (ws, req) => {
   const isGameClient = role === 'game';
   const ip = req.socket.remoteAddress || 'unknown';
 
-  log(`New connection: role=${role || 'panel'} from ${ip}`);
-
+  // ============================================================
+  // Game client подключение с ID сессии
+  // ============================================================
   if (isGameClient) {
-    if (gameClient && gameClient !== ws) {
-      log('Closing old game client');
-      gameClient.close();
+    let sessionId = url.searchParams.get('id');
+    if (!sessionId) {
+      // Если клиент не прислал ID — генерируем автоматически
+      sessionId = crypto.randomUUID();
     }
-    gameClient = ws;
-    log(`Game client connected (${panelClients.size} panels)`);
-  } else {
-    panelClients.add(ws);
-    log(`Panel client connected (${panelClients.size} total)`);
-    
-    if (gameState) {
-      ws.send(JSON.stringify({ type: 'state', data: gameState }));
+
+    // Обновляем или создаём сессию
+    if (sessions.has(sessionId)) {
+      const existing = sessions.get(sessionId);
+      log(`Session ${sessionId} reconnecting (was connected ${Date.now() - existing.connectedAt}ms ago)`);
+      // Закрываем старый WS той же сессии
+      existing.ws.close(1000, 'Reconnecting');
     }
-  }
 
-  ws.on('message', (message) => {
-    try {
-      const data = JSON.parse(message.toString());
+    sessions.set(sessionId, {
+      ws,
+      gameState: null,
+      connectedAt: Date.now(),
+      label: url.searchParams.get('label') || null,
+    });
 
-      if (isGameClient) {
+    log(`Game session ${sessionId} connected from ${ip} (${sessions.size} sessions, ${panelClients.size} panels)`);
+
+    // Отправляем клиенту подтверждение
+    ws.send(JSON.stringify({
+      type: 'connected',
+      sessionId,
+      message: 'Debug session established',
+    }));
+
+    ws.on('message', (message) => {
+      try {
+        const data = JSON.parse(message.toString());
+
         if (data.type === 'state') {
-          gameState = data.data;
-          // Отправляем состояние всем panel clients
-          const msg = JSON.stringify({ type: 'state', data: gameState });
+          const session = sessions.get(sessionId);
+          if (!session) return;
+
+          session.gameState = data.data;
+
+          // Broadcast всем panel clients с sessionId
+          const msg = JSON.stringify({
+            type: 'state',
+            sessionId,
+            data: session.gameState,
+          });
           for (const client of panelClients) {
             if (client.readyState === 1) {
               try {
@@ -259,48 +348,111 @@ wss.on('connection', (ws, req) => {
               }
             }
           }
-          // Log first message with data preview
+
+          // Логирование первого сообщения
           if (!ws._msgCount) ws._msgCount = 0;
           ws._msgCount++;
           if (ws._msgCount === 1) {
-            log(`Game client connected. First state: player=${!!gameState?.player} enemies=${(gameState?.enemies || []).length}`);
+            log(`Session ${sessionId}: first state — player=${!!session.gameState?.player} enemies=${(session.gameState?.enemies || []).length}`);
           }
           if (ws._msgCount % 50 === 0) {
-            log(`Game client sent ${ws._msgCount} state updates`);
+            log(`Session ${sessionId}: ${ws._msgCount} state updates sent`);
           }
         } else if (data.type === 'log') {
-          // Принять логи от игры
-          pushLog(data.level || 'info', data.module || 'game', data.message || '');
+          pushLog(data.level || 'info', data.module || 'game', data.message || '', sessionId);
         }
-      } else {
-        if (data.type === 'get-state') {
-          ws.send(JSON.stringify({ type: 'state', data: gameState }));
-        } else if (data.type && data.type !== 'response') {
-          if (gameClient && gameClient.readyState === 1) {
-            // Формат: {type: 'command', teleport: {x, y}} — game-client.js ожидает
-            const cmdData = { type: 'command' };
-            // data.type содержит имя команды (teleport, set-hp и т.д.) — переносим её в тело
-            const { type: cmdName, ...cmdArgs } = data;
-            cmdData[cmdName] = cmdArgs;
-            gameClient.send(JSON.stringify(cmdData));
-            ws.send(JSON.stringify({
-              type: 'response',
-              command: cmdName,
-              result: { sent: true },
-              error: null,
-            }));
-          } else {
-            ws.send(JSON.stringify({
-              type: 'response',
-              command: data.type,
-              result: null,
-              error: 'Game client not connected',
-            }));
-          }
+      } catch (e) {
+        log(`Session ${sessionId} error: ${e.message}`);
+      }
+    });
+
+    ws.on('close', (code, reason) => {
+      log(`Session ${sessionId} closed: code=${code} reason="${reason.toString()}"`);
+      sessions.delete(sessionId);
+      log(`Session ${sessionId} removed (${sessions.size} sessions remaining)`);
+    });
+
+    ws.on('error', (err) => {
+      log(`Session ${sessionId} WebSocket error: ${err.message}`);
+    });
+
+    return;
+  }
+
+  // ============================================================
+  // Panel client подключение
+  // ============================================================
+  panelClients.add(ws);
+  panelSessionMap.set(ws, { selectedSessionId: null });
+  log(`Panel client connected (${panelClients.size} total)`);
+
+  // Отправляем список сессий
+  const sessionList = Array.from(sessions.entries()).map(([id, s]) => ({
+    id,
+    connectedAt: s.connectedAt,
+    label: s.label || null,
+    player: s.gameState?.player || null,
+    enemyCount: s.gameState?.enemies?.length || 0,
+  }));
+  ws.send(JSON.stringify({ type: 'session-list', sessions: sessionList }));
+
+  // Отправляем последнюю сессию если есть
+  const lastSession = sessions.size > 0 ? Array.from(sessions.values()).pop() : null;
+  if (lastSession && lastSession.gameState) {
+    ws.send(JSON.stringify({
+      type: 'state',
+      sessionId: Array.from(sessions.keys()).pop(),
+      data: lastSession.gameState,
+    }));
+  }
+
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+
+      if (data.type === 'get-state') {
+        // Определяем сессию
+        const sessionId = data.sessionId || panelSessionMap.get(ws)?.selectedSessionId;
+        const session = sessionId ? sessions.get(sessionId) : lastSession;
+        if (session) {
+          ws.send(JSON.stringify({ type: 'state', sessionId, data: session.gameState }));
+        }
+      } else if (data.type && data.type !== 'response') {
+        // Определяем сессию для команды
+        const sessionId = data.sessionId || panelSessionMap.get(ws)?.selectedSessionId;
+        const session = sessionId ? sessions.get(sessionId) : lastSession;
+
+        if (session && session.ws.readyState === 1) {
+          // Формат: {type: 'command', teleport: {x, y}} — game-client.js ожидает
+          const cmdData = { type: 'command' };
+          const { type: cmdName, ...cmdArgs } = data;
+          cmdData[cmdName] = cmdArgs;
+          session.ws.send(JSON.stringify(cmdData));
+          ws.send(JSON.stringify({
+            type: 'response',
+            command: cmdName,
+            result: { sent: true },
+            error: null,
+            sessionId,
+          }));
+        } else {
+          ws.send(JSON.stringify({
+            type: 'response',
+            command: data.type,
+            result: null,
+            error: 'Game session not connected',
+          }));
+        }
+      } else if (data.type === 'select-session') {
+        // Panel выбирает конкретную сессию
+        const sel = panelSessionMap.get(ws);
+        if (sel) {
+          sel.selectedSessionId = data.sessionId || null;
+          log(`Panel selected session: ${sel.selectedSessionId || 'all'}`);
         }
       }
     } catch (e) {
-      log(`Error: ${e.message}`);
+      log(`Panel error: ${e.message}`);
       try {
         ws.send(JSON.stringify({ type: 'error', error: 'Invalid message' }));
       } catch (e2) {
@@ -310,23 +462,20 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', (code, reason) => {
-    log(`WS close: role=${isGameClient ? 'game' : 'panel'} code=${code} reason="${reason.toString()}"`);
-    if (isGameClient) {
-      if (gameClient === ws) gameClient = null;
-      log('Game client disconnected');
-    } else {
-      panelClients.delete(ws);
-      log(`Panel client disconnected (${panelClients.size} total)`);
-    }
+    log(`Panel client disconnected: code=${code}`);
+    panelClients.delete(ws);
+    panelSessionMap.delete(ws);
+    log(`${panelClients.size} panels remaining`);
   });
 
   ws.on('error', (err) => {
-    log(`WebSocket error: ${err.message}`);
+    log(`Panel WebSocket error: ${err.message}`);
   });
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  log(`Running on http://localhost:${PORT}`);
+  log(`Multi-session debug server running on http://localhost:${PORT}`);
+  log(`Supports multiple game sessions. Connect with ?role=game&id=<uuid>`);
 });
 
 // Graceful shutdown

@@ -647,8 +647,11 @@ export function updateProjectilesEcs(
 
   const projKinds = StringPool.projectileKinds;
 
-  for (let i = query(world, [Position, Velocity, Projectile, Time]).length - 1; i >= 0; i--) {
-    const eid = query(world, [Position, Velocity, Projectile, Time])[i];
+  // query() возвращает IterableIterator, а не массив — материализуем один раз
+  const projectiles = Array.from(query(world, [Position, Velocity, Projectile, Time]));
+
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const eid = projectiles[i];
     const pKind = projKinds[proj.kind[eid]] ?? '';
     const pLife = proj.life[eid];
     if (pLife <= 0) {

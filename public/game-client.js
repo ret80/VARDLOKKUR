@@ -9,12 +9,49 @@
 Инжектируется в index.html через Vite middleware
 */
 
-(function () {
+ (function () {
   'use strict';
 
   // Подключаемся к debug-серверу только если в URL есть ?debug
   var IS_DEBUG = window.location.search.indexOf('debug') !== -1;
-  var WS_URL = IS_DEBUG ? 'ws://localhost:3100?role=game' : null;
+  
+  // Генерируем или восстанавливаем Session ID
+  var SESSION_STORAGE_KEY = 'debugSessionId';
+  var sessionId = null;
+  
+  function generateId() {
+    try {
+      // Используем crypto.randomUUID если доступен (браузеры)
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+      }
+    } catch (e) {
+      // Fallback
+    }
+    // Fallback: генерируем простой UUID v4-подобный
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0;
+      var v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+  
+  // Пытаемся восстановить из localStorage
+  try {
+    sessionId = localStorage.getItem(SESSION_STORAGE_KEY);
+  } catch (e) {
+    // localStorage может быть недоступен
+  }
+  if (!sessionId) {
+    sessionId = generateId();
+    try {
+      localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+    } catch (e) {
+      // localStorage может быть недоступен
+    }
+  }
+  
+  var WS_URL = IS_DEBUG ? 'ws://localhost:3100?role=game&id=' + sessionId : null;
   var ws = null;
   var reconnectTimer = null;
   var connected = false;
@@ -41,6 +78,7 @@
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({
           type: 'log',
+          sessionId: sessionId,
           level: level,
           module: module,
           message: message,
@@ -64,7 +102,7 @@
 
     ws.onopen = function() {
       connected = true;
-      console.log('[game-client] Connected to debug server!');
+      console.log('[game-client] Connected to debug server! Session: ' + sessionId);
       if (reconnectTimer) {
         clearTimeout(reconnectTimer);
         reconnectTimer = null;
@@ -84,6 +122,11 @@
     ws.onmessage = function(event) {
       try {
         var data = JSON.parse(event.data);
+        
+        // Подтверждение подключения от сервера
+        if (data.type === 'connected') {
+          console.log('[game-client] Server confirmed session: ' + data.sessionId);
+        }
         
         // Выполняем команду от debug сервера
         // Формат: {type: 'command', teleport: {x, y}} или {type: 'command', set-hp: {hp: 10}}
@@ -210,7 +253,7 @@
         map: g.getMap ? g.getMap() : {},
         time: g.getTime ? g.getTime() : {},
       };
-      ws.send(JSON.stringify({ type: 'state', data: state }));
+      ws.send(JSON.stringify({ type: 'state', sessionId: sessionId, data: state }));
     } catch (e) {
       console.error('[game-client] Error pushing state:', e);
     }

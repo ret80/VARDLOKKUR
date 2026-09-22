@@ -32,7 +32,7 @@ import { T, Tl, tileAt, solidTileAt } from '../../world';
 const INTERACTION_RANGE = 20;
 
 /** Callback для спавна стража пьедестала */
-export type GuardSpawnCallback = (kind: string, x: number, y: number, pedestalIndex: number) => void;
+export type GuardSpawnCallback = (kind: string, x: number, y: number, pedestalEid: number) => void;
 
 // ============================================================
 // Взаимодействие
@@ -202,20 +202,22 @@ function takePedestalEcs(
     bus.emit('toast', { msg: 'Печать крепка' });
     if (!Pedestal.guardsSpawned[pedestalEid]) {
       Pedestal.guardsSpawned[pedestalEid] = 1;
-      // Спавн стражей через callback
-      const pedestalIndex = getPedestalIndex(world, pedestalEid);
-      if (pedestalIndex >= 0 && m.pedestals[pedestalIndex]) {
-        const def = m.pedestals[pedestalIndex];
-        for (const k of def.guards) {
-          const a = Math.random() * Math.PI * 2;
-          const gx = Position.x[pedestalEid] + Math.cos(a) * 26;
-          const gy = Position.y[pedestalEid] + Math.sin(a) * 26;
-          if (onGuardSpawn) {
-            onGuardSpawn(k, gx, gy, pedestalIndex);
+      // Спавн стражей через callback — передаём pedestalEid напрямую, а не индекс
+      if (onGuardSpawn) {
+        const px = Position.x[pedestalEid];
+        const py = Position.y[pedestalEid];
+        // Определяем определение пьедестала по позиции
+        const pdDef = m.pedestals?.find((p: { x: number; y: number }) => p.x * T + 8 === px && p.y * T + 8 === py);
+        if (pdDef) {
+          for (const k of pdDef.guards) {
+            const a = Math.random() * Math.PI * 2;
+            const gx = px + Math.cos(a) * 26;
+            const gy = py + Math.sin(a) * 26;
+            onGuardSpawn(k, gx, gy, pedestalEid);
           }
+          bus.emit('toast', { msg: 'Стражи пьедестала восстали!' });
+          audio.horn();
         }
-        bus.emit('toast', { msg: 'Стражи пьедестала восстали!' });
-        audio.horn();
       }
     }
     return;
@@ -339,20 +341,30 @@ export function getNearestInteractable(world: World, playerEid: number, store: G
   return findNearest(world, playerEid, store);
 }
 
+// REPRO-ONLY debug snapshot of pedestal/guard state
+(globalThis as any).__pedSnap = (world: World) => {
+  const peds: any[] = [];
+  for (const eid of query(world, [Position, Pedestal])) {
+    peds.push({ eid, id: poolGet(StringPool.pedestalIds, Pedestal.id[eid]), guardsLeft: Pedestal.guardsLeft[eid], guardsSpawned: Pedestal.guardsSpawned[eid], taken: Pedestal.taken[eid] });
+  }
+  const guards: any[] = [];
+  for (const eid of query(world, [Enemy])) {
+    if (Enemy.guardPedestalEid[eid] > 0) guards.push({ eid, guardPedestalEid: Enemy.guardPedestalEid[eid], guardOf: Enemy.guardOf[eid] });
+  }
+  return { peds, guards };
+};
+
 /** Обработка убийства врага-стража */
 export function onEnemyKilledEcs(world: World, enemyEid: number, store: GameStore, bus: EventBus): void {
-  if (Enemy.guardOf[enemyEid] < 0) return;
+  // Используем прямую ссылку на пьедестал, а не индекс (индекс ломается после clearWorld)
+  const pdEid = Enemy.guardPedestalEid[enemyEid];
+  if (pdEid <= 0) return;
+  if (Pedestal.taken[pdEid] || Pedestal.guardsLeft[pdEid] <= 0) return;
 
-  // Найти пьедестал через ECS query
-  const pedestals = query(world, [Position, Pedestal]);
-  if (Enemy.guardOf[enemyEid] >= pedestals.length) return;
-
-  const pdEid = pedestals[Enemy.guardOf[enemyEid]];
-  if (!pdEid || Pedestal.taken[pdEid] || Pedestal.guardsLeft[pdEid] <= 0) return;
   Pedestal.guardsLeft[pdEid] = Math.max(0, Pedestal.guardsLeft[pdEid] - 1);
   if (Pedestal.guardsLeft[pdEid] === 0) {
     bus.emit('toast', { msg: 'Печать пьедестала пала' });
     audio.chime();
   }
-  bus.emit('pedestal:guardKilled', { pedestalIndex: Enemy.guardOf[enemyEid] });
+  bus.emit('pedestal:guardKilled', { pedestalIndex: 0 });
 }

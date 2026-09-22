@@ -8,6 +8,7 @@ import { logger } from '../game/debug/logger';
 // ============================================================
 
 interface DebugPlayer {
+  eid: number;
   x: number;
   y: number;
   hp: number;
@@ -100,6 +101,22 @@ interface Toast {
   type?: 'info' | 'success' | 'error';
 }
 
+// Сессия — сводка для UI
+interface SessionInfo {
+  id: string;
+  connectedAt: number;
+  label: string | null;
+  player: DebugPlayer | null;
+  enemyCount: number;
+  dropCount: number;
+  projectileCount: number;
+}
+
+interface SessionListResponse {
+  sessions: SessionInfo[];
+  total: number;
+}
+
 // ============================================================
 // WebSocket client
 // ============================================================
@@ -110,6 +127,8 @@ const REST_BASE = 'http://localhost:3100';
 function useDebugWebSocket() {
   const [state, setState] = useState<DebugGameState | null>(null);
   const [connected, setConnected] = useState(false);
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const toastQueue = useRef<Toast[]>([]);
   const toastId = useRef(0);
@@ -122,6 +141,17 @@ function useDebugWebSocket() {
     }, 3000);
   }, []);
 
+  // Загрузка списка сессий через REST
+  const loadSessions = useCallback(async () => {
+    try {
+      const res = await fetch(`${REST_BASE}/debug/sessions`);
+      const data: SessionListResponse = await res.json();
+      setSessions(data.sessions);
+    } catch (e) {
+      logger.error('debug-panel', `Failed to load sessions: ${e}`);
+    }
+  }, []);
+
   useEffect(() => {
     const ws = new WebSocket(WS_URL);
     wsRef.current = ws;
@@ -129,6 +159,8 @@ function useDebugWebSocket() {
     ws.onopen = () => {
       setConnected(true);
       addToast('Debug server connected', 'success');
+      // Загружаем список сессий
+      loadSessions();
     };
 
     ws.onclose = () => {
@@ -143,8 +175,17 @@ function useDebugWebSocket() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        
         if (data.type === 'state') {
+          // Фильтруем по выбранной сессии
+          if (selectedSessionId && data.sessionId !== selectedSessionId) {
+            return; // Игнорируем состояние другой сессии
+          }
           setState(data.data);
+        }
+        
+        if (data.type === 'session-list') {
+          setSessions(data.sessions);
         }
       } catch (e) {
         // Ignore
@@ -154,13 +195,25 @@ function useDebugWebSocket() {
     return () => {
       ws.close();
     };
-  }, [addToast]);
+  }, [selectedSessionId, addToast, loadSessions]);
+
+  // Автообновление списка сессий каждые 5 секунд
+  useEffect(() => {
+    if (!connected) return;
+    const interval = setInterval(loadSessions, 5000);
+    return () => clearInterval(interval);
+  }, [connected, loadSessions]);
 
   const sendCommand = useCallback((type: string, args?: Record<string, any>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type, ...(args || {}) }));
+      const cmd: Record<string, any> = { type, ...(args || {}) };
+      // Добавляем sessionId если выбрана конкретная сессия
+      if (selectedSessionId) {
+        cmd.sessionId = selectedSessionId;
+      }
+      wsRef.current.send(JSON.stringify(cmd));
     }
-  }, []);
+  }, [selectedSessionId]);
 
   const restRequest = useCallback(async (method: string, path: string, body?: any) => {
     try {
@@ -176,7 +229,27 @@ function useDebugWebSocket() {
     }
   }, []);
 
-  return { state, connected, sendCommand, restRequest, toasts: toastQueue.current };
+  const handleSelectSession = useCallback((id: string | null) => {
+    setSelectedSessionId(id);
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'select-session', sessionId: id || undefined }));
+    }
+    // При переключении сбрасываем состояние
+    if (!id) {
+      setState(null);
+    }
+  }, []);
+
+  return {
+    state,
+    connected,
+    sessions,
+    selectedSessionId,
+    sendCommand,
+    restRequest,
+    toasts: toastQueue.current,
+    handleSelectSession,
+  };
 }
 
 // ============================================================
@@ -258,11 +331,11 @@ function WorldTab({ state, sendCommand, restRequest }: { state: DebugGameState |
           <div className="mb-3">
             <KeyValue label="Total Entities" value={dump.stats?.totalEntities ?? 0} />
             <KeyValue label="Alive Entities" value={dump.stats?.aliveEntities ?? 0} />
-            <div className="mt-2 text-[10px] text-[#4a5a68]">Components:</div>
+            <div className="mt-2 text-[10px] text-[#ffffff]">Components:</div>
             {dump.stats?.componentCounts && Object.entries(dump.stats.componentCounts).map(([k, v]) => (
               <div key={k} className="flex justify-between text-[10px]">
-                <span className="text-[#4a5a68]">{k}</span>
-                <span className="text-[#8fa0ae]">{String(v)}</span>
+                <span className="text-[#ffffff]">{k}</span>
+                <span className="text-[#ffffff]">{String(v)}</span>
               </div>
             ))}
           </div>
@@ -272,11 +345,11 @@ function WorldTab({ state, sendCommand, restRequest }: { state: DebugGameState |
           <div className="mb-3 space-y-1">
             {profile.queries?.map((q: any, i: number) => (
               <div key={i} className="flex justify-between text-[10px]">
-                <span className="text-[#8fa0ae]">{q.name}</span>
+                <span className="text-[#ffffff]">{q.name}</span>
                 <span className="text-[#c9a24b]">{q.count} entities · {q.elapsed}</span>
               </div>
             ))}
-            <div className="text-[10px] text-[#4a5a68]">Total: {profile.totalTime}</div>
+            <div className="text-[10px] text-[#ffffff]">Total: {profile.totalTime}</div>
           </div>
         )}
 
@@ -285,14 +358,14 @@ function WorldTab({ state, sendCommand, restRequest }: { state: DebugGameState |
             type="number"
             value={inspectEid}
             onChange={(e) => setInspectEid(e.target.value)}
-            className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 w-20 font-mono"
+            className="bg-[#0a1520] border border-[#2c3d4d] text-[#ffffff] text-xs px-2 py-1 w-20 font-mono"
             placeholder="eid"
           />
           <button onClick={handleInspect} className="btn-rune text-[11px] px-3">Inspect</button>
         </div>
 
         {inspectResult && (
-          <div className="mt-2 text-[10px] font-mono text-[#8fa0ae] bg-[#0a1520] p-2 max-h-40 overflow-y-auto">
+          <div className="mt-2 text-[10px] font-mono text-[#ffffff] bg-[#0a1520] p-2 max-h-40 overflow-y-auto">
             {JSON.stringify(inspectResult, null, 2)}
           </div>
         )}
@@ -311,6 +384,7 @@ function PlayerTab({ state, sendCommand }: { state: DebugGameState | null; sendC
       <Card title="Player">
         {player ? (
           <>
+            <KeyValue label="ID" value={player.eid} />
             <KeyValue label="Position (px)" value={`${player.x.toFixed(0)}, ${player.y.toFixed(0)}`} />
             <KeyValue label="Position (tiles)" value={`${(player.x / 16).toFixed(1)}, ${(player.y / 16).toFixed(1)}`} />
             <KeyValue label="HP" value={`${player.hp} / ${player.maxHp}`} />
@@ -324,20 +398,20 @@ function PlayerTab({ state, sendCommand }: { state: DebugGameState | null; sendC
             <KeyValue label="Slow T" value={player.slowT.toFixed(2)} />
           </>
         ) : (
-          <div className="text-[11px] text-[#4a5a68]">Player not found</div>
+          <div className="text-[11px] text-[#ffffff]">Player not found</div>
         )}
       </Card>
 
       <Card title="Actions">
         <div className="space-y-2">
           <div className="flex gap-2 items-center">
-            <span className="text-[10px] text-[#4a5a68]">Mode:</span>
+            <span className="text-[10px] text-[#ffffff]">Mode:</span>
             <button
               onClick={() => setTeleportMode('tiles')}
               className={`px-2 py-0.5 text-[10px] font-mono transition-colors ${
                 teleportMode === 'tiles'
                   ? 'bg-[#1a3a4a] text-[#8fd8e8] border border-[#8fd8e844]'
-                  : 'bg-[#0a1520] text-[#4a5a68] hover:text-[#8fa0ae]'
+                  : 'bg-[#0a1520] text-[#ffffff] hover:text-[#8fa0ae]'
               }`}
             >
               TILES
@@ -347,7 +421,7 @@ function PlayerTab({ state, sendCommand }: { state: DebugGameState | null; sendC
               className={`px-2 py-0.5 text-[10px] font-mono transition-colors ${
                 teleportMode === 'pixels'
                   ? 'bg-[#1a3a4a] text-[#8fd8e8] border border-[#8fd8e844]'
-                  : 'bg-[#0a1520] text-[#4a5a68] hover:text-[#8fa0ae]'
+                  : 'bg-[#0a1520] text-[#ffffff] hover:text-[#8fa0ae]'
               }`}
             >
               PIXELS
@@ -358,13 +432,13 @@ function PlayerTab({ state, sendCommand }: { state: DebugGameState | null; sendC
               type="number"
               id="teleport-x"
               placeholder={teleportMode === 'tiles' ? 'X (tiles)' : 'X (px)'}
-              className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 font-mono"
+              className="bg-[#0a1520] border border-[#2c3d4d] text-[#ffffff] text-xs px-2 py-1 font-mono"
             />
             <input
               type="number"
               id="teleport-y"
               placeholder={teleportMode === 'tiles' ? 'Y (tiles)' : 'Y (px)'}
-              className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 font-mono"
+              className="bg-[#0a1520] border border-[#2c3d4d] text-[#ffffff] text-xs px-2 py-1 font-mono"
             />
             <button
               onClick={() => {
@@ -390,7 +464,7 @@ function PlayerTab({ state, sendCommand }: { state: DebugGameState | null; sendC
               type="number"
               id="set-hp"
               placeholder="HP"
-              className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 w-20 font-mono"
+              className="bg-[#0a1520] border border-[#2c3d4d] text-[#ffffff] text-xs px-2 py-1 w-20 font-mono"
             />
             <button
               onClick={() => {
@@ -426,44 +500,80 @@ function EnemiesTab({ state, sendCommand }: { state: DebugGameState | null; send
   const [spawnKind, setSpawnKind] = useState('draugr');
   const [spawnX, setSpawnX] = useState('');
   const [spawnY, setSpawnY] = useState('');
+  const [spawnMode, setSpawnMode] = useState<'tiles' | 'pixels'>('tiles');
 
   return (
     <div className="space-y-3">
       <Card title="Spawn Enemy">
-        <div className="grid grid-cols-3 gap-1.5">
-          <select
-            value={spawnKind}
-            onChange={(e) => setSpawnKind(e.target.value)}
-            className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 font-mono col-span-1"
-          >
-            {ENEMY_KINDS.map(k => (
-              <option key={k} value={k}>{k}</option>
-            ))}
-          </select>
-          <input
-            type="number"
-            value={spawnX}
-            onChange={(e) => setSpawnX(e.target.value)}
-            placeholder="X"
-            className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 font-mono"
-          />
-          <input
-            type="number"
-            value={spawnY}
-            onChange={(e) => setSpawnY(e.target.value)}
-            placeholder="Y"
-            className="bg-[#0a1520] border border-[#2c3d4d] text-[#d8e2ea] text-xs px-2 py-1 font-mono"
-          />
-          <button
-            onClick={() => {
-              if (spawnX && spawnY) {
-                sendCommand('spawn-enemy', { kind: spawnKind, x: parseFloat(spawnX), y: parseFloat(spawnY) });
-              }
-            }}
-            className="btn-rune text-[11px] col-span-3"
-          >
-            Spawn
-          </button>
+        <div className="space-y-2">
+          <div className="flex gap-2 items-center">
+            <select
+              value={spawnKind}
+              onChange={(e) => setSpawnKind(e.target.value)}
+              className="bg-[#0a1520] border border-[#2c3d4d] text-[#ffffff] text-xs px-2 py-1 font-mono flex-1"
+            >
+              {ENEMY_KINDS.map(k => (
+                <option key={k} value={k}>{k}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2 items-center">
+            <span className="text-[10px] text-[#ffffff]">Mode:</span>
+            <button
+              onClick={() => setSpawnMode('tiles')}
+              className={`px-2 py-0.5 text-[10px] font-mono transition-colors ${
+                spawnMode === 'tiles'
+                  ? 'bg-[#1a3a4a] text-[#8fd8e8] border border-[#8fd8e844]'
+                  : 'bg-[#0a1520] text-[#ffffff] hover:text-[#8fa0ae]'
+              }`}
+            >
+              TILES
+            </button>
+            <button
+              onClick={() => setSpawnMode('pixels')}
+              className={`px-2 py-0.5 text-[10px] font-mono transition-colors ${
+                spawnMode === 'pixels'
+                  ? 'bg-[#1a3a4a] text-[#8fd8e8] border border-[#8fd8e844]'
+                  : 'bg-[#0a1520] text-[#ffffff] hover:text-[#8fa0ae]'
+              }`}
+            >
+              PIXELS
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <input
+              type="number"
+              id="spawn-x"
+              placeholder={spawnMode === 'tiles' ? 'X (tiles)' : 'X (px)'}
+              value={spawnX}
+              onChange={(e) => setSpawnX(e.target.value)}
+              className="bg-[#0a1520] border border-[#2c3d4d] text-[#ffffff] text-xs px-2 py-1 font-mono"
+            />
+            <input
+              type="number"
+              id="spawn-y"
+              placeholder={spawnMode === 'tiles' ? 'Y (tiles)' : 'Y (px)'}
+              value={spawnY}
+              onChange={(e) => setSpawnY(e.target.value)}
+              className="bg-[#0a1520] border border-[#2c3d4d] text-[#ffffff] text-xs px-2 py-1 font-mono"
+            />
+            <button
+              onClick={() => {
+                if (spawnX && spawnY) {
+                  let fx = parseFloat(spawnX);
+                  let fy = parseFloat(spawnY);
+                  if (spawnMode === 'tiles') {
+                    fx *= 16;
+                    fy *= 16;
+                  }
+                  sendCommand('spawn-enemy', { kind: spawnKind, x: fx, y: fy });
+                }
+              }}
+              className="btn-rune text-[11px] col-span-2"
+            >
+              Spawn
+            </button>
+          </div>
         </div>
       </Card>
 
@@ -477,9 +587,9 @@ function EnemiesTab({ state, sendCommand }: { state: DebugGameState | null; send
           {state?.enemies?.map((e) => (
             <div key={e.eid} className="flex items-center justify-between text-[10px] bg-[#0a1520] px-2 py-1">
               <div className="flex gap-2 items-center">
-                <span className={`font-bold ${e.isGhost ? 'text-[#8fd8e8]' : 'text-[#d8e2ea]'}`}>{e.kind}</span>
-                <span className="text-[#4a5a68]">#{e.eid}</span>
-                <span className="text-[#8fa0ae]">{e.stateName}</span>
+                <span className={`font-bold ${e.isGhost ? 'text-[#8fd8e8]' : 'text-[#ffffff]'}`}>{e.kind}</span>
+                <span className="text-[#ffffff]">#{e.eid}</span>
+                <span className="text-[#ffffff]">{e.stateName}</span>
               </div>
               <div className="flex gap-1 items-center">
                 <span className={`font-mono ${e.hp < e.maxHp ? 'text-[#e06060]' : 'text-[#8fd8e8]'}`}>{e.hp}/{e.maxHp}</span>
@@ -493,7 +603,7 @@ function EnemiesTab({ state, sendCommand }: { state: DebugGameState | null; send
             </div>
           ))}
           {(!state?.enemies || state.enemies.length === 0) && (
-            <div className="text-[10px] text-[#4a5a68] text-center py-4">No enemies</div>
+            <div className="text-[10px] text-[#ffffff] text-center py-4">No enemies</div>
           )}
         </div>
       </Card>
@@ -513,8 +623,8 @@ function DropsTab({ state, sendCommand }: { state: DebugGameState | null; sendCo
             <div key={d.eid} className="flex items-center justify-between text-[10px] bg-[#0a1520] px-2 py-1">
               <div className="flex gap-2 items-center">
                 <span className="text-[#c9a24b]">{d.kind}</span>
-                <span className="text-[#4a5a68]">#{d.eid}</span>
-                <span className="text-[#8fa0ae]">{d.x.toFixed(0)},{d.y.toFixed(0)}</span>
+                <span className="text-[#ffffff]">#{d.eid}</span>
+                <span className="text-[#ffffff]">{d.x.toFixed(0)},{d.y.toFixed(0)}</span>
               </div>
               <button
                 onClick={() => sendCommand('remove-drop', { eid: d.eid })}
@@ -525,7 +635,7 @@ function DropsTab({ state, sendCommand }: { state: DebugGameState | null; sendCo
             </div>
           ))}
           {(!state?.drops || state.drops.length === 0) && (
-            <div className="text-[10px] text-[#4a5a68] text-center py-4">No drops</div>
+            <div className="text-[10px] text-[#ffffff] text-center py-4">No drops</div>
           )}
         </div>
       </Card>
@@ -545,8 +655,8 @@ function ProjectilesTab({ state, sendCommand }: { state: DebugGameState | null; 
             <div key={p.eid} className="flex items-center justify-between text-[10px] bg-[#0a1520] px-2 py-1">
               <div className="flex gap-2 items-center">
                 <span className="text-[#e8c979]">{p.kind}</span>
-                <span className="text-[#4a5a68]">#{p.eid}</span>
-                <span className="text-[#8fa0ae]">dmg:{p.dmg}</span>
+                <span className="text-[#ffffff]">#{p.eid}</span>
+                <span className="text-[#ffffff]">dmg:{p.dmg}</span>
               </div>
               <button
                 onClick={() => sendCommand('remove-projectile', { eid: p.eid })}
@@ -557,7 +667,7 @@ function ProjectilesTab({ state, sendCommand }: { state: DebugGameState | null; 
             </div>
           ))}
           {(!state?.projectiles || state.projectiles.length === 0) && (
-            <div className="text-[10px] text-[#4a5a68] text-center py-4">No projectiles</div>
+            <div className="text-[10px] text-[#ffffff] text-center py-4">No projectiles</div>
           )}
         </div>
       </Card>
@@ -567,7 +677,7 @@ function ProjectilesTab({ state, sendCommand }: { state: DebugGameState | null; 
 
 function FlagsTab({ state, sendCommand }: { state: DebugGameState | null; sendCommand: (t: string, a?: any) => void }) {
   const flags = state?.flags;
-  if (!flags) return <div className="text-[11px] text-[#4a5a68]">Flags not available</div>;
+  if (!flags) return <div className="text-[11px] text-[#ffffff]">Flags not available</div>;
 
   const flagGroups: Record<string, string[]> = {
     'Inventory': ['hasSword', 'hasAxe', 'hasBow', 'hasHammer', 'hasKey', 'swordUp', 'axeUp', 'furyRune', 'nornsFavor'],
@@ -588,8 +698,8 @@ function FlagsTab({ state, sendCommand }: { state: DebugGameState | null; sendCo
               const displayValue = typeof value === 'boolean' ? (value ? 'ON' : 'OFF') : value;
               return (
                 <div key={key} className="flex justify-between items-center text-[10px]">
-                  <span className="text-[#4a5a68]">{key}</span>
-                  <span className={`font-mono ${typeof value === 'boolean' ? (value ? 'text-[#8fd8e8]' : 'text-[#4a5a68]') : 'text-[#d8e2ea]'}`}>
+                  <span className="text-[#ffffff]">{key}</span>
+                  <span className={`font-mono ${typeof value === 'boolean' ? (value ? 'text-[#8fd8e8]' : 'text-[#ffffff]') : 'text-[#ffffff]'}`}>
                     {displayValue}
                   </span>
                 </div>
@@ -644,7 +754,7 @@ function TimeTab({ state, sendCommand }: { state: DebugGameState | null; sendCom
 // ============================================================
 
 export function DebugPanel() {
-  const { state, connected, sendCommand, restRequest, toasts } = useDebugWebSocket();
+  const { state, connected, sessions, selectedSessionId, sendCommand, restRequest, toasts, handleSelectSession } = useDebugWebSocket();
   const [activeTab, setActiveTab] = useState('world');
 
   const tabs = [
@@ -657,16 +767,62 @@ export function DebugPanel() {
     { id: 'time', label: 'Time' },
   ];
 
+  // Форматируем время подключения
+  function formatConnectedAt(ts: number): string {
+    const diff = Date.now() - ts;
+    const secs = Math.floor(diff / 1000);
+    if (secs < 60) return `${secs}s ago`;
+    const mins = Math.floor(secs / 60);
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    return `${hrs}h ago`;
+  }
+
+  // Форматируем ID (короткий)
+  function shortId(id: string): string {
+    return id.slice(0, 8);
+  }
+
   return (
     <div className="fixed top-16 right-0 z-50 w-[360px] max-h-[calc(100vh-64px)] flex flex-col">
-      {/* Connection indicator */}
+      {/* Connection indicator + Session selector */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-[#0a1520] border-b border-[#2c3d4d]">
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${connected ? 'bg-[#8fd8e8]' : 'bg-[#e06060]'}`} />
-          <span className="text-[10px] font-mono tracking-wider text-[#4a5a68]">DEBUG</span>
+          <span className="text-[10px] font-mono tracking-wider text-[#ffffff]">DEBUG</span>
         </div>
-        <span className="text-[10px] text-[#4a5a68]">{connected ? 'connected' : 'disconnected'}</span>
+        <span className="text-[10px] text-[#ffffff]">{connected ? 'connected' : 'disconnected'}</span>
       </div>
+
+      {/* Session selector */}
+      {connected && sessions.length > 0 && (
+        <div className="px-3 py-1.5 bg-[#0d1a25] border-b border-[#2c3d4d]">
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-mono text-[#ffffff] tracking-wider uppercase">Session:</span>
+            <select
+              value={selectedSessionId || ''}
+              onChange={(e) => handleSelectSession(e.target.value || null)}
+              className="bg-[#0a1520] border border-[#2c3d4d] text-[#ffffff] text-[10px] px-2 py-0.5 font-mono flex-1 min-w-0"
+            >
+              <option value="">All (last)</option>
+              {sessions.map((s) => {
+                const hpStr = s.player ? `${s.player.hp}/${s.player.maxHp}` : '—';
+                const label = s.label ? ` [${s.label}]` : '';
+                return (
+                  <option key={s.id} value={s.id}>
+                    {shortId(s.id)}{label} · HP:{hpStr} · 👾{s.enemyCount}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+          {selectedSessionId && (
+            <div className="mt-1 text-[9px] text-[#ffffff] font-mono">
+              Selected: {selectedSessionId.slice(0, 12)}...
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 px-2 py-2 bg-[#0a1520] border-b border-[#2c3d4d] overflow-x-auto">
@@ -705,7 +861,7 @@ export function DebugPanel() {
             className={`anim-toast nord-panel px-3 py-1 text-[11px] text-center ${
               t.type === 'success' ? 'text-[#8fd8e8]' :
               t.type === 'error' ? 'text-[#e06060]' :
-              'text-[#d8e2ea]'
+              'text-[#ffffff]'
             }`}
           >
             {t.msg}

@@ -402,6 +402,8 @@ export class EntityFactory {
     { comp: Pedestal, field: 'taken' },
     { comp: Pedestal, field: 'guardsLeft' },
     { comp: Pedestal, field: 'guardsSpawned' },
+    // Enemy guard reference
+    { comp: Enemy, field: 'guardPedestalEid' },
     // Shrine
     { comp: Shrine, field: 'lit' },
     // Door

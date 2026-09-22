@@ -74,6 +74,7 @@ export const Enemy = {
   repathT: new Float32Array(10000),
   contactCd: new Float32Array(10000),
   guardOf: new Int32Array(10000),
+  guardPedestalEid: new Int32Array(10000),
   fade: new Float32Array(10000),
   dropDew: new Uint8Array(10000),
   leashX: new Float32Array(10000),
@@ -310,6 +311,7 @@ export function resetAllComponents(): void {
     Player.runes,
     Pedestal.guardsLeft,
     Enemy.guardOf,
+    Enemy.guardPedestalEid,
     EnemyAI.path,
   ];
   for (const a of i32Arrays) a.fill(0);

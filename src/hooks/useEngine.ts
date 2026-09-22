@@ -40,9 +40,11 @@ export function useEngine(hostRef: RefObject<HTMLElement>) {
       onStats: setStats,
     }, debugMode, testMapMode);
     engineRef.current = eng;
+    (window as any).__engine = eng; // REPRO-ONLY
     return () => {
       eng.destroy();
       engineRef.current = null;
+      delete (window as any).__engine;
     };
   }, [hostRef, pushToast, debugMode, testMapMode]);
 

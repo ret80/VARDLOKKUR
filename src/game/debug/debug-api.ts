@@ -35,6 +35,7 @@ import {
 // ============================================================
 
 export interface DebugPlayer {
+  eid: number;
   x: number;
   y: number;
   hp: number;
@@ -129,9 +130,10 @@ export interface DebugGameState {
 
 /** Получить состояние игрока из ECS */
 export function getPlayerState(world: World, playerEid: number): DebugPlayer | null {
-  if (playerEid < 0 || !Position.x[playerEid]) return null;
+  if (playerEid < 0) return null;
   
   return {
+    eid: playerEid,
     x: Position.x[playerEid],
     y: Position.y[playerEid],
     hp: Health.current[playerEid],
