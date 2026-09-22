@@ -408,9 +408,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     const dt = rdt * timeScale;
     const peid = _playerEid;
 
-    // ===== 0. Синхронизация ECS Player.hasSword ↔ store flags =====
+    // ===== 0. Синхронизация ECS Player.hasSword ↔ store flags (до ввода) =====
     if (peid >= 0 && config_flags.hasItem('sword')) {
       Player.hasSword[peid] = 1;
+    } else if (peid >= 0) {
+      Player.hasSword[peid] = 0;
     }
 
     // ===== 1. Захват ввода ОДИН раз за кадр =====
@@ -432,6 +434,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         getDungeonUnlockRegistry()
       );
     }, inputState);
+
+    // ===== 3.5. Синхронизация Player.hasSword ↔ store flags (после взаимодействия) =====
+    if (peid >= 0) {
+      Player.hasSword[peid] = config_flags.hasItem('sword') ? 1 : 0;
+    }
 
     // ===== 4. Лук =====
     updateBow(world, peid, input, bus, flags, () => {

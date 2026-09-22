@@ -48,7 +48,8 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
       snap.swingT !== prevSnap.swingT ||
       snap.hurtT !== prevSnap.hurtT ||
       snap.slowT !== prevSnap.slowT ||
-      snap.aiming !== prevSnap.aiming
+      snap.aiming !== prevSnap.aiming ||
+      snap.hasSword !== prevSnap.hasSword
     );
   }
 
@@ -114,16 +115,29 @@ export class PlayerRenderer implements Renderer<PlayerRenderData> {
       px(r, g, 2, -12 + bob, 1, 1, 0x0d1218, 1);
     }
 
+    // Меч — отрисовка во время удара или в покое
     if (extra.hasSword && p.swingT > 0) {
       const prog = 1 - p.swingT / 0.22;
       const baseA = Math.atan2(extra.swingDir.y, extra.swingDir.x);
       const sweep = baseA - 1.1 + prog * 2.2;
       const hx = Math.cos(sweep), hy = Math.sin(sweep);
-      // Меч — полигон
-      const blade = f >= 0
-        ? [-3 + hx * 10, -14 + bob + hy * 10, -1 + hx * 10, -14 + bob + hy * 10, 0, -12 + bob]
-        : [-4 + hx * 10, -14 + bob + hy * 10, -2 + hx * 10, -14 + bob + hy * 10, -1, -12 + bob];
-      drawPoly(r, g, blade, { r: 200 / 255, g: 211 / 255, b: 220 / 255, a: 1 });
+      // Меч — прямоугольное лезвие (оригинальная геометрия)
+      const blade = [
+        hx * 5, -4 + bob + hy * 5,
+        hx * 13, -4 + bob + hy * 13,
+        hx * 13 + -hy * 2, -4 + bob + hy * 13 + hx * 2,
+        hx * 5 + -hy * 2, -4 + bob + hy * 5 + hx * 2,
+      ];
+      drawPoly(r, g, blade, { r: 185 / 255, g: 194 / 255, b: 201 / 255, a: 1 });
+    } else if (extra.hasSword) {
+      // Меч висит на поясе в покое
+      if (f >= 0) {
+        px(r, g, 5, -10 + bob, 2, 8, 0xb9c2c9, 1);
+        px(r, g, 4, -4 + bob, 4, 1, 0x5a4632, 1);
+      } else {
+        px(r, g, -7, -10 + bob, 2, 8, 0xb9c2c9, 1);
+        px(r, g, -8, -4 + bob, 4, 1, 0x5a4632, 1);
+      }
     }
   }
 

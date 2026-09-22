@@ -20,6 +20,7 @@ import {
   SpriteRegistry,
 } from '../ecs-components';
 import { logger } from '../../debug/logger';
+import { getRenderer } from '../../renderer/RendererFactory';
 
 // ============================================================
 // Система жизней
@@ -40,11 +41,13 @@ export function lifeCheckSystem(world: World): void {
   }
 
   // Очистить спрайт мёртвых врагов (физ. тело удалится в game loop)
+  const r = getRenderer();
   for (const eid of query(world, [Dead, Enemy])) {
     const spriteIdx = Sprite.ref[eid];
-    const spriteRef = SpriteRegistry[spriteIdx - 1];
-    if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
-    spriteRef?.destroy();
+    const spriteHandle = SpriteRegistry[spriteIdx - 1];
+    if (spriteHandle) {
+      r.destroyGraphics(spriteHandle);
+    }
     // Сбросить ссылку — иначе renderGraphics попытается обратиться к уничтоженному Graphics
     Sprite.ref[eid] = 0;
   }
