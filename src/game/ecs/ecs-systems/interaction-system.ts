@@ -174,6 +174,11 @@ function openChestEcs(world: World, chestEid: number, _chest: any, store: GameSt
       f.setFlag('hasBow', true);
       bus.emit('toast', { msg: 'Лук Сумерек [удерживай L] — время замирает, стрела летит' });
       break;
+    case 'sword':
+      f.setFlag('hasSword', true);
+      bus.emit('toast', { msg: 'Меч Одина получен!' });
+      audio.rune();
+      break;
     case 'arrows':
       f.incrementFlag('arrows', 10);
       bus.emit('toast', { msg: '+10 стрел' });
