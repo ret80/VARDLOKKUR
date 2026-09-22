@@ -13,6 +13,7 @@ import {
   buildAllTileTextures,
   WallTextureCache,
   HouseTextureCache,
+  GroundTileCache,
   houseMetrics,
 } from "../tiles";
 import { buildMinimapBase } from "../map-display";
@@ -36,6 +37,7 @@ export interface LoadMapResult {
 export class MapLoaderService {
   wallCache = new WallTextureCache();
   houseCache = new HouseTextureCache();
+  groundCache = new GroundTileCache();
   ecsMapLoader: EcsMapLoader | null = null;
   private _mmBase: ImageData | null = null;
   /** Предыдущий PlanckWorld — уничтожается при загрузке новой карты */
@@ -68,6 +70,9 @@ export class MapLoaderService {
       create: (x: number, y: number) => {
         const g = this._renderer.createGraphics(this._dynamicLayer);
         this._renderer.setGraphicsPosition(g, { x, y });
+        // zIndex на основе y-позиции для корректной глубины (Y-sorting)
+        // Чем ниже объект на экране (больше y), тем выше zIndex — рисуется поверх
+        this._renderer.setGraphicsZIndex(g, Math.round(y));
         return g;
       },
     };
@@ -177,17 +182,19 @@ export class MapLoaderService {
     const tileLayerContainer = this._renderer.getLayerContainer(this._tileLayerHandle);
     const dynamicContainer = this._renderer.getLayerContainer(this._dynamicLayer);
 
-    // Ground — создаём спрайт напрямую в tileLayer (не через createSprite — он добавляет в worldContainer)
-    const groundHandle = this._renderer.createSprite({
-      texture: tileResult.groundTexture,
-      x: 0,
-      y: 0,
-      _container: tileLayerContainer,
-    });
-    this._renderer.setSpriteZIndex(groundHandle, 0);
-    // Помечаем map sprites флагом, чтобы clearEcsLayerContainers не уничтожал ECS-сущности
-    const groundPixi = this._renderer.getSpritePixi(groundHandle);
-    if (groundPixi) (groundPixi as any).__isMapSprite = true;
+    // Ground — создаём отдельные спрайты для каждого тайла (устраняет размытие при движении камеры)
+    for (const gt of tileResult.groundTiles) {
+      const spriteHandle = this._renderer.createSprite({
+        texture: gt.textureHandle,
+        x: gt.x,
+        y: gt.y,
+        _container: tileLayerContainer,
+      });
+      this._renderer.setSpriteZIndex(spriteHandle, 0);
+      // Помечаем map sprites флагом, чтобы clearEcsLayerContainers не уничтожал ECS-сущности
+      const groundPixi = this._renderer.getSpritePixi(spriteHandle);
+      if (groundPixi) (groundPixi as any).__isMapSprite = true;
+    }
 
     // Переносим дома, ёлки, камни, монументы в dynamic — сортируются по layer + bottomY
     for (const ws of tileResult.wallSprites) {
@@ -225,6 +232,7 @@ export class MapLoaderService {
     }
     this.wallCache = tileResult.wallCache;
     this.houseCache = tileResult.houseCache;
+    this.groundCache = tileResult.groundCache;
 
     this._mmBase = buildMinimapBase(map);
     return result;
@@ -234,5 +242,6 @@ export class MapLoaderService {
   destroy(): void {
     this.wallCache.destroy();
     this.houseCache.destroy();
+    this.groundCache.destroy();
   }
 }

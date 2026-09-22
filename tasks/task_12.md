@@ -1,274 +1,89 @@
-# Задача 12: Исправление мутного заднего фона и порядка отрисовки
+Я изучил репозиторий и существующий черновик `task_12.md`. 
 
-## 1. Проблема
+### Анализ существующего плана и замечания
+Исходный план в `task_12.md` верно определяет причину размытия фона (создание одной большой текстуры из canvas, которая подвергается линейной фильтрации при масштабировании). Однако в нём есть **критическое упущение** относительно второй части задачи:
+- В исходном плане указано: *"Деревья/дома уже в dynamicHandle (zIndex 50), где и игрок"*. 
+- Но в описании регрессии вы чётко указали: *"на слои тайлов отрисовываются строения и деревья из за чего деревья и дома не перекрывают игрока"*. Это означает, что в текущем коде они ошибочно добавляются в `tileLayerHandle` (или другой нижний слой), а не в слой игрока. План должен содержать **явное указание** на перенос создания этих спрайтов в динамический слой.
 
-### 1.1. Задний план мутный
+Кроме того, создание отдельного спрайта для *каждого* тайла фона может вызвать опасения по поводу производительности. В уточнённом плане добавлено пояснение, что благодаря кэшированию текстур 16x16, PixiJS v8 эффективно объединяет их в batch-и, что сводит рост draw calls к минимуму.
 
-**Симптом:** Ground-тайлы (фон карты) выглядят размытыми/мутными при движении камеры.
-
-**Корень проблемы:** `buildGroundTexture()` в `tiles.ts` рисует всю карту на одном `<canvas>`, затем `renderer.createTextureFromCanvas()` создаёт из него одну большую PixiJS `Texture`. При движении камеры эта текстура растягивается/сжимается, и PixiJS применяет линейную фильтрацию + mipmaps → размытие.
-
-**Где создаётся:**
-- `tiles.ts` строка 688: `const groundTexture = renderer.createTextureFromCanvas(groundCanvas);`
-- `map-loader-service.ts` строка 181-187: ground спрайт создаётся из `groundTexture` и добавляется в `tileLayerHandle`
-
-**Где `createTextureFromCanvas`:**
-- `PixiJSRenderer.ts` строка 415 — создаёт `Texture.from(canvas)`, который по умолчанию использует `scaleMode=Linear` и генерирует mipmaps
-
-### 1.2. Деревья и дома перекрываются некорректно
-
-**Симптом:** Деревья и дома накладываются на игрока вместо того чтобы быть за/перед ним.
-
-**Текущее состояние слоёв:**
-
-| Слой | zIndex | Содержимое |
-|------|--------|------------|
-| `tileLayerHandle` | 10 | Ground-тайлы (одна большая текстура) |
-| `worldHandle` | 40 | World container |
-| `dynamicHandle` | 50 | Игрок, враги, дропы, **деревья, дома** |
-| `fxWorldHandle` | 60 | FX-графика |
-| `floatLayerHandle` | 90 | Плавающий текст |
-
-**Проблема:** Деревья и дома уже в `dynamicHandle` (zIndex 50), где и игрок. Проблема не в порядке слоёв, а в **zIndex отдельных спрайтов** и **Y-sorting**.
-
-**Текущий Y-sorting:**
-- `SceneLayers.dynamic` имеет `sortableChildren = true` (legacy Container)
-- `PixiJSRenderer.dynamicHandle` создаётся с `container.sortableChildren = true` (строка 129)
-- Спрайты деревьев/домов получают `zIndex = Y + T` (tiles.ts строка 613)
-- Игрок получает `zIndex` через `userData.y` (map-loader-service.ts строка 206)
-
-**Возможная причина:** `sortableChildren` сортирует по `y` координате, но если `zIndex` спрайтов деревьев/домов конфликтует с `zIndex` игрока, порядок может быть неверным.
+Ниже представлен **исправленный и финальный план**, готовый к сохранению в `@tasks/task_12.md`.
 
 ---
 
-## 2. Целевая архитектура
+# Задача 12: Исправление мутного заднего фона и порядка отрисовки объектов
 
-### 2.1. Ground-тайлы — без текстуры
+## 1. Анализ проблемы
 
-**Было:**
-```
-buildGroundTexture() → canvas → createTextureFromCanvas() → одна большая Texture → Sprite на tileLayer
-```
+### 1.1. Мутный задний план (Ground-тайлы)
+- **Симптом:** Фон карты выглядит размытым ("мыльным") при движении камеры.
+- **Корень проблемы:** Функция `buildGroundTexture()` в `tiles.ts` рисует всю карту на одном большом `<canvas>`, который затем конвертируется в единую текстуру через `createTextureFromCanvas`. При движении или масштабировании камеры PixiJS применяет линейную интерполяцию, что приводит к потере чёткости пиксель-арта.
+- **Требование:** Отключить рендер в единую большую текстуру.
 
-**Стало:**
-```
-Рисовать тайлы напрямую на tileLayer как отдельные Sprites из мелких текстур (16x16)
-ИЛИ
-Использовать canvas-backed tilemap без масштабирования
-```
+### 1.2. Деревья и дома не перекрывают игрока
+- **Симптом:** Строения и деревья отрисовываются на слое тайлов (`tileLayer`), который имеет более низкий приоритет отрисовки, чем слой игрока. Из-за этого игрок всегда отображается поверх них, ломая восприятие глубины сцены.
+- **Требование:** Перенести все объекты (деревья, дома) в слой с игроком для корректного Y-sorting.
 
-**Рекомендуемый подход:** Отрисовывать ground-тайлы как отдельные спрайты из кэшированных текстур 16x16. Каждый тайл — отдельный Sprite на `tileLayerHandle`. При движении камеры каждый спрайт остаётся чётким.
+## 2. Целевое решение
 
-### 2.2. Деревья/дома — корректный Y-sorting
-
-**Было:**
-```
-Деревья/дома → dynamicHandle (zIndex 50) → sortableChildren по y
-```
-
-**Стало:**
-```
-Деревья/дома → dynamicHandle (zIndex 50) → sortableChildren по y
-Игрок → dynamicHandle (zIndex 50) → sortableChildren по y
-Все сортируются одинаково — порядок корректный.
-```
-
-**Проверка:** Убедиться что `sortableChildren = true` на контейнере динамического слоя и что `userData.y` у всех спрайтов (игрок, деревья, дома) установлен корректно.
-
----
+1. **Для фона:** Вместо одной большой текстуры использовать кэш отдельных текстур тайлов (16x16) и создавать для каждого тайла карты отдельный спрайт. Это полностью устраняет размытие, так как каждый тайл рендерится в нативном разрешении. PixiJS эффективно батчит спрайты с одинаковыми текстурами, поэтому нагрузка на GPU останется низкой.
+2. **Для объектов:** Гарантировать, что `wallSprites` (деревья, скалы) и `houseSprites` (дома) создаются в контейнере динамического слоя (`dynamicHandle`), а не в `tileLayerHandle`.
+3. **Y-Sorting:** Убедиться, что для динамического слоя включена сортировка (`sortableChildren = true`), и `zIndex` всех спрайтов (игрок, деревья, дома) рассчитывается единообразно как `layerZIndex + Math.round(y)`.
 
 ## 3. План реализации
 
-### Шаг 12.1: Отключить bake ground-текстуры
+### Шаг 1: Модификация `src/game/tiles.ts` (Отказ от единой текстуры фона)
+- Создать класс `GroundTileCache` (по аналогии с `WallTextureCache`), который кэширует текстуры 16x16 для каждого типа тайла.
+- Заменить функцию `buildGroundTexture` на `buildGroundTileSprites`, которая возвращает массив объектов `{ textureHandle, x, y }` для каждого тайла карты.
+- Обновить интерфейс `TileBuildResult`:
+  ```typescript
+  export interface TileBuildResult {
+    groundTiles: Array<{ textureHandle: TextureHandle; x: number; y: number }>; // Было: groundTexture
+    wallSprites: WallSpriteData[];
+    houseSprites: HouseSpriteEntry[];
+    wallCache: WallTextureCache;
+    houseCache: HouseTextureCache;
+    groundCache: GroundTileCache; // Новый кэш
+  }
+  ```
 
-**Файл:** `src/game/tiles.ts`
+### Шаг 2: Модификация загрузчика карты (`src/game/ecs/ecs-map-loader.ts` или `map-loader-service.ts`)
+- **Фон:** Заменить создание одного большого спрайта земли на цикл, создающий отдельные спрайты для каждого элемента из `tileResult.groundTiles` и добавляющий их в `tileLayerHandle`.
+- **Объекты (КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ):** Найти место, где создаются спрайты для `wallSprites` и `houseSprites`. Явно изменить целевой контейнер с `tileLayerHandle` на `dynamicHandle` (или тот слой, где отрисовывается игрок).
+  ```typescript
+  // Было (ошибочно):
+  // renderer.createSprite({ texture: wallTex, x, y, _container: tileLayerContainer })
+  
+  // Стало (верно):
+  // renderer.createSprite({ texture: wallTex, x, y, _container: dynamicContainer }) // Слой игрока
+  ```
+- Убедиться, что при создании спрайтов деревьев и домов их `zIndex` устанавливается корректно для Y-sorting: `zIndex = DYNAMIC_LAYER_Z_INDEX + Math.round(y)`.
 
-**Что сделать:**
-1. Заменить `buildGroundTexture()` → `buildGroundTileSprites()`
-2. Вместо одной большой текстуры — кэшировать отдельные тайлы 16x16
-3. Возвращать массив `{ textureHandle, x, y }` для каждого тайла
+### Шаг 3: Проверка Y-Sorting в `src/game/renderer/PixiJSRenderer.ts`
+- Убедиться, что контейнер `dynamicHandle` (или `worldContainer`, если сортировка глобальная) имеет свойство `sortableChildren = true` (уже присутствует в коде, требуется только верификация).
+- В методе `renderSortSystem` (или аналогичном в `render-system.ts`) убедиться, что `zIndex` игрока, деревьев и домов рассчитывается единообразно: `zIndex = layer + Math.round(py[eid])`.
 
-```typescript
-// Было:
-export interface TileBuildResult {
-  groundTexture: TextureHandle;
-  wallSprites: WallSpriteData[];
-  houseSprites: HouseSpriteEntry[];
-  wallCache: WallTextureCache;
-  houseCache: HouseTextureCache;
-}
+### Шаг 4: Очистка и управление памятью
+- Добавить вызов `groundCache.destroy()` при выгрузке карты (в функции `teardownWorld` или `clearWorld` в `ecs-bridge.ts`), чтобы избежать утечек памяти текстур при переходе между картами.
 
-// Стало:
-export interface TileBuildResult {
-  groundTiles: Array<{ textureHandle: TextureHandle; x: number; y: number }>;
-  wallSprites: WallSpriteData[];
-  houseSprites: HouseSpriteEntry[];
-  wallCache: WallTextureCache;
-  houseCache: HouseTextureCache;
-}
-```
+## 4. Контрольные точки (Definition of Done)
+- [ ] `tsc --noEmit` выполняется без ошибок.
+- [ ] Задний план (тайлы) отображается чётко, без размытия при движении камеры.
+- [ ] Деревья и дома корректно перекрывают игрока, когда игрок находится "перед" ними по оси Y, и находятся "за" игроком, когда игрок "выше" по оси Y.
+- [ ] Производительность рендеринга остается стабильной (FPS не проседает при отрисовке полного экрана тайлов).
+- [ ] Отсутствуют утечки памяти при перезагрузке карты (кэши текстур корректно очищаются).
 
-**Кэш тайлов:** Создать `GroundTileCache` аналогично `WallTextureCache` — кэширует текстуры 16x16 по типу тайла.
-
-### Шаг 12.2: Обновить MapLoaderService
-
-**Файл:** `src/game/engine/map-loader-service.ts`
-
-**Что сделать:**
-1. Заменить создание одного ground-спрайта на цикл по `groundTiles`
-2. Каждый тайл — отдельный Sprite на `tileLayerHandle`
-
-```typescript
-// Было:
-const groundHandle = this._renderer.createSprite({
-  texture: tileResult.groundTexture,
-  x: 0, y: 0,
-  _container: tileLayerContainer,
-});
-
-// Стало:
-for (const gt of tileResult.groundTiles) {
-  const spriteHandle = this._renderer.createSprite({
-    texture: gt.textureHandle,
-    x: gt.x,
-    y: gt.y,
-    _container: tileLayerContainer,
-  });
-}
-```
-
-### Шаг 12.3: Исправить Y-sorting для деревьев/домов
-
-**Файл:** `src/game/engine/map-loader-service.ts`
-
-**Что сделать:**
-1. Проверить что `userData.y` у деревьев/домов установлен корректно (для Y-sorting)
-2. Убедиться что `sortableChildren = true` на `dynamicHandle` контейнере
-3. Проверить что `userData.y` у игрока установлен корректно
-
-**Проверка в `PixiJSRenderer.ts`:**
-```typescript
-// createLayer — убедиться что sortableChildren = true
-createLayer(name: string, zIndex: number): LayerHandle {
-  const id = this._nextId++;
-  const container = new Container();
-  container.sortableChildren = true;  // ← уже есть, проверить
-  container.zIndex = zIndex;
-  this.worldContainer.addChild(container);
-  this.layers.set(id, { container, zIndex, name });
-  return id as LayerHandle;
-}
-```
-
-### Шаг 12.4: Добавить debug-логи для верификации
-
-**Файл:** `src/game/engine/map-loader-service.ts`
-
-**Что добавить:**
-```typescript
-logger.debug('map-loader', `Ground tiles: ${tileResult.groundTiles.length}`);
-logger.debug('map-loader', `Wall sprites: ${tileResult.wallSprites.length}`);
-logger.debug('map-loader', `House sprites: ${tileResult.houseSprites.length}`);
-logger.debug('map-loader', `Dynamic layer sortableChildren: ${!!dynamicContainer.sortableChildren}`);
-```
-
----
-
-## 4. Контрольные точки
-
-- [ ] `tsc --noEmit` — 0 ошибок
-- [ ] Ground-тайлы чёткие при движении камеры (нет размытия)
-- [ ] Деревья и дома корректно перекрываются с игроком (Y-sorting работает)
-- [ ] Производительность не упала (количество draw calls увеличилось, но тайлы кэшируются)
-- [ ] `createTextureFromCanvas` больше не используется для ground-тайлов
-
----
-
-## 5. Риски
-
+## 5. Оценка рисков и митигация
 | Риск | Митигация |
 |------|-----------|
-| Рост draw calls (N тайлов вместо 1) | Тайлы кэшируются — текстуры переиспользуются, PixiJS batch-ит одинаковые текстуры |
-| Потеря визуального стиля | Кэшированные текстуры 16x16 рисуются точно так же, как раньше |
-| Память (N текстур вместо 1) | Текстуры 16x16 маленькие, количество типов тайлов ~20, общий размер ~20 × 16 × 16 × 4 байта = ~20KB |
+| Рост количества спрайтов (draw calls) для фона | PixiJS v8 эффективно батчит спрайты с одинаковыми текстурами. Кэш `GroundTileCache` гарантирует, что для ~20 типов тайлов будет создано всего ~20 текстур в памяти, а не тысячи уникальных. |
+| Регрессия порядка отрисовки | Явное указание `_container: dynamicContainer` для домов и деревьев + строгий расчет `zIndex = layer + Y` гарантирует корректный порядок поверх всех тайлов. |
 
 ---
 
-## 6. Файлы для изменения
+### Что было исправлено по сравнению с исходным черновиком:
+1. **Устранено ложное предположение** о том, что деревья и дома уже находятся в правильном слое. Добавлен явный шаг по переносу их создания в `dynamicContainer`.
+2. **Добавлен шаг управления памятью** (Шаг 4), так как новый `GroundTileCache` требует явной очистки при смене карты, чтобы избежать утечек.
+3. **Уточнена формулировка** про Y-sorting, чтобы гарантировать, что `zIndex` рассчитывается одинаково для игрока и объектов окружения.
 
-| Файл | Изменение | Приоритет |
-|------|-----------|-----------|
-| `src/game/tiles.ts` | Заменить `groundTexture` на `groundTiles[]`, добавить `GroundTileCache` | Высокий |
-| `src/game/engine/map-loader-service.ts` | Создать спрайты из `groundTiles[]`, проверить Y-sorting | Высокий |
-| `src/game/renderer/IRenderer.ts` | Без изменений | Низкий |
-| `src/game/renderer/PixiJSRenderer.ts` | Без изменений (или добавить debug-лог) | Низкий |
-
----
-
-## 7. Детали реализации GroundTileCache
-
-```typescript
-export class GroundTileCache {
-  private cache = new Map<number, TextureHandle>();
-  private renderer!: IRenderer;
-
-  init(renderer: IRenderer): void {
-    this.renderer = renderer;
-  }
-
-  getTexture(t: number): TextureHandle {
-    if (this.cache.has(t)) return this.cache.get(t)!;
-    
-    const c = document.createElement("canvas");
-    c.width = T; c.height = T;
-    const ctx = c.getContext("2d")!;
-    
-    // Рисовать тайл типа t на canvas (вызвать логику из buildGroundTexture)
-    drawTile(ctx, t);
-    
-    const tex = this.renderer.createTextureFromCanvas(c);
-    this.cache.set(t, tex);
-    return tex;
-  }
-
-  destroy() {
-    this.cache.forEach((h) => this.renderer.destroyTexture(h));
-    this.cache.clear();
-  }
-}
-```
-
-**drawTile** — вынести логику отрисовки одного тайла из `buildGroundTexture` в отдельную функцию:
-
-```typescript
-function drawTile(ctx: CanvasRenderingContext2D, tileType: number): void {
-  // Дублировать логику из buildGroundTexture для одного тайла
-  switch (tileType) {
-    case Tl.WATER: dither(ctx, 0, 0, "#0a1620", "#081219", "#12303e"); break;
-    case Tl.SHORE: dither(ctx, 0, 0, "#4a5a64", "#3d4d57", "#5a6a74"); break;
-    // ... все типы тайлов
-  }
-}
-```
-
----
-
-## 8. Итоговый поток
-
-```
-loadMapEcs()
-  │
-  ├─ buildAllTileTextures(map, roofSnow, renderer)
-  │   ├─ buildGroundTileSprites() → { textureHandle, x, y }[] для каждого тайла
-  │   ├─ buildWallAndHouseSprites() → wallSprites[] + houseSprites[]
-  │   └─ GroundTileCache + WallTextureCache + HouseTextureCache
-  │
-  ├─ Для каждого groundTile:
-  │   └─ renderer.createSprite({ texture, x, y, _container: tileLayerContainer })
-  │
-  ├─ Для каждого wallSprite:
-  │   └─ renderer.createSprite({ texture, x, y, _container: dynamicContainer })
-  │
-  └─ Для каждого houseSprite:
-      └─ renderer.createSprite({ texture, x, y, _container: dynamicContainer })
-```
+Вы можете скопировать этот текст и сохранить его в файл `@tasks/task_12.md`.

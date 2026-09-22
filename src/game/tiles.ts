@@ -53,12 +53,20 @@ export interface HouseSpriteEntry {
   ruined: boolean;
 }
 
+/** Один тайл фона для создания отдельного спрайта */
+export interface GroundTileEntry {
+  textureHandle: TextureHandle;
+  x: number;
+  y: number;
+}
+
 export interface TileBuildResult {
-  groundTexture: TextureHandle;
+  groundTiles: GroundTileEntry[]; // Было: groundTexture — теперь массив отдельных тайлов
   wallSprites: WallSpriteData[];
   houseSprites: HouseSpriteEntry[];
   wallCache: WallTextureCache;
   houseCache: HouseTextureCache;
+  groundCache: GroundTileCache; // Новый кэш текстур тайлов 16x16
 }
 
 /* ================== хелперы ================== */
@@ -505,84 +513,144 @@ export class HouseTextureCache {
   destroy() { this.cache.forEach((h) => this.renderer.destroyTexture(h)); this.cache.clear(); }
 }
 
-/* ================== buildGroundTexture ================== */
+/* ================== кэш текстур ground-тайлов (16x16) ================== */
 
-function buildGroundTexture(map: WorldData): HTMLCanvasElement {
+export class GroundTileCache {
+  private cache = new Map<number, TextureHandle>();
+  private renderer!: IRenderer;
+
+  init(renderer: IRenderer): void {
+    this.renderer = renderer;
+  }
+
+  /** Получить или создать текстуру 16x16 для типа тайла */
+  getTexture(t: number): TextureHandle {
+    if (this.cache.has(t)) return this.cache.get(t)!;
+    
+    const c = document.createElement("canvas");
+    c.width = T; c.height = T;
+    const ctx = c.getContext("2d")!;
+    drawSingleTile(ctx, t);
+    
+    const tex = this.renderer.createTextureFromCanvas(c);
+    this.cache.set(t, tex);
+    return tex;
+  }
+
+  invalidate() { this.cache.clear(); }
+  destroy() { this.cache.forEach((h) => this.renderer.destroyTexture(h)); this.cache.clear(); }
+}
+
+/* ================== drawSingleTile ================== */
+
+/** Отрисовать один тайл 16x16 (для GroundTileCache) */
+function drawSingleTile(ctx: CanvasRenderingContext2D, t: number) {
+  switch (t) {
+    case Tl.WATER:
+      dither(ctx, 0, 0, "#0a1620", "#081219", "#12303e");
+      break;
+    case Tl.SHORE:
+      dither(ctx, 0, 0, "#4a5a64", "#3d4d57", "#5a6a74");
+      break;
+    case Tl.SNOW:
+      dither(ctx, 0, 0, "#8b98a6", "#7e8b99", "#9aa7b5");
+      break;
+    case Tl.SNOW2:
+      dither(ctx, 0, 0, "#7e8b99", "#717e8c", "#8d9aa8");
+      break;
+    case Tl.PATH:
+      dither(ctx, 0, 0, "#55636e", "#495762", "#61707b");
+      break;
+    case Tl.FOREST:
+      dither(ctx, 0, 0, "#26333c", "#1e2a32", "#2e3d47");
+      break;
+    case Tl.MTN:
+      dither(ctx, 0, 0, "#5f6b78", "#525e6b", "#6d7986");
+      break;
+    case Tl.SWAMP:
+      dither(ctx, 0, 0, "#2c3a3e", "#243034", "#354347");
+      break;
+    case Tl.POOL:
+      dither(ctx, 0, 0, "#1b2a30", "#152127", "#223339");
+      ctx.fillStyle = "#2a4a55";
+      ctx.fillRect(3, 4, 5, 1); ctx.fillRect(8, 10, 4, 1);
+      break;
+    case Tl.VILLAGE:
+      dither(ctx, 0, 0, "#635a4c", "#575043", "#6f6658");
+      break;
+    case Tl.RUINS:
+      dither(ctx, 0, 0, "#4e5a68", "#424d5a", "#5c6875");
+      break;
+    case Tl.CAVE:
+      dither(ctx, 0, 0, "#2b3646", "#222b38", "#343f50");
+      break;
+    case Tl.CAVEWALL:
+      ctx.fillStyle = "#12181f"; ctx.fillRect(0, 0, T, T);
+      ctx.fillStyle = "#1a222c"; ctx.fillRect(0, 0, T, 6);
+      break;
+    case Tl.STAIRS:
+      dither(ctx, 0, 0, "#39424e", "#2b3646", "#4e5a68");
+      ctx.fillStyle = "#222b38";
+      ctx.fillRect(2, 3, 12, 2); ctx.fillRect(3, 7, 10, 2); ctx.fillRect(4, 11, 8, 2);
+      break;
+    case Tl.DFLOOR:
+      dither(ctx, 0, 0, "#39424e", "#2f3844", "#445060");
+      break;
+    case Tl.DWALL:
+      ctx.fillStyle = "#10151c"; ctx.fillRect(0, 0, T, T);
+      ctx.fillStyle = "#232c38"; ctx.fillRect(0, 0, T, 5);
+      break;
+    case Tl.ALTAR:
+      dither(ctx, 0, 0, "#1a222c", "#141a22", "#232c38");
+      break;
+    case Tl.TREE:
+      dither(ctx, 0, 0, "#1c262e", "#161f26", "#232e37");
+      break;
+    case Tl.ROCK:
+      dither(ctx, 0, 0, "#5f6b78", "#525e6b", "#6d7986");
+      break;
+    case Tl.PALISADE:
+      dither(ctx, 0, 0, "#3a3020", "#2e2618", "#46382a");
+      break;
+    case Tl.HOUSE:
+      ctx.fillStyle = "#2c2620";
+      ctx.fillRect(0, 0, T, T);
+      break;
+    case Tl.COLUMN:
+      dither(ctx, 0, 0, "#4e5a68", "#424d5a", "#5c6875");
+      break;
+    default:
+      ctx.fillStyle = TILE_COLORS[t] ?? "#10151c";
+      ctx.fillRect(0, 0, T, T);
+  }
+}
+
+/* ================== buildGroundTileSprites ================== */
+
+/**
+ * Создать массив спрайтов для ground-тайлов (по одному на каждый тайл).
+ * Каждый тайл получает отдельную текстуру 16x16 из кэша — это устраняет размытие при движении камеры.
+ */
+function buildGroundTileSprites(
+  map: WorldData,
+  groundCache: GroundTileCache
+): GroundTileEntry[] {
   const { W, H } = map;
-  // Защита от NaN размеров
-  const width = Math.max(1, W * T);
-  const height = Math.max(1, H * T);
-  const gc = document.createElement("canvas"); gc.width = width; gc.height = height;
-  const gx = gc.getContext("2d")!;
+  const tiles: GroundTileEntry[] = [];
 
-  const pals: Record<number, { f: [string, string, string]; w: [string, string] }> = {
-    0: { f: ["#39424e", "#2f3844", "#445060"], w: ["#10151c", "#232c38"] },
-    1: { f: ["#3d4a3e", "#2f3830", "#4e5a4e"], w: ["#1c261c", "#2c362c"] },
-    2: { f: ["#5a524a", "#4a423a", "#6a625a"], w: ["#2c2824", "#3a342e"] },
-  };
-  const pal = map.isDungeon ? pals[map.dungeonId] ?? pals[0] : null;
-
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const t = map.tiles[y * W + x];
-    const X = x * T, Y = y * T;
-    switch (t) {
-      case Tl.WATER:
-        dither(gx, X, Y, "#0a1620", "#081219", "#12303e");
-        if (rnd(x, y, 3) > 0.7) { gx.fillStyle = "#1d3a4a"; gx.fillRect(X + 3, Y + Math.floor(rnd(x, y, 5) * 12) + 2, 6, 1); }
-        break;
-      case Tl.SHORE: dither(gx, X, Y, "#4a5a64", "#3d4d57", "#5a6a74"); break;
-      case Tl.SNOW: dither(gx, X, Y, "#8b98a6", "#7e8b99", "#9aa7b5"); break;
-      case Tl.SNOW2: dither(gx, X, Y, "#7e8b99", "#717e8c", "#8d9aa8"); break;
-      case Tl.PATH: dither(gx, X, Y, "#55636e", "#495762", "#61707b"); break;
-      case Tl.FOREST: dither(gx, X, Y, "#26333c", "#1e2a32", "#2e3d47"); break;
-      case Tl.MTN: dither(gx, X, Y, "#5f6b78", "#525e6b", "#6d7986"); break;
-      case Tl.SWAMP: dither(gx, X, Y, "#2c3a3e", "#243034", "#354347"); break;
-      case Tl.POOL:
-        dither(gx, X, Y, "#1b2a30", "#152127", "#223339");
-        gx.fillStyle = "#2a4a55";
-        gx.fillRect(X + 3, Y + 4, 5, 1); gx.fillRect(X + 8, Y + 10, 4, 1);
-        break;
-      case Tl.VILLAGE: dither(gx, X, Y, "#635a4c", "#575043", "#6f6658"); break;
-      case Tl.RUINS:
-        dither(gx, X, Y, "#4e5a68", "#424d5a", "#5c6875");
-        if (rnd(x, y, 7) > 0.75) { gx.fillStyle = "#39424e"; gx.fillRect(X + 2, Y + 2, 6, 1); gx.fillRect(X + 2, Y + 2, 1, 5); }
-        break;
-      case Tl.CAVE: dither(gx, X, Y, "#2b3646", "#222b38", "#343f50"); break;
-      case Tl.CAVEWALL:
-        gx.fillStyle = "#12181f"; gx.fillRect(X, Y, T, T);
-        gx.fillStyle = "#1a222c"; gx.fillRect(X, Y, T, 6);
-        break;
-      case Tl.STAIRS:
-        dither(gx, X, Y, "#39424e", "#2b3646", "#4e5a68");
-        gx.fillStyle = "#222b38";
-        gx.fillRect(X + 2, Y + 3, 12, 2); gx.fillRect(X + 3, Y + 7, 10, 2); gx.fillRect(X + 4, Y + 11, 8, 2);
-        break;
-      case Tl.DFLOOR:
-        if (pal) dither(gx, X, Y, pal.f[0], pal.f[1], pal.f[2]);
-        else dither(gx, X, Y, "#39424e", "#2f3844", "#445060");
-        break;
-      case Tl.DWALL:
-        gx.fillStyle = pal ? pal.w[0] : "#10151c"; gx.fillRect(X, Y, T, T);
-        gx.fillStyle = pal ? pal.w[1] : "#232c38"; gx.fillRect(X, Y, T, 5);
-        break;
-      case Tl.ALTAR: dither(gx, X, Y, "#1a222c", "#141a22", "#232c38"); break;
-      case Tl.TREE: dither(gx, X, Y, "#1c262e", "#161f26", "#232e37"); break;
-      case Tl.ROCK: dither(gx, X, Y, map.isDungeon ? "#39424e" : "#5f6b78", "#525e6b", "#6d7986"); break;
-      case Tl.PALISADE: dither(gx, X, Y, "#3a3020", "#2e2618", "#46382a"); break;
-      case Tl.HOUSE: {
-        const ru = false; // handled by ruinedTiles set in buildWallAndHouseSprites
-        gx.fillStyle = ru ? "#191411" : "#2c2620";
-        gx.fillRect(X, Y, T, T);
-        if (ru && rnd(x, y, 21) > 0.6) { gx.fillStyle = "#0f0b08"; gx.fillRect(X + 3, Y + 3, 4, 3); }
-        break;
-      }
-      case Tl.COLUMN: dither(gx, X, Y, "#4e5a68", "#424d5a", "#5c6875"); break;
-      default:
-        gx.fillStyle = TILE_COLORS[t] ?? "#10151c";
-        gx.fillRect(X, Y, T, T);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const t = map.tiles[y * W + x];
+      const tex = groundCache.getTexture(t);
+      tiles.push({
+        textureHandle: tex,
+        x: x * T,
+        y: y * T,
+      });
     }
   }
-  return gc;
+
+  return tiles;
 }
 
 /* ================== buildWallAndHouseSprites ================== */
@@ -665,11 +733,12 @@ export function buildAllTileTextures(
   if (!map?.tiles || !map?.W || !map?.H) {
     logger.error('tiles', `Invalid map data: tiles=${!!map?.tiles}, W=${map?.W}, H=${map?.H}`);
     return {
-      groundTexture: -1 as any,
+      groundTiles: [],
       wallSprites: [],
       houseSprites: [],
       wallCache: new WallTextureCache(),
       houseCache: new HouseTextureCache(),
+      groundCache: new GroundTileCache(),
     };
   }
 
@@ -677,6 +746,8 @@ export function buildAllTileTextures(
   wallCache.init(renderer);
   const houseCache = new HouseTextureCache();
   houseCache.init(renderer);
+  const groundCache = new GroundTileCache();
+  groundCache.init(renderer);
 
   // ruinedTiles — для house-level (целые блоки домов)
   const ruinedTiles = new Set<number>();
@@ -685,9 +756,8 @@ export function buildAllTileTextures(
     for (let dy = 0; dy < r.h; dy++) for (let dx = 0; dx < r.w; dx++)
       ruinedTiles.add((r.y + dy) * map.W + (r.x + dx));
 
-  const groundCanvas = buildGroundTexture(map);
-  const groundTexture = renderer.createTextureFromCanvas(groundCanvas);
+  const groundTiles = buildGroundTileSprites(map, groundCache);
   const { wallSprites, houseSprites } = buildWallAndHouseSprites(map, wallCache, houseCache, ruinedTiles, roofSnow);
 
-  return { groundTexture, wallSprites, houseSprites, wallCache, houseCache };
+  return { groundTiles, wallSprites, houseSprites, wallCache, houseCache, groundCache };
 }

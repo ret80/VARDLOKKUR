@@ -153,8 +153,9 @@ export function renderSortSystem(
       layer = ENTITY_LAYER.Drop;
     }
 
-    // zIndex = layer + rounded Y (для сортировки по глубине)
-    const zIndex = layer + Math.round(py[eid]);
+    // zIndex = rounded Y (для сортировки по глубине — как у wall/house sprites)
+    // Не добавляем layer, иначе player всегда будет поверх всех объектов
+    const zIndex = Math.round(py[eid]);
     renderer.setGraphicsZIndex(handle as any, zIndex);
   }
 }
@@ -378,7 +379,8 @@ export class RenderSystem {
         
         // Обновить позицию и zIndex Graphics
         r.setGraphicsPosition(sprite as any, { x: px, y: py });
-        r.setGraphicsZIndex(sprite as any, RenderLayer.value[eid] + Math.round(py));
+        // zIndex = только Y для сортировки по глубине (без смещения на layer)
+        r.setGraphicsZIndex(sprite as any, Math.round(py));
         
         const data = config.mapper(eid, world);
         try {
@@ -441,9 +443,8 @@ export class RenderSystem {
       else if (Hidden[eid]) r.setGraphicsAlpha(handle as any, 0.25);
       else r.setGraphicsAlpha(handle as any, 1);
       
-      // Z-index
-      const layer = this.getLayer(world, eid);
-      r.setGraphicsZIndex(handle as any, layer + Math.round(py));
+      // Z-index — только Y для сортировки по глубине (как у wall/house sprites)
+      r.setGraphicsZIndex(handle as any, Math.round(py));
     }
 
     // === Диспетчеризация через реестры ===
