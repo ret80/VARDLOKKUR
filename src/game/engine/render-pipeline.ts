@@ -3,7 +3,7 @@
 import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import type { IRenderer } from '../renderer/IRenderer';
-import type { RenderQueue } from '../render/RenderQueue';
+import type { RenderQueue, Viewport } from '../render/RenderQueue';
 
 /**
  * RenderPipeline — единый конвейер рендеринга игры.
@@ -41,6 +41,9 @@ export class RenderPipeline {
   /** Очередь отрисовки (применяется в flush после всех слоёв) */
   queue: RenderQueue | null = null;
 
+  /** Поставщик актуального viewport камеры (для viewport culling во flush) */
+  viewportProvider: (() => Viewport) | null = null;
+
   /** Добавить слой в пайплайн. Слои вызываются в порядке добавления. */
   addLayer(layer: IRenderLayer): void {
     this.layers.push(layer);
@@ -69,8 +72,9 @@ export class RenderPipeline {
     for (const layer of this.layers) {
       layer.render(ctx);
     }
-    // Применить очередь отрисовки (сортировка + zIndex) после всех слоёв
-    this.queue?.flush(this.renderer!);
+    // Применить очередь отрисовки (сортировка + viewport culling + zIndex)
+    // после всех слоёв. Параметры камеры передаются через viewportProvider.
+    this.queue?.flush(this.renderer!, this.viewportProvider?.() ?? undefined);
     // Финальный рендер через IRenderer (вызывается после всех слоёв)
     this.renderer?.render();
   }

@@ -110,7 +110,6 @@ import {
 import { RendererFactory, setGlobalRenderer, getRenderer } from './renderer';
 import type { GraphicsHandle } from './renderer/IRenderer';
 import { RenderQueue, setGlobalRenderQueue } from './render/RenderQueue';
-import { MapRenderSystem } from './render/MapRenderSystem';
 
 export class Engine {
   private cbs: EngineCallbacks;
@@ -156,9 +155,9 @@ export class Engine {
   private playerLifecycle!: PlayerLifecycle;
   private mapLoader!: MapLoaderService;
 
-  // RenderQueue + MapRenderSystem (task_14)
+  // RenderQueue (task_14, ECS-рефакторинг: батчи карты регистрирует
+  // ECS-система mapRenderSystem в фазе render() игрового цикла)
   private renderQueue!: RenderQueue;
-  private mapRenderSystem = new MapRenderSystem();
 
   // Debug server (динамический импорт — Node.js API)
   private debugServer: any = null;
@@ -372,13 +371,13 @@ export class Engine {
       (msg) => this.cbs.onToast(msg),
       () => audio.uiClick()
     );
-    // Этап 14: создаём RenderQueue и MapRenderSystem
+    // Этап 14: создаём RenderQueue (глобальная очередь кадра)
     this.renderQueue = new RenderQueue();
     setGlobalRenderQueue(this.renderQueue);
 
     this.mapLoader = new MapLoaderService(store, this.viewport, this.scene, this.ecsWorld!, this.prefabWorld!);
-    // Фаза 3: инициализируем MapLoaderService с IRenderer, RenderQueue и MapRenderSystem
-    this.mapLoader.init(getRenderer(), this.renderQueue, this.mapRenderSystem);
+    // Фаза 3: инициализируем MapLoaderService с IRenderer и RenderQueue
+    this.mapLoader.init(getRenderer(), this.renderQueue);
     this.playerLifecycle = new PlayerLifecycle(
       store, this.playerDomain, this.bus, this.hud,
       {
@@ -444,6 +443,11 @@ export class Engine {
         entityFactory: this.mapLoader?.entityFactory ?? undefined,
         spriteFactory: this.mapLoader?.spriteFactory,
         renderQueue: this.renderQueue,
+        // ECS-рефакторинг рендеринга: mapRenderSystem создаёт батчи в слои
+        // сцены и уничтожает их Graphics через IRenderer при выгрузке карты
+        tileLayer: this.scene.tileLayerHandle,
+        dynamicLayer: this.scene.dynamicHandle,
+        renderViewportProvider: () => this.mapLoader.getViewport(),
       });
     }
 

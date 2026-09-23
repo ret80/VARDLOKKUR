@@ -77,7 +77,9 @@ import {
   unregisterSpriteHandle,
   ENTITY_LAYER,
 } from './ecs-systems/render-system';
-import { getRenderQueue, type RenderQueue } from '../render/RenderQueue';
+import { getRenderQueue, type RenderQueue, type Viewport } from '../render/RenderQueue';
+import { mapRenderSystem } from '../render/map-render-system';
+import type { LayerHandle } from '../renderer/IRenderer';
 import {
   updatePlayerInput,
   processActions,
@@ -191,6 +193,12 @@ export interface EcsGameLoopConfig {
   spriteFactory?: SpriteFactory;
   /** Очередь отрисовки (task_14) */
   renderQueue?: RenderQueue;
+  /** Handle слоя tiles — для батчей карты (mapRenderSystem, ECS-рефакторинг) */
+  tileLayer?: LayerHandle;
+  /** Handle слоя dynamic — для стен/домов карты (mapRenderSystem) */
+  dynamicLayer?: LayerHandle;
+  /** Поставщик актуального viewport камеры (для viewport culling в flush) */
+  renderViewportProvider?: () => Viewport;
 }
 
 /** Глобальный singleton registry дропов */
@@ -233,6 +241,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     entityFactory: configFactory,
     spriteFactory: configSpriteFactory,
     renderQueue: configRenderQueue,
+    tileLayer: configTileLayer,
+    dynamicLayer: configDynamicLayer,
+    renderViewportProvider: configViewportProvider,
   } = config;
 
   /** Фабрика графических объектов (Фаза 7: возвращает GraphicsHandle, не legacy Container) */
@@ -275,6 +286,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   // Создаём пайплайн и добавляем слои
   const pipeline = new RenderPipeline();
   pipeline.queue = renderQueue; // task_14: подключаем очередь к пайплайну
+  // Viewport culling: RenderQueue.flush получает актуальные параметры камеры
+  // (cam.x/cam.y обновляются CameraController'ом в каждом кадре)
+  pipeline.viewportProvider = () => ({ camX: cam.x, camY: cam.y, viewW, viewH });
   pipeline.addLayer(entityLayer);
   pipeline.addLayer(particleLayer);
   pipeline.addLayer(fogLayer);
@@ -690,6 +704,21 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     overlayLayer.setNearestInteractable(nearestInteractable);
     overlayLayer.setCamera(cam);
     overlayLayer.setTime(_realT);
+
+    // === ECS-рефакторинг рендеринга: mapRenderSystem (фаза render) ===
+    // query(world, [MapState]) → upsert статичных батчей карты в общий
+    // RenderQueue; при уничтожении сущности MapState — выгрузка и удаление
+    // Graphics через IRenderer. Динамические объекты регистрирует
+    // renderSystem (EntityLayer ниже) — очереди они не конфликтуют.
+    const renderViewport: Viewport | undefined = configViewportProvider
+      ? configViewportProvider()
+      : { camX: cam.x, camY: cam.y, viewW, viewH };
+    mapRenderSystem(world, {
+      renderer: renderer ?? undefined,
+      tileLayer: configTileLayer,
+      dynamicLayer: configDynamicLayer,
+      viewport: renderViewport,
+    });
 
     // Вызываем update() и render() пайплайна
     // app.render() вызывается внутри RenderPipeline.render() после всех слоёв

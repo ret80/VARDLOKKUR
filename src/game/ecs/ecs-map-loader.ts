@@ -1,6 +1,6 @@
 /* ecs-map-loader.ts — загрузка сущностей карты в ECS */
 
-import { type World, query, removeEntity } from 'bitecs';
+import { type World, query, removeEntity, addEntity, addComponent } from 'bitecs';
 import { Cat, getEnemyCategory, getEnemyMask } from '../physics/planck-world';
 import { T, WorldData, Vec, solidTileAt } from '../world';
 import { clamp } from '../utils';
@@ -29,8 +29,11 @@ import {
   PhysicsBodyRegistry,
   EnemyAIRegistry,
   Chest,
+  MapState,
   resetAllComponents,
 } from './ecs-components';
+import type { IRenderer, LayerHandle } from '../renderer/IRenderer';
+import { createMapBatches, destroyMapBatches } from '../render/map-render-system';
 
 // ============================================================
 // Конфигурация Map Loader
@@ -69,6 +72,14 @@ export interface EcsMapLoaderConfig {
   entityFactory: EntityFactory;
   /** Фабрика графических объектов (возвращает GraphicsHandle) */
   spriteFactory: SpriteFactory;
+  /** IRenderer для создания статичных батчей карты (земля/стены/дома) */
+  renderer?: IRenderer;
+  /** Handle слоя tiles (для ground-батча) */
+  tileLayer?: LayerHandle;
+  /** Handle слоя dynamic (для стен/домов) */
+  dynamicLayer?: LayerHandle;
+  /** Снег на крышах домов */
+  roofSnow?: boolean;
 }
 
 // ============================================================
@@ -141,7 +152,44 @@ export class EcsMapLoader {
     }
     this.spawnDrops(world, map);
 
+    // 12. ECS-рефакторинг рендеринга: создать синглтон-сущность карты
+    //     с компонентом MapState (GraphicsHandle статичных батчей).
+    //     Процедурная генерация геометрии происходит ОДИН раз здесь;
+    //     регистрация батчей в RenderQueue — задача mapRenderSystem (каждый кадр).
+    this.createMapEntity(world, map);
+
     return { playerEid: this.playerEid, playerBody: null, cam };
+  }
+
+  /**
+   * Создать синглтон-сущность карты: один раз сгенерировать Graphics-батчи
+   * (земля / стены / дома) и сохранить их хэндлы и размеры в компоненте MapState.
+   */
+  private createMapEntity(world: World, map: WorldData): void {
+    const renderer = this.config.renderer;
+    if (!renderer) {
+      logger.warn('map-loader', 'createMapEntity: renderer not provided, map batches skipped');
+      return;
+    }
+
+    // Генерация батчей — ОДИН раз при загрузке карты
+    const batches = createMapBatches(map, renderer, {
+      tileLayer: this.config.tileLayer,
+      dynamicLayer: this.config.dynamicLayer,
+      roofSnow: this.config.roofSnow ?? false,
+    });
+
+    // Синглтон-сущность с компонентом MapState
+    const eid = addEntity(world);
+    addComponent(world, eid, MapState);
+    MapState.groundHandle[eid] = batches.groundHandle;
+    MapState.wallsHandle[eid] = batches.wallsHandle;
+    MapState.housesHandle[eid] = batches.housesHandle;
+    MapState.width[eid] = map.W;
+    MapState.height[eid] = map.H;
+    MapState.dungeonId[eid] = map.dungeonId ?? 0;
+
+    logger.debug('map-loader', `Map entity created: eid=${eid}, ${map.W}x${map.H}, dungeonId=${map.dungeonId ?? 0}`);
   }
 
   private clearWorld(world: World, preservePlayerSprite?: number): void {
