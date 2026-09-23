@@ -1,8 +1,9 @@
 /* RenderQueue.ts — плоская очередь записей на отрисовку (task_14).
  *
  * Все объекты (ground-тайлы, стены, дома, динамические сущности) перед
- * отрисовкой помещаются в RenderEntry. Один flush() на кадр:
- * сортировка по (layer, y) и применение zIndex через IRenderer.
+ * отрисовкой помещаются в RenderEntry. Один flush(renderer, viewport) на кадр:
+ * сортировка по (layer, y), viewport culling по bounding box объекта и
+ * применение позиции/alpha/visible/zIndex через IRenderer (только для видимых).
  *
  * Y-sort: zIndex = layer * 100000 + Math.round(y)
  */
@@ -22,6 +23,17 @@ export const RENDER_LAYER = {
   DYNAMIC: 40,
 } as const;
 
+/**
+ * Viewport — область видимости камеры в мировых координатах.
+ * camX/camY — левый верхний угол видимой области, viewW/viewH — её размеры.
+ */
+export interface Viewport {
+  camX: number;
+  camY: number;
+  viewW: number;
+  viewH: number;
+}
+
 /** Запись очереди: всё, что нужно для отрисовки одного Graphics-объекта */
 export interface RenderEntry {
   x: number;
@@ -31,8 +43,32 @@ export interface RenderEntry {
   alpha: number;
   visible: boolean;
   handle: GraphicsHandle;
+  /** Ширина bounding box объекта (для viewport culling). 0/undefined — без отсечения по размеру */
+  width?: number;
+  /** Высота bounding box объекта (для viewport culling) */
+  height?: number;
   /** Необязательный ключ (eid динамической сущности) для быстрого поиска */
   key?: number;
+}
+
+/** Дефолтный размер объекта для culling, если width/height не заданы (тайл ~32px + запас на высоту спрайта) */
+const DEFAULT_CULL_SIZE = 64;
+
+/**
+ * Проверка попадания bounding box объекта во viewport (AABB-пересечение).
+ * Объект считается видимым, если его рамка [x, x+width] × [y, y+height]
+ * пересекается с рамкой камеры. Небольшой запас (pad) исключает «мигание»
+ * объектов на границе экрана.
+ */
+export function isInViewport(e: RenderEntry, vp: Viewport, pad = DEFAULT_CULL_SIZE): boolean {
+  const w = e.width ?? DEFAULT_CULL_SIZE;
+  const h = e.height ?? DEFAULT_CULL_SIZE;
+  return (
+    e.x + w + pad >= vp.camX &&
+    e.x - pad <= vp.camX + vp.viewW &&
+    e.y + h + pad >= vp.camY &&
+    e.y - pad <= vp.camY + vp.viewH
+  );
 }
 
 /** Вычислить zIndex по слою и Y */
@@ -64,8 +100,8 @@ export class RenderQueue {
     }
   }
 
-  /** Найти запись по ключу (eid) */
-  getByKey(key: number): RenderEntry | undefined {
+  /** Найти запись по ключу (eid динамической сущности или строковый ключ батча) */
+  getByKey(key: string | number): RenderEntry | undefined {
     return this.byKey.get(key);
   }
 
@@ -104,12 +140,26 @@ export class RenderQueue {
 
   /**
    * Финальный проход кадра: одна сортировка, один проход.
-   * Применяет alpha/visible/zIndex каждой записи через IRenderer.
+   *
+   * 1. Сортировка записей по (layer, y).
+   * 2. Viewport culling: если передан viewport и bounding box записи не
+   *    пересекается с областью видимости камеры — вызовы IRenderer для неё
+   *    пропускаются (объект скрывается через setGraphicsVisible(false),
+   *    чтобы он не остался на экране после предыдущего кадра).
+   * 3. Для видимых записей применяются позиция/alpha/visible/zIndex
+   *    через IRenderer.
    */
-  flush(renderer: IRenderer): void {
+  flush(renderer: IRenderer, viewport?: Viewport): void {
     // Сортировка по (layer, y) — плоский массив, 1000–1500 элементов
     this.entries.sort((a, b) => a.layer - b.layer || a.y - b.y);
     for (const e of this.entries) {
+      // Viewport culling: гарантированно невидимые объекты не трогаем
+      // (кроме принудительного скрытия, т.к. в прошлом кадре они могли быть видны)
+      if (viewport && !isInViewport(e, viewport)) {
+        if (e.visible) renderer.setGraphicsVisible(e.handle, false);
+        continue;
+      }
+      renderer.setGraphicsPosition(e.handle, { x: e.x, y: e.y });
       renderer.setGraphicsAlpha(e.handle, e.alpha);
       renderer.setGraphicsVisible(e.handle, e.visible);
       renderer.setGraphicsZIndex(e.handle, computeZIndex(e.layer, e.y));

@@ -9,8 +9,7 @@ import { createEntityFactory, type EntityFactory } from "../ecs/entity-factory";
 import type { PlayerDomain } from "../store/player-domain";
 import type { ViewportController } from "./viewport-controller";
 import type { SceneLayers } from "./scene-layers";
-import type { RenderQueue } from "../render/RenderQueue";
-import { MapRenderSystem } from "../render/MapRenderSystem";
+import type { RenderQueue, Viewport } from "../render/RenderQueue";
 import { buildMinimapBase } from "../map-display";
 import { T } from "../world";
 import type { IRenderer } from "../renderer";
@@ -42,9 +41,7 @@ export class MapLoaderService {
   private _renderer!: IRenderer;
   /** Очередь отрисовки (task_14) */
   private _renderQueue!: RenderQueue;
-  /** Система рендеринга карты (task_14) */
-  private _mapRenderSystem!: MapRenderSystem;
-  /** Слои сцены (для передачи handle'ов в MapRenderSystem) */
+  /** Слои сцены (handle'ы передаются в EcsMapLoader для батчей карты) */
   private _sceneLayers!: SceneLayers;
 
   constructor(
@@ -70,17 +67,21 @@ export class MapLoaderService {
     };
   }
 
-  /** Инициализация с IRenderer, RenderQueue и MapRenderSystem (вызывается один раз) */
-  init(renderer: IRenderer, renderQueue: RenderQueue, mapRenderSystem: MapRenderSystem): void {
+  /** Инициализация с IRenderer и RenderQueue (вызывается один раз) */
+  init(renderer: IRenderer, renderQueue: RenderQueue): void {
     this._renderer = renderer;
     this._renderQueue = renderQueue;
-    this._mapRenderSystem = mapRenderSystem;
     this._sceneLayers = this.sceneLayers;
-    // Передаём handle'ы слоёв в MapRenderSystem
-    mapRenderSystem.setLayerHandles(
-      (this._sceneLayers as any).tileLayerHandle,
-      (this._sceneLayers as any).dynamicHandle
-    );
+  }
+
+  /** Текущая область видимости камеры (для viewport culling в RenderQueue.flush) */
+  getViewport(): Viewport {
+    return {
+      camX: this.viewport.cam.x ?? 0,
+      camY: this.viewport.cam.y ?? 0,
+      viewW: this.viewport.viewW,
+      viewH: this.viewport.viewH,
+    };
   }
 
   /** Фабрика графических объектов */
@@ -106,7 +107,10 @@ export class MapLoaderService {
       this._prevPlanckWorld = null;
     }
 
-    // Создаём ECS Map Loader (используется общий ECS-мир движка)
+    // Создаём ECS Map Loader (используется общий ECS-мир движка).
+    // ECS-рефакторинг рендеринга: loader сам создаёт синглтон-сущность карты
+    // с компонентом MapState (батчи генерируются ОДИН раз); регистрация
+    // батчей в RenderQueue и их выгрузка — задача mapRenderSystem (каждый кадр).
     const newPlanckWorld = new PlanckWorld();
     this.ecsMapLoader = new EcsMapLoader({
       world: this.ecsWorld,
@@ -115,6 +119,10 @@ export class MapLoaderService {
       takenPedestals: this.store.takenPedestals,
       visitedShrines: this.store.visitedShrines,
       spriteFactory: this._spriteFactory,
+      renderer: this._renderer,
+      tileLayer: this.sceneLayers.tileLayerHandle,
+      dynamicLayer: this.sceneLayers.dynamicHandle,
+      roofSnow: this.store.roofSnow,
       flags: {
         secretKnown: this.store.flags.secretKnown,
         shrineIdx: this.store.flags.shrineIdx,
@@ -136,13 +144,11 @@ export class MapLoaderService {
     // Загружаем карту в ECS (teardownWorld уничтожает ECS-сущности старой карты)
     const result = this.ecsMapLoader.loadMap(playerG, playerDomain, onPlayerCreated);
 
-    // ===== Task 14: MapRenderSystem — геометрический рендеринг карты =====
-    // Очищаем очередь от старой графики карты
-    this._mapRenderSystem.clear(this._renderer, this._renderQueue);
-    // Устанавливаем флаг снега
-    this._mapRenderSystem.roofSnow = this.store.roofSnow;
-    // Загружаем геометрию карты в очередь (ground-батч + стены + дома)
-    this._mapRenderSystem.loadMap(map, this._renderer, this._renderQueue);
+    // ===== ECS-рефакторинг рендеринга (task_14) =====
+    // Генерация батчей карты выполнена ОДИН раз внутри ecsMapLoader.loadMap
+    // (createMapEntity → MapState). Каждую карту регистрирует и выгружает
+    // ECS-система mapRenderSystem в фазе render() игрового цикла — здесь
+    // императивный вызов MapRenderSystem.loadMap/clear больше не нужен.
 
     this._mmBase = buildMinimapBase(map);
     return result;

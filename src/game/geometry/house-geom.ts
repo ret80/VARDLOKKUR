@@ -45,6 +45,7 @@ export function houseMetrics(hw: number, hh: number): HouseMetrics {
  * @param v        вариант (биты 1,2: окна/цвет линзы)
  * @param ruined   руины (тёмные проёмы, заплатки-дыры)
  * @param roofSnow снег на крышах
+ * @param ox, oy   смещение для батчинга (когда один Graphics на все дома)
  */
 export function drawHouseGeometry(
   renderer: IRenderer,
@@ -53,14 +54,21 @@ export function drawHouseGeometry(
   hh: number,
   v: number,
   ruined = false,
-  roofSnow = true
+  roofSnow = true,
+  ox = 0,
+  oy = 0
 ): void {
   const { mode, wallW, wallH, topPad, marginX, foundH, wallTop, ridgeLen } = houseMetrics(hw, hh);
   const wx = marginX, cx = marginX + wallW / 2;
   const snow = roofSnow;
   const SNOW = 0xeef6fc, SNOW2 = 0xc8d8e8, ICE = 0xbdeef8;
 
-  const { P: R, C: CIRC, POLY: PATH } = makePainter(renderer, g);
+  const painter = makePainter(renderer, g);
+  // Смещение ox/oy — для батчинга нескольких домов в одном Graphics
+  const R = (x: number, y: number, w: number, h: number, c: number, a = 1) => painter.P(x + ox, y + oy, w, h, c, a);
+  const CIRC = (x: number, y: number, r: number, c: number, a = 1) => painter.C(x + ox, y + oy, r, c, a);
+  const PATH = (pts: number[], c: number, a = 1) =>
+    painter.POLY(pts.map((v, i) => (i % 2 === 0 ? v + ox : v + oy)), c, a);
 
   const logWall = (x: number, y: number, w: number, h: number) => {
     R(x, y, w, h, 0x4a3624);
