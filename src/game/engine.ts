@@ -1,6 +1,6 @@
 /* engine.ts – Оркестратор: создаёт EventBus, GameStore и системы */
 
-import { Application, Container, Graphics } from "pixi.js";
+import { Application } from "pixi.js";
 import { FloatTextLayer } from './renderers/float/FloatTextLayer';
 import {
   T, Tl, WorldData, Vec,
@@ -17,12 +17,7 @@ import {
 import { audio } from "./audio";
 import { FxManager } from "./fx";
 import { ParticleSystem } from "./engine/particle-system";
-import {
-  HouseSpriteEntry,
-  WallTextureCache,
-  HouseTextureCache,
-  buildAllTileTextures,
-} from "./tiles";
+
 import { buildMinimapBase, buildBigMapBase, drawBigMap, drawMinimap } from "./map-display";
 
 // Подсистемы
@@ -72,7 +67,7 @@ import {
   fullHealEntityEcs,
   increaseMaxHpEcs,
 } from './ecs/ecs-components';
-import { updateGraphicsPosition } from './ecs/ecs-systems/render-system';
+
 import { query, removeEntity } from 'bitecs';
 import { ViewportController } from './engine/viewport-controller';
 import { SceneLayers } from './engine/scene-layers';
@@ -114,6 +109,8 @@ import {
 // Импорты IRenderer
 import { RendererFactory, setGlobalRenderer, getRenderer } from './renderer';
 import type { GraphicsHandle } from './renderer/IRenderer';
+import { RenderQueue, setGlobalRenderQueue } from './render/RenderQueue';
+import { MapRenderSystem } from './render/MapRenderSystem';
 
 export class Engine {
   private cbs: EngineCallbacks;
@@ -158,6 +155,10 @@ export class Engine {
   private screenRouter!: ScreenRouter;
   private playerLifecycle!: PlayerLifecycle;
   private mapLoader!: MapLoaderService;
+
+  // RenderQueue + MapRenderSystem (task_14)
+  private renderQueue!: RenderQueue;
+  private mapRenderSystem = new MapRenderSystem();
 
   // Debug server (динамический импорт — Node.js API)
   private debugServer: any = null;
@@ -243,7 +244,7 @@ export class Engine {
     this.viewport = new ViewportController(container, renderer, { x: 0, y: 0 });
     this.scene = new SceneLayers();
     // Этап 8: инициализация SceneLayers через IRenderer
-    this.scene.init(renderer, app, () => new Container(), () => new Graphics());
+    this.scene.init(renderer, app);
     this.floatTextLayer = new FloatTextLayer();
     // Canvas добавлен в контейнер через PixiJSRenderer.init(existingApp)
     const cv = app.canvas as HTMLCanvasElement;
@@ -371,9 +372,13 @@ export class Engine {
       (msg) => this.cbs.onToast(msg),
       () => audio.uiClick()
     );
-    this.mapLoader = new MapLoaderService(this.scene, store, this.viewport, this.ecsWorld!, this.prefabWorld!);
-    // Фаза 3: инициализируем MapLoaderService с IRenderer
-    this.mapLoader.init(getRenderer());
+    // Этап 14: создаём RenderQueue и MapRenderSystem
+    this.renderQueue = new RenderQueue();
+    setGlobalRenderQueue(this.renderQueue);
+
+    this.mapLoader = new MapLoaderService(store, this.viewport, this.scene, this.ecsWorld!, this.prefabWorld!);
+    // Фаза 3: инициализируем MapLoaderService с IRenderer, RenderQueue и MapRenderSystem
+    this.mapLoader.init(getRenderer(), this.renderQueue, this.mapRenderSystem);
     this.playerLifecycle = new PlayerLifecycle(
       store, this.playerDomain, this.bus, this.hud,
       {
@@ -403,8 +408,8 @@ export class Engine {
         store: this.store,
         planckWorld: null as any, // будет установлен после загрузки карты
         floatLayer: this.floatTextLayer,
-        gameWorld: this.scene.world,
-        sceneManager: this.scene as any, // deprecated: legacy compatibility
+        gameWorld: null as any,
+        sceneManager: null as any, // deprecated: legacy compatibility
         sceneLayers: this.scene,
         fx: this.fx,
         particleSys: this.particleSys, // Этап 6: извлечение частиц из FxManager
@@ -438,6 +443,7 @@ export class Engine {
         guardSpawn: (kind: string, x: number, y: number, idx: number) => this.guardSpawn(kind, x, y, idx),
         entityFactory: this.mapLoader?.entityFactory ?? undefined,
         spriteFactory: this.mapLoader?.spriteFactory,
+        renderQueue: this.renderQueue,
       });
     }
 
@@ -1043,7 +1049,6 @@ export class Engine {
 
   destroy() {
     this.input.unregister();
-    this.mapLoader?.destroy();
     this.debugServer?.stop();
     if (this.app) this.app.destroy(true);
     this.fx.destroy();

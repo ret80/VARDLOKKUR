@@ -1,55 +1,50 @@
 /* entity-layer.ts — Слой отрисовки ECS-сущностей */
 
 import type { World } from 'bitecs';
+import type { FloatTextLayer } from '../renderers/float/FloatTextLayer';
+import type { InteractableHit } from '../ecs/ecs-systems/interaction-system';
+import { renderSystem } from '../ecs/ecs-systems/render-system';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
-import type { RenderSystemOptions } from '../ecs/ecs-systems/render-system';
-import { RenderSystem } from '../ecs/ecs-systems/render-system';
-import { getRenderer, isRendererInitialized } from '../renderer/RendererFactory';
-import type { IRenderer } from '../renderer/IRenderer';
+import type { RenderQueue } from '../render/RenderQueue';
+
+export interface EntityLayerOptions {
+  world: World;
+  time: number;
+  dt: number;
+  float: FloatTextLayer;
+  playerEid: number;
+  cam: { x: number; y: number };
+  getNpcSig?: (npcId: string) => string;
+  talkedSig?: Map<string, string>;
+  nearestInteractable?: InteractableHit | null;
+}
 
 /**
- * EntityLayer — слой отрисовки ECS-сущностей.
+ * EntityLayer — обёртка над RenderSystem (ECS-рендеринг).
  *
- * Обёртка над RenderSystem.render(), инкапсулирующая логику рендеринга:
- * - Слежение камеры за игроком
- * - Обновление позиций и видимости спрайтов
- * - Сортировка по глубине (z-index)
- * - Отрисовка сущностей: игрок, враги, дропы, снаряды, NPC, объекты
- * - Interaction hints
- *
- * НЕ вызывает renderer.render() — это делает RenderPipeline.
+ * Записи RenderQueue обновляются в renderSystem(), а применяются
+ * (сортировка + zIndex) в RenderQueue.flush() после всех слоёв пайплайна.
  */
 export class EntityLayer implements IRenderLayer {
-  private system = new RenderSystem();
-  private opts: RenderSystemOptions | null = null;
+  readonly name = 'entity';
 
-  /**
-   * Обновить параметры рендеринга. Вызывается каждый кадр из ecs-game-loop.
-   */
-  setOptions(opts: RenderSystemOptions): void {
-    this.opts = opts;
+  constructor(private readonly queue?: RenderQueue | null) {}
+
+  render(ctx: RenderLayerContext): void {
+    const o = ctx.options as EntityLayerOptions | undefined;
+    if (!o) return;
+    renderSystem(o.world, o);
   }
 
-  init(renderer: IRenderer, _ctx: RenderLayerContext): void {
-    // Инициализируем RenderSystem с IRenderer
-    this.system.init(renderer);
+  setOptions(opts: EntityLayerOptions): void {
+    this._opts = opts;
   }
 
-  update(_ctx: RenderLayerContext): void {
-    // EntityLayer не требует обновления состояния — вся логика в render()
-  }
+  private _opts: EntityLayerOptions | null = null;
 
-  render(_ctx: RenderLayerContext): void {
-    if (!this.opts) return;
-    // Delegating to RenderSystem instance — он не вызывает renderer.render() (это делает RenderPipeline)
-    this.system.render(this.opts.world, this.opts);
-  }
-
-  resize(_viewW: number, _viewH: number): void {
-    // EntityLayer не требует обновления при ресайзе
-  }
-
-  destroy(): void {
-    this.opts = null;
-  }
+  // IRenderLayer stubs (EntityLayer управляется через setOptions + render)
+  init(_renderer: any, _ctx: RenderLayerContext): void {}
+  update(_ctx: RenderLayerContext): void {}
+  resize(_viewW: number, _viewH: number): void {}
+  destroy(): void {}
 }

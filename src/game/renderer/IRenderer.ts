@@ -132,6 +132,8 @@ export interface IRenderer {
   setGraphicsAlpha(handle: GraphicsHandle, alpha: number): void;
   /** Установить z-index Graphics (для сортировки по глубине) */
   setGraphicsZIndex(handle: GraphicsHandle, zIndex: number): void;
+  /** Получить внутренний PixiJS Graphics по handle (для батч-переиспользования) */
+  getGraphicsPixi(handle: GraphicsHandle): any;
 
   // === Textures (для запекания и кэширования) ===
   /** Загрузить текстуру по URL. Возвращает handle. */

@@ -73,10 +73,11 @@ import {
 } from './ecs-systems/interaction-handlers';
 import {
   renderSystem,
-  initInteractionHint,
-  unregisterSpriteHandle,
   cleanupRenderedEnemy,
+  unregisterSpriteHandle,
+  ENTITY_LAYER,
 } from './ecs-systems/render-system';
+import { getRenderQueue, type RenderQueue } from '../render/RenderQueue';
 import {
   updatePlayerInput,
   processActions,
@@ -188,6 +189,8 @@ export interface EcsGameLoopConfig {
   entityFactory?: EntityFactory;
   /** Фабрика графических объектов (возвращает GraphicsHandle) */
   spriteFactory?: SpriteFactory;
+  /** Очередь отрисовки (task_14) */
+  renderQueue?: RenderQueue;
 }
 
 /** Глобальный singleton registry дропов */
@@ -229,6 +232,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     particleSys,
     entityFactory: configFactory,
     spriteFactory: configSpriteFactory,
+    renderQueue: configRenderQueue,
   } = config;
 
   /** Фабрика графических объектов (Фаза 7: возвращает GraphicsHandle, не legacy Container) */
@@ -257,20 +261,20 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   // CameraController — извлечён из render-system.ts (Этап 4)
   const cameraController = new CameraController({ cam, viewportW: viewW, viewportH: viewH });
 
-  // hintLayer — подсказка взаимодействия, создаётся через IRenderer (Этап 8)
-  let hintLayerHandle: number | null = null;
-  let dynamicLayerHandle: number | null = null;
-  // initInteractionHint будет вызвана когда renderer инициализирован
+  // hintLayer — подсказка взаимодействия (создаётся в RenderSystem.init)
+  // RenderQueue — очередь отрисовки всех объектов кадра (task_14)
+  const renderQueue = configRenderQueue ?? getRenderQueue();
 
   // ── RenderPipeline (Этап 5-6) ──
   // Создаём слои пайплайна
-  const entityLayer = new EntityLayer();
+  const entityLayer = new EntityLayer(renderQueue);
   const particleLayer = new ParticleLayer(particleSys); // Этап 6: извлечение из FxManager
   const fogLayer = new FogLayer(fx);
   const overlayLayer = new OverlayLayer();
 
   // Создаём пайплайн и добавляем слои
   const pipeline = new RenderPipeline();
+  pipeline.queue = renderQueue; // task_14: подключаем очередь к пайплайну
   pipeline.addLayer(entityLayer);
   pipeline.addLayer(particleLayer);
   pipeline.addLayer(fogLayer);
@@ -671,26 +675,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       talkedSig: talkedSig.value,
       nearestInteractable,
     };
-
-    // Если renderer доступен — используем новый путь (Этап 8)
-    if (renderer) {
-      // Создаём hintLayer если ещё не создан
-      if (!hintLayerHandle) {
-        hintLayerHandle = renderer.createLayer('hint', 9999);
-        overlayLayer.setHintLayer(hintLayerHandle as any);
-      }
-      if (!dynamicLayerHandle) {
-        dynamicLayerHandle = renderer.createLayer('dynamic', 40);
-      }
-
-      entityLayerOpts.renderer = renderer;
-      entityLayerOpts.hintLayer = hintLayerHandle as any;
-      entityLayerOpts.dynamicLayer = dynamicLayerHandle as any;
-    } else {
-      // Legacy-путь: renderer ещё не инициализирован (Этап 8)
-      // TODO: После Этапа 8 удалить этот блок
-      logger.debug('game-loop', 'Renderer not initialized, using legacy path');
-    }
 
     entityLayer.setOptions(entityLayerOpts);
 

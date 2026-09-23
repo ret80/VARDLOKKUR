@@ -11,6 +11,10 @@ export interface RenderLayerContext {
   time: number;
   /** ECS-мир */
   world: World;
+  /** Рендерер (для RenderQueue.flush и прямых операций слоя) */
+  renderer?: IRenderer;
+  /** Опции слоя (world/time/dt/float/playerEid/cam и т.д.) */
+  options?: any;
 }
 
 /**

@@ -3,6 +3,7 @@
 import type { World } from 'bitecs';
 import type { IRenderLayer, RenderLayerContext } from './render-layer';
 import type { IRenderer } from '../renderer/IRenderer';
+import type { RenderQueue } from '../render/RenderQueue';
 
 /**
  * RenderPipeline — единый конвейер рендеринга игры.
@@ -37,6 +38,9 @@ export class RenderPipeline {
   private initialized = false;
   private renderer: IRenderer | null = null;
 
+  /** Очередь отрисовки (применяется в flush после всех слоёв) */
+  queue: RenderQueue | null = null;
+
   /** Добавить слой в пайплайн. Слои вызываются в порядке добавления. */
   addLayer(layer: IRenderLayer): void {
     this.layers.push(layer);
@@ -65,6 +69,8 @@ export class RenderPipeline {
     for (const layer of this.layers) {
       layer.render(ctx);
     }
+    // Применить очередь отрисовки (сортировка + zIndex) после всех слоёв
+    this.queue?.flush(this.renderer!);
     // Финальный рендер через IRenderer (вызывается после всех слоёв)
     this.renderer?.render();
   }
