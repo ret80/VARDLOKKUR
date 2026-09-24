@@ -442,10 +442,6 @@ export class Engine {
         entityFactory: this.mapLoader?.entityFactory ?? undefined,
         spriteFactory: this.mapLoader?.spriteFactory,
         renderQueue: this.renderQueue,
-        // ECS-рефакторинг рендеринга: mapRenderSystem создаёт батчи в слои
-        // сцены и уничтожает их Graphics через IRenderer при выгрузке карты
-        tileLayer: this.scene.tileLayerHandle,
-        dynamicLayer: this.scene.dynamicHandle,
         renderViewportProvider: () => this.mapLoader.getViewport(),
       });
     }

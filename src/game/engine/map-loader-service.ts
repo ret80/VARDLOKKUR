@@ -120,8 +120,6 @@ export class MapLoaderService {
       visitedShrines: this.store.visitedShrines,
       spriteFactory: this._spriteFactory,
       renderer: this._renderer,
-      tileLayer: this.sceneLayers.tileLayerHandle,
-      dynamicLayer: this.sceneLayers.dynamicHandle,
       roofSnow: this.store.roofSnow,
       flags: {
         secretKnown: this.store.flags.secretKnown,

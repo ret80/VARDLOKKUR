@@ -80,7 +80,6 @@ import {
 } from './ecs-systems/render-system';
 import { getRenderQueue, type RenderQueue, type Viewport } from '../render/RenderQueue';
 import { mapRenderSystem } from '../render/map-render-system';
-import type { LayerHandle } from '../renderer/IRenderer';
 import {
   updatePlayerInput,
   processActions,
@@ -194,10 +193,6 @@ export interface EcsGameLoopConfig {
   spriteFactory?: SpriteFactory;
   /** Очередь отрисовки (task_14) */
   renderQueue?: RenderQueue;
-  /** Handle слоя tiles — для батчей карты (mapRenderSystem, ECS-рефакторинг) */
-  tileLayer?: LayerHandle;
-  /** Handle слоя dynamic — для стен/домов карты (mapRenderSystem) */
-  dynamicLayer?: LayerHandle;
   /** Поставщик актуального viewport камеры (для viewport culling в flush) */
   renderViewportProvider?: () => Viewport;
 }
@@ -242,8 +237,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     entityFactory: configFactory,
     spriteFactory: configSpriteFactory,
     renderQueue: configRenderQueue,
-    tileLayer: configTileLayer,
-    dynamicLayer: configDynamicLayer,
     renderViewportProvider: configViewportProvider,
   } = config;
 
@@ -715,8 +708,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       : { camX: cam.x, camY: cam.y, viewW, viewH };
     mapRenderSystem(world, {
       renderer: renderer ?? undefined,
-      tileLayer: configTileLayer,
-      dynamicLayer: configDynamicLayer,
       viewport: renderViewport,
     });
 

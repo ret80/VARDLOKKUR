@@ -142,17 +142,9 @@ export const Altar = {
   runes: new Float32Array(10000),
 } as const;
 
-// --- MapState (синглтон-сущность карты, ECS-рефакторинг рендеринга) ---
-// Хранит параметры текущей карты и GraphicsHandle статичных батчей
-// (земля / стены / дома), созданных один раз при загрузке карты.
-// Значения 0 означают «хэндл ещё не создан» (handle'ы IRenderer >= 1).
+// --- MapState (синглтон-сущность карты) ---
+// Хранит параметры текущей карты.
 export const MapState = {
-  /** GraphicsHandle батча земли (drawTileBatch) */
-  groundHandle: new Int32Array(10000),
-  /** GraphicsHandle батча стен/деревьев/камней (drawWallGeometry) */
-  wallsHandle: new Int32Array(10000),
-  /** GraphicsHandle батча домов/руин (drawHouseGeometry) */
-  housesHandle: new Int32Array(10000),
   /** Ширина карты в тайлах */
   width: new Int32Array(10000),
   /** Высота карты в тайлах */
@@ -161,12 +153,16 @@ export const MapState = {
   dungeonId: new Int32Array(10000),
 } as const;
 
-/** Ключ записи RenderQueue для батча земли карты */
-export const MAP_GROUND_QUEUE_KEY = 'map.ground';
-/** Ключ записи RenderQueue для батча стен карты */
-export const MAP_WALLS_QUEUE_KEY = 'map.walls';
-/** Ключ записи RenderQueue для батча домов карты */
-export const MAP_HOUSES_QUEUE_KEY = 'map.houses';
+/** Информация о per-tile Graphics карты */
+export interface MapTileInfo {
+  handle: number;
+  x: number;
+  y: number;
+  layer: number;
+}
+
+/** Хранение per-tile Graphics: ключ → информация о Graphics */
+export const MapTiles = new Map<string, MapTileInfo>();
 
 // --- Dead ---
 export const Dead = new Uint8Array(10000);

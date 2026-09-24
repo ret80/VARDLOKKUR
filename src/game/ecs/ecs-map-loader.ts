@@ -32,7 +32,7 @@ import {
   resetAllComponents,
 } from './ecs-components';
 import type { IRenderer, LayerHandle } from '../renderer/IRenderer';
-import { createMapBatches, destroyMapBatches } from '../render/map-render-system';
+import { createMapTileGraphics, destroyAllMapTileGraphics } from '../render/map-render-system';
 
 // ============================================================
 // Конфигурация Map Loader
@@ -71,12 +71,8 @@ export interface EcsMapLoaderConfig {
   entityFactory: EntityFactory;
   /** Фабрика графических объектов (возвращает GraphicsHandle) */
   spriteFactory: SpriteFactory;
-  /** IRenderer для создания статичных батчей карты (земля/стены/дома) */
+  /** IRenderer для создания per-tile Graphics карты */
   renderer?: IRenderer;
-  /** Handle слоя tiles (для ground-батча) */
-  tileLayer?: LayerHandle;
-  /** Handle слоя dynamic (для стен/домов) */
-  dynamicLayer?: LayerHandle;
   /** Снег на крышах домов */
   roofSnow?: boolean;
 }
@@ -161,29 +157,26 @@ export class EcsMapLoader {
   }
 
   /**
-   * Создать синглтон-сущность карты: один раз сгенерировать Graphics-батчи
-   * (земля / стены / дома) и сохранить их хэндлы и размеры в компоненте MapState.
+   * Создать per-tile Graphics для карты: по одному Graphics на каждый
+   * видимый тайл земли, стены и дома. Каждый рисуется в (0,0),
+   * координаты (x,y) сохраняются в MapTiles.
+   * Регистрация в RenderQueue -> задача mapRenderSystem (каждый кадр).
    */
   private createMapEntity(world: World, map: WorldData): void {
     const renderer = this.config.renderer;
     if (!renderer) {
-      logger.warn('map-loader', 'createMapEntity: renderer not provided, map batches skipped');
+      logger.warn('map-loader', 'createMapEntity: renderer not provided, map tile graphics skipped');
       return;
     }
 
-    // Генерация батчей — ОДИН раз при загрузке карты
-    const batches = createMapBatches(map, renderer, {
-      tileLayer: this.config.tileLayer,
-      dynamicLayer: this.config.dynamicLayer,
+    // Генерация per-tile Graphics -> ОДИН раз при загрузке карты
+    createMapTileGraphics(map, renderer, {
       roofSnow: this.config.roofSnow ?? false,
     });
 
     // Синглтон-сущность с компонентом MapState
     const eid = addEntity(world);
     addComponent(world, eid, MapState);
-    MapState.groundHandle[eid] = batches.groundHandle;
-    MapState.wallsHandle[eid] = batches.wallsHandle;
-    MapState.housesHandle[eid] = batches.housesHandle;
     MapState.width[eid] = map.W;
     MapState.height[eid] = map.H;
     MapState.dungeonId[eid] = map.dungeonId ?? 0;

@@ -12,7 +12,6 @@ import {
   Position,
   Velocity,
   Health,
-  Radius,
   Time,
   Direction,
   RenderLayer,
@@ -318,13 +317,9 @@ export class RenderSystem {
 
         const px = Position.x[eid];
         const py = Position.y[eid];
-        const radius = Radius.value[eid] || 8;
 
         entry.x = px;
         entry.y = py;
-
-        // Видимость через viewport culling
-        entry.visible = r.isVisibleInViewport({ x: px, y: py }, radius);
 
         // Альфа: Dead/Hidden/hurt-мигание игрока
         if (eid === playerEid && Dead[eid]) entry.alpha = 0;

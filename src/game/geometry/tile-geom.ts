@@ -16,9 +16,12 @@ const rnd = (x: number, y: number, s: number) => {
 };
 
 /**
- * Нарисовать один тайл типа t в заданных координатах.
+ * Нарисовать один тайл типа t в заданных локальных координатах (0,0 для per-tile Graphics).
+ * @param g     GraphicsHandle
+ * @param t     тип тайла
+ * @param x,y   локальные координаты внутри Graphics (обычно 0,0)
  */
-function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number, renderer: IRenderer): void {
+export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number, renderer: IRenderer): void {
   const tileRect = { x, y, width: T, height: T };
 
   // dither-тайл: базовый цвет + 6 пикселей тёмного/светлого крапа

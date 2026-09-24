@@ -1,49 +1,29 @@
-/* map-render-system.ts — ECS-система рендеринга карты (рефакторинг MapRenderSystem).
+/* map-render-system.ts — ECS-система рендеринга карты (per-tile Graphics).
  *
- * Архитектура (Data-Oriented Design):
- *  1. EcsMapLoader при загрузке карты ОДИН раз генерирует геометрию батчей
- *     (земля / стены / дома) и сохраняет GraphicsHandle в компоненте MapState
- *     синглтон-сущности карты (см. createMapEntity в ecs-map-loader.ts).
- *  2. mapRenderSystem(world) вызывается каждый кадр в фазе рендеринга
- *     (ecs-game-loop.ts, вместе с renderSystem). Она делает query(world, [MapState])
- *     и регистрирует статичные хэндлы в общем RenderQueue через upsert()
- *     с правильными слоями (RENDER_LAYER.GROUND для земли, RENDER_LAYER.DYNAMIC
- *     для стен и домов). Новые Graphics система НЕ создаёт.
- *  3. Если сущность MapState уничтожена (переход на другую локацию), система
- *     выгружает устаревшие батчи: удаляет записи из RenderQueue и уничтожает
- *     Graphics через IRenderer.
+ * Архитектура:
+ *  1. При загрузке карты (EcsMapLoader) создаётся ПО ОДНОМУ Graphics на каждый
+ *     видимый тайл земли, стены и дома. Каждый Graphics рисуется в (0,0).
+ *  2. Каждый Graphics регистрируется в MapTiles с координатами (x,y).
+ *  3. mapRenderSystem(world, opts) вызывается каждый кадр:
+ *     — регистрирует все тайлы из MapTiles в RenderQueue.
+ *     — RenderQueue сортирует по (layer, y) -> корректный Z-sort.
+ *  4. Если карта уничтожена -> все Graphics уничтожаются.
  *
- * Сортировка, viewport culling и финальные вызовы IRenderer — в RenderQueue.flush().
+ * Y-sort: zIndex = layer * 100000 + Math.round(y)
+ * Каждый тайл -> отдельный Graphics, поэтому игрок может зайти ЗА дом.
  */
 
 import { query, type World } from 'bitecs';
 import type { IRenderer, GraphicsHandle, LayerHandle } from '../renderer/IRenderer';
 import { getRenderQueue, RENDER_LAYER, type RenderEntry, type Viewport } from './RenderQueue';
-import {
-  MapState,
-  MAP_GROUND_QUEUE_KEY,
-  MAP_WALLS_QUEUE_KEY,
-  MAP_HOUSES_QUEUE_KEY,
-} from '../ecs/ecs-components';
-import { T } from '../world';
+import { MapState, MapTiles, type MapTileInfo } from '../ecs/ecs-components';
+import { T, Tl, type WorldData } from '../world';
+import { drawTileLocal } from '../geometry/tile-geom';
+import { drawWallGeometry } from '../geometry/wall-geom';
+import { drawHouseGeometry, houseMetrics } from '../geometry/house-geom';
+import { logger } from '../debug/logger';
 
-/** Описание одного статичного батча карты */
-interface MapBatchDef {
-  /** Ключ записи в RenderQueue (стабилен между кадрами) */
-  key: string;
-  /** Компонентный массив с GraphicsHandle */
-  handles: Int32Array;
-  /** Слой отрисовки */
-  layer: number;
-}
-
-const BATCH_DEFS: MapBatchDef[] = [
-  { key: MAP_GROUND_QUEUE_KEY, handles: MapState.groundHandle, layer: RENDER_LAYER.GROUND },
-  { key: MAP_WALLS_QUEUE_KEY, handles: MapState.wallsHandle, layer: RENDER_LAYER.DYNAMIC },
-  { key: MAP_HOUSES_QUEUE_KEY, handles: MapState.housesHandle, layer: RENDER_LAYER.DYNAMIC },
-];
-
-/** Значение «хэндл не создан» (handle'ы IRenderer >= 1) */
+/** Значение "хэндл не создан" (handle'ы IRenderer >= 1) */
 const NO_HANDLE = 0;
 
 /**
@@ -51,122 +31,84 @@ const NO_HANDLE = 0;
  */
 export interface MapRenderSystemOptions {
   renderer?: IRenderer;
-  /** Handle слоя tiles (для ground-батча) */
-  tileLayer?: LayerHandle;
-  /** Handle слоя dynamic (для стен/домов) */
-  dynamicLayer?: LayerHandle;
-  /** Параметры камеры (для bounding box батчей в viewport culling) */
+  /** Параметры камеры (для viewport culling) */
   viewport?: Viewport;
+  /** Снег на крышах домов */
+  roofSnow?: boolean;
 }
 
 /**
- * mapRenderSystem — ECS-система: синглтон-сущность карты → RenderQueue.
+ * mapRenderSystem -> ECS-система: per-tile Graphics -> RenderQueue.
  *
- * Вызывается каждый кадр в фазе render() игрового цикла:
- *   mapRenderSystem(world, { renderer, tileLayer, dynamicLayer, viewport });
+ * Вызывается каждый кадр в фазе render() игрового цикла.
+ * Регистрация всех видимых тайлов в RenderQueue для сортировки по (layer, y).
  */
 export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {}): void {
   const queue = getRenderQueue();
   if (!queue) return;
+  const viewport = opts.viewport;
 
-  // Найди синглтон-сущность карты (в мире должна быть не более одной)
+  // Проверяем, загружена ли карта
   let mapEid = -1;
   for (const eid of query(world, [MapState])) {
     mapEid = eid;
     break;
   }
 
-  // === Сущности MapState нет (или она уничтожена при переходе на другую
-  //     локацию) — выгрузить все батчи карты из очереди и уничтожить их ===
+  // Карта не загружена -> очищаем RenderQueue от тайлов карты
   if (mapEid < 0) {
-    unloadAllMapBatches(queue, opts.renderer);
-    // Принудительно скрываем legacy-спрайты карты (layer containers), если
-    // они остались в worldContainer после teardown. В новом ECS-пути карта
-    // рисуется только батчами из RenderQueue — любые прямые спрайты слоёв
-    // перекрывают новый рендер (замена legacy MapRenderSystem.clear()).
+    clearMapTilesFromQueue(queue);
     hideLegacyLayerSprites(opts.renderer);
     return;
   }
 
-  const wPx = MapState.width[mapEid] * T;
-  const hPx = MapState.height[mapEid] * T;
+  // === Регистрируем все тайлы карты в RenderQueue ===
+  for (const [key, tile] of MapTiles) {
+    const handle = tile.handle;
+    if (handle === NO_HANDLE) continue;
 
-  for (const def of BATCH_DEFS) {
-    const handle = def.handles[mapEid];
-
-    // Хэндл не создан или уже уничтожен вне системы — убираем запись из очереди
-    if (handle === NO_HANDLE || !isHandleAlive(queue, opts.renderer, handle)) {
-      const taken = queue.takeByKey(def.key);
-      if (taken !== null && taken !== handle && isHandleAlive(queue, opts.renderer, taken)) {
-        destroyHandle(opts.renderer, taken);
+    // Проверяем, жив ли Graphics
+    if (opts.renderer) {
+      try {
+        const g = (opts.renderer as any).getGraphicsPixi?.(handle as GraphicsHandle);
+        if (!g || g.destroyed) {
+          MapTiles.delete(key);
+          continue;
+        }
+      } catch {
+        MapTiles.delete(key);
+        continue;
       }
-      if (handle !== NO_HANDLE) def.handles[mapEid] = NO_HANDLE;
-      continue;
     }
 
-    // Статичный батч покрывает всю карту — bounding box нужен для viewport culling
-    const entry = queue.upsert(def.key, (): RenderEntry => ({
-      x: 0,
-      y: 0,
-      width: wPx,
-      height: hPx,
-      layer: def.layer,
+    // Добавляем в очередь (upsert по ключу)
+    queue.upsert(key, (): RenderEntry => ({
+      x: tile.x,
+      y: tile.y,
+      width: T,
+      height: T,
+      layer: tile.layer,
       alpha: 1,
       visible: true,
       handle: handle as GraphicsHandle,
     }));
-
-    // Обновляем актуальные данные (при перезагрузке карты handle мог смениться)
-    entry.handle = handle as GraphicsHandle;
-    entry.layer = def.layer;
-    entry.alpha = 1;
-    entry.visible = true;
-    entry.width = wPx;
-    entry.height = hPx;
   }
+
+  // === Скрываем legacy-спрайты карты ===
+  hideLegacyLayerSprites(opts.renderer);
 }
 
-/** Проверить, жив ли ещё GraphicsHandle (если доступен IRenderer) */
-function isHandleAlive(
-  _queue: ReturnType<typeof getRenderQueue>,
-  renderer: IRenderer | undefined,
-  handle: number
-): boolean {
-  if (!renderer) return true; // без рендерера не можем проверить — считаем живым
-  try {
-    // Обращение к несуществующему handle в PixiJSRenderer логирует warning,
-    // но не бросает исключение; проверяем наличие внутреннего объекта.
-    const g = (renderer as any).getGraphicsPixi?.(handle as GraphicsHandle);
-    return !!g && !g.destroyed;
-  } catch {
-    return false;
-  }
-}
-
-/** Уничтожить GraphicsHandle через IRenderer (безопасно) */
-function destroyHandle(renderer: IRenderer | undefined, handle: GraphicsHandle): void {
-  if (!renderer) return;
-  try {
-    renderer.destroyGraphics(handle);
-  } catch {
-    // уже уничтожен — игнорируем
-  }
-}
-
-/** Выгрузить все батчи карты из очереди и уничтожить их Graphics */
-function unloadAllMapBatches(
-  queue: NonNullable<ReturnType<typeof getRenderQueue>>,
-  renderer: IRenderer | undefined
-): void {
-  for (const def of BATCH_DEFS) {
-    const handle = queue.takeByKey(def.key);
-    if (handle !== null) destroyHandle(renderer, handle);
+/** Очистить все записи тайлов карты из RenderQueue */
+function clearMapTilesFromQueue(queue: ReturnType<typeof getRenderQueue>): void {
+  if (!queue) return;
+  for (const key of MapTiles.keys()) {
+    queue.takeByKey(key);
   }
 }
 
 /**
  * Скрыть legacy-спрайты/графику внутри layer containers worldContainer.
- * Вызывается один раз при выгрузке карты (когда сущность MapState удалена).
+ * Вызывается при выгрузке карты (когда сущность MapState удалена).
  */
 let _legacyHiddenOnce = false;
 function hideLegacyLayerSprites(renderer: IRenderer | undefined): void {
@@ -185,93 +127,92 @@ function hideLegacyLayerSprites(renderer: IRenderer | undefined): void {
 }
 
 // ============================================================
-// Генерация геометрии батчей (вызывается ОДИН раз — ecs-map-loader)
+// Генерация per-tile Graphics (вызывается ОДИН раз -> ecs-map-loader)
 // ============================================================
 
-import { Tl, type WorldData } from '../world';
-import { logger } from '../debug/logger';
-import { drawTileBatch } from '../geometry/tile-geom';
-import { drawWallGeometry } from '../geometry/wall-geom';
-import { drawHouseGeometry, houseMetrics } from '../geometry/house-geom';
-
-/** Детерминированный шум вариантов (как в legacy tiles.ts) */
-const rnd = (x: number, y: number, s: number) => {
-  const v = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
-  return v - Math.floor(v);
-};
-
-/** Типы тайлов, отрисовываемые как вертикальные объекты (стены) */
-const WALL_TILES = new Set<number>([
-  Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.COLUMN, Tl.DWALL, Tl.CAVEWALL,
-]);
-
-/** Результат процедурной генерации батчей карты */
-export interface MapBatches {
-  groundHandle: GraphicsHandle;
-  wallsHandle: GraphicsHandle;
-  housesHandle: GraphicsHandle;
-}
-
 /**
- * Создать статичные Graphics-батчи карты (земля, стены, дома).
+ * Создать per-tile Graphics для карты (земля, стены, дома).
  *
  * Вызывается ОДИН раз при загрузке карты (EcsMapLoader.createMapEntity).
- * Процедурная геометрия рисуется в ЛОКАЛЬНЫХ координатах батча через ox/oy —
- * позиция самого Graphics всегда (0,0). Возвращённые хэндлы сохраняются
- * в компонент MapState; регистрация в RenderQueue — задача mapRenderSystem.
+ * Каждый тайл получает СВОЙ GraphicsHandle, который рисуется в (0,0).
+ * Координаты (x,y) сохраняются в MapTiles.
+ * Регистрация в RenderQueue -> задача mapRenderSystem (каждый кадр).
  */
-export function createMapBatches(
+export function createMapTileGraphics(
   map: WorldData,
   renderer: IRenderer,
-  opts: { tileLayer?: LayerHandle; dynamicLayer?: LayerHandle; roofSnow?: boolean } = {},
-): MapBatches {
+  opts: { roofSnow?: boolean } = {},
+): void {
   if (!map?.tiles || !map.W || !map.H) {
     throw new Error(
-      `Invalid map data: tiles=${!!map?.tiles}, W=${map?.W}, H=${map?.H}`,
+      "Invalid map data: tiles=" + !!map?.tiles + ", W=" + map?.W + ", H=" + map?.H,
     );
   }
+
   const { W, H } = map;
   const roofSnow = opts.roofSnow ?? false;
+  let count = 0;
 
-  // ===== 1. Ground: один Graphics на все тайлы (layer=0) =====
-  const groundG = renderer.createGraphics(opts.tileLayer);
-  renderer.setGraphicsPosition(groundG, { x: 0, y: 0 });
-  drawTileBatch(renderer, groundG, map);
+  // Детерминированный шум вариантов
+  const rnd = (x: number, y: number, s: number) => {
+    const v = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
+    return v - Math.floor(v);
+  };
 
-  // ===== 2. Стены: собираем все стены в список, сортируем по Y =====
-  const walls: { x: number; y: number; tile: number; variant: number; renderY: number }[] = [];
+  // ===== 1. Ground: один Graphics на каждый тайл (ВСЕХ, включая деревья/дома) =====
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const t = map.tiles[y * W + x];
+
+      const g = renderer.createGraphics();
+      renderer.setGraphicsPosition(g, { x: 0, y: 0 });
+      drawTileLocal(g, t, 0, 0, renderer);
+
+      const key = x + "_" + y;
+      MapTiles.set(key, {
+        handle: g as GraphicsHandle,
+        x: x * T,
+        y: y * T,
+        layer: RENDER_LAYER.GROUND,
+      });
+
+      count++;
+    }
+  }
+
+  // ===== 2. Стены: один Graphics на каждый тайл =====
+  const WALL_TILES = new Set<number>([
+    Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.COLUMN, Tl.DWALL, Tl.CAVEWALL,
+  ]);
+
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const t = map.tiles[y * W + x];
       if (!WALL_TILES.has(t)) continue;
+
       const variant =
         t === Tl.TREE ? ((rnd(x, y, 13) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
         : t === Tl.ROCK ? (rnd(x, y, 11) > 0.5 ? 1 : 0)
         : t === Tl.COLUMN ? ((rnd(x, y, 11) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
         : 0;
 
-      walls.push({
+      const g = renderer.createGraphics();
+      renderer.setGraphicsPosition(g, { x: 0, y: 0 });
+      drawWallGeometry(renderer, g, t, variant, map.dungeonId ?? 0, 0, 0);
+
+      const key = "wall_" + x + "_" + y;
+      MapTiles.set(key, {
+        handle: g as GraphicsHandle,
         x: x * T,
         y: y * T,
-        tile: t,
-        variant,
-        renderY: y * T + T, // якорь — низ объекта для Y-sort
+        layer: RENDER_LAYER.DYNAMIC,
       });
+
+      count++;
     }
   }
 
-  // Сортируем стены по Y (сверху вниз) — порядок рисования = Z-sort
-  walls.sort((a, b) => a.renderY - b.renderY);
-
-  // Создаём ОДИН Graphics-батч для всех стен; геометрия рисуется в мировых
-  // координатах тайла (w.x, w.y), позиция Graphics = (0, 0)
-  const wallG = renderer.createGraphics(opts.dynamicLayer);
-  renderer.setGraphicsPosition(wallG, { x: 0, y: 0 });
-  for (const w of walls) {
-    drawWallGeometry(renderer, wallG, w.tile, w.variant, map.dungeonId, w.x, w.y);
-  }
-
-  // ===== 3. Дома: собираем все дома в список, сортируем по Y =====
+  // ===== 3. Дома: один Graphics на каждый блок домов =====
   const ruinedTiles = new Set<number>();
   for (const r of map.ruinedHouses ?? []) {
     for (let dy = 0; dy < r.h; dy++) {
@@ -279,14 +220,14 @@ export function createMapBatches(
     }
   }
 
-  const houses: { x: number; y: number; hw: number; hh: number; variant: number; isRuined: boolean; renderY: number }[] = [];
   const houseSeen = new Set<string>();
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       if (map.tiles[y * W + x] !== Tl.HOUSE) continue;
-      const key = `${x},${y}`;
+      const key = x + "," + y;
       if (houseSeen.has(key)) continue;
 
+      // Найти размер блока
       let hw = 1, hh = 1;
       while (x + hw < W && map.tiles[y * W + (x + hw)] === Tl.HOUSE) hw++;
       while (y + hh < H) {
@@ -298,63 +239,49 @@ export function createMapBatches(
         hh++;
       }
       for (let dy = 0; dy < hh; dy++) {
-        for (let dx = 0; dx < hw; dx++) houseSeen.add(`${x + dx},${y + dy}`);
+        for (let dx = 0; dx < hw; dx++) houseSeen.add((x + dx) + "," + (y + dy));
       }
 
       const isRuined = ruinedTiles.has(y * W + x);
       const v = (rnd(x, y, 13) > 0.5 ? 1 : 0) | (rnd(x, y, 11) > 0.6 ? 2 : 0);
 
-      houses.push({
+      const g = renderer.createGraphics();
+      renderer.setGraphicsPosition(g, { x: 0, y: 0 });
+
+      // Метрики дома для локальных координат
+      const m = houseMetrics(hw, hh);
+      const ox = 0 - m.marginX; // локально в Graphics
+      const oy = hh * T + 1 - (m.wallTop + m.wallH + m.foundH);
+      drawHouseGeometry(renderer, g, hw, hh, v, isRuined, roofSnow, ox, oy);
+
+      const hkey = "house_" + x + "_" + y;
+      MapTiles.set(hkey, {
+        handle: g as GraphicsHandle,
         x: x * T,
         y: y * T,
-        hw, hh,
-        variant: v,
-        isRuined,
-        renderY: y * T + hh * T, // якорь Y — низ фундамента
+        layer: RENDER_LAYER.DYNAMIC,
       });
+
+      count++;
     }
   }
 
-  // Сортируем дома по Y (сверху вниз) — порядок рисования = Z-sort
-  houses.sort((a, b) => a.renderY - b.renderY);
-
-  // Создаём ОДИН Graphics-батч для всех домов; локальные координаты блока
-  // вычисляются так же, как в legacy (через метрики дома)
-  const houseG = renderer.createGraphics(opts.dynamicLayer);
-  renderer.setGraphicsPosition(houseG, { x: 0, y: 0 });
-  for (const h of houses) {
-    const m = houseMetrics(h.hw, h.hh);
-    const ox = h.x - m.marginX;
-    const oy = h.y + h.hh * T + 1 - (m.wallTop + m.wallH + m.foundH);
-    drawHouseGeometry(renderer, houseG, h.hw, h.hh, h.variant, h.isRuined, roofSnow, ox, oy);
-  }
-
-  logger.info('map-render', `Map batches created: 1 ground + 1 wall-batch (${walls.length} tiles) + 1 house-batch (${houses.length} blocks)`);
-
-  return { groundHandle: groundG, wallsHandle: wallG, housesHandle: houseG };
+  logger.info("map-render", "Map tile graphics created: " + count + " Graphics (ground + walls + houses)");
 }
 
 /**
- * Уничтожить батчи карты через IRenderer и удалить их записи из RenderQueue.
- * Используется при teardown карты (переход на другую локацию), если сущность
- * MapState была удалена ДО того, как mapRenderSystem успела их выгрузить.
+ * Уничтожить все per-tile Graphics карты через IRenderer.
  */
-export function destroyMapBatches(
+export function destroyAllMapTileGraphics(
   renderer: IRenderer,
-  handles: (GraphicsHandle | number | null | undefined)[],
 ): void {
-  const queue = getRenderQueue();
-  for (const h of handles) {
-    if (h === null || h === undefined || h === NO_HANDLE) continue;
-    const handle = h as GraphicsHandle;
-    // Удалить записи очереди по ключам, ссылающиеся на этот handle
-    if (queue) {
-      for (const def of BATCH_DEFS) {
-        const entry = queue.getByKey(def.key);
-        if (entry && entry.handle === handle) queue.takeByKey(def.key);
-      }
-      queue.remove(handle);
+  for (const [key, tile] of MapTiles) {
+    try {
+      renderer.destroyGraphics(tile.handle as GraphicsHandle);
+    } catch {
+      // уже уничтожен
     }
-    destroyHandle(renderer, handle);
   }
+  MapTiles.clear();
+  _legacyHiddenOnce = false;
 }
