@@ -17,10 +17,10 @@ import {
   Position,
   Velocity,
   Sprite,
-  SpriteRegistry,
 } from '../ecs-components';
 import { logger } from '../../debug/logger';
 import { getRenderer } from '../../renderer/RendererFactory';
+import type { GraphicsHandle } from '../../renderer/IRenderer';
 
 // ============================================================
 // Система жизней
@@ -43,8 +43,7 @@ export function lifeCheckSystem(world: World): void {
   // Очистить спрайт мёртвых врагов (физ. тело удалится в game loop)
   const r = getRenderer();
   for (const eid of query(world, [Dead, Enemy])) {
-    const spriteIdx = Sprite.ref[eid];
-    const spriteHandle = SpriteRegistry[spriteIdx - 1];
+    const spriteHandle = Sprite.ref[eid] as GraphicsHandle;
     if (spriteHandle) {
       r.destroyGraphics(spriteHandle);
     }

@@ -17,7 +17,6 @@ import {
   Projectile,
   NPC,
   Sprite,
-  SpriteRegistry,
   PhysicsBody,
   PhysicsBodyRegistry,
   EnemyAI,
@@ -442,8 +441,7 @@ export function inspectEntity(world: World, eid: number): DebugEntity | null {
   
   if (hasComponent(world, Sprite as any, eid)) {
     entity.components.push('Sprite');
-    const spriteIdx = Sprite.ref[eid];
-    entity.sprite = spriteIdx > 0 ? SpriteRegistry[spriteIdx - 1] : null;
+    entity.sprite = Sprite.ref[eid] || null;
   }
   
   if (hasComponent(world, PhysicsBody as any, eid)) {
@@ -539,18 +537,8 @@ export function removeEnemy(
   if (eid < 0 || !hasComponent(world, Enemy as any, eid)) return false;
   if (Dead[eid]) return false;
   
-  const spriteIdx = Sprite.ref[eid];
-  if (spriteIdx > 0) {
-    const sprite = SpriteRegistry[spriteIdx - 1];
-    if (sprite) {
-      if (onRemoveSprite) onRemoveSprite(sprite);
-      sprite?.destroy({ children: true });
-    }
-    SpriteRegistry.splice(spriteIdx - 1, 1);
-    for (const e of query(world, [Sprite])) {
-      if (Sprite.ref[e] > spriteIdx) Sprite.ref[e]--;
-    }
-  }
+  // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
+  Sprite.ref[eid] = 0;
   
   const pbIdx = PhysicsBody.body[eid];
   if (pbIdx > 0) {
@@ -565,7 +553,7 @@ export function removeEnemy(
 /** Удалить всех врагов */
 export function removeAllEnemies(
   world: World,
-  onRemoveSprite?: (sprite: any) => void
+  _onRemoveSprite?: (sprite: any) => void
 ): number {
   let count = 0;
   const toRemove: number[] = [];
@@ -578,15 +566,8 @@ export function removeAllEnemies(
   }
   
   for (const eid of toRemove) {
-    const spriteIdx = Sprite.ref[eid];
-    if (spriteIdx > 0) {
-      const sprite = SpriteRegistry[spriteIdx - 1];
-      if (sprite) {
-        if (onRemoveSprite) onRemoveSprite(sprite);
-        sprite?.destroy({ children: true });
-      }
-      SpriteRegistry.splice(spriteIdx - 1, 1);
-    }
+    // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
+    Sprite.ref[eid] = 0;
     removeEntity(world, eid);
   }
   
@@ -596,7 +577,7 @@ export function removeAllEnemies(
 /** Удалить всех призраков */
 export function removeAllGhosts(
   world: World,
-  onRemoveSprite?: (sprite: any) => void
+  _onRemoveSprite?: (sprite: any) => void
 ): number {
   let count = 0;
   const toRemove: number[] = [];
@@ -609,15 +590,8 @@ export function removeAllGhosts(
   }
   
   for (const eid of toRemove) {
-    const spriteIdx = Sprite.ref[eid];
-    if (spriteIdx > 0) {
-      const sprite = SpriteRegistry[spriteIdx - 1];
-      if (sprite) {
-        if (onRemoveSprite) onRemoveSprite(sprite);
-        sprite?.destroy({ children: true });
-      }
-      SpriteRegistry.splice(spriteIdx - 1, 1);
-    }
+    // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
+    Sprite.ref[eid] = 0;
     removeEntity(world, eid);
   }
   
@@ -628,15 +602,8 @@ export function removeAllGhosts(
 export function removeProjectile(world: World, eid: number): boolean {
   if (eid < 0 || !hasComponent(world, Projectile as any, eid)) return false;
   
-  const spriteIdx = Sprite.ref[eid];
-  if (spriteIdx > 0) {
-    const sprite = SpriteRegistry[spriteIdx - 1];
-    if (sprite) sprite?.destroy({ children: true });
-    SpriteRegistry.splice(spriteIdx - 1, 1);
-    for (const e of query(world, [Sprite])) {
-      if (Sprite.ref[e] > spriteIdx) Sprite.ref[e]--;
-    }
-  }
+  // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
+  Sprite.ref[eid] = 0;
   
   removeEntity(world, eid);
   return true;
@@ -646,15 +613,8 @@ export function removeProjectile(world: World, eid: number): boolean {
 export function removeDrop(world: World, eid: number): boolean {
   if (eid < 0 || !hasComponent(world, Drop as any, eid)) return false;
   
-  const spriteIdx = Sprite.ref[eid];
-  if (spriteIdx > 0) {
-    const sprite = SpriteRegistry[spriteIdx - 1];
-    if (sprite) sprite?.destroy({ children: true });
-    SpriteRegistry.splice(spriteIdx - 1, 1);
-    for (const e of query(world, [Sprite])) {
-      if (Sprite.ref[e] > spriteIdx) Sprite.ref[e]--;
-    }
-  }
+  // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
+  Sprite.ref[eid] = 0;
   
   removeEntity(world, eid);
   return true;

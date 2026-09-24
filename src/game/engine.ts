@@ -59,7 +59,6 @@ import {
   Projectile as EcsProjectile,
   Drop,
   Sprite as EcsSprite,
-  SpriteRegistry,
   PhysicsBody,
   PhysicsBodyRegistry,
   damageEntityEcs,
@@ -672,13 +671,8 @@ export class Engine {
         if (!this.ecsWorld) return 0;
         let count = 0;
         for (const eid of query(this.ecsWorld, [Drop])) {
-          const spriteIdx = EcsSprite.ref[eid];
-          if (spriteIdx > 0) {
-            const sprite = SpriteRegistry[spriteIdx - 1];
-            if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
-            sprite?.destroy({ children: true });
-            SpriteRegistry.splice(spriteIdx - 1, 1);
-          }
+          // sprite — это GraphicsHandle (number), не PixiJS объект
+          EcsSprite.ref[eid] = 0;
           removeEntity(this.ecsWorld!, eid);
           count++;
         }
@@ -688,13 +682,7 @@ export class Engine {
         if (!this.ecsWorld) return 0;
         let count = 0;
         for (const eid of query(this.ecsWorld, [EcsProjectile])) {
-          const spriteIdx = EcsSprite.ref[eid];
-          if (spriteIdx > 0) {
-            const sprite = SpriteRegistry[spriteIdx - 1];
-            if (sprite && sprite.parent) sprite.parent.removeChild(sprite);
-            sprite?.destroy({ children: true });
-            SpriteRegistry.splice(spriteIdx - 1, 1);
-          }
+          EcsSprite.ref[eid] = 0;
           removeEntity(this.ecsWorld!, eid);
           count++;
         }

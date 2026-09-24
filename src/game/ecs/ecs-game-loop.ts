@@ -76,6 +76,7 @@ import {
   cleanupRenderedEnemy,
   unregisterSpriteHandle,
   ENTITY_LAYER,
+  _renderSystemInstance,
 } from './ecs-systems/render-system';
 import { getRenderQueue, type RenderQueue, type Viewport } from '../render/RenderQueue';
 import { mapRenderSystem } from '../render/map-render-system';
@@ -96,7 +97,7 @@ import { type EntityFactory } from './entity-factory';
 import {
   Position, Velocity, PhysicsBody, Player, Direction, Health,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
-  Flashing, Enemy, EnemyState, Sprite, SpriteRegistry, Radius,
+  Flashing, Enemy, EnemyState, Sprite, Radius,
   Shrine, Dead,
 } from '../ecs/ecs-components';
 import type { InputSystem } from '../input/input-system';
@@ -297,6 +298,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   // Инициализируем пайплайн (Этап 8: IRenderer)
   const renderer = getRenderer();
   pipeline.init(renderer, { dt: _stepT, time: _realT, world });
+
+  // Инициализируем RenderSystem — нужен для overlay-слоя и _hintG
+  _renderSystemInstance.init(renderer);
 
   // Локальные копии для updateConfig
   let config_map = map;
@@ -517,9 +521,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       _planckWorld,
       (eid) => {
         // onProjectileRemove: удалить Graphics + Planck body снаряда
-        const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
-        if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
-        spriteRef?.destroy();
+        // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
         Sprite.ref[eid] = 0;
         const pbIdx = PhysicsBody.body[eid];
         if (pbIdx > 0) {
@@ -559,9 +561,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       bus,
       (eid: number) => {
         // Удалить Graphics + Planck body дропа
-        const spriteRef = SpriteRegistry[Sprite.ref[eid] - 1];
-        if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
-        spriteRef?.destroy();
+        // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
         Sprite.ref[eid] = 0;
       },
       playerDomain,
@@ -612,8 +612,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     if (peid >= 0 && !!Dead[peid] && !playerDomain?.isAlive()) {
       bus.emit("player:died", {});
       // Удалить спрайт из display list (не destroy — render system всё ещё может обращаться)
-      const spriteRef = SpriteRegistry[Sprite.ref[peid] - 1];
-      if (spriteRef && spriteRef.parent) spriteRef.parent.removeChild(spriteRef);
+      // Sprite.ref[eid] теперь хранит GraphicsHandle (number), а не PixiJS объект
+      Sprite.ref[peid] = 0;
       // Уничтожить физ. тело
       const pbIdx = PhysicsBody.body[peid];
       if (pbIdx > 0) {

@@ -25,7 +25,6 @@ import { logger } from '../debug/logger';
 import {
   Shrine,
   Sprite,
-  SpriteRegistry,
   PhysicsBodyRegistry,
   EnemyAIRegistry,
   Chest,
@@ -193,8 +192,6 @@ export class EcsMapLoader {
   }
 
   private clearWorld(world: World, preservePlayerSprite?: number): void {
-    const registryBefore = SpriteRegistry.length;
-
     // Удалить ВСЕ сущности из ECS мира
     const eids: number[] = [];
     for (const eid of query(world, [])) {
@@ -207,29 +204,11 @@ export class EcsMapLoader {
     // Сбросить все SoA массивы компонентов
     resetAllComponents();
 
-    // Очистить SpriteRegistry — но не уничтожать playerG
-    const playerG = preservePlayerSprite;
-    let playerFound = false;
-    for (const s of [...SpriteRegistry]) {
-      if (s === playerG) {
-        playerFound = true;
-      } else {
-        // GraphicsHandle — уничтожаем через IRenderer (но здесь мы не имеем доступа к renderer)
-        // Поэтому просто очищаем массив
-      }
-    }
-    SpriteRegistry.length = 0;
-
-    // Спрайт игрока — это GraphicsHandle (number), push как есть
-    if (playerG) {
-      SpriteRegistry.push(playerG);
-    }
-
     // Очистить другие реестры
     EnemyAIRegistry.length = 0;
     PhysicsBodyRegistry.length = 0;
 
-    logger.debug('map-loader', `cleared ${eids.length} entities, sprites: ${registryBefore} -> ${SpriteRegistry.length}`);
+    logger.debug('map-loader', `cleared ${eids.length} entities`);
   }
 
   private createTileBodies(map: WorldData, planckWorld: PlanckWorld): void {

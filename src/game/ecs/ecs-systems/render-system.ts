@@ -10,6 +10,12 @@ import { query, hasComponent, type World } from 'bitecs';
 import type { IRenderer, GraphicsHandle } from '../../renderer/IRenderer';
 import {
   Position,
+  Velocity,
+  Health,
+  Radius,
+  Time,
+  Direction,
+  RenderLayer,
   Player,
   Enemy,
   Projectile,
@@ -21,14 +27,13 @@ import {
   Door,
   Barrier,
   Altar,
-  Sprite as SpriteComp,
-  Dead,
+  Sprite,
   Hidden,
   Taken,
-  SpriteRegistry,
-  Radius,
-  StringPool,
+  Magnet,
+  Dead,
   poolGet,
+  StringPool,
 } from '../ecs-components';
 import {
   enemyRegistry,
@@ -61,14 +66,13 @@ import { getRenderQueue, RENDER_LAYER, type RenderEntry } from '../../render/Ren
 // Утилиты рендеринга
 // ============================================================
 
-/** Получить GraphicsHandle из SpriteRegistry по eid */
+/** Получить GraphicsHandle из Sprite.ref (хранит handle напрямую) */
 function getSpriteHandle(eid: number): number | undefined {
-  const idx = SpriteComp.ref[eid];
-  if (idx <= 0 || idx > SpriteRegistry.length) {
+  const handle = Sprite.ref[eid];
+  if (!handle) {
     return undefined;
   }
-  // SpriteRegistry хранит реальные GraphicsHandle (id от createGraphics)
-  return SpriteRegistry[idx - 1];
+  return handle;
 }
 
 /**
@@ -187,12 +191,12 @@ export class RenderSystem {
 
   /** Конфигурация всех статических объектов окружения */
   private readonly OBJECT_QUERIES: ObjectQueryConfig[] = [
-    { components: [SpriteComp, Chest], key: "chest", mapper: eidToChestData },
-    { components: [SpriteComp, Pedestal], key: "pedestal", mapper: eidToPedestalData },
-    { components: [SpriteComp, Shrine], key: "shrine", mapper: eidToShrineData },
-    { components: [SpriteComp, Door], key: "door", mapper: eidToDoorData },
-    { components: [SpriteComp, Barrier], key: "barrier", mapper: eidToBarrierData },
-    { components: [SpriteComp, Altar], key: "altar", mapper: eidToAltarData },
+    { components: [Sprite, Chest], key: "chest", mapper: eidToChestData },
+    { components: [Sprite, Pedestal], key: "pedestal", mapper: eidToPedestalData },
+    { components: [Sprite, Shrine], key: "shrine", mapper: eidToShrineData },
+    { components: [Sprite, Door], key: "door", mapper: eidToDoorData },
+    { components: [Sprite, Barrier], key: "barrier", mapper: eidToBarrierData },
+    { components: [Sprite, Altar], key: "altar", mapper: eidToAltarData },
   ];
 
   /** Инициализировать рендерер (внедрение зависимости) */
@@ -234,11 +238,9 @@ export class RenderSystem {
     getNpcSig?: (npcId: string) => string,
     talkedSig?: Map<string, string>
   ): void {
-    for (const eid of query(world, [SpriteComp, NPC])) {
+    for (const eid of query(world, [Sprite, NPC])) {
       ensureRenderEntry(eid, RENDER_LAYER.DYNAMIC);
-      const spriteIdx = SpriteComp.ref[eid];
-      if (spriteIdx <= 0 || spriteIdx > SpriteRegistry.length) continue;
-      const sprite = SpriteRegistry[spriteIdx - 1];
+      const sprite = Sprite.ref[eid];
       if (!sprite) continue;
 
       const npcId = poolNpcId(eid);
@@ -276,9 +278,7 @@ export class RenderSystem {
         // Viewport culling по записи очереди
         if (entry && !entry.visible) continue;
 
-        const spriteIdx = SpriteComp.ref[eid];
-        if (spriteIdx <= 0 || spriteIdx > SpriteRegistry.length) continue;
-        const sprite = SpriteRegistry[spriteIdx - 1];
+        const sprite = Sprite.ref[eid];
         if (!sprite) continue;
 
         const data = config.mapper(eid, world);
@@ -312,7 +312,7 @@ export class RenderSystem {
     // === Единый проход: обновить записи очереди (позиция + видимость + альфа) ===
     const q = getRenderQueue();
     if (q) {
-      for (const eid of query(world, [Position, SpriteComp])) {
+      for (const eid of query(world, [Position, Sprite])) {
         const entry = ensureRenderEntry(eid, RENDER_LAYER.DYNAMIC);
         if (!entry) continue;
 
@@ -346,7 +346,7 @@ export class RenderSystem {
     // Враги
     this.renderByRegistry(
       world,
-      [SpriteComp, Enemy],
+      [Sprite, Enemy],
       poolEnemyKind,
       enemyRegistry,
       (eid) => eidToEnemyData(eid, world),
@@ -356,7 +356,7 @@ export class RenderSystem {
     // Снаряды
     this.renderByRegistry(
       world,
-      [SpriteComp, Projectile],
+      [Sprite, Projectile],
       poolProjectileKind,
       projectileRegistry,
       (eid) => eidToProjectileData(eid, world),
@@ -366,7 +366,7 @@ export class RenderSystem {
     // Дропы
     this.renderByRegistry(
       world,
-      [SpriteComp, Drop],
+      [Sprite, Drop],
       poolDropKind,
       dropRegistry,
       (eid) => eidToDropData(eid, world),
@@ -403,9 +403,7 @@ export class RenderSystem {
       return;
     }
 
-    const spriteIdx = SpriteComp.ref[playerEid];
-    if (spriteIdx <= 0 || spriteIdx > SpriteRegistry.length) return;
-    const sprite = SpriteRegistry[spriteIdx - 1];
+    const sprite = Sprite.ref[playerEid] as GraphicsHandle;
     if (!sprite) return;
 
     const { data, extra } = playerToRenderData(playerEid, ctx.time);
@@ -443,9 +441,7 @@ export class RenderSystem {
       const renderer = reg.get(key);
       if (!renderer) continue;
 
-      const spriteIdx = SpriteComp.ref[eid];
-      if (spriteIdx <= 0 || spriteIdx > SpriteRegistry.length) continue;
-      const sprite = SpriteRegistry[spriteIdx - 1];
+      const sprite = Sprite.ref[eid];
       if (!sprite) continue;
 
       const data = mapper(eid);
@@ -504,7 +500,7 @@ export class RenderSystem {
 // ============================================================
 
 /** Синглтон RenderSystem — создаётся один раз и переиспользуется */
-const _renderSystemInstance = new RenderSystem();
+export const _renderSystemInstance = new RenderSystem();
 
 /** Выполнить полный рендеринг (обёртка для обратной совместимости) */
 export function renderSystem(

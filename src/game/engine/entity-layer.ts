@@ -30,8 +30,8 @@ export class EntityLayer implements IRenderLayer {
 
   constructor(private readonly queue?: RenderQueue | null) {}
 
-  render(ctx: RenderLayerContext): void {
-    const o = ctx.options as EntityLayerOptions | undefined;
+  render(_ctx: RenderLayerContext): void {
+    const o = this._opts;
     if (!o) return;
     renderSystem(o.world, o);
   }
