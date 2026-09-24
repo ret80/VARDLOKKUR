@@ -263,12 +263,12 @@ export function createMapBatches(
   // Сортируем стены по Y (сверху вниз) — порядок рисования = Z-sort
   walls.sort((a, b) => a.renderY - b.renderY);
 
-  // Создаём ОДИН Graphics-батч для всех стен; геометрия — со смещением ox/oy
-  // (legacy: якорь — низ объекта, локальный сдвиг (-8, -20))
+  // Создаём ОДИН Graphics-батч для всех стен; геометрия рисуется в мировых
+  // координатах тайла (w.x, w.y), позиция Graphics = (0, 0)
   const wallG = renderer.createGraphics(opts.dynamicLayer);
   renderer.setGraphicsPosition(wallG, { x: 0, y: 0 });
   for (const w of walls) {
-    drawWallGeometry(renderer, wallG, w.tile, w.variant, map.dungeonId, w.x - 8, w.y - 20);
+    drawWallGeometry(renderer, wallG, w.tile, w.variant, map.dungeonId, w.x, w.y);
   }
 
   // ===== 3. Дома: собираем все дома в список, сортируем по Y =====

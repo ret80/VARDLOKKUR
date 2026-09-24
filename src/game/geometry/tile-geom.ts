@@ -87,7 +87,7 @@ export function drawTileBatch(renderer: IRenderer, g: GraphicsHandle, map: World
     for (let x = 0; x < W; x++) {
       const t = map.tiles[y * W + x];
       // Рисуем в локальных координатах батча — позиция Graphics = (0,0)
-      drawTileLocal(g, t, x, y, renderer);
+      drawTileLocal(g, t, x * T, y * T, renderer);
     }
   }
 }

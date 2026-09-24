@@ -290,8 +290,7 @@ function addNpcComponents(world: World, eid: number, id: string, name: string, x
 }
 
 function addChestComponents(world: World, eid: number, item: string, x: number, y: number, spriteRef: number): void {
-  addComponents(world, eid, Chest);
-  addComponent(world, eid, Sprite);
+  addComponents(world, eid, Chest, Sprite);
   Chest.item[eid] = poolAdd(StringPool.chestItems, item);
   Chest.opened[eid] = 0;
   SpriteRegistry.push(spriteRef);
@@ -301,8 +300,7 @@ function addChestComponents(world: World, eid: number, item: string, x: number, 
 }
 
 function addPedestalComponents(world: World, eid: number, id: string, x: number, y: number, guardsLeft: number, spriteRef: number): void {
-  addComponents(world, eid, Pedestal);
-  addComponent(world, eid, Sprite);
+  addComponents(world, eid, Pedestal, Sprite);
   Pedestal.id[eid] = poolAdd(StringPool.pedestalIds, id);
   Pedestal.taken[eid] = 0;
   Pedestal.guardsLeft[eid] = guardsLeft;
@@ -314,8 +312,7 @@ function addPedestalComponents(world: World, eid: number, id: string, x: number,
 }
 
 function addShrineComponents(world: World, eid: number, x: number, y: number, spriteRef: number): void {
-  addComponents(world, eid, Shrine, Position);
-  addComponent(world, eid, Sprite);
+  addComponents(world, eid, Shrine, Sprite);
   Shrine.lit[eid] = 0;
   SpriteRegistry.push(spriteRef);
   Sprite.ref[eid] = SpriteRegistry.length;
@@ -324,8 +321,7 @@ function addShrineComponents(world: World, eid: number, x: number, y: number, sp
 }
 
 function addDoorComponents(world: World, eid: number, x: number, y: number, locked: boolean, spriteRef: number): void {
-  addComponents(world, eid, Door);
-  addComponent(world, eid, Sprite);
+  addComponents(world, eid, Door, Sprite);
   Door.open[eid] = 0;
   Door.locked[eid] = locked ? 1 : 0;
   SpriteRegistry.push(spriteRef);
@@ -335,8 +331,7 @@ function addDoorComponents(world: World, eid: number, x: number, y: number, lock
 }
 
 function addBarrierComponents(world: World, eid: number, x: number, y: number, active: boolean, spriteRef: number): void {
-  addComponents(world, eid, Barrier);
-  addComponent(world, eid, Sprite);
+  addComponents(world, eid, Barrier, Sprite);
   Barrier.active[eid] = active ? 1 : 0;
   SpriteRegistry.push(spriteRef);
   Sprite.ref[eid] = SpriteRegistry.length;
@@ -346,8 +341,7 @@ function addBarrierComponents(world: World, eid: number, x: number, y: number, a
 }
 
 function addAltarComponents(world: World, eid: number, x: number, y: number, spriteRef: number): void {
-  addComponents(world, eid, Altar);
-  addComponent(world, eid, Sprite);
+  addComponents(world, eid, Altar, Sprite);
   Altar.runes[eid] = 0;
   SpriteRegistry.push(spriteRef);
   Sprite.ref[eid] = SpriteRegistry.length;
