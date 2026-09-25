@@ -179,6 +179,26 @@
           }
         }
         
+        // Запрос инспекции сущности
+        if (data.type === 'inspect-entity') {
+          console.log('[game-client] inspect-entity received, eid:', data.eid, 'requestId:', data.requestId);
+          try {
+            var result = getters.inspectEntity ? getters.inspectEntity(data.eid) : null;
+            ws.send(JSON.stringify({
+              type: 'inspect-response',
+              requestId: data.requestId,
+              result: result,
+            }));
+          } catch (e) {
+            console.error('[game-client] inspectEntity error:', e.message);
+            ws.send(JSON.stringify({
+              type: 'inspect-response',
+              requestId: data.requestId,
+              result: { error: e.message },
+            }));
+          }
+        }
+        
         // Выполняем команду от debug сервера
         // Формат: {type: 'command', teleport: {x, y}} или {type: 'command', set-hp: {hp: 10}}
         if (data.type === 'command') {

@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { logger } from '../game/debug/logger';
+import { JSONView } from './JSONView';
+import type { DebugEntity } from '../game/debug/debug-api';
 
 // ============================================================
 // Типы
@@ -302,7 +304,7 @@ function WorldTab({ state, sendCommand, restRequest }: { state: DebugGameState |
   const [profile, setProfile] = useState<any>(null);
   const [stats, setStats] = useState<any>(null);
   const [inspectEid, setInspectEid] = useState('0');
-  const [inspectResult, setInspectResult] = useState<any>(null);
+  const [inspectResult, setInspectResult] = useState<DebugEntity | null>(null);
 
   const handleDump = async () => {
     const data = await restRequest('GET', '/debug/world-dump');
@@ -392,8 +394,8 @@ function WorldTab({ state, sendCommand, restRequest }: { state: DebugGameState |
         </div>
 
         {inspectResult && (
-          <div className="mt-2 text-[10px] font-mono text-[#ffffff] bg-[#0a1520] p-2 max-h-40 overflow-y-auto">
-            {JSON.stringify(inspectResult, null, 2)}
+          <div className="mt-2 bg-[#0a1520] border border-[#2c3d4d] rounded p-2 max-h-64 overflow-y-auto">
+            <JSONView data={inspectResult} />
           </div>
         )}
       </Card>

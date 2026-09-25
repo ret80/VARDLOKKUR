@@ -132,7 +132,21 @@ const SERVER_DEDUP_MS = 1000; // Don't send same message to server within 1 seco
 export class DebugLogger {
   private buffer = new LogBuffer();
   private enabled = true;
-  private minLevel: LogLevel = (import.meta as any).env?.VITE_LOG_LEVEL || 'warn';
+  private minLevel: LogLevel = (() => {
+    const env = (import.meta as any).env?.VITE_LOG_LEVEL;
+    if (env) return env;
+    // Check URL parameter ?min_log=
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlLevel = params.get('min_log');
+      if (urlLevel && ['debug', 'info', 'warn', 'error'].includes(urlLevel)) {
+        return urlLevel as LogLevel;
+      }
+    } catch {
+      // Ignore
+    }
+    return 'warn';
+  })();
 
   // Dedup: last message sent to server + timestamp
   private lastServerMsg = '';
@@ -171,19 +185,24 @@ export class DebugLogger {
   }
 
   log(level: LogLevel, module: string, message: string): void {
-    if (!this.shouldLog(level)) return;
-
-    this.writeConsole(level, module, message);
+    // Буфер всегда принимает все логи — чтобы debug API мог их читать
     const entry = this.buffer.addEntry(level, module, message);
 
-    // Dedup: don't send same message to server within 1 second
-    const now = Date.now();
-    if (message === this.lastServerMsg && (now - this.lastServerTime) < SERVER_DEDUP_MS) {
-      return; // suppressed
+    // Консоль — только если уровень проходит фильтр minLevel
+    if (this.shouldLog(level)) {
+      this.writeConsole(level, module, message);
     }
-    this.lastServerMsg = message;
-    this.lastServerTime = now;
-    sendLogToServer(entry);
+
+    // На сервер отправляем ТОЛЬКО debug логи — всегда, независимо от minLevel
+    if (level === 'debug') {
+      const now = Date.now();
+      if (message === this.lastServerMsg && (now - this.lastServerTime) < SERVER_DEDUP_MS) {
+        return; // suppressed
+      }
+      this.lastServerMsg = message;
+      this.lastServerTime = now;
+      sendLogToServer(entry);
+    }
   }
 
   debug(module: string, message: string): void {

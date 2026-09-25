@@ -2,7 +2,6 @@
 
 import type { IRenderer, ShaderHandle, LayerHandle } from '../../renderer/IRenderer';
 import { getRenderer } from '../../renderer/RendererFactory';
-import { logger } from '../../debug/logger';
 
 /** Vertex shader для тумана (screen-space) */
 const FOG_VERTEX = `
@@ -78,7 +77,6 @@ export class FogRenderer {
     renderer.applyShaderToLayer(this._fogLayer, this._shader);
 
     this._enabled = true;
-    logger.info('fog-renderer', 'FogRenderer initialized');
   }
 
   /** Получить рендерер */
@@ -146,6 +144,5 @@ export class FogRenderer {
       this._fogLayer = null;
     }
     this._enabled = false;
-    logger.info('fog-renderer', 'FogRenderer destroyed');
   }
 }

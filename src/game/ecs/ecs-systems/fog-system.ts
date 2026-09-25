@@ -33,7 +33,6 @@ import {
 import { dist2 } from '../../utils';
 import { T } from '../../world';
 import { audio } from '../../audio';
-import { logger } from '../../debug/logger';
 
 // ============================================================
 // Конфигурация тумана
@@ -130,7 +129,6 @@ export function fogUpdateSystem(
   }
   
   if (nearAltar && !nearShrine) {
-    logger.info('fog', `NEAR ALTAR: fogActive=${fogState.fogActive} fogAmbient=${fogState.fogAmbient} px=${px} py=${py}`);
     if (!fogState.fogActive) {
       fogState.fogActive = true;
       fogState.fogAmbient = true;
@@ -145,7 +143,6 @@ export function fogUpdateSystem(
   
   // Игрок рядом с зажжённым святилищем — безопасная зона, туман отключён
   if (nearShrine) {
-    logger.info('fog', `NEAR SHRINE: fogActive=${fogState.fogActive} px=${px} py=${py}`);
     if (fogState.fogActive) {
       endWave(fogState, true, bus, getRunes, f);
     }
@@ -155,7 +152,6 @@ export function fogUpdateSystem(
   
   // Игрок ушёл от алтаря и святилищ — призраки исчезают
   if (fogState.fogAmbient) {
-    logger.info('fog', 'ALTAR/SHRINE LEAVE: emitting fog:altarLeave');
     bus.emit('fog:altarLeave', {});
     endWave(fogState, true, bus, getRunes, f);
   }
@@ -203,7 +199,6 @@ function zoneFor(map: any, tx: number, ty: number): string {
 }
 
 function endWave(state: FogState, dropDew: boolean, bus: any, getRunes: () => number, flags: any) {
-  logger.info('fog', 'endWave: resetting fogActive, fogAmbient, fogSpawned');
   state.fogActive = false;
   state.fogWarned = false;
   state.fogAmbient = false;

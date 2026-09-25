@@ -34,10 +34,12 @@ const panelClients = new Set(); // Множество panel clients (DebugPanel)
 const panelSessionMap = new Map();
 
 // ============================================================
-// Pending profile queries (request-response between server and game clients)
+  // Pending profile queries (request-response between server and game clients)
 // ============================================================
 const pendingProfiles = new Map(); // requestId → { send: fn }
 const pendingStats = new Map(); // requestId → { send: fn }
+const pendingInspect = new Map(); // requestId → { send: fn, eid: number }
+const pendingWorldDump = new Map(); // requestId → { send: fn }
 
 // ============================================================
 // Серверный буфер логов (кольцевой, 10 MB)
@@ -314,14 +316,43 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // GET /debug/inspect?eid=N — инспекция сущности (из последней сессии)
+  // GET /debug/inspect?eid=N — инспекция сущности (forward to game client)
   if (req.method === 'GET' && url.pathname === '/debug/inspect') {
     const eid = parseInt(url.searchParams.get('eid') || '0');
-    const lastSession = sessions.size > 0 ? Array.from(sessions.values()).pop() : null;
-    const state = lastSession?.gameState;
-    const entity = state?.enemies?.find(e => e.eid === eid) || null;
-    return res.writeHead(200, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify(entity));
+    const requestId = crypto.randomUUID();
+    const timer = setTimeout(() => {
+      pendingInspect.delete(requestId);
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'timeout' }));
+    }, 3000);
+    pendingInspect.set(requestId, {
+      send: (data) => {
+        clearTimeout(timer);
+        pendingInspect.delete(requestId);
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify(data));
+      },
+    });
+    let sent = 0;
+    for (const [sid, session] of sessions) {
+      if (session.ws.readyState === 1) {
+        session.ws.send(JSON.stringify({
+          type: 'inspect-entity',
+          requestId,
+          eid,
+        }));
+        sent++;
+        log(`[inspect] sent request to session ${sid}`);
+      }
+    }
+    log(`[inspect] sessions=${sessions.size} sent=${sent}`);
+    if (sent === 0) {
+      clearTimeout(timer);
+      pendingInspect.delete(requestId);
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'no game client ready' }));
+    }
+    return;
   }
 
   // GET /debug/logs — получить логи с фильтрами
@@ -438,6 +469,12 @@ wss.on('connection', (ws, req) => {
         } else if (data.type === 'stats-response') {
           const requestId = data.requestId;
           const handler = pendingStats.get(requestId);
+          if (handler) {
+            handler.send(data.result);
+          }
+        } else if (data.type === 'inspect-response') {
+          const requestId = data.requestId;
+          const handler = pendingInspect.get(requestId);
           if (handler) {
             handler.send(data.result);
           }

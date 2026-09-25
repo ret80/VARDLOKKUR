@@ -303,29 +303,17 @@ export function resetAllComponents(): void {
     Enemy.repathT, Enemy.contactCd, Enemy.fade, Enemy.leashX, Enemy.leashY,
     Projectile.dmg, Projectile.life, Projectile.dist, Projectile.spin,
     Drop.t,
-    EnemyAI.path, EnemyAI.lightspeedT, EnemyAI.slowT, EnemyAI.freezeT,
+    EnemyAI.lightspeedT, EnemyAI.slowT, EnemyAI.freezeT,
     EnemyAI.flashT, EnemyAI.lungeT, EnemyAI.repathT, EnemyAI.stateT,
     EnemyAI.contactCd,
   ];
   for (const a of floatArrays) a.fill(0);
 
-  // Reset all Uint8Array fields
-  const u8Arrays: any[] = [
-    Player.moving, Player.hasSword, Player.aiming,
-    Enemy.state, Enemy.aggro, Enemy.hidden, Enemy.dropDew, Enemy.leashX,
-    Enemy.leashY, Enemy.fogOnly, Enemy.nearLitShrine,
-    Dead,
-    Projectile.returning,
-    Drop.magnet,
-    Chest.opened,
-    Pedestal.taken, Pedestal.guardsSpawned,
-    Shrine.lit,
-    Door.open, Door.locked,
-    Barrier.active,
-    Hidden, Taken, Magnet, Moving, Attacking, Aiming,
-    Frozen, Flashing, Slowed, Returning, ShrineLit,
-  ];
-  for (const a of u8Arrays) a.fill(0);
+  // NOTE: Uint8Array components (Player.moving, Enemy.state, Dead, etc.)
+  // are NOT reset here — bitecs hasComponent() checks comp[eid] !== 0.
+  // removeEntity() already clears these arrays when destroying entities.
+  // Resetting them here would break hasComponent() for any entity that
+  // survives the clear (or gets reused with the same eid).
 
   // Reset all Int32Array fields
   const i32Arrays: any[] = [
@@ -333,7 +321,6 @@ export function resetAllComponents(): void {
     Pedestal.guardsLeft,
     Enemy.guardOf,
     Enemy.guardPedestalEid,
-    EnemyAI.path,
   ];
   for (const a of i32Arrays) a.fill(0);
 
