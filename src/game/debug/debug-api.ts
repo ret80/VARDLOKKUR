@@ -363,6 +363,191 @@ export function getWorldDump(world: World): { entities: DebugEntity[]; stats: an
   };
 }
 
+export interface DebugEntity {
+  eid: number;
+  components: string[];
+  [key: string]: any;
+}
+
+/**
+ * Собирает полный набор компонентов сущности в виде дерева:
+ * `{ eid, components: [...], Position: {...}, Enemy: {...}, ... }`
+ */
+function buildEntityComponents(world: World, eid: number): Record<string, any> | null {
+  const out: Record<string, any> = {};
+  const names: string[] = [];
+
+  const add = (name: string, value?: any) => {
+    names.push(name);
+    if (value !== undefined) out[name] = value;
+  };
+
+  if (hasComponent(world, Position as any, eid))
+    add('Position', { x: Position.x[eid], y: Position.y[eid] });
+
+  if (hasComponent(world, Velocity as any, eid))
+    add('Velocity', { x: Velocity.x[eid], y: Velocity.y[eid] });
+
+  if (hasComponent(world, Health as any, eid))
+    add('Health', { current: Health.current[eid], max: Health.max[eid] });
+
+  if (hasComponent(world, Radius as any, eid))
+    add('Radius', Radius.value[eid]);
+
+  if (hasComponent(world, Time as any, eid))
+    add('Time', Time.value[eid]);
+
+  if (hasComponent(world, Direction as any, eid))
+    add('Direction', { x: Direction.x[eid], y: Direction.y[eid] });
+
+  if (hasComponent(world, RenderLayer as any, eid))
+    add('RenderLayer', RenderLayer.value[eid]);
+
+  if (hasComponent(world, Player as any, eid))
+    add('Player', {
+      moving: Player.moving[eid],
+      animT: Player.animT[eid],
+      swingT: Player.swingT[eid],
+      hurtT: Player.hurtT[eid],
+      slowT: Player.slowT[eid],
+      hasSword: Player.hasSword[eid],
+      runes: Player.runes[eid],
+      swingDirX: Player.swingDirX[eid],
+      swingDirY: Player.swingDirY[eid],
+      aiming: Player.aiming[eid],
+      maxHp: Player.maxHp[eid],
+    });
+
+  if (hasComponent(world, Enemy as any, eid))
+    add('Enemy', {
+      kind: poolGet(StringPool.enemyKinds, Enemy.kind[eid]),
+      radius: Enemy.radius[eid],
+      facingX: Enemy.facingX[eid],
+      facingY: Enemy.facingY[eid],
+      t: Enemy.t[eid],
+      state: Enemy.state[eid],
+      stateName: getEnemyStateName(Enemy.state[eid]),
+      aggro: Enemy.aggro[eid],
+      hidden: Enemy.hidden[eid],
+      lungeT: Enemy.lungeT[eid],
+      freezeT: Enemy.freezeT[eid],
+      flashT: Enemy.flashT[eid],
+      seed: Enemy.seed[eid],
+      speed: Enemy.speed[eid],
+      dmg: Enemy.dmg[eid],
+      stateT: Enemy.stateT[eid],
+      pathI: Enemy.pathI[eid],
+      repathT: Enemy.repathT[eid],
+      contactCd: Enemy.contactCd[eid],
+      guardOf: Enemy.guardOf[eid],
+      guardPedestalEid: Enemy.guardPedestalEid[eid],
+      fade: Enemy.fade[eid],
+      dropDew: Enemy.dropDew[eid],
+      leashX: Enemy.leashX[eid],
+      leashY: Enemy.leashY[eid],
+      fogOnly: Enemy.fogOnly[eid],
+      nearLitShrine: Enemy.nearLitShrine[eid],
+    });
+
+  if (hasComponent(world, Projectile as any, eid))
+    add('Projectile', {
+      kind: poolGet(StringPool.projectileKinds, Projectile.kind[eid]),
+      dmg: Projectile.dmg[eid],
+      life: Projectile.life[eid],
+      dist: Projectile.dist[eid],
+      returning: Projectile.returning[eid],
+      spin: Projectile.spin[eid],
+    });
+
+  if (hasComponent(world, Drop as any, eid))
+    add('Drop', {
+      kind: poolGet(StringPool.dropKinds, Drop.kind[eid]),
+      t: Drop.t[eid],
+      magnet: Drop.magnet[eid],
+      life: Drop.life[eid],
+    });
+
+  if (hasComponent(world, NPC as any, eid))
+    add('NPC', {
+      id: poolGet(StringPool.npcIds, NPC.id[eid]),
+      name: poolGet(StringPool.npcNames, NPC.name[eid]),
+    });
+
+  if (hasComponent(world, Chest as any, eid))
+    add('Chest', {
+      item: poolGet(StringPool.chestItems, Chest.item[eid]),
+      opened: !!Chest.opened[eid],
+    });
+
+  if (hasComponent(world, Pedestal as any, eid))
+    add('Pedestal', {
+      id: poolGet(StringPool.pedestalIds, Pedestal.id[eid]),
+      taken: !!Pedestal.taken[eid],
+      guardsLeft: Pedestal.guardsLeft[eid],
+      guardsSpawned: !!Pedestal.guardsSpawned[eid],
+    });
+
+  if (hasComponent(world, Shrine as any, eid))
+    add('Shrine', { lit: !!Shrine.lit[eid] });
+
+  if (hasComponent(world, Door as any, eid))
+    add('Door', { open: Door.open[eid], locked: !!Door.locked[eid] });
+
+  if (hasComponent(world, Barrier as any, eid))
+    add('Barrier', { active: !!Barrier.active[eid] });
+
+  if (hasComponent(world, Altar as any, eid))
+    add('Altar', { runes: Altar.runes[eid] });
+
+  if (hasComponent(world, MapState as any, eid))
+    add('MapState', {
+      width: MapState.width[eid],
+      height: MapState.height[eid],
+      dungeonId: MapState.dungeonId[eid],
+    });
+
+  if (hasComponent(world, Sprite as any, eid))
+    add('Sprite', { ref: Sprite.ref[eid] });
+
+  if (hasComponent(world, PhysicsBody as any, eid)) {
+    const idx = PhysicsBody.body[eid];
+    const body = idx > 0 ? PhysicsBodyRegistry[idx - 1] : null;
+    // planck-тело нельзя сериализовать в JSON — выводим только значимые поля
+    add('PhysicsBody', {
+      index: idx,
+      exists: !!body,
+      position: body?.getPosition ? { x: body.getPosition().x, y: body.getPosition().y } : null,
+      velocity: body?.getLinearVelocity ? { x: body.getLinearVelocity().x, y: body.getLinearVelocity().y } : null,
+      type: body?.getType ? body.getType() : null,
+      bullet: body?.isBullet ? !!body.isBullet() : null,
+    });
+  }
+
+  if (hasComponent(world, EnemyAI as any, eid))
+    add('EnemyAI', {
+      path: EnemyAI.path[eid],
+      lightspeedT: EnemyAI.lightspeedT[eid],
+      slowT: EnemyAI.slowT[eid],
+      freezeT: EnemyAI.freezeT[eid],
+      flashT: EnemyAI.flashT[eid],
+      lungeT: EnemyAI.lungeT[eid],
+      repathT: EnemyAI.repathT[eid],
+      stateT: EnemyAI.stateT[eid],
+      contactCd: EnemyAI.contactCd[eid],
+      guardsSpawned: EnemyAI.guardsSpawned[eid],
+    });
+
+  for (const mc of MARKER_COMPONENTS) {
+    if (mc.arr[eid]) add(mc.name);
+  }
+
+  if (Dead[eid]) add('Dead');
+
+  if (names.length === 0) return null;
+  out.components = names;
+  return out;
+}
+
 /** Профилирование ECS запросов */
 export function profileQueries(world: World): { queries: any[]; totalTime: string } {
   console.log('[profile] Starting, world:', !!world, 'entityIds:', (world as any)?._entityIndex?.entityIds?.length);

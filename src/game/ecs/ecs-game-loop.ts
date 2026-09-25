@@ -403,7 +403,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       PhysicsBody.body[eid] = PhysicsBodyRegistry.length + 1;
       PhysicsBodyRegistry.push(ghostBody);
     }
-    // Установить stateT для перехода из appear → ghost_wander
+    // Установить stateT и состояние appear для перехода из appear → ghost_wander
+    Enemy.state[eid] = EnemyState.appear;
     Enemy.stateT[eid] = 1.5 + Math.random() * 0.5;
     Enemy.aggro[eid] = 1;
     Enemy.fogOnly[eid] = 1;
@@ -430,6 +431,13 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   bus.on("enemy:killed", (e) => {
     onEnemyKilledEcs(world, e.enemy, store, bus);
+  });
+
+  // ── При смерти игрока — dissipate ВСЕХ призраков ──
+
+  bus.on("player:died", () => {
+    // Эмитим fog:altarLeave — это переведёт ВСЕХ призраков (включая leashed) в dissipate
+    bus.emit("fog:altarLeave", {});
   });
 
   /** Выполнить один кадр */
