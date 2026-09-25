@@ -300,6 +300,7 @@ function KeyValue({ label, value }: { label: string; value: string | number }) {
 function WorldTab({ state, sendCommand, restRequest }: { state: DebugGameState | null; sendCommand: (t: string, a?: any) => void; restRequest: (m: string, p: string, b?: any) => Promise<any> }) {
   const [dump, setDump] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
+  const [stats, setStats] = useState<any>(null);
   const [inspectEid, setInspectEid] = useState('0');
   const [inspectResult, setInspectResult] = useState<any>(null);
 
@@ -313,6 +314,11 @@ function WorldTab({ state, sendCommand, restRequest }: { state: DebugGameState |
     setProfile(data);
   };
 
+  const handleStats = async () => {
+    const data = await restRequest('GET', '/debug/stats');
+    setStats(data);
+  };
+
   const handleInspect = async () => {
     const eid = parseInt(inspectEid) || 0;
     const data = await restRequest('GET', `/debug/inspect?eid=${eid}`);
@@ -322,9 +328,10 @@ function WorldTab({ state, sendCommand, restRequest }: { state: DebugGameState |
   return (
     <div className="space-y-3">
       <Card title="ECS Introspection">
-        <div className="flex gap-2 mb-3">
+        <div className="flex flex-col gap-2 mb-3">
           <button onClick={handleDump} className="btn-rune text-[11px] px-3">World Dump</button>
           <button onClick={handleProfile} className="btn-rune btn-ice text-[11px] px-3">Profile Queries</button>
+          <button onClick={handleStats} className="btn-rune text-[11px] px-3">Resource Stats</button>
         </div>
 
         {dump && (
@@ -350,6 +357,26 @@ function WorldTab({ state, sendCommand, restRequest }: { state: DebugGameState |
               </div>
             ))}
             <div className="text-[10px] text-[#ffffff]">Total: {profile.totalTime}</div>
+          </div>
+        )}
+
+        {stats && (
+          <div className="mb-3 space-y-1">
+            {stats.pixi && (
+              <>
+                <KeyValue label="Pixi Sprites" value={stats.pixi.sprites} />
+                <KeyValue label="Pixi Textures" value={stats.pixi.textures} />
+                <KeyValue label="Draw Calls" value={stats.pixi.drawCalls} />
+              </>
+            )}
+            {stats.webgl && (
+              <>
+                <KeyValue label="GL Renderer" value={stats.webgl.renderers?.split(' ').slice(0, 2).join(' ') || '—'} />
+                <KeyValue label="Max Textures" value={stats.webgl.textures} />
+                <KeyValue label="Max Shaders" value={stats.webgl.shaders} />
+              </>
+            )}
+            {stats.error && <div className="text-[10px] text-[#e06060]">{stats.error}</div>}
           </div>
         )}
 

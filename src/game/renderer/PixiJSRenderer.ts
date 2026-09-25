@@ -87,8 +87,23 @@ export class PixiJSRenderer implements IRenderer {
     this.worldContainer.sortableChildren = true;
     this.app.stage.addChild(this.worldContainer);
 
+    // Восстановление WebGL контекста после потери (GPU crash, tab switch, etc.)
+    this.app.canvas.addEventListener('webglcontextlost', (e) => {
+      e.preventDefault();
+      logger.error('renderer', 'WebGL context lost — attempting restore...');
+    });
+    this.app.canvas.addEventListener('webglcontextrestored', () => {
+      logger.info('renderer', 'WebGL context restored');
+      // Перезагружаем текстуры — PixiJS Texture.from() кэширует,
+      // нужно пересоздать все текстуры
+      for (const [id, tex] of this.textures) {
+        if (tex.source && tex.source.url) {
+          this.textures.set(id, Texture.from(tex.source.url));
+        }
+      }
+    });
+
     logger.info('renderer', `PixiJSRenderer initialized: ${width}x${height}`);
-    logger.info('renderer', `  stage.children=${this.app.stage.children.length}, worldContainer=${this.worldContainer.constructor.name}`);
   }
 
   destroy(): void {
@@ -130,7 +145,6 @@ export class PixiJSRenderer implements IRenderer {
     container.zIndex = zIndex;
     this.worldContainer.addChild(container);
     this.layers.set(id, { container, zIndex, name });
-    logger.debug('renderer', `createLayer: name=${name} id=${id} zIndex=${zIndex} parent=worldContainer`);
     return id as LayerHandle;
   }
 
@@ -290,17 +304,13 @@ export class PixiJSRenderer implements IRenderer {
       const l = this.layers.get(layer as number);
       if (l) {
         l.container.addChild(g);
-        logger.debug('renderer', `createGraphics: added to layer container id=${id} layer=${layer} container=${l.container.constructor.name}`);
       } else {
         this.worldContainer.addChild(g);
-        logger.debug('renderer', `createGraphics: layer not found, added to worldContainer id=${id}`);
       }
     } else {
       this.worldContainer.addChild(g);
-      logger.debug('renderer', `createGraphics: no layer, added to worldContainer id=${id}`);
     }
     this.graphics.set(id, { pixiGraphics: g, layer });
-    logger.debug('renderer', `createGraphics: registered in this.graphics id=${id} total=${this.graphics.size} context=${g.context?.constructor.name}`);
     return id as GraphicsHandle;
   }
 
@@ -382,9 +392,6 @@ export class PixiJSRenderer implements IRenderer {
     if (g) {
       g.pixiGraphics.x = pos.x;
       g.pixiGraphics.y = pos.y;
-    } else {
-      console.warn(`[PixiJSRenderer] setGraphicsPosition: Graphics not found for handle=${handle}`);
-      console.warn(`[PixiJSRenderer] graphics Map size=${this.graphics.size}, keys=[${Array.from(this.graphics.keys()).slice(-10).join(',')}]`);
     }
   }
 

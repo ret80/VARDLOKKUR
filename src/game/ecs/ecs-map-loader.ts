@@ -125,7 +125,7 @@ export class EcsMapLoader {
     // playerG уже добавлен в IRenderer layer через spriteFactory
 
     // 4. Вызвать callback после создания игрока — SpriteRegistry уже заполнен
-    logger.debug('map-loader', `playerEid=${this.playerEid} onPlayerCreated=${!!onPlayerCreated}`);
+    // logger.debug('map-loader', `playerEid=${this.playerEid} onPlayerCreated=${!!onPlayerCreated}`);
     if (onPlayerCreated) onPlayerCreated(this.playerEid);
 
     // 5. Камера
@@ -181,7 +181,7 @@ export class EcsMapLoader {
     MapState.height[eid] = map.H;
     MapState.dungeonId[eid] = map.dungeonId ?? 0;
 
-    logger.debug('map-loader', `Map entity created: eid=${eid}, ${map.W}x${map.H}, dungeonId=${map.dungeonId ?? 0}`);
+    // logger.debug('map-loader', `Map entity created: eid=${eid}, ${map.W}x${map.H}, dungeonId=${map.dungeonId ?? 0}`);
   }
 
   private clearWorld(world: World, preservePlayerSprite?: number): void {
@@ -201,7 +201,7 @@ export class EcsMapLoader {
     EnemyAIRegistry.length = 0;
     PhysicsBodyRegistry.length = 0;
 
-    logger.debug('map-loader', `cleared ${eids.length} entities`);
+    // logger.debug('map-loader', `cleared ${eids.length} entities`);
   }
 
   private createTileBodies(map: WorldData, planckWorld: PlanckWorld): void {
@@ -241,7 +241,7 @@ export class EcsMapLoader {
   private spawnChests(world: World, map: WorldData): void {
     const factory = this.config.entityFactory;
     const sf = this.config.spriteFactory;
-    logger.debug('map-loader', `spawnChests chests=${map.chests.length}`);
+    // logger.debug('map-loader', `spawnChests chests=${map.chests.length}`);
     const { openedChests } = this.config;
     for (const c of map.chests) {
       const cx = c.x * T + 8;
@@ -281,7 +281,7 @@ export class EcsMapLoader {
   private spawnShrines(world: World, map: WorldData): void {
     const factory = this.config.entityFactory;
     const sf = this.config.spriteFactory;
-    logger.debug('map-loader', `spawnShrines shrines=${map.shrines.length}`);
+    // logger.debug('map-loader', `spawnShrines shrines=${map.shrines.length}`);
     for (let j = 0; j < map.shrines.length; j++) {
       const s = map.shrines[j];
       const sx = s.x * T + 8;
@@ -299,7 +299,7 @@ export class EcsMapLoader {
   private spawnNpcs(world: World, map: WorldData): void {
     const factory = this.config.entityFactory;
     const sf = this.config.spriteFactory;
-    logger.debug('map-loader', `spawnNpcs npcs=${map.npcs.length} souls=${map.souls?.length ?? 0}`);
+    // logger.debug('map-loader', `spawnNpcs npcs=${map.npcs.length} souls=${map.souls?.length ?? 0}`);
     for (const n of map.npcs) {
       const g = sf.create(n.x * T + 8, n.y * T + 8);
       const eid = createNpcInEcs(factory, world, n.id, n.name, n.x * T + 8, n.y * T + 8, g);

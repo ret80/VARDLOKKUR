@@ -34,6 +34,12 @@ const panelClients = new Set(); // Множество panel clients (DebugPanel)
 const panelSessionMap = new Map();
 
 // ============================================================
+// Pending profile queries (request-response between server and game clients)
+// ============================================================
+const pendingProfiles = new Map(); // requestId → { send: fn }
+const pendingStats = new Map(); // requestId → { send: fn }
+
+// ============================================================
 // Серверный буфер логов (кольцевой, 10 MB)
 // ============================================================
 const logBuffer = [];
@@ -239,10 +245,73 @@ const server = http.createServer((req, res) => {
       }));
   }
 
-  // GET /debug/profile — профилирование запросов
+  // GET /debug/stats — статистика ресурсов (forward to game client)
+  if (req.method === 'GET' && url.pathname === '/debug/stats') {
+    const requestId = crypto.randomUUID();
+    const timer = setTimeout(() => {
+      pendingStats.delete(requestId);
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'timeout' }));
+    }, 3000);
+    pendingStats.set(requestId, {
+      send: (data) => {
+        clearTimeout(timer);
+        pendingStats.delete(requestId);
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify(data));
+      },
+    });
+    let sent = 0;
+    for (const [sid, session] of sessions) {
+      if (session.ws.readyState === 1) {
+        session.ws.send(JSON.stringify({ type: 'get-stats', requestId }));
+        sent++;
+        log(`[stats] sent get-stats to session ${sid}`);
+      }
+    }
+    log(`[stats] sessions=${sessions.size} sent=${sent}`);
+    if (sent === 0) {
+      clearTimeout(timer);
+      pendingStats.delete(requestId);
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ error: 'no game client ready' }));
+    }
+    return;
+  }
+
+  // GET /debug/profile — профилирование запросов (forward to game client)
   if (req.method === 'GET' && url.pathname === '/debug/profile') {
-    return res.writeHead(200, { 'Content-Type': 'application/json' })
-      .end(JSON.stringify({ queries: [], totalTime: '0ms' }));
+    const requestId = crypto.randomUUID();
+    const timer = setTimeout(() => {
+      pendingProfiles.delete(requestId);
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ queries: [], totalTime: '0ms (timeout)' }));
+    }, 3000);
+    pendingProfiles.set(requestId, {
+      send: (data) => {
+        clearTimeout(timer);
+        pendingProfiles.delete(requestId);
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+          .end(JSON.stringify(data));
+      },
+    });
+    // Broadcast to all game clients
+    for (const [sid, session] of sessions) {
+      if (session.ws.readyState === 1) {
+        session.ws.send(JSON.stringify({
+          type: 'profile-queries',
+          requestId,
+        }));
+      }
+    }
+    // If no game clients connected, return empty immediately
+    if (sessions.size === 0) {
+      clearTimeout(timer);
+      pendingProfiles.delete(requestId);
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+        .end(JSON.stringify({ queries: [], totalTime: '0ms (no game client)' }));
+    }
+    return;
   }
 
   // GET /debug/inspect?eid=N — инспекция сущности (из последней сессии)
@@ -360,6 +429,18 @@ wss.on('connection', (ws, req) => {
           }
         } else if (data.type === 'log') {
           pushLog(data.level || 'info', data.module || 'game', data.message || '', sessionId);
+        } else if (data.type === 'profile-response') {
+          const requestId = data.requestId;
+          const handler = pendingProfiles.get(requestId);
+          if (handler) {
+            handler.send(data.result);
+          }
+        } else if (data.type === 'stats-response') {
+          const requestId = data.requestId;
+          const handler = pendingStats.get(requestId);
+          if (handler) {
+            handler.send(data.result);
+          }
         }
       } catch (e) {
         log(`Session ${sessionId} error: ${e.message}`);

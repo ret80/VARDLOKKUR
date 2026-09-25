@@ -26,6 +26,7 @@ import {
   Shrine,
 } from '../ecs-components';
 import { dist2 } from '../../utils';
+import { logger } from '../../debug/logger';
 import type { EnemyKind } from '../../generators/types';
 import { solidTileAt, T, zoneFor, type WorldData } from '../../world';
 
@@ -89,6 +90,12 @@ export function aiUpdateSystem(
 
   for (const enemyEid of query(world, [Enemy, Position, Velocity, Health])) {
     if (!!Dead[enemyEid]) continue;
+
+    // Логирование призраков
+    const kind = poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]);
+    if (kind === 'ghost') {
+      logger.warn('ai', `ghost eid=${enemyEid} state=${Enemy.state[enemyEid]} stateT=${Enemy.stateT[enemyEid].toFixed(2)} fade=${Enemy.fade[enemyEid].toFixed(2)} freezeT=${Enemy.freezeT[enemyEid].toFixed(2)} dead=${!!Dead[enemyEid]}`);
+    }
 
     // Common updates
     Time.value[enemyEid] += dt;
@@ -496,6 +503,7 @@ function updateGhost(
       // Появление завершено — переходим к дрейфу
       if (Enemy.stateT[eid] <= 0) {
         Enemy.state[eid] = EnemyState.ghost_wander;
+        console.log(`[AI] ghost eid=${eid} appear→wander stateT=${Enemy.stateT[eid].toFixed(2)}`);
       }
       break;
     }

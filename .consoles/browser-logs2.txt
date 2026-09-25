@@ -1,0 +1,16 @@
+Total messages: 14 (Errors: 1, Warnings: 0)
+
+[LOG] [game-client] Connecting to debug server at ws://localhost:3100?role=game&id=52f122e4-aa89-4340-836e-255061ee20e5 @ http://localhost:3000/VARDLOKKUR/game-client.js:103
+[DEBUG] [vite] connecting... @ http://localhost:3000/VARDLOKKUR/@vite/client:788
+[LOG] [game-client] Connected to debug server! Session: 52f122e4-aa89-4340-836e-255061ee20e5 @ http://localhost:3000/VARDLOKKUR/game-client.js:114
+[LOG] [game-client] Server confirmed session: 52f122e4-aa89-4340-836e-255061ee20e5 @ http://localhost:3000/VARDLOKKUR/game-client.js:137
+[DEBUG] [vite] connected. @ http://localhost:3000/VARDLOKKUR/@vite/client:911
+[INFO] %cDownload the React DevTools for a better development experience: https://reactjs.org/link/react-devtools font-weight:bold @ http://localhost:3000/VARDLOKKUR/node_modules/.vite/deps/chunk-VIJJTZRL.js?v=2f94fef9:21608
+[LOG] [game-client] Registered getters: [getPlayerState, getEnemiesState, getDropsState, getProjectilesState, getNpcsState, getFogState, getFlags, getMap, getTime, getWorldDump, profileQueries, inspectEntity, getRenderer] @ http://localhost:3000/VARDLOKKUR/game-client.js:67
+[LOG] [game-client] Registered setters: [teleportPlayer, setPlayerHp, killPlayer, respawnPlayer, spawnEnemy, removeEnemy, removeAllEnemies, removeAllGhosts, removeProjectile, removeDrop, setTimeScale, setFlag, addRunes, addArrows, addHearts, freePlayer, fullHealPlayer, clearDrops, clearProjectiles] @ http://localhost:3000/VARDLOKKUR/game-client.js:72
+[ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://localhost:3000/favicon.ico:0
+[LOG] [game-client] get-stats received, requestId: 8d629111-029f-4ac7-9a59-b4f408b516e6 @ http://localhost:3000/VARDLOKKUR/game-client.js:161
+[LOG] [game-client] get-stats result: null @ http://localhost:3000/VARDLOKKUR/game-client.js:165
+[LOG] [profile] Starting, world: true entityIds: undefined @ http://localhost:3000/VARDLOKKUR/src/game/debug/debug-api.ts?t=1790330091698:240
+[LOG] [game-client] get-stats received, requestId: b56110ef-0ac8-4b56-b6e5-aa2baed62539 @ http://localhost:3000/VARDLOKKUR/game-client.js:161
+[LOG] [game-client] get-stats result: null @ http://localhost:3000/VARDLOKKUR/game-client.js:165

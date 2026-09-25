@@ -107,6 +107,7 @@ import {
 
 // Импорты IRenderer
 import { RendererFactory, setGlobalRenderer, getRenderer } from './renderer';
+import { PixiJSRenderer } from './renderer/PixiJSRenderer';
 import type { GraphicsHandle } from './renderer/IRenderer';
 import { RenderQueue, setGlobalRenderQueue } from './render/RenderQueue';
 
@@ -542,12 +543,31 @@ export class Engine {
         if (!this.ecsWorld) return null;
         return getInspectEntity(this.ecsWorld, eid);
       },
+      getRenderer: () => {
+        const r = getRenderer();
+        if (!r) return null;
+        // @ts-ignore — PixiJSRenderer специфичный метод
+        const stats = r.getStats ? r.getStats() : null;
+        // @ts-ignore — PixiJS Application
+        const pixi = r instanceof PixiJSRenderer ? (r as any).app : null;
+        const gl = pixi?.renderer?.gl;
+        const webglInfo = gl ? {
+          textures: gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS),
+          shaders: gl.getParameter(gl.MAX_VERTEX_UNIFORM_VECTORS),
+          renderers: gl.getParameter(gl.RENDERER),
+          vendor: gl.getParameter(gl.VENDOR),
+        } : null;
+        return {
+          pixi: stats,
+          webgl: webglInfo,
+        };
+      },
     });
 
     globals.registerSetters({
       teleportPlayer: (x: number, y: number) => {
         const eid = this.ecsGameLoop?.getPlayerEid() ?? -1;
-        logger.debug('engine', `teleportPlayer called x=${x} y=${y} eid=${eid}`);
+        // logger.debug('engine', `teleportPlayer called x=${x} y=${y} eid=${eid}`);
         if (!this.ecsWorld || eid < 0) return false;
         // Validate — NaN from parseFloat('') or undefined would break everything
         if (typeof x !== 'number' || typeof y !== 'number' || isNaN(x) || isNaN(y)) {
@@ -566,7 +586,7 @@ export class Engine {
             body.setTransform(Vec2(x, y), 0);
             body.setLinearVelocity(Vec2(0, 0));
             body.setAwake(true);
-            logger.debug('engine', `physics body moved to ${x},${y} pbIdx=${pbIdx}`);
+            // logger.debug('engine', `physics body moved to ${x},${y} pbIdx=${pbIdx}`);
           } else {
             logger.warn('engine', `body at pbIdx ${pbIdx} is null`);
           }
@@ -576,7 +596,7 @@ export class Engine {
         // Обновляем визуальную позицию игрока через IRenderer
         const renderer = getRenderer();
         renderer.setGraphicsPosition(this.playerG as GraphicsHandle, { x, y });
-        logger.debug('engine', `playerG position set to ${x},${y}`);
+        // logger.debug('engine', `playerG position set to ${x},${y}`);
         return true;
       },
       setPlayerHp: (hp: number) => {
@@ -847,7 +867,7 @@ export class Engine {
       (msg) => this.toast(msg),
       (eid) => {
         // Вызывается ПОСЛЕ создания игрока — SpriteRegistry уже заполнен
-        logger.debug('engine', `onPlayerCreated eid=${eid} ecsGameLoop=${!!this.ecsGameLoop}`);
+        // logger.debug('engine', `onPlayerCreated eid=${eid} ecsGameLoop=${!!this.ecsGameLoop}`);
         if (this.ecsGameLoop) {
           this.ecsGameLoop.setPlayerEid(eid);
           this.ecsPlayerEid = eid;

@@ -73,6 +73,16 @@
       console.log('[game-client] Registered setters:', Object.keys(s));
     },
     get connected() { return connected; },
+    // Метод для отправки статистики ресурсов
+    getStats: function() {
+      if (!getters.getRenderer) return null;
+      try {
+        var stats = getters.getRenderer();
+        return stats;
+      } catch (e) {
+        return { error: e.message };
+      }
+    },
     // Метод для отправки логов на сервер
     pushLog: function(level, module, message) {
       if (ws && ws.readyState === WebSocket.OPEN) {
@@ -126,6 +136,47 @@
         // Подтверждение подключения от сервера
         if (data.type === 'connected') {
           console.log('[game-client] Server confirmed session: ' + data.sessionId);
+        }
+        
+        // Профилирование запросов от debug сервера
+        if (data.type === 'profile-queries') {
+          try {
+            var result = getters.profileQueries ? getters.profileQueries() : { queries: [], totalTime: '0ms' };
+            ws.send(JSON.stringify({
+              type: 'profile-response',
+              requestId: data.requestId,
+              result: result,
+            }));
+          } catch (e) {
+            console.error('[game-client] profileQueries error:', e.message);
+            ws.send(JSON.stringify({
+              type: 'profile-response',
+              requestId: data.requestId,
+              result: { queries: [], totalTime: '0ms (error)', error: e.message },
+            }));
+          }
+        }
+        
+        // Запрос статистики ресурсов
+        if (data.type === 'get-stats') {
+          console.log('[game-client] get-stats received, requestId:', data.requestId);
+          try {
+            var gsg = window.__debugServerGlobals;
+            var result = gsg && gsg.getStats ? gsg.getStats() : { error: 'no getStats' };
+            console.log('[game-client] get-stats result:', result);
+            ws.send(JSON.stringify({
+              type: 'stats-response',
+              requestId: data.requestId,
+              result: result,
+            }));
+          } catch (e) {
+            console.error('[game-client] getStats error:', e.message);
+            ws.send(JSON.stringify({
+              type: 'stats-response',
+              requestId: data.requestId,
+              result: { error: e.message },
+            }));
+          }
         }
         
         // Выполняем команду от debug сервера

@@ -1,0 +1,44 @@
+- generic [ref=f18e2]:
+  - generic:
+    - generic:
+      - generic: 12/12
+      - generic:
+        - generic: "12"
+        - generic: "2"
+        - generic: 0/5
+    - generic:
+      - generic: Тестовая Карта
+      - generic:
+        - generic: 0:00
+        - generic: ⚔ 0
+        - generic: † 0
+  - generic:
+    - button "Большая карта" [ref=f18e50] [cursor=pointer]
+    - generic:
+      - button "Инвентарь (Tab)" [ref=f18e52] [cursor=pointer]
+      - button "Журнал квестов (Q)" [ref=f18e58] [cursor=pointer]
+  - button "᛫ цель Пробуждение — Поговори с Эйриком Старшим — он вернёт твой клинок" [ref=f18e64] [cursor=pointer]:
+    - generic [ref=f18e65]: ᛫ цель
+    - generic [ref=f18e66]: Пробуждение — Поговори с Эйриком Старшим — он вернёт твой клинок
+  - generic [ref=f18e24]:
+    - generic [ref=f18e25]:
+      - generic [ref=f18e26]: DEBUG
+      - generic [ref=f18e29]: connected
+    - generic [ref=f18e30]:
+      - button "World" [ref=f18e31]
+      - button "Player" [ref=f18e32]
+      - button "Enemies" [ref=f18e33]
+      - button "Drops" [ref=f18e34]
+      - button "Proj." [ref=f18e35]
+      - button "Flags" [ref=f18e36]
+      - button "Time" [ref=f18e37]
+    - generic [ref=f18e40]:
+      - generic [ref=f18e41]: ECS Introspection
+      - generic [ref=f18e42]:
+        - button "World Dump" [ref=f18e43] [cursor=pointer]
+        - button "Profile Queries" [ref=f18e44] [cursor=pointer]
+        - button "Resource Stats" [active] [ref=f18e45] [cursor=pointer]
+      - generic [ref=f18e67]: no game client
+      - generic [ref=f18e46]:
+        - spinbutton "eid" [ref=f18e47]: "0"
+        - button "Inspect" [ref=f18e48] [cursor=pointer]

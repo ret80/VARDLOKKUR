@@ -46,7 +46,7 @@ export class ParticleSystem {
     this._worldParticleG = renderer.createGraphics(layer);
     this._renderer = renderer;
     this._initialized = true;
-    logger.debug('particle-system', 'ParticleSystem initialized with IRenderer');
+    // logger.debug('particle-system', 'ParticleSystem initialized with IRenderer');
   }
 
   /** Получить GraphicsHandle для частиц */

@@ -1,0 +1,49 @@
+- generic [ref=f12e2]:
+  - generic:
+    - generic:
+      - generic: 2/12
+      - generic:
+        - generic: "12"
+        - generic: "2"
+        - generic: 0/5
+    - generic:
+      - generic: Тестовая Карта
+      - generic:
+        - generic: 0:00
+        - generic: ⚔ 0
+        - generic: † 0
+  - generic:
+    - button "Большая карта" [ref=f12e50] [cursor=pointer]
+    - generic:
+      - button "Инвентарь (Tab)" [ref=f12e52] [cursor=pointer]
+      - button "Журнал квестов (Q)" [ref=f12e58] [cursor=pointer]
+  - button "᛫ цель Пробуждение — Поговори с Эйриком Старшим — он вернёт твой клинок" [ref=f12e64] [cursor=pointer]:
+    - generic [ref=f12e65]: ᛫ цель
+    - generic [ref=f12e66]: Пробуждение — Поговори с Эйриком Старшим — он вернёт твой клинок
+  - generic [ref=f12e25]:
+    - generic [ref=f12e26]:
+      - generic [ref=f12e27]: DEBUG
+      - generic [ref=f12e30]: connected
+    - generic [ref=f12e68]:
+      - generic [ref=f12e69]: "Session:"
+      - combobox [ref=f12e70]:
+        - option "All (last)" [selected]
+        - option "52f122e4 · HP:4/0 · 👾4"
+    - generic [ref=f12e31]:
+      - button "World" [ref=f12e32]
+      - button "Player" [ref=f12e33]
+      - button "Enemies" [ref=f12e34]
+      - button "Drops" [ref=f12e35]
+      - button "Proj." [ref=f12e36]
+      - button "Flags" [ref=f12e37]
+      - button "Time" [ref=f12e38]
+    - generic [ref=f12e41]:
+      - generic [ref=f12e42]: ECS Introspection
+      - generic [ref=f12e43]:
+        - button "World Dump" [ref=f12e44] [cursor=pointer]
+        - button "Profile Queries" [ref=f12e45] [cursor=pointer]
+        - button "Resource Stats" [active] [ref=f12e46] [cursor=pointer]
+      - generic [ref=f12e71]: no getStats
+      - generic [ref=f12e47]:
+        - spinbutton "eid" [ref=f12e48]: "0"
+        - button "Inspect" [ref=f12e49] [cursor=pointer]

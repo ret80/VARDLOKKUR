@@ -119,12 +119,12 @@ export class PlayerLifecycle {
     player.x = spawn.x;
     player.y = spawn.y;
 
-    logger.debug('respawn', `spawn=${JSON.stringify(spawn)} ow=${ow ? 'present' : 'null'} shrines=${ow?.shrines?.length ?? -1}`);
+    // logger.debug('respawn', `spawn=${JSON.stringify(spawn)} ow=${ow ? 'present' : 'null'} shrines=${ow?.shrines?.length ?? -1}`);
 
     this.cbs.resetDeath?.();
-    logger.debug('respawn', 'calling loadMap(ow, spawn)...');
+    // logger.debug('respawn', 'calling loadMap(ow, spawn)...');
     this.cbs.loadMap(ow, spawn);
-    logger.debug('respawn', `loadMap done, playerDomain._eid=${(this.playerDomain as any)._eid}`);
+    // logger.debug('respawn', `loadMap done, playerDomain._eid=${(this.playerDomain as any)._eid}`);
     this.store.setScreen("play");
     this.cbs.fadeTo(1);
     this.hud.pushHud(true);

@@ -388,11 +388,25 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   // ── При респавне — пересоздать призраков если игрок рядом с алтарём ──
 
-  // Обёртка для ensureGhosts — создаёт призрака через entityFactory (только ECS, без графики и физики)
+  // Обёртка для ensureGhosts — создаёт призрака через entityFactory (ECS + графика + физика)
   function spawnGhost(kind: string, x: number, y: number): number {
-    const eid = entityFactory.createFogGhost(x, y);
-    // Добавить Sprite компонент для рендеринга
-    addComponent(world, eid, Sprite);
+    const g = spriteFactory.create(x, y);
+    const eid = createEnemyInEcs(
+      entityFactory, world, kind as any, x, y, g, _planckWorld,
+      Cat.Ghost, Cat.Ghost | Cat.Player | Cat.Projectile
+    );
+    // Призрак — кинематическое тело (проходит сквозь стены)
+    const body = PhysicsBodyRegistry[PhysicsBody.body[eid] - 1];
+    if (body) {
+      _planckWorld.destroyBody(body);
+      const ghostBody = _planckWorld.createGhostBody(x, y, ENEMY_STATS.ghost.r);
+      PhysicsBody.body[eid] = PhysicsBodyRegistry.length + 1;
+      PhysicsBodyRegistry.push(ghostBody);
+    }
+    // Установить stateT для перехода из appear → ghost_wander
+    Enemy.stateT[eid] = 1.5 + Math.random() * 0.5;
+    Enemy.aggro[eid] = 1;
+    Enemy.fogOnly[eid] = 1;
     return eid;
   }
 
@@ -723,7 +737,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     render,
     get realT() { return _realT; },
     set realT(v: number) { _realT = v; },
-    setPlayerEid: (eid: number) => { logger.debug('game-loop', `setPlayerEid=${eid}`); _playerEid = eid; },
+    setPlayerEid: (eid: number) => { _playerEid = eid; },
     getPlayerEid: () => _playerEid,
     isDungeonBossDead: (id: number) => dungeonBossDead(id),
     getDropsForTransition: () => {

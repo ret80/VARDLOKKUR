@@ -239,19 +239,19 @@ export function ensureGhosts(
     const kind = poolGet(StringPool.enemyKinds, Enemy.kind[eid]);
     const state = Enemy.state[eid];
     if (kind === 'ghost') {
-      logger.debug('fog', `ensureGhosts: ghost eid=${eid} state=${state} dissipate=${EnemyState.dissipate}`);
+      // logger.debug('fog', `ensureGhosts: ghost eid=${eid} state=${state} dissipate=${EnemyState.dissipate}`);
       if (state !== EnemyState.dissipate) {
         alive++;
       }
     }
   }
-  logger.debug('fog', `ensureGhosts: n=${n} leashed=${leashed} alive=${alive} totalEnemy=${totalEnemy}`);
+  // logger.debug('fog', `ensureGhosts: n=${n} leashed=${leashed} alive=${alive} totalEnemy=${totalEnemy}`);
   
   const altarX = map.treeAltar.x * T + 8;
   const altarY = map.treeAltar.y * T + 8;
   const targetCx = leashed ? altarX : cx;
   const targetCy = leashed ? altarY : cy;
-  logger.debug('fog', `ensureGhosts: targetCx=${targetCx} targetCy=${targetCy} limit=${Math.min(4, n)}`);
+  // logger.debug('fog', `ensureGhosts: targetCx=${targetCx} targetCy=${targetCy} limit=${Math.min(4, n)}`);
   
   for (let i = alive; i < Math.min(4, n); i++) {
     const a = Math.random() * Math.PI * 2;

@@ -365,6 +365,7 @@ export function getWorldDump(world: World): { entities: DebugEntity[]; stats: an
 
 /** Профилирование ECS запросов */
 export function profileQueries(world: World): { queries: any[]; totalTime: string } {
+  console.log('[profile] Starting, world:', !!world, 'entityIds:', (world as any)?._entityIndex?.entityIds?.length);
   const queries: any[] = [];
   
   const queryDefs = [
@@ -380,7 +381,7 @@ export function profileQueries(world: World): { queries: any[]; totalTime: strin
   
   for (const qd of queryDefs) {
     const start = performance.now();
-    const results = query(world, qd.components);
+    const results = Array.from(query(world, qd.components));
     const elapsed = performance.now() - start;
     
     queries.push({

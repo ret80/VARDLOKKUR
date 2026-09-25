@@ -127,7 +127,7 @@ export class TextureCacheManager {
       // Спрайт уже использует эту текстуру (при создании был передан texture handle)
       entry.baked = true;
 
-      logger.debug('render', `Bake success eid=${eid} sprite visible=${entry.sprite} texture=${entry.texture}`);
+      // logger.debug('render', `Bake success eid=${eid} sprite visible=${entry.sprite} texture=${entry.texture}`);
       return true;
     } catch (err) {
       logger.warn('render', `Bake failed eid=${eid}: ${err}`);

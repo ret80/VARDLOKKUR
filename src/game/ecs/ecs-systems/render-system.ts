@@ -269,9 +269,9 @@ export class RenderSystem {
     for (const config of this.OBJECT_QUERIES) {
       const renderer = objectRegistry.getOrThrow(config.key);
       const matches = [...query(world, config.components)];
-      if (matches.length === 0) {
-        logger.debug('render', `renderObjectsEcs: no ${config.key} found`);
-      }
+      // if (matches.length === 0) {
+      //   logger.debug('render', `renderObjectsEcs: no ${config.key} found`);
+      // }
       for (const eid of matches) {
         const entry = ensureRenderEntry(eid, RENDER_LAYER.DYNAMIC);
         // Viewport culling по записи очереди
@@ -304,9 +304,9 @@ export class RenderSystem {
     }
 
     // Лог: состояние игрока при рендере (раз в 5 сек)
-    if (playerEid >= 0 && time % 5 < dt) {
-      logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]} handle=${getSpriteHandle(playerEid)}`);
-    }
+    // if (playerEid >= 0 && time % 5 < dt) {
+    //   logger.debug('render', `playerEid=${playerEid} Dead=${!!Dead[playerEid]} handle=${getSpriteHandle(playerEid)}`);
+    // }
 
     // === Единый проход: обновить записи очереди (позиция + видимость + альфа) ===
     const q = getRenderQueue();
