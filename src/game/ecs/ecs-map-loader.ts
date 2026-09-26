@@ -1,6 +1,6 @@
 /* ecs-map-loader.ts — загрузка сущностей карты в ECS */
 
-import { type World, query, removeEntity, addEntity, addComponent } from 'bitecs';
+import { type World, query, removeEntity, addEntity, addComponent, getAllEntities } from 'bitecs';
 import { Cat, getEnemyCategory, getEnemyMask } from '../physics/planck-world';
 import { T, WorldData, Vec, solidTileAt } from '../world';
 import { clamp } from '../utils';
@@ -183,11 +183,10 @@ export class EcsMapLoader {
 
   private clearWorld(world: World, preservePlayerSprite?: number): void {
     // Удалить ВСЕ сущности из ECS мира
-    // removeEntity сам очищает entityMasks — bitecs не трогает AoS массивы,
-    // но query() проверяет masks, поэтому после removeEntity сущности
-    // не будут возвращены query() — рассинхронизация невозможна.
-    // resetAllComponents() НЕ нужен и вреден — он ломает masks/AoS связь.
-    for (const eid of query(world, [])) {
+    // getAllEntities возвращает реальный список всех сущностей,
+    // в отличие от query(world, []) который может кэшировать результаты
+    const entities = getAllEntities(world);
+    for (const eid of entities) {
       removeEntity(world, eid);
     }
 

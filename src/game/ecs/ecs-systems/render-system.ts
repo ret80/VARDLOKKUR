@@ -327,11 +327,9 @@ export class RenderSystem {
     const q = getRenderQueue();
     if (q) {
       const entities = [...query(world, [Position, Sprite])];
-      logger.debug('render', `query(Position, Sprite) found ${entities.length} entities: [${entities.join(',')}]`);
       for (const eid of entities) {
         const entry = ensureRenderEntry(eid, RENDER_LAYER.DYNAMIC);
         if (!entry) {
-          logger.debug('render', `ensureRenderEntry returned null for eid=${eid} (handle=${getSpriteHandle(eid)}, pos=${Position[eid] ? JSON.stringify(Position[eid]) : 'null'})`);
           continue;
         }
 
@@ -346,7 +344,6 @@ export class RenderSystem {
         // Альфа: Dead/Hidden/hurt-мигание игрока
         if (eid === playerEid && !!Dead[eid]) {
           entry.alpha = 0;
-          logger.debug('render', `playerEid=${playerEid} Dead=true, alpha=0`);
         } else if (!!Hidden[eid]) {
           entry.alpha = 0.25;
         } else if (eid === playerEid && Player[eid] && Player[eid].hurtT > 0 && Math.floor(time * 14) % 2 === 0) {
@@ -362,13 +359,6 @@ export class RenderSystem {
 
     // === Диспетчеризация через реестры (перерисовка геометрии тел) ===
     const ctx: RenderContext = { time, renderer: r };
-
-    // Лог: состояние рендера (раз в 10 сек)
-    if (Math.floor(time) % 10 < dt) {
-      const allEntities = [...query(world, [])];
-      const withPosSprite = [...query(world, [Position, Sprite])];
-      logger.debug('render', `world: ${allEntities.length} total, ${withPosSprite.length} with Position+Sprite, playerEid=${playerEid}`);
-    }
 
     // Игрок
     this.renderPlayerEcs(world, playerEid, ctx);
@@ -425,12 +415,10 @@ export class RenderSystem {
     ctx: RenderContext
   ): void {
     if (playerEid < 0) {
-      logger.debug('render', `renderPlayerEcs: playerEid=${playerEid} < 0, skipping`);
       return;
     }
     // Проверяем компонент Dead — чтобы не рендерить мёртвого игрока
     if (hasComponent(world, playerEid, Dead) && !!Dead[playerEid]) {
-      logger.debug('render', `renderPlayerEcs: playerEid=${playerEid} Dead=true, skipping`);
       return;
     }
 
@@ -452,7 +440,6 @@ export class RenderSystem {
     }
 
     const pos = Position[playerEid];
-    logger.debug('render', `renderPlayerEcs: playerEid=${playerEid} handle=${handle} sprite=${sprite} pos=${pos ? JSON.stringify(pos) : 'null'}`);
 
     const { data, extra } = playerToRenderData(playerEid, ctx.time);
     try {
