@@ -17,46 +17,46 @@ import {
 /** Проверить, жива ли сущность (есть Health и current > 0) */
 export function isAlive(world: World, eid: number): boolean {
   if (!hasComponent(world, eid, Health)) return true;
-  return Health.current[eid] > 0;
+  return Health[eid].current > 0;
 }
 
 /** Получить расстояние между двумя сущностями */
 export function distBetween(world: World, a: number, b: number): number {
-  const dx = Position.x[a] - Position.x[b];
-  const dy = Position.y[a] - Position.y[b];
+  const dx = Position[a].x - Position[b].x;
+  const dy = Position[a].y - Position[b].y;
   return Math.sqrt(dx * dx + dy * dy);
 }
 
 /** Проверить расстояние между двумя сущностями */
 export function distSqBetween(a: number, b: number): number {
-  const dx = Position.x[a] - Position.x[b];
-  const dy = Position.y[a] - Position.y[b];
+  const dx = Position[a].x - Position[b].x;
+  const dy = Position[a].y - Position[b].y;
   return dx * dx + dy * dy;
 }
 
 /** Установить позицию */
 export function setPosition(world: World, eid: number, x: number, y: number): void {
-  Position.x[eid] = x;
-  Position.y[eid] = y;
+  Position[eid].x = x;
+  Position[eid].y = y;
 }
 
 /** Установить скорость */
 export function setVelocity(world: World, eid: number, vx: number, vy: number): void {
-  Velocity.x[eid] = vx;
-  Velocity.y[eid] = vy;
+  Velocity[eid].x = vx;
+  Velocity[eid].y = vy;
 }
 
 /** Нанести урон */
 export function damageEntity(world: World, eid: number, amount: number): void {
   if (!hasComponent(world, eid, Health)) return;
-  Health.current[eid] = Math.max(0, Health.current[eid] - amount);
+  Health[eid].current = Math.max(0, Health[eid].current - amount);
 }
 
 /** Восстановить здоровье */
 export function healEntity(world: World, eid: number, amount: number): void {
   if (!hasComponent(world, eid, Health)) return;
-  const max = Health.max[eid];
-  Health.current[eid] = Math.min(max, Health.current[eid] + amount);
+  const max = Health[eid].max;
+  Health[eid].current = Math.min(max, Health[eid].current + amount);
 }
 
 /** Получить количество живых сущностей */

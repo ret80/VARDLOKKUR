@@ -33,6 +33,7 @@ import {
 import { dist2 } from '../../utils';
 import { T } from '../../world';
 import { audio } from '../../audio';
+import { logger } from '../../debug/logger';
 
 // ============================================================
 // Конфигурация тумана
@@ -90,8 +91,8 @@ export function fogUpdateSystem(
   if (!map || playerEid < 0) return;
   
   const f = flags;
-  const px = Position.x[playerEid];
-  const py = Position.y[playerEid];
+  const px = Position[playerEid].x;
+  const py = Position[playerEid].y;
   
   fogState.ghostClangT = Math.max(0, fogState.ghostClangT - dt);
   
@@ -231,8 +232,13 @@ export function ensureGhosts(
   let totalEnemy = 0;
   for (const eid of query(world, [Enemy])) {
     totalEnemy++;
-    const kind = poolGet(StringPool.enemyKinds, Enemy.kind[eid]);
-    const state = Enemy.state[eid];
+    const enemyData = Enemy[eid];
+    if (!enemyData) {
+      logger.warn('fog', `ensureGhosts: Enemy[${eid}] is undefined (Enemy.length=${Enemy.length})`);
+      continue; // AoS элемент может быть undefined
+    }
+    const kind = poolGet(StringPool.enemyKinds, enemyData.kind);
+    const state = enemyData.state;
     if (kind === 'ghost') {
       // logger.debug('fog', `ensureGhosts: ghost eid=${eid} state=${state} dissipate=${EnemyState.dissipate}`);
       if (state !== EnemyState.dissipate) {
@@ -257,14 +263,14 @@ export function ensureGhosts(
     if (x < T || y < T || x > (map.W - 1) * T || y > (map.H - 1) * T) continue;
     
     const eid = spawnEnemyInEcs('ghost', x, y);
-    Enemy.aggro[eid] = 1;
-    Enemy.state[eid] = EnemyState.appear;
-    Enemy.stateT[eid] = 1.5 + Math.random() * 0.5;
-    Enemy.fogOnly[eid] = 1;
+    Enemy[eid].aggro = 1;
+    Enemy[eid].state = EnemyState.appear;
+    Enemy[eid].stateT = 1.5 + Math.random() * 0.5;
+    Enemy[eid].fogOnly = 1;
     // Привязка к алтарю
     if (leashed) {
-      Enemy.leashX[eid] = altarX;
-      Enemy.leashY[eid] = altarY;
+      Enemy[eid].leashX = altarX;
+      Enemy[eid].leashY = altarY;
     }
   }
 }

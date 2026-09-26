@@ -49,11 +49,10 @@ export class MapLoaderService {
     private viewport: ViewportController,
     private sceneLayers: SceneLayers,
     private ecsWorld: World,
-    private prefabWorld: World,
     spriteFactory?: SpriteFactory
   ) {
     // Фабрика создаётся ОДИН раз при инициализации сервиса
-    this.entityFactory = createEntityFactory(this.ecsWorld, this.prefabWorld);
+    this.entityFactory = createEntityFactory(this.ecsWorld);
     // Фаза 3/Регрессия: default-фабрика создаёт через IRenderer.createGraphics()
     // и добавляет в dynamic layer (в worldContainer), а не в legacy Container.
     // Это исправляет регрессию: ECS-сущности теперь двигаются с камерой.

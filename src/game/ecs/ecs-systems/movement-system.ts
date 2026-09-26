@@ -10,45 +10,47 @@ import {
   Time,
 } from '../ecs-components';
 
+// Проверка что AoS элемент инициализирован
+function isSet<T>(arr: T[], eid: number): boolean {
+  return eid < arr.length && arr[eid] !== undefined;
+}
+
 // ============================================================
 // Базовое движение
 // ============================================================
 
 /** Обновить позиции на основе скорости */
 export function movementSystem(world: World, dt: number): void {
-  const { x: px, y: py } = Position;
-  const { x: vx, y: vy } = Velocity;
   const dtSec = dt;
 
   for (const eid of query(world, [Position, Velocity])) {
-    px[eid] += vx[eid] * dtSec;
-    py[eid] += vy[eid] * dtSec;
+    Position[eid].x += Velocity[eid].x * dtSec;
+    Position[eid].y += Velocity[eid].y * dtSec;
   }
 }
 
 /** Обновить направление на основе скорости + синхронизировать Enemy.facingX/Y */
 export function directionFromVelocitySystem(world: World): void {
-  const { x: vx, y: vy } = Velocity;
-  const { x: dx, y: dy } = Direction;
-
   for (const eid of query(world, [Velocity, Direction])) {
-    const speed = Math.sqrt(vx[eid] * vx[eid] + vy[eid] * vy[eid]);
+    const vx = Velocity[eid].x;
+    const vy = Velocity[eid].y;
+    const speed = Math.sqrt(vx * vx + vy * vy);
     if (speed > 0.5) {
-      dx[eid] = vx[eid] / speed;
-      dy[eid] = vy[eid] / speed;
+      Direction[eid].x = vx / speed;
+      Direction[eid].y = vy / speed;
     }
-    // Синхронизировать Enemy.facingX/Y с Direction (для рендера)
-    Enemy.facingX[eid] = dx[eid];
-    Enemy.facingY[eid] = dy[eid];
+    // Синхронизировать Enemy.facingX/Y с Direction (только для врагов)
+    if (isSet(Enemy, eid)) {
+      Enemy[eid].facingX = Direction[eid].x;
+      Enemy[eid].facingY = Direction[eid].y;
+    }
   }
 }
 
 /** Обновить таймеры */
 export function timerSystem(world: World, dt: number): void {
-  const t = Time.value;
-
   for (const eid of query(world, [Time])) {
-    t[eid] += dt;
+    Time[eid].value += dt;
   }
 }
 
@@ -65,33 +67,29 @@ export function playerMovementSystem(
   speed: number,
   isSlowed: boolean
 ): void {
-  const { x: px, y: py } = Position;
-  const { x: vx, y: vy } = Velocity;
-  const { x: dx, y: dy } = Direction;
-
   if (playerEid < 0) return;
 
   // Apply input
   const mag = Math.sqrt(inputX * inputX + inputY * inputY);
   if (mag > 0.12) {
-    vx[playerEid] = inputX * speed;
-    vy[playerEid] = inputY * speed;
-    Player.moving[playerEid] = 1;
+    Velocity[playerEid].x = inputX * speed;
+    Velocity[playerEid].y = inputY * speed;
+    Player[playerEid].moving = 1;
   } else {
-    vx[playerEid] = 0;
-    vy[playerEid] = 0;
-    Player.moving[playerEid] = 0;
+    Velocity[playerEid].x = 0;
+    Velocity[playerEid].y = 0;
+    Player[playerEid].moving = 0;
   }
 
   // Update direction
   if (mag > 0.12) {
-    dx[playerEid] = inputX / Math.max(1, mag);
-    dy[playerEid] = inputY / Math.max(1, mag);
+    Direction[playerEid].x = inputX / Math.max(1, mag);
+    Direction[playerEid].y = inputY / Math.max(1, mag);
   }
 
   // Update slow timer
-  if (Player.slowT[playerEid] > 0) {
-    Player.slowT[playerEid] -= 0.016;
+  if (Player[playerEid].slowT > 0) {
+    Player[playerEid].slowT -= 0.016;
   }
 }
 
@@ -101,11 +99,8 @@ export function playerMovementSystem(
 
 /** Кинематическое движение — задаётся напрямую, игнорирует физику */
 export function kinematicMovementSystem(world: World, dt: number): void {
-  const { x: px, y: py } = Position;
-  const { x: vx, y: vy } = Velocity;
-
   for (const eid of query(world, [Position, Velocity])) {
-    px[eid] += vx[eid] * dt;
-    py[eid] += vy[eid] * dt;
+    Position[eid].x += Velocity[eid].x * dt;
+    Position[eid].y += Velocity[eid].y * dt;
   }
 }

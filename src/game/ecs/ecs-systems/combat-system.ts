@@ -62,39 +62,36 @@ export function swordAttackSystem(
 ): void {
   if (playerEid < 0 || !hasSword) return;
 
-  if (Player.swingT[playerEid] > 0) return;
+  if (Player[playerEid].swingT > 0) return;
 
   // Set swing timer
-  Player.swingT[playerEid] = 0.22;
+  Player[playerEid].swingT = 0.22;
 
-  const { x: px, y: py } = Position;
-  const { x: dx, y: dy } = Direction;
-  const { value: r } = Radius;
-
-  const playerX = px[playerEid];
-  const playerY = py[playerEid];
-  const dirAngle = Math.atan2(dy[playerEid], dx[playerEid]);
+  const playerX = Position[playerEid].x;
+  const playerY = Position[playerEid].y;
+  const dirAngle = Math.atan2(Direction[playerEid].y, Direction[playerEid].x);
   const dmg = swordUp ? 2 : 1;
 
   // Check all enemies in range
   for (const enemyEid of query(world, [Enemy, Health, Position, Radius])) {
     if (!!Dead[enemyEid]) continue;
+    if (!Enemy[enemyEid]) continue; // AoS элемент может быть undefined
 
     // Snake special case
-    const enemyKind = poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]);
+    const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
     if (enemyKind === 'snake') {
-      const enemyState = getEnemyStateName(Enemy.state[enemyEid]);
+      const enemyState = getEnemyStateName(Enemy[enemyEid].state);
       if (enemyState === 'open') {
-        const timeVal = Time.value[enemyEid] || 0;
-        const ex = px[enemyEid] + Math.sin(timeVal * 1.6) * 4;
-        const ey = py[enemyEid] - 8;
-        if (dist2(playerX + dx[playerEid] * 14, playerY + dy[playerEid] * 14, ex, ey) < 20 * 20) {
+        const timeVal = Time[enemyEid].value || 0;
+        const ex = Position[enemyEid].x + Math.sin(timeVal * 1.6) * 4;
+        const ey = Position[enemyEid].y - 8;
+        if (dist2(playerX + Direction[playerEid].x * 14, playerY + Direction[playerEid].y * 14, ex, ey) < 20 * 20) {
           damageSnake(enemyEid, onFloatText, onAudioHit, () => {});
         }
       } else {
-        const dist = Math.sqrt(dist2(playerX, playerY, px[enemyEid], py[enemyEid]));
-        if (dist < r[enemyEid] + 18) {
-          onFloatText(px[enemyEid], py[enemyEid], 'Чешуя крепче камня', 0x6e7f8d);
+        const dist = Math.sqrt(dist2(playerX, playerY, Position[enemyEid].x, Position[enemyEid].y));
+        if (dist < Radius[enemyEid].value + 18) {
+          onFloatText(Position[enemyEid].x, Position[enemyEid].y, 'Чешуя крепче камня', 0x6e7f8d);
           onAudioClang();
         }
       }
@@ -103,33 +100,33 @@ export function swordAttackSystem(
 
     // Ghost immunity check
     if (enemyKind === 'ghost' && !hasGhostBane) {
-      onFloatText(px[enemyEid], py[enemyEid], 'Не пробивает', 0x8fd8e8);
+      onFloatText(Position[enemyEid].x, Position[enemyEid].y, 'Не пробивает', 0x8fd8e8);
       onAudioClang();
       continue;
     }
 
     const dist = Math.sqrt(
-      (playerX - px[enemyEid]) ** 2 +
-      (playerY - py[enemyEid]) ** 2
+      (playerX - Position[enemyEid].x) ** 2 +
+      (playerY - Position[enemyEid].y) ** 2
     );
 
-    if (dist > SWORD_RANGE + r[enemyEid]) continue;
+    if (dist > SWORD_RANGE + Radius[enemyEid].value) continue;
 
     const enemyAngle = Math.atan2(
-      py[enemyEid] - playerY,
-      px[enemyEid] - playerX
+      Position[enemyEid].y - playerY,
+      Position[enemyEid].x - playerX
     );
     let angleDiff = Math.abs(enemyAngle - dirAngle);
     if (angleDiff > Math.PI) angleDiff = Math.PI * 2 - angleDiff;
     if (angleDiff > SWORD_ANGLE) continue;
 
     // Draugr shield check
-    if (enemyKind === 'draugr' && Enemy.freezeT[enemyEid] <= 0) {
-      const d = Math.hypot(px[enemyEid] - playerX, py[enemyEid] - playerY) || 1;
-      const fromDirX = (playerX - px[enemyEid]) / d;
-      const fromDirY = (playerY - py[enemyEid]) / d;
-      if (fromDirX * Enemy.facingX[enemyEid] + fromDirY * Enemy.facingY[enemyEid] > 0.35) {
-        onFloatText(px[enemyEid], py[enemyEid], 'Щит!', 0x8f9aa8);
+    if (enemyKind === 'draugr' && Enemy[enemyEid].freezeT <= 0) {
+      const d = Math.hypot(Position[enemyEid].x - playerX, Position[enemyEid].y - playerY) || 1;
+      const fromDirX = (playerX - Position[enemyEid].x) / d;
+      const fromDirY = (playerY - Position[enemyEid].y) / d;
+      if (fromDirX * Enemy[enemyEid].facingX + fromDirY * Enemy[enemyEid].facingY > 0.35) {
+        onFloatText(Position[enemyEid].x, Position[enemyEid].y, 'Щит!', 0x8f9aa8);
         onAudioClang();
         continue;
       }
@@ -138,8 +135,8 @@ export function swordAttackSystem(
     // Hit!
     onDamageEnemy(enemyEid, dmg, playerX, playerY);
     applyKnockback(planckWorld, enemyEid, playerX, playerY, 5);
-    if (hasHammer && !Dead[enemyEid] && Enemy.freezeT[enemyEid] <= 0) {
-      Enemy.freezeT[enemyEid] = 0.8;
+    if (hasHammer && !Dead[enemyEid] && Enemy[enemyEid].freezeT <= 0) {
+      Enemy[enemyEid].freezeT = 0.8;
     }
   }
 }
@@ -158,14 +155,11 @@ export function axeThrowSystem(
 ): number {
   if (playerEid < 0 || !hasAxe) return -1;
 
-  const { x: px, y: py } = Position;
-  const { x: dx, y: dy } = Direction;
-
-  const dirAngle = Math.atan2(dy[playerEid], dx[playerEid]);
+  const dirAngle = Math.atan2(Direction[playerEid].y, Direction[playerEid].x);
   const dmg = axeUp ? 2 : 1;
 
   // Create axe projectile via factory
-  const eid = factory.createAxe(px[playerEid], py[playerEid], dirAngle, dmg, onProjectileSpawn);
+  const eid = factory.createAxe(Position[playerEid].x, Position[playerEid].y, dirAngle, dmg, onProjectileSpawn);
   return eid;
 }
 
@@ -183,13 +177,10 @@ export function arrowShootSystem(
 ): number {
   if (playerEid < 0 || !hasBow || arrows <= 0) return -1;
 
-  const { x: px, y: py } = Position;
-  const { x: dx, y: dy } = Direction;
-
-  const dirAngle = Math.atan2(dy[playerEid], dx[playerEid]);
+  const dirAngle = Math.atan2(Direction[playerEid].y, Direction[playerEid].x);
 
   // Create arrow via factory
-  const eid = factory.createArrow(px[playerEid], py[playerEid], dirAngle, onProjectileSpawn);
+  const eid = factory.createArrow(Position[playerEid].x, Position[playerEid].y, dirAngle, onProjectileSpawn);
   return eid;
 }
 
@@ -210,25 +201,31 @@ export function projectileUpdateSystem(
   const t = Time.value;
 
   for (const eid of query(world, [Position, Velocity, Projectile, Time])) {
+    const pos = Position[eid];
+    const vel = Velocity[eid];
+    const proj = Projectile[eid];
+    const tm = Time[eid];
+    if (!pos || !vel || !proj || !tm) continue; // AoS элемент может быть undefined
+
     // Update lifetime
-    t[eid] += dt;
-    proj.life[eid] -= dt;
-    proj.dist[eid] += Math.sqrt(vx[eid] * vx[eid] + vy[eid] * vy[eid]) * dt;
+    tm.value += dt;
+    proj.life -= dt;
+    proj.dist += Math.sqrt(vel.x * vel.x + vel.y * vel.y) * dt;
 
     // Move
-    px[eid] += vx[eid] * dt;
-    py[eid] += vy[eid] * dt;
+    pos.x += vel.x * dt;
+    pos.y += vel.y * dt;
 
     // Rotate axe
-    if (poolGet(StringPool.projectileKinds, proj.kind[eid]) === 'axe') {
-      proj.spin[eid] += dt * 10;
+    if (poolGet(StringPool.projectileKinds, proj.kind) === 'axe') {
+      proj.spin += dt * 10;
     }
 
     // Remove if expired
-    if (proj.life[eid] <= 0 || t[eid] > 10) {
+    if (proj.life <= 0 || tm.value > 10) {
       // Axe returns
-      if (poolGet(StringPool.projectileKinds, proj.kind[eid]) === 'axe' && !!proj.returning[eid]) {
-        proj.returning[eid] = 1;
+      if (poolGet(StringPool.projectileKinds, proj.kind) === 'axe' && !!proj.returning) {
+        proj.returning = 1;
         // Set velocity toward player (simplified)
         // vx[eid] = ...; vy[eid] = ...;
       } else {
@@ -253,13 +250,22 @@ export function projectileEnemyCollisionSystem(
   const proj = Projectile;
 
   for (const projEid of query(world, [Position, Projectile])) {
+    const pPos = Position[projEid];
+    if (!pPos) continue;
+    const pRad = Radius[projEid];
+    if (!pRad) continue;
+
     for (const enemyEid of query(world, [Position, Health, Radius])) {
       if (!!Dead[enemyEid]) continue;
 
-      const dx = px[projEid] - px[enemyEid];
-      const dy = py[projEid] - py[enemyEid];
+      const ePos = Position[enemyEid];
+      const eRad = Radius[enemyEid];
+      if (!ePos || !eRad) continue;
+
+      const dx = pPos.x - ePos.x;
+      const dy = pPos.y - ePos.y;
       const distSq = dx * dx + dy * dy;
-      const minDist = r[projEid] + r[enemyEid];
+      const minDist = pRad.value + eRad.value;
 
       if (distSq < minDist * minDist) {
         onHit(projEid, enemyEid);
@@ -284,7 +290,7 @@ export function damageEnemy(
 ): void {
   if (!hasComponent(world, enemyEid, Health)) return;
 
-  Health.current[enemyEid] -= dmg;
+  Health[enemyEid].current -= dmg;
   onDamageEvent(enemyEid, dmg, fx, fy);
   onFlash(enemyEid);
 }
@@ -301,7 +307,7 @@ export function damagePlayer(
 ): void {
   if (playerEid < 0 || !hasComponent(world, playerEid, Health)) return;
 
-  Health.current[playerEid] -= dmg;
+  Health[playerEid].current -= dmg;
   onDamageEvent(playerEid, dmg, fx, fy);
   onFlash(playerEid);
 }
@@ -318,15 +324,15 @@ export function applyKnockback(
   fromY: number,
   strength: number
 ): void {
-  const pbIdx = PhysicsBody.body[enemyEid];
+  const pbIdx = PhysicsBody[enemyEid].body;
   if (pbIdx <= 0) return;
 
   const body = PhysicsBodyRegistry[pbIdx - 1];
   if (!body) return;
 
-  const d = Math.hypot(Position.x[enemyEid] - fromX, Position.y[enemyEid] - fromY) || 1;
-  const impulseX = ((Position.x[enemyEid] - fromX) / d) * strength;
-  const impulseY = ((Position.y[enemyEid] - fromY) / d) * strength;
+  const d = Math.hypot(Position[enemyEid].x - fromX, Position[enemyEid].y - fromY) || 1;
+  const impulseX = ((Position[enemyEid].x - fromX) / d) * strength;
+  const impulseY = ((Position[enemyEid].y - fromY) / d) * strength;
 
   body.applyLinearImpulse(Vec2(impulseX, impulseY), body.getWorldCenter());
 }
@@ -343,12 +349,12 @@ export function canProjectileHitEnemy(
 ): boolean {
   if (!!Dead[enemyEid]) return false;
 
-  const enemyKind = poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]);
-  const enemyState = getEnemyStateName(Enemy.state[enemyEid]);
+  const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
+  const enemyState = getEnemyStateName(Enemy[enemyEid].state);
 
   // Ghost immunity
   if (enemyKind === 'ghost' && !hasGhostBane) {
-    onFloatText(Position.x[enemyEid], Position.y[enemyEid], 'Не пробивает', 0x8fd8e8);
+    onFloatText(Position[enemyEid].x, Position[enemyEid].y, 'Не пробивает', 0x8fd8e8);
     onClang();
     return false;
   }
@@ -356,22 +362,22 @@ export function canProjectileHitEnemy(
   // Snake phase check
   if (enemyKind === 'snake') {
     if (enemyState === 'open') return true;
-    onFloatText(Position.x[enemyEid], Position.y[enemyEid], 'Чешуя крепче камня', 0x6e7f8d);
+    onFloatText(Position[enemyEid].x, Position[enemyEid].y, 'Чешуя крепче камня', 0x6e7f8d);
     onClang();
     return false;
   }
 
   // Draugr shield check
-  if (enemyKind === 'draugr' && Enemy.freezeT[enemyEid] <= 0) {
-    const facingX = Enemy.facingX[enemyEid];
-    const facingY = Enemy.facingY[enemyEid];
-    const dx = Position.x[enemyEid] - fromX;
-    const dy = Position.y[enemyEid] - fromY;
+  if (enemyKind === 'draugr' && Enemy[enemyEid].freezeT <= 0) {
+    const facingX = Enemy[enemyEid].facingX;
+    const facingY = Enemy[enemyEid].facingY;
+    const dx = Position[enemyEid].x - fromX;
+    const dy = Position[enemyEid].y - fromY;
     const dist = Math.hypot(dx, dy) || 1;
     const fromDirX = -dx / dist;
     const fromDirY = -dy / dist;
     if (fromDirX * facingX + fromDirY * facingY > 0.35) {
-      onFloatText(Position.x[enemyEid], Position.y[enemyEid], 'Щит!', 0x8f9aa8);
+      onFloatText(Position[enemyEid].x, Position[enemyEid].y, 'Щит!', 0x8f9aa8);
       onClang();
       return false;
     }
@@ -389,21 +395,18 @@ export function updateAxeReturn(
   onPickup: () => void,
   onRemove: (eid: number) => void
 ): boolean {
-  const projKind = poolGet(StringPool.projectileKinds, Projectile.kind[projEid]);
-  if (projKind !== 'axe' || !!!Projectile.returning[projEid]) return false;
+  const projKind = poolGet(StringPool.projectileKinds, Projectile[projEid].kind);
+  if (projKind !== 'axe' || !!!Projectile[projEid].returning) return false;
 
-  const { x: px, y: py } = Position;
-  const { x: vx, y: vy } = Velocity;
-
-  const dx = px[playerEid] - px[projEid];
-  const dy = py[playerEid] - 2 - py[projEid];
+  const dx = Position[playerEid].x - Position[projEid].x;
+  const dy = Position[playerEid].y - 2 - Position[projEid].y;
   const d = Math.hypot(dx, dy) || 1;
 
   // Move toward player
   const newVx = (dx / d) * 240;
   const newVy = (dy / d) * 240;
-  vx[projEid] = newVx;
-  vy[projEid] = newVy;
+  Velocity[projEid].x = newVx;
+  Velocity[projEid].y = newVy;
 
   // Check pickup
   if (d < AXE_PICKUP_DIST) {
@@ -429,9 +432,7 @@ export function killEnemy(
 ): void {
   if (!!Dead[enemyEid]) return;
 
-  const enemyKind = poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]);
-
-  const { x: px, y: py } = Position;
+  const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
 
   // Boss handling
   if (isBoss(enemyKind)) {
@@ -449,18 +450,20 @@ export function killEnemy(
 
   // Ghost special drop
   if (enemyKind === 'ghost') {
-    onDropSpawn('dew', px[enemyEid], py[enemyEid], 40);
+    onDropSpawn('dew', Position[enemyEid].x, Position[enemyEid].y, 40);
     if (Math.random() < 0.35) {
-      onDropSpawn(Math.random() < 0.5 ? 'shard' : 'heart', px[enemyEid], py[enemyEid]);
+      onDropSpawn(Math.random() < 0.5 ? 'shard' : 'heart', Position[enemyEid].x, Position[enemyEid].y);
     }
-    addComponents(world, enemyEid, Dead);
+    Dead[enemyEid] = {};
+    addComponents(world, enemyEid, [Dead]);
     return;
   }
 
   // Normal enemy death
-  addComponents(world, enemyEid, Dead);
-  Enemy.pathI[enemyEid] = 0;
-  onEnemyKilled(enemyKind, px[enemyEid], py[enemyEid]);
+  Dead[enemyEid] = {};
+  addComponents(world, enemyEid, [Dead]);
+  Enemy[enemyEid].pathI = 0;
+  onEnemyKilled(enemyKind, Position[enemyEid].x, Position[enemyEid].y);
 }
 
 // ============================================================
@@ -487,56 +490,56 @@ export function hitEnemy(
 ): void {
   if (!!Dead[enemyEid]) return;
 
-  const enemyKind = poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]);
+  const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
 
   // Ghost immunity check
   if (enemyKind === 'ghost' && !hasGhostBane) {
-    onFloat(Position.x[enemyEid], Position.y[enemyEid], 'Не пробивает', 0x8fd8e8);
+    onFloat(Position[enemyEid].x, Position[enemyEid].y, 'Не пробивает', 0x8fd8e8);
     onAudioClang();
     return;
   }
 
   // Draugr shield check
-  if (enemyKind === 'draugr' && !ignoreShield && Enemy.freezeT[enemyEid] <= 0) {
-    const d = Math.hypot(Enemy.facingX[enemyEid], Enemy.facingY[enemyEid]) || 1;
-    const fromX = (sx - Position.x[enemyEid]) / d;
-    const fromY = (sy - Position.y[enemyEid]) / d;
-    if (fromX * Enemy.facingX[enemyEid] + fromY * Enemy.facingY[enemyEid] > 0.35) {
+  if (enemyKind === 'draugr' && !ignoreShield && Enemy[enemyEid].freezeT <= 0) {
+    const d = Math.hypot(Enemy[enemyEid].facingX, Enemy[enemyEid].facingY) || 1;
+    const fromX = (sx - Position[enemyEid].x) / d;
+    const fromY = (sy - Position[enemyEid].y) / d;
+    if (fromX * Enemy[enemyEid].facingX + fromY * Enemy[enemyEid].facingY > 0.35) {
       onAudioClang();
-      onFloat(Position.x[enemyEid], Position.y[enemyEid], 'Щит!', 0x8f9aa8);
+      onFloat(Position[enemyEid].x, Position[enemyEid].y, 'Щит!', 0x8f9aa8);
       return;
     }
   }
 
   // Apply damage
-  Health.current[enemyEid] -= dmg;
-  Enemy.flashT[enemyEid] = 0.12;
+  Health[enemyEid].current -= dmg;
+  Enemy[enemyEid].flashT = 0.12;
   onAudioHit();
-  onFloat(Position.x[enemyEid], Position.y[enemyEid], String(dmg), 0xe8dcc0);
+  onFloat(Position[enemyEid].x, Position[enemyEid].y, String(dmg), 0xe8dcc0);
   onEnemyHit(enemyEid, dmg);
 
   // Knockback via Planck body
-  const pbIdx = PhysicsBody.body[enemyEid];
+  const pbIdx = PhysicsBody[enemyEid].body;
   if (pbIdx > 0) {
     const body = PhysicsBodyRegistry[pbIdx - 1];
     if (body) {
-      const d = Math.hypot(Position.x[enemyEid] - sx, Position.y[enemyEid] - sy) || 1;
+      const d = Math.hypot(Position[enemyEid].x - sx, Position[enemyEid].y - sy) || 1;
       body.applyLinearImpulse(
-        Vec2(((Position.x[enemyEid] - sx) / d) * 5, ((Position.y[enemyEid] - sy) / d) * 5),
+        Vec2(((Position[enemyEid].x - sx) / d) * 5, ((Position[enemyEid].y - sy) / d) * 5),
         body.getWorldCenter()
       );
     }
   }
 
   // Freeze if hammer
-  if (freezeDuration !== undefined && Enemy.freezeT[enemyEid] <= 0) {
-    Enemy.freezeT[enemyEid] = freezeDuration;
+  if (freezeDuration !== undefined && Enemy[enemyEid].freezeT <= 0) {
+    Enemy[enemyEid].freezeT = freezeDuration;
     onAudioFreeze();
-    onFloat(Position.x[enemyEid], Position.y[enemyEid], 'Заморожен', 0x9fe0ee);
+    onFloat(Position[enemyEid].x, Position[enemyEid].y, 'Заморожен', 0x9fe0ee);
   }
 
   // Check death
-  if (Health.current[enemyEid] <= 0) {
+  if (Health[enemyEid].current <= 0) {
     onEnemyKilled(enemyEid);
   }
 }
@@ -550,12 +553,12 @@ export function damageSnake(
 ): void {
   if (!!Dead[enemyEid]) return;
 
-  Health.current[enemyEid] -= 1;
-  Enemy.flashT[enemyEid] = 0.15;
+  Health[enemyEid].current -= 1;
+  Enemy[enemyEid].flashT = 0.15;
   onAudioHit();
-  onFloat(Position.x[enemyEid], Position.y[enemyEid], '1', 0xe8c979);
+  onFloat(Position[enemyEid].x, Position[enemyEid].y, '1', 0xe8c979);
   
-  if (Health.current[enemyEid] <= 0) {
+  if (Health[enemyEid].current <= 0) {
     onSnakeDeath();
   }
 }
@@ -575,24 +578,24 @@ export function damagePlayerEcs(
 ): void {
   if (playerEid < 0) return;
 
-  if (!pierce && Player.hurtT[playerEid] > 0) return;
-  if (pierce && Player.hurtT[playerEid] > 0.6) return;
+  if (!pierce && Player[playerEid].hurtT > 0) return;
+  if (pierce && Player[playerEid].hurtT > 0.6) return;
 
   // Apply damage via ECS Health component
-  Health.current[playerEid] -= dmg;
-  Player.hurtT[playerEid] = 0.35; // invulnerability window
+  Health[playerEid].current -= dmg;
+  Player[playerEid].hurtT = 0.35; // invulnerability window
 
   onAudioHurt();
-  onFloat(Position.x[playerEid], Position.y[playerEid], `-${dmg}`, 0xe06060);
+  onFloat(Position[playerEid].x, Position[playerEid].y, `-${dmg}`, 0xe06060);
 
   // Knockback via Planck body
-  const pbIdx = PhysicsBody.body[playerEid];
+  const pbIdx = PhysicsBody[playerEid].body;
   if (pbIdx > 0) {
     const body = PhysicsBodyRegistry[pbIdx - 1];
     if (body) {
-      const d = Math.hypot(Position.x[playerEid] - sx, Position.y[playerEid] - sy) || 1;
+      const d = Math.hypot(Position[playerEid].x - sx, Position[playerEid].y - sy) || 1;
       body.applyLinearImpulse(
-        Vec2(((Position.x[playerEid] - sx) / d) * 8, ((Position.y[playerEid] - sy) / d) * 8),
+        Vec2(((Position[playerEid].x - sx) / d) * 8, ((Position[playerEid].y - sy) / d) * 8),
         body.getWorldCenter()
       );
     }
@@ -652,8 +655,15 @@ export function updateProjectilesEcs(
 
   for (let i = projectiles.length - 1; i >= 0; i--) {
     const eid = projectiles[i];
-    const pKind = projKinds[proj.kind[eid]] ?? '';
-    const pLife = proj.life[eid];
+    const pos = Position[eid];
+    const vel = Velocity[eid];
+    const proj = Projectile[eid];
+    const tm = Time[eid];
+    const rad = Radius[eid];
+    if (!pos || !vel || !proj || !tm || !rad) continue; // AoS элемент может быть undefined
+
+    const pKind = projKinds[proj.kind] ?? '';
+    const pLife = proj.life;
     if (pLife <= 0) {
       onProjectileRemove(eid);
       removeEntity(world, eid);
@@ -661,39 +671,41 @@ export function updateProjectilesEcs(
     }
 
     // Sync position from Planck body
-    const pbIdx = PhysicsBody.body[eid];
+    const pbIdx = PhysicsBody[eid].body;
     if (pbIdx > 0) {
       const body = PhysicsBodyRegistry[pbIdx - 1];
       if (body) {
-        const pos = body.getPosition();
-        px[eid] = pos.x;
-        py[eid] = pos.y;
+        const pos2 = body.getPosition();
+        pos.x = pos2.x;
+        pos.y = pos2.y;
       }
     }
 
-    proj.spin[eid] += dt * 18;
+    proj.spin += dt * 18;
 
     // Axe return logic
     if (pKind === 'axe') {
-      if (!proj.returning[eid]) {
-        proj.dist[eid] += Math.sqrt(vx[eid] * vx[eid] + vy[eid] * vy[eid]) * dt;
-        if (proj.dist[eid] > 130) proj.returning[eid] = 1;
+      if (!proj.returning) {
+        proj.dist += Math.sqrt(vel.x * vel.x + vel.y * vel.y) * dt;
+        if (proj.dist > 130) proj.returning = 1;
       }
-      if (!!proj.returning[eid]) {
-        const pdx = px[playerEid] - px[eid];
-        const pdy = py[playerEid] - 2 - py[eid];
+      if (!!proj.returning) {
+        const pPos = Position[playerEid];
+        if (!pPos) continue;
+        const pdx = pPos.x - pos.x;
+        const pdy = pPos.y - 2 - pos.y;
         const pd = Math.hypot(pdx, pdy) || 1;
         const newVx = (pdx / pd) * 240;
         const newVy = (pdy / pd) * 240;
-        
+
         if (pbIdx > 0) {
           const body = PhysicsBodyRegistry[pbIdx - 1];
           if (body) {
             body.setLinearVelocity(Vec2(newVx, newVy));
           }
         }
-        vx[eid] = newVx;
-        vy[eid] = newVy;
+        vel.x = newVx;
+        vel.y = newVy;
 
         if (pd < 12) {
           onProjectileRemove(eid);
@@ -708,14 +720,15 @@ export function updateProjectilesEcs(
       let consumed = false;
       for (const enemyEid of query(world, [Enemy, Position, Health, Radius])) {
         if (!!Dead[enemyEid]) continue;
+        if (!Enemy[enemyEid]) continue; // AoS элемент может быть undefined
 
-        const enemyKind = poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]);
-        const enemyState = getEnemyStateName(Enemy.state[enemyEid]);
+        const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
+        const enemyState = getEnemyStateName(Enemy[enemyEid].state);
 
         // Ghost immunity
         if (enemyKind === 'ghost' && !hasGhostBane) {
           if (pKind === 'axe') {
-            proj.returning[eid] = 1;
+            proj.returning = 1;
           } else {
             onProjectileRemove(eid);
             removeEntity(world, eid);
@@ -726,10 +739,13 @@ export function updateProjectilesEcs(
 
         // Snake phase check
         if (enemyKind === 'snake') {
+          const ePos = Position[enemyEid];
+          const eRad = Radius[enemyEid];
+          if (!ePos || !eRad) continue;
           if (enemyState === 'open') {
-            const ex = px[enemyEid] + Math.sin(t[enemyEid] * 1.6) * 4;
-            const ey = py[enemyEid] - 8;
-            if ((px[eid] - ex) ** 2 + (py[eid] - ey) ** 2 < 11 * 11) {
+            const ex = ePos.x + Math.sin(tm.value * 1.6) * 4;
+            const ey = ePos.y - 8;
+            if ((pos.x - ex) ** 2 + (pos.y - ey) ** 2 < 11 * 11) {
               damageSnake(enemyEid, onFloat, onAudioHit, onSnakeDeath);
               consumed = true;
               if (pKind !== 'axe') {
@@ -739,7 +755,7 @@ export function updateProjectilesEcs(
               break;
             }
           } else {
-            if ((px[eid] - px[enemyEid]) ** 2 + (py[eid] - py[enemyEid]) ** 2 < (r[enemyEid] + 6) ** 2) {
+            if ((pos.x - ePos.x) ** 2 + (pos.y - ePos.y) ** 2 < (eRad.value + 6) ** 2) {
               onAudioClang();
               consumed = true;
               if (pKind !== 'axe') {
@@ -753,17 +769,20 @@ export function updateProjectilesEcs(
         }
 
         // Normal enemy collision
-        const rr = r[eid] + r[enemyEid];
-        if ((px[eid] - px[enemyEid]) ** 2 + (py[eid] - py[enemyEid]) ** 2 < rr * rr) {
+        const ePos = Position[enemyEid];
+        const eRad = Radius[enemyEid];
+        if (!ePos || !eRad) continue;
+        const rr = rad.value + eRad.value;
+        if ((pos.x - ePos.x) ** 2 + (pos.y - ePos.y) ** 2 < rr * rr) {
           if (pKind === 'axe') {
-            Enemy.freezeT[enemyEid] = 2.6;
+            Enemy[enemyEid].freezeT = 2.6;
             onAudioFreeze();
-            onFloat(px[enemyEid], py[enemyEid], 'Заморожен', 0x9fe0ee);
+            onFloat(ePos.x, ePos.y, 'Заморожен', 0x9fe0ee);
             if (enemyKind === 'raven' || enemyKind === 'crawler') {
-              hitEnemy(world, enemyEid, proj.dmg[eid], px[eid], py[eid], true, hasGhostBane, planckWorld, onFloat, onAudioClang, onAudioHit, onAudioFreeze, onEnemyHit, onEnemyKilled);
+              hitEnemy(world, enemyEid, proj.dmg, pos.x, pos.y, true, hasGhostBane, planckWorld, onFloat, onAudioClang, onAudioHit, onAudioFreeze, onEnemyHit, onEnemyKilled);
             }
           } else {
-            hitEnemy(world, enemyEid, proj.dmg[eid], px[eid], py[eid], true, hasGhostBane, planckWorld, onFloat, onAudioClang, onAudioHit, onAudioFreeze, onEnemyHit, onEnemyKilled);
+            hitEnemy(world, enemyEid, proj.dmg, pos.x, pos.y, true, hasGhostBane, planckWorld, onFloat, onAudioClang, onAudioHit, onAudioFreeze, onEnemyHit, onEnemyKilled);
           }
           consumed = true;
           if (pKind !== 'axe') {
@@ -774,17 +793,19 @@ export function updateProjectilesEcs(
         }
       }
       if (consumed && pKind === 'axe') {
-        proj.returning[eid] = 1;
+        proj.returning = 1;
         continue;
       }
       if (consumed) continue;
     } else {
       // Enemy projectile hits player
-      const pr = px[playerEid];
-      const pyr = py[playerEid];
-      const rr = r[eid] + 10; // player radius approx
-      if (proj.life[eid] > 0 && (px[eid] - pr) ** 2 + (py[eid] - pyr) ** 2 < rr * rr) {
-        damagePlayerEcs(world, playerEid, proj.dmg[eid], px[eid], py[eid], false, playerDomain, onFloat, onAudioClang, onPlayerDamaged);
+      const pPos = Position[playerEid];
+      if (!pPos) continue;
+      const pr = pPos.x;
+      const pyr = pPos.y;
+      const rr = rad.value + 10; // player radius approx
+      if (proj.life > 0 && (pos.x - pr) ** 2 + (pos.y - pyr) ** 2 < rr * rr) {
+        damagePlayerEcs(world, playerEid, proj.dmg, pos.x, pos.y, false, playerDomain, onFloat, onAudioClang, onPlayerDamaged);
         onProjectileRemove(eid);
         removeEntity(world, eid);
         continue;

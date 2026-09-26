@@ -28,11 +28,10 @@ interface TargetContext {
 function getAliveEnemiesEcs(ctx: TargetContext): Array<{ kind: string; x: number; y: number }> {
   const world = ctx.store.ecsWorld;
   if (!world) return [];
-  const { Enemy, Dead, Position, poolGet, StringPool } = require('../ecs/ecs-components');
   const result: Array<{ kind: string; x: number; y: number }> = [];
   for (const eid of query(world, [Enemy])) {
     if (!Dead[eid]) {
-      result.push({ kind: poolGet(StringPool.enemyKinds, Enemy.kind[eid]), x: Position.x[eid], y: Position.y[eid] });
+      result.push({ kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind), x: Position[eid].x, y: Position[eid].y });
     }
   }
   return result;
@@ -42,11 +41,10 @@ function getAliveEnemiesEcs(ctx: TargetContext): Array<{ kind: string; x: number
 function getUntakenPedestalsEcs(ctx: TargetContext): Array<{ x: number; y: number }> {
   const world = ctx.store.ecsWorld;
   if (!world) return [];
-  const { Pedestal, Position } = require('../ecs/ecs-components');
   const result: Array<{ x: number; y: number }> = [];
   for (const eid of query(world, [Pedestal])) {
-    if (!Pedestal.taken[eid]) {
-      result.push({ x: Position.x[eid], y: Position.y[eid] });
+    if (!Pedestal[eid].taken) {
+      result.push({ x: Position[eid].x, y: Position[eid].y });
     }
   }
   return result;
@@ -114,8 +112,8 @@ const RESOLVERS: Record<string, TargetResolver> = {
     const world = ctx.store.ecsWorld;
     if (world) {
       for (const eid of query(world, [Enemy])) {
-        if (!Dead[eid] && poolGet(StringPool.enemyKinds, Enemy.kind[eid]) === 'snake') {
-          return { x: Position.x[eid], y: Position.y[eid] };
+        if (!Dead[eid] && poolGet(StringPool.enemyKinds, Enemy[eid].kind) === 'snake') {
+          return { x: Position[eid].x, y: Position[eid].y };
         }
       }
     }

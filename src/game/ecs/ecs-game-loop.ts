@@ -305,8 +305,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     const peid = _playerEid;
     if (peid < 0) return;
     // Направление замаха = направление взгляда игрока
-    Player.swingDirX[peid] = Direction.x[peid];
-    Player.swingDirY[peid] = Direction.y[peid];
+    Player[peid].swingDirX = Direction[peid].x;
+    Player[peid].swingDirY = Direction[peid].y;
     swordAttackSystem(
       world, peid,
       store.flags.hasItem("sword"),
@@ -315,13 +315,13 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       store.flags.ghostBane,
       (enemyEid, dmg, fx, fy) => {
         // Нанести урон врагу через ECS Health
-        Health.current[enemyEid] -= dmg;
-        Flashing[enemyEid] = 1;
-        Enemy.flashT[enemyEid] = 0.12;
-        bus.emit("enemy:hit", { enemy: enemyEid, dmg, sx: Position.x[enemyEid], sy: Position.y[enemyEid] });
+        Health[enemyEid].current -= dmg;
+        Flashing[enemyEid] = {};
+        Enemy[enemyEid].flashT = 0.12;
+        bus.emit("enemy:hit", { enemy: enemyEid, dmg, sx: Position[enemyEid].x, sy: Position[enemyEid].y });
         // Проверить смерть врага
-        if (Health.current[enemyEid] <= 0) {
-          bus.emit("enemy:killed", { enemy: enemyEid, kind: poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]) as any, x: Position.x[enemyEid], y: Position.y[enemyEid] });
+        if (Health[enemyEid].current <= 0) {
+          bus.emit("enemy:killed", { enemy: enemyEid, kind: poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind) as any, x: Position[enemyEid].x, y: Position[enemyEid].y });
         }
       },
       () => {},
@@ -337,7 +337,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     if (peid < 0) return;
     const eid = axeThrowSystem(
       entityFactory, peid, store.flags.hasAxe, store.flags.axeUp, (eid: number) => {
-        const g = spriteFactory.create(Position.x[eid], Position.y[eid]);
+        const g = spriteFactory.create(Position[eid].x, Position[eid].y);
         // g уже в IRenderer layer через spriteFactory
     });
     if (eid >= 0) {
@@ -368,11 +368,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   bus.on("fog:ghostDissipate", () => {
     for (const eid of query(world, [Enemy])) {
-      if (poolGet(StringPool.enemyKinds, Enemy.kind[eid]) !== 'ghost') continue;
+      if (poolGet(StringPool.enemyKinds, Enemy[eid].kind) !== 'ghost') continue;
       // Пропускаем привязанных призраков (у алтаря) — они не исчезают сами
-      if (Enemy.leashX[eid] !== 0 || Enemy.leashY[eid] !== 0) continue;
+      if (Enemy[eid].leashX !== 0 || Enemy[eid].leashY !== 0) continue;
       // Переходим в dissipate — призрак начнёт исчезать
-      Enemy.state[eid] = EnemyState.dissipate;
+      Enemy[eid].state = EnemyState.dissipate;
     }
   });
 
@@ -380,9 +380,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   bus.on("fog:altarLeave", () => {
     for (const eid of query(world, [Enemy])) {
-      if (poolGet(StringPool.enemyKinds, Enemy.kind[eid]) !== 'ghost') continue;
+      if (poolGet(StringPool.enemyKinds, Enemy[eid].kind) !== 'ghost') continue;
       // Переводим ВСЕХ призраков, включая привязанных
-      Enemy.state[eid] = EnemyState.dissipate;
+      Enemy[eid].state = EnemyState.dissipate;
     }
   });
 
@@ -396,25 +396,28 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       Cat.Ghost, Cat.Ghost | Cat.Player | Cat.Projectile
     );
     // Призрак — кинематическое тело (проходит сквозь стены)
-    const body = PhysicsBodyRegistry[PhysicsBody.body[eid] - 1];
-    if (body) {
-      _planckWorld.destroyBody(body);
-      const ghostBody = _planckWorld.createGhostBody(x, y, ENEMY_STATS.ghost.r);
-      PhysicsBody.body[eid] = PhysicsBodyRegistry.length + 1;
-      PhysicsBodyRegistry.push(ghostBody);
+    const pbData = PhysicsBody[eid];
+    if (pbData && pbData.body > 0) {
+      const body = PhysicsBodyRegistry[pbData.body - 1];
+      if (body) {
+        _planckWorld.destroyBody(body);
+        const ghostBody = _planckWorld.createGhostBody(x, y, ENEMY_STATS.ghost.r);
+        PhysicsBody[eid] = { body: PhysicsBodyRegistry.length + 1 };
+        PhysicsBodyRegistry.push(ghostBody);
+      }
     }
     // Установить stateT и состояние appear для перехода из appear → ghost_wander
-    Enemy.state[eid] = EnemyState.appear;
-    Enemy.stateT[eid] = 1.5 + Math.random() * 0.5;
-    Enemy.aggro[eid] = 1;
-    Enemy.fogOnly[eid] = 1;
+    Enemy[eid].state = EnemyState.appear;
+    Enemy[eid].stateT = 1.5 + Math.random() * 0.5;
+    Enemy[eid].aggro = 1;
+    Enemy[eid].fogOnly = 1;
     return eid;
   }
 
   bus.on("player:respawned", () => {
     if (!config_map || _playerEid < 0 || !_fogState) return;
-    const px = Position.x[_playerEid];
-    const py = Position.y[_playerEid];
+    const px = Position[_playerEid].x;
+    const py = Position[_playerEid].y;
     const ax = config_map.treeAltar.x * T + 8;
     const ay = config_map.treeAltar.y * T + 8;
     const nearAltar = dist2(px, py, ax, ay) < 240 * 240;
@@ -447,9 +450,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
     // ===== 0. Синхронизация ECS Player.hasSword ↔ store flags (до ввода) =====
     if (peid >= 0 && config_flags.hasItem('sword')) {
-      Player.hasSword[peid] = 1;
+      Player[peid].hasSword = 1;
     } else if (peid >= 0) {
-      Player.hasSword[peid] = 0;
+      Player[peid].hasSword = 0;
     }
 
     // ===== 1. Захват ввода ОДИН раз за кадр =====
@@ -474,12 +477,12 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
     // ===== 3.5. Синхронизация Player.hasSword ↔ store flags (после взаимодействия) =====
     if (peid >= 0) {
-      Player.hasSword[peid] = config_flags.hasItem('sword') ? 1 : 0;
+      Player[peid].hasSword = config_flags.hasItem('sword') ? 1 : 0;
     }
 
     // ===== 4. Лук =====
     updateBow(world, peid, input, bus, flags, () => {
-      addFloat(Position.x[peid], Position.y[peid], "Нет стрел", 0xc9a24b);
+      addFloat(Position[peid].x, Position[peid].y, "Нет стрел", 0xc9a24b);
     });
 
     // ===== 5. Sync Velocity → Physics Body =====
@@ -493,13 +496,15 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
     // ===== 8. Остальные сущности без физики =====
     {
-      const { x: px, y: py } = Position;
-      const { x: vx, y: vy } = Velocity;
       for (const eid of query(world, [Position, Velocity])) {
         if (eid === peid) continue;
-        if (PhysicsBody.body[eid] > 0) continue;
-        px[eid] += vx[eid] * dt;
-        py[eid] += vy[eid] * dt;
+        const pos = Position[eid];
+        const vel = Velocity[eid];
+        if (!pos || !vel) continue; // AoS элемент может быть undefined при рассинхронизации masks/AoS
+        const pb = PhysicsBody[eid];
+        if (pb && pb.body > 0) continue;
+        pos.x += vel.x * dt;
+        pos.y += vel.y * dt;
       }
     }
 
@@ -515,11 +520,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         () => {}, () => {},
         (dmg, sx, sy) => {
           playerDomain?.takeDamage(dmg, sx, sy);
-          Player.moving[peid] = 0;
+          Player[peid].moving = 0;
           bus.emit("hud:dirty", {});
         },
         (duration: number) => {
-          Player.slowT[peid] = duration;
+          Player[peid].slowT = duration;
         },
       );
     }
@@ -537,12 +542,13 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       (eid) => {
         // onProjectileRemove: удалить Graphics + Planck body снаряда
         // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
-        Sprite.ref[eid] = 0;
-        const pbIdx = PhysicsBody.body[eid];
-        if (pbIdx > 0) {
+        Sprite[eid] = { ref: 0 };
+        const pb = PhysicsBody[eid];
+        if (pb && pb.body > 0) {
+          const pbIdx = pb.body;
           const body = PhysicsBodyRegistry[pbIdx - 1];
           if (body) _planckWorld.destroyBody(body);
-          PhysicsBody.body[eid] = 0;
+          PhysicsBody[eid] = { body: 0 };
           PhysicsBodyRegistry[pbIdx - 1] = null as any;
         }
       },
@@ -551,11 +557,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       () => audio.hit(),
       () => audio.freeze(),
       (enemyEid: number) => {
-        Flashing[enemyEid] = 1;
-        Enemy.flashT[enemyEid] = 0.2;
+        Flashing[enemyEid] = {};
+        Enemy[enemyEid].flashT = 0.2;
       },
       (enemyEid: number) => {
-        bus.emit('enemy:killed', { enemy: enemyEid, kind: poolGet(StringPool.enemyKinds, Enemy.kind[enemyEid]) as any, x: Position.x[enemyEid], y: Position.y[enemyEid] });
+        bus.emit('enemy:killed', { enemy: enemyEid, kind: poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind) as any, x: Position[enemyEid].x, y: Position[enemyEid].y });
       },
       () => {
         bus.emit("hud:dirty", {});
@@ -577,7 +583,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       (eid: number) => {
         // Удалить Graphics + Planck body дропа
         // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
-        Sprite.ref[eid] = 0;
+        Sprite[eid] = { ref: 0 };
       },
       playerDomain,
       getDropRegistry()
@@ -603,12 +609,15 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         );
         // g уже в IRenderer layer через spriteFactory
         // Призрак — кинематическое тело (проходит сквозь стены)
-        const body = PhysicsBodyRegistry[PhysicsBody.body[eid] - 1];
-        if (body) {
-          _planckWorld.destroyBody(body);
-          const ghostBody = _planckWorld.createGhostBody(x, y, ENEMY_STATS.ghost.r);
-          PhysicsBody.body[eid] = PhysicsBodyRegistry.length + 1;
-          PhysicsBodyRegistry.push(ghostBody);
+        const pbData = PhysicsBody[eid];
+        if (pbData && pbData.body > 0) {
+          const body = PhysicsBodyRegistry[pbData.body - 1];
+          if (body) {
+            _planckWorld.destroyBody(body);
+            const ghostBody = _planckWorld.createGhostBody(x, y, ENEMY_STATS.ghost.r);
+            PhysicsBody[eid] = { body: PhysicsBodyRegistry.length + 1 };
+            PhysicsBodyRegistry.push(ghostBody);
+          }
         }
         return eid;
       },
@@ -628,15 +637,16 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       bus.emit("player:died", {});
       // Удалить спрайт из display list (не destroy — render system всё ещё может обращаться)
       // Sprite.ref[eid] теперь хранит GraphicsHandle (number), а не PixiJS объект
-      Sprite.ref[peid] = 0;
+      Sprite[peid] = { ref: 0 };
       // Уничтожить физ. тело
-      const pbIdx = PhysicsBody.body[peid];
-      if (pbIdx > 0) {
+      const pb = PhysicsBody[peid];
+      if (pb && pb.body > 0) {
+        const pbIdx = pb.body;
         const body = PhysicsBodyRegistry[pbIdx - 1];
         if (body) {
           // Безопасное удаление: тело могло быть уже удалено в step()/pendingDestroy
           _planckWorld.destroyBody(body);
-          PhysicsBody.body[peid] = 0;
+          PhysicsBody[peid] = { body: 0 };
           PhysicsBodyRegistry[pbIdx - 1] = null as any;
         }
       }
@@ -645,14 +655,15 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // Уничтожить физ. тело и удалить мёртвых врагов из ECS.
     // Спрайт уже удалён в lifeCheckSystem.
     for (const eid of query(world, [Dead, Enemy])) {
-      const pbIdx = PhysicsBody.body[eid];
-      if (pbIdx > 0) {
+      const pb = PhysicsBody[eid];
+      if (pb && pb.body > 0) {
+        const pbIdx = pb.body;
         const body = PhysicsBodyRegistry[pbIdx - 1];
         if (body) {
           // Безопасное удаление: destroyBody проверяет destroyedBodies и
           // обрабатывает случай, когда тело уже удалено в step()/pendingDestroy
           _planckWorld.destroyBody(body);
-          PhysicsBody.body[eid] = 0;
+          PhysicsBody[eid] = { body: 0 };
           PhysicsBodyRegistry[pbIdx - 1] = null as any;
         }
       }
@@ -672,8 +683,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     const nearestInteractable = getNearestInteractable(world, _playerEid, store);
 
     // === Камера: следим за игроком ===
-    if (_playerEid >= 0 && Position.x.length > _playerEid) {
-      cameraController.trackPlayer(Position.x[_playerEid], Position.y[_playerEid]);
+    if (_playerEid >= 0 && Position.length > _playerEid) {
+      cameraController.trackPlayer(Position[_playerEid].x, Position[_playerEid].y);
     }
 
     // Получаем IRenderer (если инициализирован)
@@ -752,10 +763,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       const drops: Array<{ kind: string; x: number; y: number; life: number; ambientIdx?: number }> = [];
       for (const eid of query(world, [Drop])) {
         drops.push({ 
-          kind: poolGet(StringPool.dropKinds, Drop.kind[eid]), 
-          x: Position.x[eid], 
-          y: Position.y[eid], 
-          life: Drop.life[eid], 
+          kind: poolGet(StringPool.dropKinds, Drop[eid].kind), 
+          x: Position[eid].x, 
+          y: Position[eid].y, 
+          life: Drop[eid].life, 
           ambientIdx: 0 
         });
       }

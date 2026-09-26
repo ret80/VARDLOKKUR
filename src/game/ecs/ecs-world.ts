@@ -1,6 +1,14 @@
-/* ecs-world.ts — инициализация мира bitECS и управление временем */
+/* ecs-world.ts — инициализация мира bitecs и управление временем */
 
 import { createWorld, type World, type WorldContext as BitecsWorldContext } from 'bitecs';
+import {
+  Position, Velocity, Health, Radius, Time, Direction, RenderLayer,
+  Player, Enemy, Projectile, Drop, NPC, Chest, Pedestal,
+  Shrine, Door, Barrier, Altar, MapState,
+  Dead, Hidden, Taken, Magnet, Moving, Attacking, Aiming,
+  Frozen, Flashing, Slowed, Returning, ShrineLit,
+  EnemyAI, Sprite, PhysicsBody,
+} from './ecs-components';
 import { logger } from '../debug/logger';
 
 let _worldCreationCounter = 0;
@@ -31,6 +39,11 @@ export function createEcsWorld(): World<WorldContext> {
     },
   };
   _world = createWorld(context);
+  
+  // AoS компоненты не требуют регистрации через registerComponents.
+  // Они уже являются массивами и работают напрямую: Component[eid] = { ... }
+  // addComponent(world, eid, Component) устанавливает битовую маску.
+  
   logger.info('ecs-world', `ECS game world #${_worldCreationCounter} created, world object: ${!!_world}`);
   return _world;
 }
@@ -66,31 +79,4 @@ export function resetWorldTime(world: World<WorldContext>): void {
 /** Уничтожить мир */
 export function destroyEcsWorld(): void {
   _world = null;
-}
-
-// ============================================================
-// Prefab World — отдельный мир для шаблонов сущностей
-// ============================================================
-
-let _prefabWorld: World<WorldContext> | null = null;
-
-/** Создать мир префабов (живёт на протяжении всей жизни приложения) */
-export function createPrefabWorld(): World<WorldContext> {
-  _worldCreationCounter++;
-  logger.info('ecs-world', `Creating prefab world #${_worldCreationCounter}`);
-  _prefabWorld = createWorld();
-  logger.info('ecs-world', `Prefab world #${_worldCreationCounter} created, world object: ${!!_prefabWorld}`);
-  return _prefabWorld;
-}
-
-/** Получить мир префабов */
-export function getPrefabWorld(): World<WorldContext> {
-  if (!_prefabWorld) throw new Error('Prefab world not initialized. Call createPrefabWorld() first.');
-  logger.debug('ecs-world', `getPrefabWorld called, returning world: ${!!_prefabWorld}`);
-  return _prefabWorld;
-}
-
-/** Уничтожить мир префабов */
-export function destroyPrefabWorld(): void {
-  _prefabWorld = null;
 }

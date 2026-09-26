@@ -97,8 +97,8 @@ export class PixiJSRenderer implements IRenderer {
       // Перезагружаем текстуры — PixiJS Texture.from() кэширует,
       // нужно пересоздать все текстуры
       for (const [id, tex] of this.textures) {
-        if (tex.source && tex.source.url) {
-          this.textures.set(id, Texture.from(tex.source.url));
+        if (tex.source && (tex.source as any).canvas) {
+          this.textures.set(id, Texture.from((tex.source as any).canvas));
         }
       }
     });

@@ -163,22 +163,23 @@ export interface DebugGameState {
 /** Получить состояние игрока из ECS */
 export function getPlayerState(world: World, playerEid: number): DebugPlayer | null {
   if (playerEid < 0) return null;
+  if (!Player[playerEid]) return null;
   
   return {
     eid: playerEid,
-    x: Position.x[playerEid],
-    y: Position.y[playerEid],
-    hp: Health.current[playerEid],
-    maxHp: Player.maxHp[playerEid],
+    x: Position[playerEid].x,
+    y: Position[playerEid].y,
+    hp: Health[playerEid].current,
+    maxHp: Player[playerEid].maxHp,
     arrows: 0,
-    runes: Player.runes[playerEid],
+    runes: Player[playerEid].runes,
     hearts: 0,
     dead: !!Dead[playerEid],
-    moving: Player.moving[playerEid],
-    swingT: Player.swingT[playerEid],
-    hurtT: Player.hurtT[playerEid],
-    slowT: Player.slowT[playerEid],
-    hasSword: Player.hasSword[playerEid],
+    moving: Player[playerEid].moving,
+    swingT: Player[playerEid].swingT,
+    hurtT: Player[playerEid].hurtT,
+    slowT: Player[playerEid].slowT,
+    hasSword: Player[playerEid].hasSword,
   };
 }
 
@@ -187,32 +188,37 @@ export function getEnemiesState(world: World): DebugEnemy[] {
   const enemies: DebugEnemy[] = [];
   
   for (const eid of query(world, [Enemy, Position])) {
-    const kindIdx = Enemy.kind[eid];
+    const en = Enemy[eid];
+    const pos = Position[eid];
+    const hp = Health[eid];
+    if (!en || !pos || !hp) continue; // AoS элемент может быть undefined
+
+    const kindIdx = en.kind;
     const kind = poolGet(StringPool.enemyKinds, kindIdx);
-    const stateName = getEnemyStateName(Enemy.state[eid]);
+    const stateName = getEnemyStateName(en.state);
     const isGhost = kind === 'ghost';
-    
+
     enemies.push({
       eid,
       kind,
-      x: Position.x[eid],
-      y: Position.y[eid],
-      hp: Health.current[eid],
-      maxHp: Health.max[eid],
-      state: Enemy.state[eid],
+      x: pos.x,
+      y: pos.y,
+      hp: hp.current,
+      maxHp: hp.max,
+      state: en.state,
       stateName,
-      stateT: Enemy.stateT[eid],
+      stateT: en.stateT,
       isGhost,
-      leashX: Enemy.leashX[eid],
-      leashY: Enemy.leashY[eid],
-      aggro: Enemy.aggro[eid],
-      fogOnly: Enemy.fogOnly[eid],
-      fade: Enemy.fade[eid],
-      guardOf: Enemy.guardOf[eid],
-      speed: Enemy.speed[eid],
-      dmg: Enemy.dmg[eid],
-      hidden: Enemy.hidden[eid],
-      radius: Enemy.radius[eid],
+      leashX: en.leashX,
+      leashY: en.leashY,
+      aggro: en.aggro,
+      fogOnly: en.fogOnly,
+      fade: en.fade,
+      guardOf: en.guardOf,
+      speed: en.speed,
+      dmg: en.dmg,
+      hidden: en.hidden,
+      radius: en.radius,
     });
   }
   
@@ -224,16 +230,20 @@ export function getDropsState(world: World): DebugDrop[] {
   const drops: DebugDrop[] = [];
   
   for (const eid of query(world, [Drop, Position])) {
-    const kind = poolGet(StringPool.dropKinds, Drop.kind[eid]);
-    
+    const drop = Drop[eid];
+    const pos = Position[eid];
+    if (!drop || !pos) continue; // AoS элемент может быть undefined
+
+    const kind = poolGet(StringPool.dropKinds, drop.kind);
+
     drops.push({
       eid,
       kind,
-      x: Position.x[eid],
-      y: Position.y[eid],
-      life: Drop.life[eid],
-      t: Drop.t[eid],
-      magnet: Drop.magnet[eid],
+      x: pos.x,
+      y: pos.y,
+      life: drop.life,
+      t: drop.t,
+      magnet: drop.magnet,
     });
   }
   
@@ -245,18 +255,23 @@ export function getProjectilesState(world: World): DebugProjectile[] {
   const projectiles: DebugProjectile[] = [];
   
   for (const eid of query(world, [Projectile, Position, Velocity])) {
-    const kind = poolGet(StringPool.projectileKinds, Projectile.kind[eid]);
-    
+    const proj = Projectile[eid];
+    const pos = Position[eid];
+    const vel = Velocity[eid];
+    if (!proj || !pos || !vel) continue; // AoS элемент может быть undefined
+
+    const kind = poolGet(StringPool.projectileKinds, proj.kind);
+
     projectiles.push({
       eid,
       kind,
-      x: Position.x[eid],
-      y: Position.y[eid],
-      vx: Velocity.x[eid],
-      vy: Velocity.y[eid],
-      dmg: Projectile.dmg[eid],
-      life: Projectile.life[eid],
-      dist: Projectile.dist[eid],
+      x: pos.x,
+      y: pos.y,
+      vx: vel.x,
+      vy: vel.y,
+      dmg: proj.dmg,
+      life: proj.life,
+      dist: proj.dist,
     });
   }
   
@@ -268,15 +283,17 @@ export function getNpcsState(world: World): DebugNpc[] {
   const npcs: DebugNpc[] = [];
   
   for (const eid of query(world, [NPC, Position])) {
-    const id = poolGet(StringPool.npcIds, NPC.id[eid]);
-    const name = poolGet(StringPool.npcNames, NPC.name[eid]);
+    if (!NPC[eid]) continue;
+    
+    const id = poolGet(StringPool.npcIds, NPC[eid].id);
+    const name = poolGet(StringPool.npcNames, NPC[eid].name);
     
     npcs.push({
       eid,
       id,
       name,
-      x: Position.x[eid],
-      y: Position.y[eid],
+      x: Position[eid].x,
+      y: Position[eid].y,
     });
   }
   
@@ -309,242 +326,272 @@ export function getWorldDump(world: World): { entities: DebugEntity[]; stats: an
     const entity: DebugEntity = { eid, components: [] };
     let hasAnyComponent = false;
 
-    if (hasComponent(world, Position as any, eid)) {
+    if (hasComponent(world, eid, Position)) {
       entity.components.push('Position');
       componentCounts['Position']++;
-      entity.Position = { x: Position.x[eid], y: Position.y[eid] };
+      entity.Position = { x: Position[eid].x, y: Position[eid].y };
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Velocity as any, eid)) {
+    if (hasComponent(world, eid, Velocity)) {
       entity.components.push('Velocity');
       componentCounts['Velocity']++;
-      entity.Velocity = { x: Velocity.x[eid], y: Velocity.y[eid] };
+      entity.Velocity = { x: Velocity[eid].x, y: Velocity[eid].y };
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Health as any, eid)) {
+    if (hasComponent(world, eid, Health)) {
       entity.components.push('Health');
       componentCounts['Health']++;
-      entity.Health = { current: Health.current[eid], max: Health.max[eid] };
-      if (Health.current[eid] > 0) aliveEntities++;
+      entity.Health = { current: Health[eid].current, max: Health[eid].max };
+      if (Health[eid].current > 0) aliveEntities++;
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Radius as any, eid)) {
+    if (hasComponent(world, eid, Radius)) {
       entity.components.push('Radius');
       componentCounts['Radius']++;
-      entity.Radius = Radius.value[eid];
+      entity.Radius = Radius[eid].value;
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Time as any, eid)) {
+    if (hasComponent(world, eid, Time)) {
       entity.components.push('Time');
       componentCounts['Time']++;
-      entity.Time = Time.value[eid];
+      entity.Time = Time[eid].value;
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Direction as any, eid)) {
+    if (hasComponent(world, eid, Direction)) {
       entity.components.push('Direction');
       componentCounts['Direction']++;
-      entity.Direction = { x: Direction.x[eid], y: Direction.y[eid] };
+      entity.Direction = { x: Direction[eid].x, y: Direction[eid].y };
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, RenderLayer as any, eid)) {
+    if (hasComponent(world, eid, RenderLayer)) {
       entity.components.push('RenderLayer');
       componentCounts['RenderLayer']++;
-      entity.RenderLayer = RenderLayer.value[eid];
+      entity.RenderLayer = RenderLayer[eid].value;
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Player as any, eid)) {
+    if (hasComponent(world, eid, Player)) {
       entity.components.push('Player');
       componentCounts['Player']++;
-      entity.Player = {
-        moving: Player.moving[eid],
-        animT: Player.animT[eid],
-        swingT: Player.swingT[eid],
-        hurtT: Player.hurtT[eid],
-        slowT: Player.slowT[eid],
-        hasSword: Player.hasSword[eid],
-        runes: Player.runes[eid],
-        swingDirX: Player.swingDirX[eid],
-        swingDirY: Player.swingDirY[eid],
-        aiming: Player.aiming[eid],
-        maxHp: Player.maxHp[eid],
-      };
+      if (Player[eid]) {
+        entity.Player = {
+          moving: Player[eid].moving,
+          animT: Player[eid].animT,
+          swingT: Player[eid].swingT,
+          hurtT: Player[eid].hurtT,
+          slowT: Player[eid].slowT,
+          hasSword: Player[eid].hasSword,
+          runes: Player[eid].runes,
+          swingDirX: Player[eid].swingDirX,
+          swingDirY: Player[eid].swingDirY,
+          aiming: Player[eid].aiming,
+          maxHp: Player[eid].maxHp,
+        };
+      }
       aliveEntities++;
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Enemy as any, eid)) {
+    if (hasComponent(world, eid, Enemy)) {
       entity.components.push('Enemy');
       componentCounts['Enemy']++;
-      entity.Enemy = {
-        kind: poolGet(StringPool.enemyKinds, Enemy.kind[eid]),
-        radius: Enemy.radius[eid],
-        facingX: Enemy.facingX[eid],
-        facingY: Enemy.facingY[eid],
-        t: Enemy.t[eid],
-        state: Enemy.state[eid],
-        stateName: getEnemyStateName(Enemy.state[eid]),
-        aggro: Enemy.aggro[eid],
-        hidden: Enemy.hidden[eid],
-        lungeT: Enemy.lungeT[eid],
-        freezeT: Enemy.freezeT[eid],
-        flashT: Enemy.flashT[eid],
-        seed: Enemy.seed[eid],
-        speed: Enemy.speed[eid],
-        dmg: Enemy.dmg[eid],
-        stateT: Enemy.stateT[eid],
-        pathI: Enemy.pathI[eid],
-        repathT: Enemy.repathT[eid],
-        contactCd: Enemy.contactCd[eid],
-        guardOf: Enemy.guardOf[eid],
-        guardPedestalEid: Enemy.guardPedestalEid[eid],
-        fade: Enemy.fade[eid],
-        dropDew: Enemy.dropDew[eid],
-        leashX: Enemy.leashX[eid],
-        leashY: Enemy.leashY[eid],
-        fogOnly: Enemy.fogOnly[eid],
-        nearLitShrine: Enemy.nearLitShrine[eid],
-      };
+      if (Enemy[eid]) {
+        entity.Enemy = {
+          kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind),
+          radius: Enemy[eid].radius,
+          facingX: Enemy[eid].facingX,
+          facingY: Enemy[eid].facingY,
+          t: Enemy[eid].t,
+          state: Enemy[eid].state,
+          stateName: getEnemyStateName(Enemy[eid].state),
+          aggro: Enemy[eid].aggro,
+          hidden: Enemy[eid].hidden,
+          lungeT: Enemy[eid].lungeT,
+          freezeT: Enemy[eid].freezeT,
+          flashT: Enemy[eid].flashT,
+          seed: Enemy[eid].seed,
+          speed: Enemy[eid].speed,
+          dmg: Enemy[eid].dmg,
+          stateT: Enemy[eid].stateT,
+          pathI: Enemy[eid].pathI,
+          repathT: Enemy[eid].repathT,
+          contactCd: Enemy[eid].contactCd,
+          guardOf: Enemy[eid].guardOf,
+          guardPedestalEid: Enemy[eid].guardPedestalEid,
+          fade: Enemy[eid].fade,
+          dropDew: Enemy[eid].dropDew,
+          leashX: Enemy[eid].leashX,
+          leashY: Enemy[eid].leashY,
+          fogOnly: Enemy[eid].fogOnly,
+          nearLitShrine: Enemy[eid].nearLitShrine,
+        };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Projectile as any, eid)) {
+    if (hasComponent(world, eid, Projectile)) {
       entity.components.push('Projectile');
       componentCounts['Projectile']++;
-      entity.Projectile = {
-        kind: poolGet(StringPool.projectileKinds, Projectile.kind[eid]),
-        dmg: Projectile.dmg[eid],
-        life: Projectile.life[eid],
-        dist: Projectile.dist[eid],
-        returning: Projectile.returning[eid],
-        spin: Projectile.spin[eid],
-      };
+      if (Projectile[eid]) {
+        entity.Projectile = {
+          kind: poolGet(StringPool.projectileKinds, Projectile[eid].kind),
+          dmg: Projectile[eid].dmg,
+          life: Projectile[eid].life,
+          dist: Projectile[eid].dist,
+          returning: Projectile[eid].returning,
+          spin: Projectile[eid].spin,
+        };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Drop as any, eid)) {
+    if (hasComponent(world, eid, Drop)) {
       entity.components.push('Drop');
       componentCounts['Drop']++;
-      entity.Drop = {
-        kind: poolGet(StringPool.dropKinds, Drop.kind[eid]),
-        t: Drop.t[eid],
-        magnet: Drop.magnet[eid],
-        life: Drop.life[eid],
-      };
+      if (Drop[eid]) {
+        entity.Drop = {
+          kind: poolGet(StringPool.dropKinds, Drop[eid].kind),
+          t: Drop[eid].t,
+          magnet: Drop[eid].magnet,
+          life: Drop[eid].life,
+        };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, NPC as any, eid)) {
+    if (hasComponent(world, eid, NPC)) {
       entity.components.push('NPC');
       componentCounts['NPC']++;
-      entity.NPC = {
-        id: poolGet(StringPool.npcIds, NPC.id[eid]),
-        name: poolGet(StringPool.npcNames, NPC.name[eid]),
-      };
+      if (NPC[eid]) {
+        entity.NPC = {
+          id: poolGet(StringPool.npcIds, NPC[eid].id),
+          name: poolGet(StringPool.npcNames, NPC[eid].name),
+        };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Chest as any, eid)) {
+    if (hasComponent(world, eid, Chest)) {
       entity.components.push('Chest');
       componentCounts['Chest']++;
-      entity.Chest = {
-        item: poolGet(StringPool.chestItems, Chest.item[eid]),
-        opened: !!Chest.opened[eid],
-      };
+      if (Chest[eid]) {
+        entity.Chest = {
+          item: poolGet(StringPool.chestItems, Chest[eid].item),
+          opened: !!Chest[eid].opened,
+        };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Pedestal as any, eid)) {
+    if (hasComponent(world, eid, Pedestal)) {
       entity.components.push('Pedestal');
       componentCounts['Pedestal']++;
-      entity.Pedestal = {
-        id: poolGet(StringPool.pedestalIds, Pedestal.id[eid]),
-        taken: !!Pedestal.taken[eid],
-        guardsLeft: Pedestal.guardsLeft[eid],
-        guardsSpawned: !!Pedestal.guardsSpawned[eid],
-      };
+      if (Pedestal[eid]) {
+        entity.Pedestal = {
+          id: poolGet(StringPool.pedestalIds, Pedestal[eid].id),
+          taken: !!Pedestal[eid].taken,
+          guardsLeft: Pedestal[eid].guardsLeft,
+          guardsSpawned: !!Pedestal[eid].guardsSpawned,
+        };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Shrine as any, eid)) {
+    if (hasComponent(world, eid, Shrine)) {
       entity.components.push('Shrine');
       componentCounts['Shrine']++;
-      entity.Shrine = { lit: !!Shrine.lit[eid] };
+      if (Shrine[eid]) {
+        entity.Shrine = { lit: !!Shrine[eid].lit };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Door as any, eid)) {
+    if (hasComponent(world, eid, Door)) {
       entity.components.push('Door');
       componentCounts['Door']++;
-      entity.Door = { open: Door.open[eid], locked: !!Door.locked[eid] };
+      if (Door[eid]) {
+        entity.Door = { open: Door[eid].open, locked: !!Door[eid].locked };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Barrier as any, eid)) {
+    if (hasComponent(world, eid, Barrier)) {
       entity.components.push('Barrier');
       componentCounts['Barrier']++;
-      entity.Barrier = { active: !!Barrier.active[eid] };
+      if (Barrier[eid]) {
+        entity.Barrier = { active: !!Barrier[eid].active };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Altar as any, eid)) {
+    if (hasComponent(world, eid, Altar)) {
       entity.components.push('Altar');
       componentCounts['Altar']++;
-      entity.Altar = { runes: Altar.runes[eid] };
+      if (Altar[eid]) {
+        entity.Altar = { runes: Altar[eid].runes };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, MapState as any, eid)) {
+    if (hasComponent(world, eid, MapState)) {
       entity.components.push('MapState');
       componentCounts['MapState']++;
-      entity.MapState = {
-        width: MapState.width[eid],
-        height: MapState.height[eid],
-        dungeonId: MapState.dungeonId[eid],
-      };
+      if (MapState[eid]) {
+        entity.MapState = {
+          width: MapState[eid].width,
+          height: MapState[eid].height,
+          dungeonId: MapState[eid].dungeonId,
+        };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, Sprite as any, eid)) {
+    if (hasComponent(world, eid, Sprite)) {
       entity.components.push('Sprite');
       componentCounts['Sprite']++;
-      entity.Sprite = { ref: Sprite.ref[eid] };
+      if (Sprite[eid]) {
+        entity.Sprite = { ref: Sprite[eid].ref };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, PhysicsBody as any, eid)) {
+    if (hasComponent(world, eid, PhysicsBody)) {
       entity.components.push('PhysicsBody');
       componentCounts['PhysicsBody']++;
-      const idx = PhysicsBody.body[eid];
-      entity.PhysicsBody = { index: idx, exists: idx > 0 };
+      if (PhysicsBody[eid]) {
+        const idx = PhysicsBody[eid].body;
+        entity.PhysicsBody = { index: idx, exists: idx > 0 };
+      }
       hasAnyComponent = true;
     }
 
-    if (hasComponent(world, EnemyAI as any, eid)) {
+    if (hasComponent(world, eid, EnemyAI)) {
       entity.components.push('EnemyAI');
       componentCounts['EnemyAI']++;
-      entity.EnemyAI = {
-        path: EnemyAI.path[eid],
-        lightspeedT: EnemyAI.lightspeedT[eid],
-        slowT: EnemyAI.slowT[eid],
-        freezeT: EnemyAI.freezeT[eid],
-        flashT: EnemyAI.flashT[eid],
-        lungeT: EnemyAI.lungeT[eid],
-        repathT: EnemyAI.repathT[eid],
-        stateT: EnemyAI.stateT[eid],
-        contactCd: EnemyAI.contactCd[eid],
-        guardsSpawned: EnemyAI.guardsSpawned[eid],
-      };
+      if (EnemyAI[eid]) {
+        entity.EnemyAI = {
+          path: EnemyAI[eid].path,
+          lightspeedT: EnemyAI[eid].lightspeedT,
+          slowT: EnemyAI[eid].slowT,
+          freezeT: EnemyAI[eid].freezeT,
+          flashT: EnemyAI[eid].flashT,
+          lungeT: EnemyAI[eid].lungeT,
+          repathT: EnemyAI[eid].repathT,
+          stateT: EnemyAI[eid].stateT,
+          contactCd: EnemyAI[eid].contactCd,
+          guardsSpawned: EnemyAI[eid].guardsSpawned,
+        };
+      }
       hasAnyComponent = true;
     }
 
-    const markerComponents: Array<{ name: string; arr: Uint8Array }> = [
+    const markerComponents: Array<{ name: string; arr: any[] }> = [
       { name: 'Hidden', arr: Hidden },
       { name: 'Taken', arr: Taken },
       { name: 'Magnet', arr: Magnet },
@@ -631,94 +678,122 @@ export function inspectEntity(world: World, eid: number): DebugEntity | null {
   };
 
   const check = (comp: any, name: string) => {
-    const has = hasComponent(world, comp, eid);
-    // Fallback: check SoA array directly (clonePrefab copies SoA but never calls addComponents)
-    const soaHas = comp[eid] !== 0;
-    return has || soaHas;
+    const has = hasComponent(world, eid, comp);
+    return has;
   };
 
-  if (check(Position as any, 'Position')) add('Position', { x: Position.x[eid], y: Position.y[eid] });
-  if (check(Velocity as any, 'Velocity')) add('Velocity', { x: Velocity.x[eid], y: Velocity.y[eid] });
-  if (check(Health as any, 'Health')) add('Health', { current: Health.current[eid], max: Health.max[eid] });
-  if (check(Radius as any, 'Radius')) add('Radius', Radius.value[eid]);
-  if (check(Time as any, 'Time')) add('Time', Time.value[eid]);
-  if (check(Direction as any, 'Direction')) add('Direction', { x: Direction.x[eid], y: Direction.y[eid] });
-  if (check(RenderLayer as any, 'RenderLayer')) add('RenderLayer', RenderLayer.value[eid]);
+  if (check(Position as any, 'Position')) add('Position', { x: Position[eid].x, y: Position[eid].y });
+  if (check(Velocity as any, 'Velocity')) add('Velocity', { x: Velocity[eid].x, y: Velocity[eid].y });
+  if (check(Health as any, 'Health')) add('Health', { current: Health[eid].current, max: Health[eid].max });
+  if (check(Radius as any, 'Radius')) add('Radius', Radius[eid].value);
+  if (check(Time as any, 'Time')) add('Time', Time[eid].value);
+  if (check(Direction as any, 'Direction')) add('Direction', { x: Direction[eid].x, y: Direction[eid].y });
+  if (check(RenderLayer as any, 'RenderLayer')) add('RenderLayer', RenderLayer[eid].value);
 
   if (check(Player as any, 'Player')) {
-    add('Player', {
-      moving: Player.moving[eid], animT: Player.animT[eid], swingT: Player.swingT[eid],
-      hurtT: Player.hurtT[eid], slowT: Player.slowT[eid], hasSword: Player.hasSword[eid],
-      runes: Player.runes[eid], swingDirX: Player.swingDirX[eid], swingDirY: Player.swingDirY[eid],
-      aiming: Player.aiming[eid], maxHp: Player.maxHp[eid],
-    });
+    if (Player[eid]) {
+      add('Player', {
+        moving: Player[eid].moving, animT: Player[eid].animT, swingT: Player[eid].swingT,
+        hurtT: Player[eid].hurtT, slowT: Player[eid].slowT, hasSword: Player[eid].hasSword,
+        runes: Player[eid].runes, swingDirX: Player[eid].swingDirX, swingDirY: Player[eid].swingDirY,
+        aiming: Player[eid].aiming, maxHp: Player[eid].maxHp,
+      });
+    }
   }
   if (check(Enemy as any, 'Enemy')) {
-    add('Enemy', {
-      kind: poolGet(StringPool.enemyKinds, Enemy.kind[eid]), radius: Enemy.radius[eid],
-      facingX: Enemy.facingX[eid], facingY: Enemy.facingY[eid], t: Enemy.t[eid],
-      state: Enemy.state[eid], stateName: getEnemyStateName(Enemy.state[eid]),
-      aggro: Enemy.aggro[eid], hidden: Enemy.hidden[eid], lungeT: Enemy.lungeT[eid],
-      freezeT: Enemy.freezeT[eid], flashT: Enemy.flashT[eid], seed: Enemy.seed[eid],
-      speed: Enemy.speed[eid], dmg: Enemy.dmg[eid], stateT: Enemy.stateT[eid],
-      pathI: Enemy.pathI[eid], repathT: Enemy.repathT[eid], contactCd: Enemy.contactCd[eid],
-      guardOf: Enemy.guardOf[eid], guardPedestalEid: Enemy.guardPedestalEid[eid],
-      fade: Enemy.fade[eid], dropDew: Enemy.dropDew[eid], leashX: Enemy.leashX[eid],
-      leashY: Enemy.leashY[eid], fogOnly: Enemy.fogOnly[eid], nearLitShrine: Enemy.nearLitShrine[eid],
-    });
+    if (Enemy[eid]) {
+      add('Enemy', {
+        kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind), radius: Enemy[eid].radius,
+        facingX: Enemy[eid].facingX, facingY: Enemy[eid].facingY, t: Enemy[eid].t,
+        state: Enemy[eid].state, stateName: getEnemyStateName(Enemy[eid].state),
+        aggro: Enemy[eid].aggro, hidden: Enemy[eid].hidden, lungeT: Enemy[eid].lungeT,
+        freezeT: Enemy[eid].freezeT, flashT: Enemy[eid].flashT, seed: Enemy[eid].seed,
+        speed: Enemy[eid].speed, dmg: Enemy[eid].dmg, stateT: Enemy[eid].stateT,
+        pathI: Enemy[eid].pathI, repathT: Enemy[eid].repathT, contactCd: Enemy[eid].contactCd,
+        guardOf: Enemy[eid].guardOf, guardPedestalEid: Enemy[eid].guardPedestalEid,
+        fade: Enemy[eid].fade, dropDew: Enemy[eid].dropDew, leashX: Enemy[eid].leashX,
+        leashY: Enemy[eid].leashY, fogOnly: Enemy[eid].fogOnly, nearLitShrine: Enemy[eid].nearLitShrine,
+      });
+    }
   }
   if (check(Projectile as any, 'Projectile')) {
-    add('Projectile', {
-      kind: poolGet(StringPool.projectileKinds, Projectile.kind[eid]), dmg: Projectile.dmg[eid],
-      life: Projectile.life[eid], dist: Projectile.dist[eid], returning: Projectile.returning[eid], spin: Projectile.spin[eid],
-    });
+    if (Projectile[eid]) {
+      add('Projectile', {
+        kind: poolGet(StringPool.projectileKinds, Projectile[eid].kind), dmg: Projectile[eid].dmg,
+        life: Projectile[eid].life, dist: Projectile[eid].dist, returning: Projectile[eid].returning, spin: Projectile[eid].spin,
+      });
+    }
   }
   if (check(Drop as any, 'Drop')) {
-    add('Drop', {
-      kind: poolGet(StringPool.dropKinds, Drop.kind[eid]), t: Drop.t[eid],
-      magnet: Drop.magnet[eid], life: Drop.life[eid],
-    });
+    if (Drop[eid]) {
+      add('Drop', {
+        kind: poolGet(StringPool.dropKinds, Drop[eid].kind), t: Drop[eid].t,
+        magnet: Drop[eid].magnet, life: Drop[eid].life,
+      });
+    }
   }
   if (check(NPC as any, 'NPC')) {
-    add('NPC', {
-      id: poolGet(StringPool.npcIds, NPC.id[eid]), name: poolGet(StringPool.npcNames, NPC.name[eid]),
-    });
+    if (NPC[eid]) {
+      add('NPC', {
+        id: poolGet(StringPool.npcIds, NPC[eid].id), name: poolGet(StringPool.npcNames, NPC[eid].name),
+      });
+    }
   }
   if (check(Chest as any, 'Chest')) {
-    add('Chest', { item: poolGet(StringPool.chestItems, Chest.item[eid]), opened: !!Chest.opened[eid] });
+    if (Chest[eid]) {
+      add('Chest', { item: poolGet(StringPool.chestItems, Chest[eid].item), opened: !!Chest[eid].opened });
+    }
   }
   if (check(Pedestal as any, 'Pedestal')) {
-    add('Pedestal', {
-      id: poolGet(StringPool.pedestalIds, Pedestal.id[eid]), taken: !!Pedestal.taken[eid],
-      guardsLeft: Pedestal.guardsLeft[eid], guardsSpawned: !!Pedestal.guardsSpawned[eid],
-    });
+    if (Pedestal[eid]) {
+      add('Pedestal', {
+        id: poolGet(StringPool.pedestalIds, Pedestal[eid].id), taken: !!Pedestal[eid].taken,
+        guardsLeft: Pedestal[eid].guardsLeft, guardsSpawned: !!Pedestal[eid].guardsSpawned,
+      });
+    }
   }
-  if (check(Shrine as any, 'Shrine')) add('Shrine', { lit: !!Shrine.lit[eid] });
-  if (check(Door as any, 'Door')) add('Door', { open: Door.open[eid], locked: !!Door.locked[eid] });
-  if (check(Barrier as any, 'Barrier')) add('Barrier', { active: !!Barrier.active[eid] });
-  if (check(Altar as any, 'Altar')) add('Altar', { runes: Altar.runes[eid] });
+  if (check(Shrine as any, 'Shrine')) {
+    if (Shrine[eid]) add('Shrine', { lit: !!Shrine[eid].lit });
+  }
+  if (check(Door as any, 'Door')) {
+    if (Door[eid]) add('Door', { open: Door[eid].open, locked: !!Door[eid].locked });
+  }
+  if (check(Barrier as any, 'Barrier')) {
+    if (Barrier[eid]) add('Barrier', { active: !!Barrier[eid].active });
+  }
+  if (check(Altar as any, 'Altar')) {
+    if (Altar[eid]) add('Altar', { runes: Altar[eid].runes });
+  }
   if (check(MapState as any, 'MapState')) {
-    add('MapState', { width: MapState.width[eid], height: MapState.height[eid], dungeonId: MapState.dungeonId[eid] });
+    if (MapState[eid]) {
+      add('MapState', { width: MapState[eid].width, height: MapState[eid].height, dungeonId: MapState[eid].dungeonId });
+    }
   }
-  if (check(Sprite as any, 'Sprite')) add('Sprite', { ref: Sprite.ref[eid] });
+  if (check(Sprite as any, 'Sprite')) {
+    if (Sprite[eid]) add('Sprite', { ref: Sprite[eid].ref });
+  }
   
   // ВАЖНО: Убрана сериализация planck-объектов. Оставлены только безопасные примитивы.
   if (check(PhysicsBody as any, 'PhysicsBody')) {
-    const idx = PhysicsBody.body[eid];
-    add('PhysicsBody', { index: idx, exists: idx > 0 });
+    if (PhysicsBody[eid]) {
+      const idx = PhysicsBody[eid].body;
+      add('PhysicsBody', { index: idx, exists: idx > 0 });
+    }
   }
   
   if (check(EnemyAI as any, 'EnemyAI')) {
-    add('EnemyAI', {
-      path: EnemyAI.path[eid], lightspeedT: EnemyAI.lightspeedT[eid], slowT: EnemyAI.slowT[eid],
-      freezeT: EnemyAI.freezeT[eid], flashT: EnemyAI.flashT[eid], lungeT: EnemyAI.lungeT[eid],
-      repathT: EnemyAI.repathT[eid], stateT: EnemyAI.stateT[eid], contactCd: EnemyAI.contactCd[eid],
-      guardsSpawned: EnemyAI.guardsSpawned[eid],
-    });
+    if (EnemyAI[eid]) {
+      add('EnemyAI', {
+        path: EnemyAI[eid].path, lightspeedT: EnemyAI[eid].lightspeedT, slowT: EnemyAI[eid].slowT,
+        freezeT: EnemyAI[eid].freezeT, flashT: EnemyAI[eid].flashT, lungeT: EnemyAI[eid].lungeT,
+        repathT: EnemyAI[eid].repathT, stateT: EnemyAI[eid].stateT, contactCd: EnemyAI[eid].contactCd,
+        guardsSpawned: EnemyAI[eid].guardsSpawned,
+      });
+    }
   }
 
   // Маркеры
-  const markerComponents: Array<{ name: string; arr: Uint8Array }> = [
+  const markerComponents: Array<{ name: string; arr: any[] }> = [
     { name: 'Hidden', arr: Hidden }, { name: 'Taken', arr: Taken },
     { name: 'Magnet', arr: Magnet }, { name: 'Flashing', arr: Flashing },
   ];
@@ -777,7 +852,7 @@ export function getFullGameState(
 // Маркеры для buildEntityComponents
 // ============================================================
 
-const MARKER_COMPONENTS: Array<{ name: string; arr: Uint8Array }> = [
+const MARKER_COMPONENTS: Array<{ name: string; arr: any[] }> = [
   { name: 'Hidden', arr: Hidden },
   { name: 'Taken', arr: Taken },
   { name: 'Magnet', arr: Magnet },
@@ -790,25 +865,25 @@ const MARKER_COMPONENTS: Array<{ name: string; arr: Uint8Array }> = [
 
 /** Телепортировать игрока */
 export function teleportPlayer(world: World, playerEid: number, x: number, y: number): boolean {
-  if (playerEid < 0 || !Position.x[playerEid]) return false;
-  Position.x[playerEid] = x;
-  Position.y[playerEid] = y;
-  Velocity.x[playerEid] = 0;
-  Velocity.y[playerEid] = 0;
+  if (playerEid < 0 || !Position[playerEid]) return false;
+  Position[playerEid].x = x;
+  Position[playerEid].y = y;
+  Velocity[playerEid].x = 0;
+  Velocity[playerEid].y = 0;
   return true;
 }
 
 /** Установить HP игрока */
 export function setPlayerHp(world: World, playerEid: number, hp: number): boolean {
-  if (playerEid < 0 || !Health.current[playerEid]) return false;
-  Health.current[playerEid] = Math.max(0, hp);
+  if (playerEid < 0 || !Health[playerEid]) return false;
+  Health[playerEid].current = Math.max(0, hp);
   return true;
 }
 
 /** Убить игрока */
 export function killPlayer(world: World, playerEid: number): boolean {
-  if (playerEid < 0 || !Health.current[playerEid]) return false;
-  Health.current[playerEid] = 0;
+  if (playerEid < 0 || !Health[playerEid]) return false;
+  Health[playerEid].current = 0;
   return true;
 }
 
@@ -818,16 +893,16 @@ export function removeEnemy(
   eid: number,
   onRemoveSprite?: (sprite: any) => void
 ): boolean {
-  if (eid < 0 || !hasComponent(world, Enemy as any, eid)) return false;
+  if (eid < 0 || !hasComponent(world, eid, Enemy)) return false;
   if (Dead[eid]) return false;
   
   // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
-  Sprite.ref[eid] = 0;
+  Sprite[eid].ref = 0;
   
-  const pbIdx = PhysicsBody.body[eid];
+  const pbIdx = PhysicsBody[eid].body;
   if (pbIdx > 0) {
     PhysicsBodyRegistry[pbIdx - 1] = null as any;
-    PhysicsBody.body[eid] = 0;
+    PhysicsBody[eid].body = 0;
   }
   
   removeEntity(world, eid);
@@ -851,7 +926,7 @@ export function removeAllEnemies(
   
   for (const eid of toRemove) {
     // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
-    Sprite.ref[eid] = 0;
+    Sprite[eid].ref = 0;
     removeEntity(world, eid);
   }
   
@@ -867,7 +942,7 @@ export function removeAllGhosts(
   const toRemove: number[] = [];
   
   for (const eid of query(world, [Enemy])) {
-    if (!Dead[eid] && poolGet(StringPool.enemyKinds, Enemy.kind[eid]) === 'ghost') {
+    if (!Dead[eid] && poolGet(StringPool.enemyKinds, Enemy[eid].kind) === 'ghost') {
       toRemove.push(eid);
       count++;
     }
@@ -875,7 +950,7 @@ export function removeAllGhosts(
   
   for (const eid of toRemove) {
     // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
-    Sprite.ref[eid] = 0;
+    Sprite[eid].ref = 0;
     removeEntity(world, eid);
   }
   
@@ -884,10 +959,10 @@ export function removeAllGhosts(
 
 /** Удалить снаряд по ID */
 export function removeProjectile(world: World, eid: number): boolean {
-  if (eid < 0 || !hasComponent(world, Projectile as any, eid)) return false;
+  if (eid < 0 || !hasComponent(world, eid, Projectile)) return false;
   
   // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
-  Sprite.ref[eid] = 0;
+  Sprite[eid].ref = 0;
   
   removeEntity(world, eid);
   return true;
@@ -895,10 +970,10 @@ export function removeProjectile(world: World, eid: number): boolean {
 
 /** Удалить дроп по ID */
 export function removeDrop(world: World, eid: number): boolean {
-  if (eid < 0 || !hasComponent(world, Drop as any, eid)) return false;
+  if (eid < 0 || !hasComponent(world, eid, Drop)) return false;
   
   // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
-  Sprite.ref[eid] = 0;
+  Sprite[eid].ref = 0;
   
   removeEntity(world, eid);
   return true;

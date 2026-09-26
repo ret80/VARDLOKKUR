@@ -215,7 +215,7 @@ export class GameStore {
     if (!this._state.ecsWorld) return [];
     const result: number[] = [];
     for (const eid of query(this._state.ecsWorld!, [Pedestal])) {
-      if (!Pedestal.taken[eid]) result.push(eid);
+      if (!Pedestal[eid].taken) result.push(eid);
     }
     return result;
   }
@@ -223,20 +223,20 @@ export class GameStore {
   /** Получить Enemy component для entity ID */
   getEnemy(eid: number): unknown {
     if (!this._state.ecsWorld || eid < 0) return null;
-    if (eid >= Enemy.kind.length) return null;
+    if (eid >= Enemy.length) return null;
     return {
-      kind: poolGet(StringPool.enemyKinds, Enemy.kind[eid]),
-      state: Enemy.state[eid],
-      aggro: !!Enemy.aggro[eid],
-      hidden: !!Enemy.hidden[eid],
-      guardOf: Enemy.guardOf[eid],
+      kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind),
+      state: Enemy[eid].state,
+      aggro: !!Enemy[eid].aggro,
+      hidden: !!Enemy[eid].hidden,
+      guardOf: Enemy[eid].guardOf,
     };
   }
 
   /** Получить Position для entity ID */
   getPos(eid: number): { x: number; y: number } | null {
     if (!this._state.ecsWorld || eid < 0) return null;
-    return { x: Position.x[eid], y: Position.y[eid] };
+    return { x: Position[eid].x, y: Position[eid].y };
   }
 
   // ── Обновление talkCount ──

@@ -40,8 +40,6 @@ export {
   PhysicsBody,
   EnemyAI,
   // Utility functions
-  setSoA,
-  getSoA,
   poolAdd,
   poolGet,
 } from './ecs-components';

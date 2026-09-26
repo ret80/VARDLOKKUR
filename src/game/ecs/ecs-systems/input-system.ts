@@ -27,36 +27,29 @@ export function updatePlayerInput(
 ): { stepT: number; realT: number } {
   if (playerEid < 0) return { stepT, realT };
 
-  const { x: px, y: py } = Position;
-  const { x: vx, y: vy } = Velocity;
-  const { x: dx, y: dy } = Direction;
-
   // Захватываем ввод ОДИН раз за кадр (если не передан снаружи)
   const captured = inputState ?? input.getState();
   const ix = captured.ix;
   const iy = captured.iy;
   const mag = Math.hypot(ix, iy);
 
-  const p = Player;
-  if (!p) return { stepT, realT };
-
   // Обновляем направление и анимацию
   if (mag > 0.12) {
-    vx[playerEid] = ix * 92;
-    vy[playerEid] = iy * 92;
-    p.moving[playerEid] = 1;
-    dx[playerEid] = ix / Math.max(1, mag);
-    dy[playerEid] = iy / Math.max(1, mag);
+    Velocity[playerEid].x = ix * 92;
+    Velocity[playerEid].y = iy * 92;
+    Player[playerEid].moving = 1;
+    Direction[playerEid].x = ix / Math.max(1, mag);
+    Direction[playerEid].y = iy / Math.max(1, mag);
   } else {
-    vx[playerEid] = 0;
-    vy[playerEid] = 0;
-    p.moving[playerEid] = 0;
+    Velocity[playerEid].x = 0;
+    Velocity[playerEid].y = 0;
+    Player[playerEid].moving = 0;
   }
 
   // Обновляем таймеры игрока
-  if (p.slowT[playerEid] > 0) p.slowT[playerEid] -= 0.016;
-  if (p.hurtT[playerEid] > 0) p.hurtT[playerEid] -= 0.016;
-  if (p.swingT[playerEid] > 0) p.swingT[playerEid] -= 0.016;
+  if (Player[playerEid].slowT > 0) Player[playerEid].slowT -= 0.016;
+  if (Player[playerEid].hurtT > 0) Player[playerEid].hurtT -= 0.016;
+  if (Player[playerEid].swingT > 0) Player[playerEid].swingT -= 0.016;
 
   // Звуки шагов
   stepT -= 0.016;
@@ -112,18 +105,15 @@ export function updateBow(
 ): void {
   if (playerEid < 0) return;
 
-  const { x: px, y: py } = Position;
-  const { x: dx, y: dy } = Direction;
-
   if (input.getBowHeld()) {
     input.updateBow(false);
     if (flags.hasBow && flags.arrows > 0) {
       flags.arrows--;
-      const a = Math.atan2(dy[playerEid], dx[playerEid]);
+      const a = Math.atan2(Direction[playerEid].y, Direction[playerEid].x);
       bus.emit("projectile:fire", {
         kind: "arrow",
-        x: px[playerEid] + Math.cos(a) * 8,
-        y: py[playerEid] - 2 + Math.sin(a) * 8,
+        x: Position[playerEid].x + Math.cos(a) * 8,
+        y: Position[playerEid].y - 2 + Math.sin(a) * 8,
         vx: Math.cos(a) * 260,
         vy: Math.sin(a) * 260,
         dmg: 2,

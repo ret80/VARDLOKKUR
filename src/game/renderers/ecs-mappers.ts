@@ -45,35 +45,44 @@ export function eidToEnemyData(
   _world: World,
   prevData?: IEnemyData | null
 ): IEnemyData {
-  const kind = poolGet(StringPool.enemyKinds, Enemy.kind[eid]) as EnemyKind;
+  if (!Enemy[eid]) {
+    // Fallback: возвращаем нейтральные данные если AoS элемент не инициализирован
+    return {
+      x: 0, y: 0, kind: 'default' as any, r: 10, hp: 0, maxHp: 0,
+      facing: { x: 0, y: 0 }, t: 0, state: 'idle', aggro: false,
+      dead: false, hidden: false, lungeT: 0, freezeT: 0, flashT: 0,
+      seed: 0, fade: 1, leash: null, dropDew: false, nearLitShrine: false, prevData,
+    };
+  }
+  const kind = poolGet(StringPool.enemyKinds, Enemy[eid].kind) as EnemyKind;
   const stats = ENEMY_STATS[kind];
-  const hp = Health.current[eid];
-  const maxHp = Health.max[eid];
-  const r = Radius.value[eid];
+  const hp = Health[eid].current;
+  const maxHp = Health[eid].max;
+  const r = Radius[eid].value;
 
   return {
-    x: Position.x[eid],
-    y: Position.y[eid],
+    x: Position[eid].x,
+    y: Position[eid].y,
     kind,
     r,
     hp,
     maxHp,
-    facing: { x: Enemy.facingX[eid], y: Enemy.facingY[eid] },
-    t: Enemy.t[eid],
-    state: getEnemyStateName(Enemy.state[eid]),
-    aggro: !!Enemy.aggro[eid],
+    facing: { x: Enemy[eid].facingX, y: Enemy[eid].facingY },
+    t: Enemy[eid].t,
+    state: getEnemyStateName(Enemy[eid].state),
+    aggro: !!Enemy[eid].aggro,
     dead: false,
-    hidden: !!Enemy.hidden[eid],
-    lungeT: Enemy.lungeT[eid],
-    freezeT: Enemy.freezeT[eid],
-    flashT: Enemy.flashT[eid],
-    seed: Enemy.seed[eid],
-    fade: Enemy.fade[eid],
-    leash: (Enemy.leashX[eid] !== 0 || Enemy.leashY[eid] !== 0)
-      ? { x: Enemy.leashX[eid], y: Enemy.leashY[eid] }
+    hidden: !!Enemy[eid].hidden,
+    lungeT: Enemy[eid].lungeT,
+    freezeT: Enemy[eid].freezeT,
+    flashT: Enemy[eid].flashT,
+    seed: Enemy[eid].seed,
+    fade: Enemy[eid].fade,
+    leash: (Enemy[eid].leashX !== 0 || Enemy[eid].leashY !== 0)
+      ? { x: Enemy[eid].leashX, y: Enemy[eid].leashY }
       : null,
-    dropDew: !!Enemy.dropDew[eid],
-    nearLitShrine: !!Enemy.nearLitShrine[eid],
+    dropDew: !!Enemy[eid].dropDew,
+    nearLitShrine: !!Enemy[eid].nearLitShrine,
     prevData,
   };
 }
@@ -83,12 +92,12 @@ export function eidToEnemyData(
 // ============================================================
 
 export function eidToDropData(eid: number, _world: World): IDropData {
-  const kind = poolGet(StringPool.dropKinds, Drop.kind[eid]) as DropKind;
+  const kind = poolGet(StringPool.dropKinds, Drop[eid].kind) as DropKind;
   return {
-    x: Position.x[eid],
-    y: Position.y[eid],
+    x: Position[eid].x,
+    y: Position[eid].y,
     kind,
-    t: Drop.t[eid],
+    t: Drop[eid].t,
     taken: false,
     magnet: false,
   };
@@ -99,13 +108,13 @@ export function eidToDropData(eid: number, _world: World): IDropData {
 // ============================================================
 
 export function eidToProjectileData(eid: number, _world: World): IProjectileData {
-  const kind = poolGet(StringPool.projectileKinds, Projectile.kind[eid]) as ProjectileKind;
+  const kind = poolGet(StringPool.projectileKinds, Projectile[eid].kind) as ProjectileKind;
   return {
-    x: Position.x[eid],
-    y: Position.y[eid],
+    x: Position[eid].x,
+    y: Position[eid].y,
     kind,
     r: 3,
-    spin: Projectile.spin[eid],
+    spin: Projectile[eid].spin,
     vx: 0,
     vy: 0,
   };
@@ -117,10 +126,10 @@ export function eidToProjectileData(eid: number, _world: World): IProjectileData
 
 export function eidToNpcData(eid: number, _world: World): INpcData {
   return {
-    x: Position.x[eid],
-    y: Position.y[eid],
-    id: poolGet(StringPool.npcIds, NPC.id[eid]),
-    name: poolGet(StringPool.npcNames, NPC.name[eid]),
+    x: Position[eid].x,
+    y: Position[eid].y,
+    id: poolGet(StringPool.npcIds, NPC[eid].id),
+    name: poolGet(StringPool.npcNames, NPC[eid].name),
   };
 }
 
@@ -130,51 +139,51 @@ export function eidToNpcData(eid: number, _world: World): INpcData {
 
 export function eidToChestData(eid: number, _world: World): IChestData {
   return {
-    x: Position.x[eid],
-    y: Position.y[eid],
-    opened: !!Chest.opened[eid],
+    x: Position[eid].x,
+    y: Position[eid].y,
+    opened: !!Chest[eid].opened,
   };
 }
 
 export function eidToPedestalData(eid: number, _world: World): IPedestalData {
   return {
-    x: Position.x[eid],
-    y: Position.y[eid],
-    taken: !!Pedestal.taken[eid],
-    guardsLeft: Pedestal.guardsLeft[eid],
+    x: Position[eid].x,
+    y: Position[eid].y,
+    taken: !!Pedestal[eid].taken,
+    guardsLeft: Pedestal[eid].guardsLeft,
   };
 }
 
 export function eidToShrineData(eid: number, _world: World): IShrineData {
   return {
-    x: Position.x[eid],
-    y: Position.y[eid],
-    lit: !!Shrine.lit[eid],
+    x: Position[eid].x,
+    y: Position[eid].y,
+    lit: !!Shrine[eid].lit,
   };
 }
 
 export function eidToDoorData(eid: number, _world: World): IDoorData {
   return {
-    x: Position.x[eid],
-    y: Position.y[eid],
-    open: Door.open[eid],
-    locked: !!Door.locked[eid],
+    x: Position[eid].x,
+    y: Position[eid].y,
+    open: Door[eid].open,
+    locked: !!Door[eid].locked,
   };
 }
 
 export function eidToBarrierData(eid: number, _world: World): IBarrierData {
   return {
-    x: Position.x[eid],
-    y: Position.y[eid],
-    active: !!Barrier.active[eid],
+    x: Position[eid].x,
+    y: Position[eid].y,
+    active: !!Barrier[eid].active,
   };
 }
 
 export function eidToAltarData(eid: number, _world: World): IAltarData {
   return {
-    x: Position.x[eid],
-    y: Position.y[eid],
-    runes: Altar.runes[eid],
+    x: Position[eid].x,
+    y: Position[eid].y,
+    runes: Altar[eid].runes,
   };
 }
 
@@ -186,24 +195,23 @@ export function playerToRenderData(
   peid: number,
   _time: number
 ): { data: IPlayerData; extra: IPlayerExtra } {
-  const d = Direction;
   return {
     data: {
-      x: Position.x[peid],
-      y: Position.y[peid],
-      dir: { x: d.x[peid], y: d.y[peid] },
-      moving: !!Player.moving[peid],
-      animT: Player.animT[peid],
-      swingT: Player.swingT[peid],
-      hurtT: Player.hurtT[peid],
-      slowT: Player.slowT[peid],
+      x: Position[peid].x,
+      y: Position[peid].y,
+      dir: { x: Direction[peid].x, y: Direction[peid].y },
+      moving: !!Player[peid].moving,
+      animT: Player[peid].animT,
+      swingT: Player[peid].swingT,
+      hurtT: Player[peid].hurtT,
+      slowT: Player[peid].slowT,
       r: 5,
     },
     extra: {
-      hasSword: !!Player.hasSword[peid],
-      runes: Player.runes[peid],
-      swingDir: { x: Player.swingDirX[peid], y: Player.swingDirY[peid] },
-      aiming: !!Player.aiming[peid],
+      hasSword: !!Player[peid].hasSword,
+      runes: Player[peid].runes,
+      swingDir: { x: Player[peid].swingDirX, y: Player[peid].swingDirY },
+      aiming: !!Player[peid].aiming,
     },
   };
 }

@@ -1,157 +1,95 @@
-/* ecs-components.ts — все компоненты для bitECS */
+/* ecs-components.ts — все компоненты для bitecs (AoS архитектура)
 
+   Компоненты создаются через aos() и регистрируются в createEcsWorld().
+   Данные хранятся в AoS-массивах: components[eid] = { x, y, ... }.
+*/
+
+import { aos } from 'bitecs';
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
 
 // ============================================================
-// 1. SOA КОМПОНЕНТЫ (Structure of Arrays — hot path)
+// 1. БАЗОВЫЕ КОМПОНЕНТЫ (AoS)
 // ============================================================
 
-export const Position = {
-  x: new Float32Array(10000),
-  y: new Float32Array(10000),
-} as const;
+/** Позиция сущности */
+export const Position = aos<{ x: number; y: number }>();
 
-export const Velocity = {
-  x: new Float32Array(10000),
-  y: new Float32Array(10000),
-} as const;
+/** Скорость сущности */
+export const Velocity = aos<{ x: number; y: number }>();
 
-export const Health = {
-  current: new Float32Array(10000),
-  max: new Float32Array(10000),
-} as const;
+/** Здоровье сущности */
+export const Health = aos<{ current: number; max: number }>();
 
-export const Radius = {
-  value: new Float32Array(10000),
-} as const;
+/** Радиус сущности */
+export const Radius = aos<{ value: number }>();
 
-export const Time = {
-  value: new Float32Array(10000),
-} as const;
+/** Таймер сущности */
+export const Time = aos<{ value: number }>();
 
-export const Direction = {
-  x: new Float32Array(10000),
-  y: new Float32Array(10000),
-} as const;
+/** Направление сущности */
+export const Direction = aos<{ x: number; y: number }>();
 
-export const RenderLayer = {
-  value: new Int32Array(10000),
-} as const;
+/** Слой рендеринга */
+export const RenderLayer = aos<{ value: number }>();
 
-// --- Player ---
-export const Player = {
-  moving: new Uint8Array(10000),
-  animT: new Float32Array(10000),
-  swingT: new Float32Array(10000),
-  hurtT: new Float32Array(10000),
-  slowT: new Float32Array(10000),
-  hasSword: new Uint8Array(10000),
-  runes: new Int32Array(10000),
-  swingDirX: new Float32Array(10000),
-  swingDirY: new Float32Array(10000),
-  aiming: new Uint8Array(10000),
-  maxHp: new Float32Array(10000),
-} as const;
+// ============================================================
+// 2. КОМПОНЕНТЫ ИГРОКА
+// ============================================================
 
-// --- Enemy ---
-export const Enemy = {
-  kind: new Uint32Array(10000),
-  radius: new Float32Array(10000),
-  facingX: new Float32Array(10000),
-  facingY: new Float32Array(10000),
-  t: new Float32Array(10000),
-  state: new Uint8Array(10000),
-  aggro: new Uint8Array(10000),
-  hidden: new Uint8Array(10000),
-  lungeT: new Float32Array(10000),
-  freezeT: new Float32Array(10000),
-  flashT: new Float32Array(10000),
-  seed: new Float32Array(10000),
-  speed: new Float32Array(10000),
-  dmg: new Float32Array(10000),
-  stateT: new Float32Array(10000),
-  pathI: new Float32Array(10000),
-  repathT: new Float32Array(10000),
-  contactCd: new Float32Array(10000),
-  guardOf: new Int32Array(10000),
-  guardPedestalEid: new Int32Array(10000),
-  fade: new Float32Array(10000),
-  dropDew: new Uint8Array(10000),
-  leashX: new Float32Array(10000),
-  leashY: new Float32Array(10000),
-  fogOnly: new Uint8Array(10000),
-  nearLitShrine: new Uint8Array(10000),
-} as const;
+export const Player = aos<{
+  moving: number; animT: number; swingT: number; hurtT: number; slowT: number;
+  hasSword: number; runes: number; swingDirX: number; swingDirY: number;
+  aiming: number; maxHp: number;
+}>();
 
-// --- Projectile ---
-export const Projectile = {
-  kind: new Uint32Array(10000),
-  dmg: new Float32Array(10000),
-  life: new Float32Array(10000),
-  dist: new Float32Array(10000),
-  returning: new Uint8Array(10000),
-  spin: new Float32Array(10000),
-} as const;
+// ============================================================
+// 3. КОМПОНЕНТЫ ВРАГА
+// ============================================================
 
-// --- Drop ---
-export const Drop = {
-  kind: new Uint32Array(10000),
-  t: new Float32Array(10000),
-  magnet: new Uint8Array(10000),
-  life: new Float32Array(10000),
-} as const;
+export const Enemy = aos<{
+  kind: number; radius: number; facingX: number; facingY: number;
+  t: number; state: number; aggro: number; hidden: number;
+  lungeT: number; freezeT: number; flashT: number; seed: number;
+  speed: number; dmg: number; stateT: number; pathI: number; repathT: number;
+  contactCd: number; guardOf: number; guardPedestalEid: number;
+  fade: number; dropDew: number; leashX: number; leashY: number;
+  fogOnly: number; nearLitShrine: number;
+}>();
 
-// --- NPC ---
-export const NPC = {
-  id: new Uint32Array(10000),
-  name: new Uint32Array(10000),
-} as const;
+// ============================================================
+// 4. КОМПОНЕНТЫ СНАРЯДОВ И ДРОПОВ
+// ============================================================
 
-// --- Chest ---
-export const Chest = {
-  item: new Uint32Array(10000),
-  opened: new Uint8Array(10000),
-} as const;
+export const Projectile = aos<{
+  kind: number; dmg: number; life: number; dist: number; returning: number; spin: number;
+}>();
 
-// --- Pedestal ---
-export const Pedestal = {
-  id: new Uint32Array(10000),
-  taken: new Uint8Array(10000),
-  guardsLeft: new Int32Array(10000),
-  guardsSpawned: new Uint8Array(10000),
-} as const;
+export const Drop = aos<{
+  kind: number; t: number; magnet: number; life: number;
+}>();
 
-// --- Shrine ---
-export const Shrine = {
-  lit: new Uint8Array(10000),
-} as const;
+export const NPC = aos<{ id: number; name: number }>();
 
-// --- Door ---
-export const Door = {
-  open: new Float32Array(10000),
-  locked: new Uint8Array(10000),
-} as const;
+export const Chest = aos<{ item: number; opened: number }>();
 
-// --- Barrier ---
-export const Barrier = {
-  active: new Uint8Array(10000),
-} as const;
+export const Pedestal = aos<{
+  id: number; taken: number; guardsLeft: number; guardsSpawned: number;
+}>();
 
-// --- Altar ---
-export const Altar = {
-  runes: new Float32Array(10000),
-} as const;
+export const Shrine = aos<{ lit: number }>();
 
-// --- MapState (синглтон-сущность карты) ---
-// Хранит параметры текущей карты.
-export const MapState = {
-  /** Ширина карты в тайлах */
-  width: new Int32Array(10000),
-  /** Высота карты в тайлах */
-  height: new Int32Array(10000),
-  /** ID подземелья (0 для overworld) */
-  dungeonId: new Int32Array(10000),
-} as const;
+export const Door = aos<{ open: number; locked: number }>();
+
+export const Barrier = aos<{ active: number }>();
+
+export const Altar = aos<{ runes: number }>();
+
+// ============================================================
+// 5. КОМПОНЕНТ КАРТЫ
+// ============================================================
+
+/** Параметры текущей карты (синглтон-сущность) */
+export const MapState = aos<{ width: number; height: number; dungeonId: number }>();
 
 /** Информация о per-tile Graphics карты */
 export interface MapTileInfo {
@@ -164,22 +102,45 @@ export interface MapTileInfo {
 /** Хранение per-tile Graphics: ключ → информация о Graphics */
 export const MapTiles = new Map<string, MapTileInfo>();
 
-// --- Dead ---
-export const Dead = new Uint8Array(10000);
+// ============================================================
+// 6. МАРКЕРНЫЕ КОМПОНЕНТЫ (только битовые маски bitecs)
+// ============================================================
 
-// --- EnemyAI ---
-export const EnemyAI = {
-  path: new Int32Array(10000),
-  lightspeedT: new Float32Array(10000),
-  slowT: new Float32Array(10000),
-  freezeT: new Float32Array(10000),
-  flashT: new Float32Array(10000),
-  lungeT: new Float32Array(10000),
-  repathT: new Float32Array(10000),
-  stateT: new Float32Array(10000),
-  contactCd: new Float32Array(10000),
-  guardsSpawned: new Uint8Array(10000),
-} as const;
+/** Флаг мёртвой сущности */
+export const Dead = aos<{}>();
+
+/** Флаг скрытой сущности */
+export const Hidden = aos<{}>();
+
+/** Флаг взятого объекта */
+export const Taken = aos<{}>();
+
+/** Флаг магнита (дроп притягивается) */
+export const Magnet = aos<{}>();
+
+/** Флаг перемещения */
+export const Moving = aos<{}>();
+
+/** Флаг атаки */
+export const Attacking = aos<{}>();
+
+/** Флаг прицеливания */
+export const Aiming = aos<{}>();
+
+/** Флаг заморозки */
+export const Frozen = aos<{}>();
+
+/** Флаг мигания */
+export const Flashing = aos<{}>();
+
+/** Флаг замедления */
+export const Slowed = aos<{}>();
+
+/** Флаг возвращающегося снаряда */
+export const Returning = aos<{}>();
+
+/** Флаг зажжённого святилища */
+export const ShrineLit = aos<{}>();
 
 // --- EnemyState ---
 export const EnemyState = {
@@ -219,7 +180,7 @@ export function getEnemyStateName(idx: number): string {
 }
 
 // ============================================================
-// 2. STRING POOL
+// 3. STRING POOL
 // ============================================================
 
 export const StringPool = {
@@ -244,23 +205,22 @@ export function poolGet(pool: string[], idx: number): string {
 }
 
 // ============================================================
-// 3. МАРКЕР-КОМПОНЕНТЫ (булевы флаги)
+// 4. КОМПОНЕНТЫ AI, СПРАЙТОВ И ФИЗИКИ
 // ============================================================
 
-export const Hidden = new Uint8Array(10000);
-export const Taken = new Uint8Array(10000);
-export const Magnet = new Uint8Array(10000);
-export const Moving = new Uint8Array(10000);
-export const Attacking = new Uint8Array(10000);
-export const Aiming = new Uint8Array(10000);
-export const Frozen = new Uint8Array(10000);
-export const Flashing = new Uint8Array(10000);
-export const Slowed = new Uint8Array(10000);
-export const Returning = new Uint8Array(10000);
-export const ShrineLit = new Uint8Array(10000);
+export const EnemyAI = aos<{
+  path: number; lightspeedT: number; slowT: number; freezeT: number; flashT: number;
+  lungeT: number; repathT: number; stateT: number; contactCd: number; guardsSpawned: number;
+}>();
+
+/** Ссылка на спрайт (GraphicsHandle) */
+export const Sprite = aos<{ ref: number }>();
+
+/** Индекс физического тела в PhysicsBodyRegistry */
+export const PhysicsBody = aos<{ body: number }>();
 
 // ============================================================
-// 3. ОБЪЕКТНЫЕ РЕЕСТРЫ
+// 5. ОБЪЕКТНЫЕ РЕЕСТРЫ
 // ============================================================
 
 /** Физические тела сущностей */
@@ -273,67 +233,28 @@ export const SpriteBakeContainer: any[] = [];
 /** Baked Sprite для DYNAMIC_TEXTURE сущностей (вместо Graphics) */
 export const SpriteBakedSprite: any[] = [];
 
-export const Sprite = {
-  ref: new Int32Array(10000),
-} as const;
-
-export const PhysicsBody = {
-  body: new Int32Array(10000),
-} as const;
-
 // ============================================================
-// 4. УТИЛИТЫ
+// 6. УТИЛИТЫ
 // ============================================================
 
-/** Сбросить все SoA массивы компонентов (при перезагрузке карты) */
+/** Сбросить все AoS-массивы компонентов (при перезагрузке карты) */
 export function resetAllComponents(): void {
-  // Reset all Float32Array fields
-  const floatArrays: any[] = [
-    Position.x, Position.y,
-    Velocity.x, Velocity.y,
-    Health.current, Health.max,
-    Radius.value, Time.value,
-    Direction.x, Direction.y,
-    RenderLayer.value,
-    Player.animT, Player.swingT, Player.hurtT, Player.slowT,
-    Player.swingDirX, Player.swingDirY, Player.maxHp,
-    Enemy.radius, Enemy.facingX, Enemy.facingY, Enemy.t,
-    Enemy.lungeT, Enemy.freezeT, Enemy.flashT, Enemy.seed,
-    Enemy.speed, Enemy.dmg, Enemy.stateT, Enemy.pathI,
-    Enemy.repathT, Enemy.contactCd, Enemy.fade, Enemy.leashX, Enemy.leashY,
-    Projectile.dmg, Projectile.life, Projectile.dist, Projectile.spin,
-    Drop.t,
-    EnemyAI.lightspeedT, EnemyAI.slowT, EnemyAI.freezeT,
-    EnemyAI.flashT, EnemyAI.lungeT, EnemyAI.repathT, EnemyAI.stateT,
-    EnemyAI.contactCd,
+  // Clear all AoS arrays (they grow dynamically)
+  const arrays = [
+    Position, Velocity, Health, Radius, Time, Direction, RenderLayer,
+    Player, Enemy, Projectile, Drop, NPC, Chest, Pedestal,
+    Shrine, Door, Barrier, Altar, MapState,
+    Dead, Hidden, Taken, Magnet, Moving, Attacking, Aiming,
+    Frozen, Flashing, Slowed, Returning, ShrineLit,
+    EnemyAI, Sprite, PhysicsBody,
   ];
-  for (const a of floatArrays) a.fill(0);
+  for (const arr of arrays) arr.length = 0;
 
-  // NOTE: Uint8Array components (Player.moving, Enemy.state, Dead, etc.)
-  // are NOT reset here — bitecs hasComponent() checks comp[eid] !== 0.
-  // removeEntity() already clears these arrays when destroying entities.
-  // Resetting them here would break hasComponent() for any entity that
-  // survives the clear (or gets reused with the same eid).
-
-  // Reset all Int32Array fields
-  const i32Arrays: any[] = [
-    Player.runes,
-    Pedestal.guardsLeft,
-    Enemy.guardOf,
-    Enemy.guardPedestalEid,
-  ];
-  for (const a of i32Arrays) a.fill(0);
-
-  // Reset all Uint32Array fields (string pool indices)
-  const u32Arrays: any[] = [
-    NPC.id, NPC.name,
-    Chest.item,
-    Pedestal.id,
-    Enemy.kind,
-    Projectile.kind,
-    Drop.kind,
-  ];
-  for (const a of u32Arrays) a.fill(0);
+  // Clear registries
+  PhysicsBodyRegistry.length = 0;
+  EnemyAIRegistry.length = 0;
+  SpriteBakeContainer.length = 0;
+  SpriteBakedSprite.length = 0;
 
   // Clear string pools
   StringPool.enemyKinds.length = 0;
@@ -346,105 +267,35 @@ export function resetAllComponents(): void {
 }
 
 // ============================================================
-// 5. ECS-хелперы для здоровья
+// 7. ECS-хелперы для здоровья
 // ============================================================
 
 export function damageEntityEcs(eid: number, dmg: number): number {
-  Health.current[eid] = Math.max(0, Health.current[eid] - dmg);
-  return Health.current[eid];
+  Health[eid].current = Math.max(0, Health[eid].current - dmg);
+  return Health[eid].current;
 }
 
 export function healEntityEcs(eid: number, amount: number): number {
-  Health.current[eid] = Math.min(Health.max[eid], Health.current[eid] + amount);
-  return Health.current[eid];
+  Health[eid].current = Math.min(Health[eid].max, Health[eid].current + amount);
+  return Health[eid].current;
 }
 
 export function fullHealEntityEcs(eid: number): number {
-  Health.current[eid] = Health.max[eid];
-  return Health.current[eid];
+  Health[eid].current = Health[eid].max;
+  return Health[eid].current;
 }
 
 export function increaseMaxHpEcs(eid: number, amount: number): { hp: number; maxHp: number } {
-  Health.max[eid] += amount;
-  Health.current[eid] = Math.min(Health.max[eid], Health.current[eid] + amount);
-  return { hp: Health.current[eid], maxHp: Health.max[eid] };
+  Health[eid].max += amount;
+  Health[eid].current = Math.min(Health[eid].max, Health[eid].current + amount);
+  return { hp: Health[eid].current, maxHp: Health[eid].max };
 }
 
 // ============================================================
-// 6. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+// 8. ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 // ============================================================
 
-export function setSoA<T extends Record<string, Float32Array>>(
-  comp: T,
-  eid: number,
-  values: Partial<{ [K in keyof T]: number }>
-): void {
-  for (const key of Object.keys(comp) as (keyof T)[]) {
-    if (values[key] !== undefined) {
-      comp[key][eid] = values[key];
-    }
-  }
-}
-
-export function getSoA<T extends Record<string, Float32Array>>(
-  comp: T,
-  eid: number,
-  key: keyof T
-): number {
-  return comp[key][eid];
-}
-
-export function setSoANum<T extends Record<string, Uint8Array | Int32Array | Float32Array>>(
-  comp: T,
-  eid: number,
-  key: keyof T,
-  value: number
-): void {
-  comp[key][eid] = value;
-}
-
-export function getSoANum<T extends Record<string, Uint8Array | Int32Array | Float32Array>>(
-  comp: T,
-  eid: number,
-  key: keyof T
-): number {
-  return comp[key][eid];
-}
-
-export function setSoAString(
-  comp: { kind: Uint32Array; id: Uint32Array; name: Uint32Array; item: Uint32Array },
-  eid: number,
-  field: 'kind' | 'id' | 'name' | 'item',
-  value: string,
-  pool: string[]
-): void {
-  comp[field][eid] = poolAdd(pool, value);
-}
-
-export function getSoAString(
-  comp: { kind: Uint32Array; id: Uint32Array; name: Uint32Array; item: Uint32Array },
-  eid: number,
-  field: 'kind' | 'id' | 'name' | 'item',
-  pool: string[]
-): string {
-  return pool[comp[field][eid]] ?? '';
-}
-
-export function setSoAObject(
-  registry: any[],
-  arr: Uint32Array,
-  eid: number,
-  value: any
-): void {
-  arr[eid] = registry.length;
-  registry.push(value);
-}
-
-export function getSoAObject(
-  registry: any[],
-  arr: Uint32Array,
-  eid: number
-): any {
-  const idx = arr[eid];
-  return idx > 0 ? registry[idx - 1] : undefined;
+/** Получить строку из пула по индексу */
+export function getStringFromPool(pool: string[], idx: number): string {
+  return pool[idx] ?? '';
 }

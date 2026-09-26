@@ -93,62 +93,62 @@ export class PlayerDomain implements IPlayerDomain, IPlayerMutations {
   // ── Геттеры (IPlayerDomain — читают из ECS) ──
 
   get hp(): number {
-    return this._eid >= 0 ? Health.current[this._eid] : 0;
+    return this._eid >= 0 ? Health[this._eid].current : 0;
   }
 
   get maxHp(): number {
     // Приоритет: Player.maxHp (если инициализирован) → Health.max
     return this._eid >= 0
-      ? (Player.maxHp[this._eid] > 0 ? Player.maxHp[this._eid] : Health.max[this._eid])
+      ? (Player[this._eid].maxHp > 0 ? Player[this._eid].maxHp : Health[this._eid].max)
       : 0;
   }
 
   get pos(): Vec {
     return this._eid >= 0
-      ? { x: Position.x[this._eid], y: Position.y[this._eid] }
+      ? { x: Position[this._eid].x, y: Position[this._eid].y }
       : { x: 0, y: 0 };
   }
 
   get x(): number {
-    return this._eid >= 0 ? Position.x[this._eid] : 0;
+    return this._eid >= 0 ? Position[this._eid].x : 0;
   }
 
   get y(): number {
-    return this._eid >= 0 ? Position.y[this._eid] : 0;
+    return this._eid >= 0 ? Position[this._eid].y : 0;
   }
 
   get dir(): Vec {
     return this._eid >= 0
-      ? { x: Direction.x[this._eid], y: Direction.y[this._eid] }
+      ? { x: Direction[this._eid].x, y: Direction[this._eid].y }
       : { x: 0, y: 1 };
   }
 
   get swingT(): number {
-    return this._eid >= 0 ? Player.swingT[this._eid] : 0;
+    return this._eid >= 0 ? Player[this._eid].swingT : 0;
   }
 
   get hurtT(): number {
-    return this._eid >= 0 ? Player.hurtT[this._eid] : 0;
+    return this._eid >= 0 ? Player[this._eid].hurtT : 0;
   }
 
   get slowT(): number {
-    return this._eid >= 0 ? Player.slowT[this._eid] : 0;
+    return this._eid >= 0 ? Player[this._eid].slowT : 0;
   }
 
   get animT(): number {
-    return this._eid >= 0 ? Player.animT[this._eid] : 0;
+    return this._eid >= 0 ? Player[this._eid].animT : 0;
   }
 
   get moving(): boolean {
-    return this._eid >= 0 ? !!Player.moving[this._eid] : false;
+    return this._eid >= 0 ? !!Player[this._eid].moving : false;
   }
 
   get vx(): number {
-    return this._eid >= 0 ? Velocity.x[this._eid] : 0;
+    return this._eid >= 0 ? Velocity[this._eid].x : 0;
   }
 
   get vy(): number {
-    return this._eid >= 0 ? Velocity.y[this._eid] : 0;
+    return this._eid >= 0 ? Velocity[this._eid].y : 0;
   }
 
   get r(): number {
@@ -185,40 +185,40 @@ export class PlayerDomain implements IPlayerDomain, IPlayerMutations {
 
   resetTimers(): void {
     if (this._eid >= 0) {
-      Player.swingT[this._eid] = 0;
-      Player.hurtT[this._eid] = 0;
-      Player.slowT[this._eid] = 0;
+      Player[this._eid].swingT = 0;
+      Player[this._eid].hurtT = 0;
+      Player[this._eid].slowT = 0;
     }
   }
 
   setPosition(_x: number, _y: number): void {
     // DEPRECATED — position управляется через Position ECS component
     if (this._eid >= 0) {
-      Position.x[this._eid] = _x;
-      Position.y[this._eid] = _y;
+      Position[this._eid].x = _x;
+      Position[this._eid].y = _y;
     }
   }
 
   setVelocity(_vx: number, _vy: number): void {
     // DEPRECATED — velocity управляется через Velocity ECS component
     if (this._eid >= 0) {
-      Velocity.x[this._eid] = _vx;
-      Velocity.y[this._eid] = _vy;
+      Velocity[this._eid].x = _vx;
+      Velocity[this._eid].y = _vy;
     }
   }
 
   setDirection(_dir: Vec): void {
     // DEPRECATED — direction управляется direction-from-velocity system
     if (this._eid >= 0) {
-      Direction.x[this._eid] = _dir.x;
-      Direction.y[this._eid] = _dir.y;
+      Direction[this._eid].x = _dir.x;
+      Direction[this._eid].y = _dir.y;
     }
   }
 
   // ── Утилиты ──
 
   isAlive(): boolean {
-    return this._eid >= 0 && Health.current[this._eid] > 0;
+    return this._eid >= 0 && Health[this._eid].current > 0;
   }
 
   /** Увеличить максимальное здоровье (DEPRECATED — используйте increaseMaxHpEcs) */
@@ -243,16 +243,16 @@ export class PlayerDomain implements IPlayerDomain, IPlayerMutations {
   toModel(): import("../models").Player {
     const eid = this._eid;
     return {
-      x: eid >= 0 ? Position.x[eid] : 0,
-      y: eid >= 0 ? Position.y[eid] : 0,
-      vx: eid >= 0 ? Velocity.x[eid] : 0,
-      vy: eid >= 0 ? Velocity.y[eid] : 0,
+      x: eid >= 0 ? Position[eid].x : 0,
+      y: eid >= 0 ? Position[eid].y : 0,
+      vx: eid >= 0 ? Velocity[eid].x : 0,
+      vy: eid >= 0 ? Velocity[eid].y : 0,
       r: 10,
       hp: this.hp,
       maxHp: this.maxHp,
       dir: this.dir,
-      moving: eid >= 0 ? !!Player.moving[eid] : false,
-      animT: eid >= 0 ? Player.animT[eid] : 0,
+      moving: eid >= 0 ? !!Player[eid].moving : false,
+      animT: eid >= 0 ? Player[eid].animT : 0,
       swingT: this.swingT,
       hurtT: this.hurtT,
       slowT: this.slowT,

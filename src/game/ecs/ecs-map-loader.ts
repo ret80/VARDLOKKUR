@@ -29,7 +29,6 @@ import {
   EnemyAIRegistry,
   Chest,
   MapState,
-  resetAllComponents,
 } from './ecs-components';
 import type { IRenderer, LayerHandle } from '../renderer/IRenderer';
 import { createMapTileGraphics, destroyAllMapTileGraphics } from '../render/map-render-system';
@@ -177,31 +176,24 @@ export class EcsMapLoader {
     // Синглтон-сущность с компонентом MapState
     const eid = addEntity(world);
     addComponent(world, eid, MapState);
-    MapState.width[eid] = map.W;
-    MapState.height[eid] = map.H;
-    MapState.dungeonId[eid] = map.dungeonId ?? 0;
+    MapState[eid] = { width: map.W, height: map.H, dungeonId: map.dungeonId ?? 0 };
 
     // logger.debug('map-loader', `Map entity created: eid=${eid}, ${map.W}x${map.H}, dungeonId=${map.dungeonId ?? 0}`);
   }
 
   private clearWorld(world: World, preservePlayerSprite?: number): void {
     // Удалить ВСЕ сущности из ECS мира
-    const eids: number[] = [];
+    // removeEntity сам очищает entityMasks — bitecs не трогает AoS массивы,
+    // но query() проверяет masks, поэтому после removeEntity сущности
+    // не будут возвращены query() — рассинхронизация невозможна.
+    // resetAllComponents() НЕ нужен и вреден — он ломает masks/AoS связь.
     for (const eid of query(world, [])) {
-      eids.push(eid);
-    }
-    for (const eid of eids) {
       removeEntity(world, eid);
     }
 
-    // Сбросить все SoA массивы компонентов
-    resetAllComponents();
-
-    // Очистить другие реестры
+    // Очистить внешние реестры (не bitecs)
     EnemyAIRegistry.length = 0;
     PhysicsBodyRegistry.length = 0;
-
-    // logger.debug('map-loader', `cleared ${eids.length} entities`);
   }
 
   private createTileBodies(map: WorldData, planckWorld: PlanckWorld): void {
@@ -251,14 +243,14 @@ export class EcsMapLoader {
       const eid = createChestInEcs(factory, world, cx, cy, c.item, g);
       // Восстановить состояние opened из store.openedChests
       if (openedChests.has(`${c.x}_${c.y}`)) {
-        Chest.opened[eid] = 1;
+        Chest[eid].opened = 1;
       }
     }
     if (!map.isDungeon && this.config.flags.secretKnown) {
       const g = sf.create(map.stashSpot.x * T + 8, map.stashSpot.y * T + 8);
       const eid = createChestInEcs(factory, world, map.stashSpot.x * T + 8, map.stashSpot.y * T + 8, "heartPiece", g);
       if (openedChests.has(`${map.stashSpot.x}_${map.stashSpot.y}`)) {
-        Chest.opened[eid] = 1;
+        Chest[eid].opened = 1;
       }
     }
   }
@@ -289,7 +281,7 @@ export class EcsMapLoader {
       const g = sf.create(sx, sy);
       const eid = createShrineInEcs(factory, world, sx, sy, g);
       if (this.config.visitedShrines.has(j)) {
-        Shrine.lit[eid] = 1;
+        Shrine[eid].lit = 1;
       }
       // Статическое тело для коллизии
       this.planckWorld.createStaticBody(sx, sy, 6, Cat.Shrine);

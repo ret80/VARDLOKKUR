@@ -67,7 +67,11 @@ import { getRenderQueue, RENDER_LAYER, type RenderEntry } from '../../render/Ren
 
 /** Получить GraphicsHandle из Sprite.ref (хранит handle напрямую) */
 function getSpriteHandle(eid: number): number | undefined {
-  const handle = Sprite.ref[eid];
+  const sprite = Sprite[eid];
+  if (!sprite) {
+    return undefined;
+  }
+  const handle = sprite.ref;
   if (!handle) {
     return undefined;
   }
@@ -85,9 +89,12 @@ export function ensureRenderEntry(eid: number, layer: number): RenderEntry | nul
   if (existing) return existing;
   const handle = getSpriteHandle(eid);
   if (handle === undefined) return null;
-  const entry: RenderEntry = {
-    x: Position.x[eid],
-    y: Position.y[eid],
+  // Проверка что Position инициализирован (AoS объект может быть undefined)
+  const pos = Position[eid];
+  if (!pos) return null;
+    const entry: RenderEntry = {
+      x: pos.x,
+      y: pos.y,
     layer,
     alpha: 1,
     visible: true,
@@ -159,16 +166,20 @@ export interface RenderSystemOptions {
 // ============================================================
 
 function poolEnemyKind(eid: number): string {
-  return poolGet(StringPool.enemyKinds, Enemy.kind[eid]);
+  if (!Enemy[eid]) return '';
+  return poolGet(StringPool.enemyKinds, Enemy[eid].kind);
 }
 function poolDropKind(eid: number): string {
-  return poolGet(StringPool.dropKinds, Drop.kind[eid]);
+  if (!Drop[eid]) return '';
+  return poolGet(StringPool.dropKinds, Drop[eid].kind);
 }
 function poolProjectileKind(eid: number): string {
-  return poolGet(StringPool.projectileKinds, Projectile.kind[eid]);
+  if (!Projectile[eid]) return '';
+  return poolGet(StringPool.projectileKinds, Projectile[eid].kind);
 }
 function poolNpcId(eid: number): string {
-  return poolGet(StringPool.npcIds, NPC.id[eid]);
+  if (!NPC[eid]) return '';
+  return poolGet(StringPool.npcIds, NPC[eid].id);
 }
 
 // ============================================================
@@ -239,7 +250,9 @@ export class RenderSystem {
   ): void {
     for (const eid of query(world, [Sprite, NPC])) {
       ensureRenderEntry(eid, RENDER_LAYER.DYNAMIC);
-      const sprite = Sprite.ref[eid];
+      const spriteData = Sprite[eid];
+      if (!spriteData) continue;
+      const sprite = spriteData.ref;
       if (!sprite) continue;
 
       const npcId = poolNpcId(eid);
@@ -277,7 +290,9 @@ export class RenderSystem {
         // Viewport culling по записи очереди
         if (entry && !entry.visible) continue;
 
-        const sprite = Sprite.ref[eid];
+        const spriteData = Sprite[eid];
+        if (!spriteData) continue;
+        const sprite = spriteData.ref;
         if (!sprite) continue;
 
         const data = config.mapper(eid, world);
@@ -311,21 +326,34 @@ export class RenderSystem {
     // === Единый проход: обновить записи очереди (позиция + видимость + альфа) ===
     const q = getRenderQueue();
     if (q) {
-      for (const eid of query(world, [Position, Sprite])) {
+      const entities = [...query(world, [Position, Sprite])];
+      logger.debug('render', `query(Position, Sprite) found ${entities.length} entities: [${entities.join(',')}]`);
+      for (const eid of entities) {
         const entry = ensureRenderEntry(eid, RENDER_LAYER.DYNAMIC);
-        if (!entry) continue;
+        if (!entry) {
+          logger.debug('render', `ensureRenderEntry returned null for eid=${eid} (handle=${getSpriteHandle(eid)}, pos=${Position[eid] ? JSON.stringify(Position[eid]) : 'null'})`);
+          continue;
+        }
 
-        const px = Position.x[eid];
-        const py = Position.y[eid];
+        const pos = Position[eid];
+        if (!pos) continue;
+        const px = pos.x;
+        const py = pos.y;
 
         entry.x = px;
         entry.y = py;
 
         // Альфа: Dead/Hidden/hurt-мигание игрока
-        if (eid === playerEid && Dead[eid]) entry.alpha = 0;
-        else if (Hidden[eid]) entry.alpha = 0.25;
-        else if (eid === playerEid && Player.hurtT[eid] > 0 && Math.floor(time * 14) % 2 === 0) entry.alpha = 0.35;
-        else entry.alpha = 1;
+        if (eid === playerEid && !!Dead[eid]) {
+          entry.alpha = 0;
+          logger.debug('render', `playerEid=${playerEid} Dead=true, alpha=0`);
+        } else if (!!Hidden[eid]) {
+          entry.alpha = 0.25;
+        } else if (eid === playerEid && Player[eid] && Player[eid].hurtT > 0 && Math.floor(time * 14) % 2 === 0) {
+          entry.alpha = 0.35;
+        } else {
+          entry.alpha = 1;
+        }
 
         // Слой дропа ниже динамических сущностей
         if (hasComponent(world, eid, Drop)) entry.layer = ENTITY_LAYER.Drop;
@@ -334,6 +362,13 @@ export class RenderSystem {
 
     // === Диспетчеризация через реестры (перерисовка геометрии тел) ===
     const ctx: RenderContext = { time, renderer: r };
+
+    // Лог: состояние рендера (раз в 10 сек)
+    if (Math.floor(time) % 10 < dt) {
+      const allEntities = [...query(world, [])];
+      const withPosSprite = [...query(world, [Position, Sprite])];
+      logger.debug('render', `world: ${allEntities.length} total, ${withPosSprite.length} with Position+Sprite, playerEid=${playerEid}`);
+    }
 
     // Игрок
     this.renderPlayerEcs(world, playerEid, ctx);
@@ -389,17 +424,35 @@ export class RenderSystem {
     playerEid: number,
     ctx: RenderContext
   ): void {
-    if (playerEid < 0) return;
-    if (!!Dead[playerEid]) return;
-
-    const handle = getSpriteHandle(playerEid);
-    if (handle === undefined) {
-      logger.warn('render', `playerEid=${playerEid} handle is undefined`);
+    if (playerEid < 0) {
+      logger.debug('render', `renderPlayerEcs: playerEid=${playerEid} < 0, skipping`);
+      return;
+    }
+    // Проверяем компонент Dead — чтобы не рендерить мёртвого игрока
+    if (hasComponent(world, playerEid, Dead) && !!Dead[playerEid]) {
+      logger.debug('render', `renderPlayerEcs: playerEid=${playerEid} Dead=true, skipping`);
       return;
     }
 
-    const sprite = Sprite.ref[playerEid] as GraphicsHandle;
-    if (!sprite) return;
+    const handle = getSpriteHandle(playerEid);
+    if (handle === undefined) {
+      logger.warn('render', `renderPlayerEcs: playerEid=${playerEid} handle is undefined (Sprite[playerEid]=${JSON.stringify(Sprite[playerEid])})`);
+      return;
+    }
+
+    const spriteData = Sprite[playerEid];
+    if (!spriteData) {
+      logger.warn('render', `renderPlayerEcs: playerEid=${playerEid} spriteData is undefined, skipping`);
+      return;
+    }
+    const sprite = spriteData.ref as GraphicsHandle;
+    if (!sprite) {
+      logger.warn('render', `renderPlayerEcs: playerEid=${playerEid} sprite ref=${sprite}, skipping`);
+      return;
+    }
+
+    const pos = Position[playerEid];
+    logger.debug('render', `renderPlayerEcs: playerEid=${playerEid} handle=${handle} sprite=${sprite} pos=${pos ? JSON.stringify(pos) : 'null'}`);
 
     const { data, extra } = playerToRenderData(playerEid, ctx.time);
     try {
@@ -424,9 +477,9 @@ export class RenderSystem {
 
     for (const eid of query(world, mask)) {
       // Для врагов проверяем dead
-      if (isEnemy && Dead[eid]) continue;
+      if (isEnemy && !!Dead[eid]) continue;
       // Для дропов проверяем taken
-      if (isDrop && Taken[eid]) continue;
+      if (isDrop && !!Taken[eid]) continue;
 
       const entry = ensureRenderEntry(eid, isDrop ? ENTITY_LAYER.Drop : RENDER_LAYER.DYNAMIC);
       // Viewport culling по записи очереди
@@ -436,7 +489,9 @@ export class RenderSystem {
       const renderer = reg.get(key);
       if (!renderer) continue;
 
-      const sprite = Sprite.ref[eid];
+      const spriteData = Sprite[eid];
+      if (!spriteData) continue;
+      const sprite = spriteData.ref;
       if (!sprite) continue;
 
       const data = mapper(eid);

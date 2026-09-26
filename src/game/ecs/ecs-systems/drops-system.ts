@@ -69,49 +69,55 @@ export function dropsUpdateSystem(
   playerDomain: any,
   dropRegistry?: DropHandlerRegistry
 ): void {
-  const { x: px, y: py } = Position;
-
   for (const eid of query(world, [Position, Drop, Time])) {
+    const pos = Position[eid];
+    const drop = Drop[eid];
+    const tm = Time[eid];
+    if (!pos || !drop || !tm) continue; // AoS элемент может быть undefined
     if (Taken[eid]) continue;
 
-    Time.value[eid] += dt;
+    tm.value += dt;
 
     // Remove old drops with alpha blink
-    if (Drop.life[eid] !== 0) {
-      Drop.life[eid] -= dt;
-      if (Drop.life[eid] <= 0) {
+    if (drop.life !== 0) {
+      drop.life -= dt;
+      if (drop.life <= 0) {
         removeEntity(world, eid);
         onDropRemove(eid);
         continue;
       }
-      if (Drop.life[eid] < 5) {
+      if (drop.life < 5) {
         // Alpha blink handled in render system
       }
     }
 
     // Magnet pull to player
-    if (Drop.magnet[eid] && playerEid >= 0) {
-      const dx = px[playerEid] - px[eid];
-      const dy = py[playerEid] - py[eid];
+    if (drop.magnet && playerEid >= 0) {
+      const pPos = Position[playerEid];
+      if (!pPos) continue;
+      const dx = pPos.x - pos.x;
+      const dy = pPos.y - pos.y;
       const distSq = dx * dx + dy * dy;
-      
+
       if (distSq < 34 * 34 && distSq > 1) {
         const dd = Math.sqrt(distSq);
-        px[eid] += (dx / dd) * 120 * dt;
-        py[eid] += (dy / dd) * 120 * dt;
+        pos.x += (dx / dd) * 120 * dt;
+        pos.y += (dy / dd) * 120 * dt;
       }
     }
 
     // Check pickup by player
     if (playerEid >= 0) {
-      const dx = px[eid] - px[playerEid];
-      const dy = py[eid] - py[playerEid];
+      const pPos = Position[playerEid];
+      if (!pPos) continue;
+      const dx = pos.x - pPos.x;
+      const dy = pos.y - pPos.y;
       const distSq = dx * dx + dy * dy;
 
       if (distSq < 11 * 11) {
         Taken[eid] = 1;
         // Collect drop via drop-handlers
-        const dropKind = poolGet(StringPool.dropKinds, Drop.kind[eid]) as DropKind;
+        const dropKind = poolGet(StringPool.dropKinds, drop.kind) as DropKind;
         const handler = dropRegistry?.get(dropKind);
         if (handler) {
         handler.handle({

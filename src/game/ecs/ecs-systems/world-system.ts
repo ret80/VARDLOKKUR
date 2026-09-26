@@ -28,18 +28,18 @@ export function updateDoors(
 ): void {
   if (playerEid < 0) return;
 
-  const { x: px, y: py } = Position;
-
   for (const doorEid of query(world, [Position, Door])) {
-    if (Door.locked[doorEid] && flags.hasKey && dist2(px[doorEid], py[doorEid], px[playerEid], py[playerEid]) < 24 * 24) {
-      Door.locked[doorEid] = 0;
+    const doorPos = Position[doorEid];
+    const playerPos = Position[playerEid];
+    if (Door[doorEid].locked && flags.hasKey && dist2(doorPos.x, doorPos.y, playerPos.x, playerPos.y) < 24 * 24) {
+      Door[doorEid].locked = 0;
       flags.hasKey = false;
-      Door.open[doorEid] = 0.01;
+      Door[doorEid].open = 0.01;
       toast("Ключ повернут — путь к стражу открыт");
       pushHud(true);
     }
-    if (Door.open[doorEid] < 1 && Door.open[doorEid] > 0 && !Door.locked[doorEid]) {
-      Door.open[doorEid] = Math.min(1, Door.open[doorEid] + 0.032); // ~2 секунды при 60fps
+    if (Door[doorEid].open < 1 && Door[doorEid].open > 0 && !Door[doorEid].locked) {
+      Door[doorEid].open = Math.min(1, Door[doorEid].open + 0.032); // ~2 секунды при 60fps
     }
   }
 }
@@ -59,8 +59,8 @@ export function updateZone(
 ): void {
   if (playerEid < 0) return;
 
-  const { x: px, y: py } = Position;
-  const zn = zoneFor(map, Math.floor(px[playerEid] / T), Math.floor(py[playerEid] / T));
+  const playerPos = Position[playerEid];
+  const zn = zoneFor(map, Math.floor(playerPos.x / T), Math.floor(playerPos.y / T));
   if (zn !== store.zone) {
     if (store.zone !== "") toast(zn);
     store.setZone(zn);
@@ -82,12 +82,11 @@ export function checkDungeonBoss(
 ): void {
   if (playerEid < 0) return;
 
-  const { x: px, y: py } = Position;
-
   if (map.isDungeon && !dungeonBossDead(map.dungeonId)) {
+    const playerPos = Position[playerEid];
     const br = map.bossRoom;
-    if (px[playerEid] > br.x && px[playerEid] < br.x + br.w &&
-        py[playerEid] > br.y && py[playerEid] < br.y + br.h) {
+    if (playerPos.x > br.x && playerPos.x < br.x + br.w &&
+        playerPos.y > br.y && playerPos.y < br.y + br.h) {
       bus.emit("boss:start-dungeon", {});
     }
   }
@@ -105,6 +104,6 @@ export function updateBarriers(
   for (const barrierEid of query(world, [Position, Barrier])) {
     // Барьер активируется/деактивируется в зависимости от рун
     const active = flags.runes < 5 && !flags.snakeStarted;
-    Barrier.active[barrierEid] = active ? 1 : 0;
+    Barrier[barrierEid].active = active ? 1 : 0;
   }
 }

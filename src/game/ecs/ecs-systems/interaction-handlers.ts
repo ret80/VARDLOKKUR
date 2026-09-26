@@ -175,15 +175,15 @@ class ChestHandler implements InteractionHandler {
 
   handle(world: World, chestEid: number, _ref: any, ctx: InteractionContext): boolean {
     const { store, bus, chestItemRegistry } = ctx;
-    Chest.opened[chestEid] = 1;
+    Chest[chestEid].opened = 1;
     const m = store.map!;
-    const cx = Math.round((Position.x[chestEid] - 8) / 16);
-    const cy = Math.round((Position.y[chestEid] - 8) / 16);
+    const cx = Math.round((Position[chestEid].x - 8) / 16);
+    const cy = Math.round((Position[chestEid].y - 8) / 16);
     store.openedChests.add(`${cx}_${cy}`);
     audio.chest();
 
     // Выдать предмет из сундука через ChestItemHandlerRegistry
-    const itemKind = poolGet(StringPool.chestItems, Chest.item[chestEid]);
+    const itemKind = poolGet(StringPool.chestItems, Chest[chestEid].item);
     if (chestItemRegistry) {
       chestItemRegistry.collect(itemKind, chestEid, store, bus);
     } else {
@@ -207,14 +207,14 @@ class PedestalHandler implements InteractionHandler {
     const { store, bus, onGuardSpawn } = ctx;
     const m = store.map!;
 
-    if (Pedestal.guardsLeft[pedestalEid] > 0) {
+    if (Pedestal[pedestalEid].guardsLeft > 0) {
       audio.locked();
       bus.emit('toast', { msg: 'Печать крепка' });
-      if (!Pedestal.guardsSpawned[pedestalEid]) {
-        Pedestal.guardsSpawned[pedestalEid] = 1;
+        if (!Pedestal[pedestalEid].guardsSpawned) {
+          Pedestal[pedestalEid].guardsSpawned = 1;
         if (onGuardSpawn) {
-          const px = Position.x[pedestalEid];
-          const py = Position.y[pedestalEid];
+          const px = Position[pedestalEid].x;
+          const py = Position[pedestalEid].y;
           const pdDef = m.pedestals?.find(
             (p: { x: number; y: number }) => p.x * 16 + 8 === px && p.y * 16 + 8 === py
           );
@@ -233,10 +233,10 @@ class PedestalHandler implements InteractionHandler {
       return true;
     }
 
-    Pedestal.taken[pedestalEid] = 1;
-    store.takenPedestals.add(poolGet(StringPool.pedestalIds, Pedestal.id[pedestalEid]));
+    Pedestal[pedestalEid].taken = 1;
+    store.takenPedestals.add(poolGet(StringPool.pedestalIds, Pedestal[pedestalEid].id));
     audio.chime();
-    bus.emit('drop:spawn', { kind: 'rune' as any, x: Position.x[pedestalEid], y: Position.y[pedestalEid] - 6 });
+    bus.emit('drop:spawn', { kind: 'rune' as any, x: Position[pedestalEid].x, y: Position[pedestalEid].y - 6 });
 
     let idx = 0;
     for (const eid of query(world, [Position, Pedestal])) {
@@ -260,8 +260,8 @@ class ShrineHandler implements InteractionHandler {
 
     let shrineIdx = -1;
     if (m.shrines) {
-      const sx = Position.x[shrineEid];
-      const sy = Position.y[shrineEid];
+      const sx = Position[shrineEid].x;
+      const sy = Position[shrineEid].y;
       for (let j = 0; j < m.shrines.length; j++) {
         const s = m.shrines[j];
         if (s.x * 16 + 8 === sx && s.y * 16 + 8 === sy) {
@@ -281,7 +281,7 @@ class ShrineHandler implements InteractionHandler {
       bus.emit('quest:reveal', { id: 's_shrines' });
     }
 
-    Shrine.lit[shrineEid] = 1;
+    Shrine[shrineEid].lit = 1;
     store.playerDomain!.fullHeal();
     audio.chime();
     audio.heal();

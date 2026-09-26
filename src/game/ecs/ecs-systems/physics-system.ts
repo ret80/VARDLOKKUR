@@ -33,44 +33,46 @@ export interface PhysicsCallbacks {
 
 /** Получить Planck.js body из registry */
 function getBody(eid: number): any {
-  const idx = PhysicsBody.body[eid];
+  const pb = PhysicsBody[eid];
+  if (!pb) return undefined;
+  const idx = pb.body;
   return idx > 0 ? PhysicsBodyRegistry[idx - 1] : undefined;
 }
 
 /** Синхронизировать позицию из Position в Planck.js body */
 export function syncPositionToBody(world: World): void {
-  const { x: px, y: py } = Position;
-
   for (const eid of query(world, [Position, PhysicsBody])) {
+    const pos = Position[eid];
+    if (!pos) continue; // AoS элемент может быть undefined
     const body = getBody(eid);
     if (body) {
-      body.setPosition({ x: px[eid], y: py[eid] });
+      body.setPosition({ x: pos.x, y: pos.y });
     }
   }
 }
 
 /** Синхронизировать Velocity из ECS в Planck.js body */
 export function syncVelocityToBody(world: World, playerEid?: number): void {
-  const { x: vx, y: vy } = Velocity;
-
   for (const eid of query(world, [Velocity, PhysicsBody])) {
+    const vel = Velocity[eid];
+    if (!vel) continue; // AoS элемент может быть undefined
     const body = getBody(eid);
     if (body) {
-      body.setLinearVelocity(Vec2(vx[eid], vy[eid]));
+      body.setLinearVelocity(Vec2(vel.x, vel.y));
     }
   }
 }
 
 /** Синхронизировать позицию из Planck.js body в Position */
 export function syncBodyToPosition(world: World, playerEid?: number): void {
-  const { x: px, y: py } = Position;
-
   for (const eid of query(world, [Position, PhysicsBody])) {
+    const pos = Position[eid];
+    if (!pos) continue; // AoS элемент может быть undefined
     const body = getBody(eid);
     if (body) {
-      const pos = body.getPosition();
-      px[eid] = pos.x;
-      py[eid] = pos.y;
+      const pos2 = body.getPosition();
+      pos.x = pos2.x;
+      pos.y = pos2.y;
     }
   }
 }
@@ -84,14 +86,15 @@ export function createBodyForEntity(
   category: number,
   mask: number
 ): void {
-  const { x: px, y: py } = Position;
-
   // Добавляем компонент PhysicsBody (если ещё не добавлен)
   addComponent(world, eid, PhysicsBody);
+  PhysicsBody[eid] = { body: 0 }; // Инициализируем AoS-объект
 
   // Создаём физическое тело
-  const body = planckWorld.createEntityBody(px[eid], py[eid], radius, category, {});
-  PhysicsBody.body[eid] = PhysicsBodyRegistry.length + 1;
+  const pos = Position[eid];
+  if (!pos) return; // AoS элемент может быть undefined
+  const body = planckWorld.createEntityBody(pos.x, pos.y, radius, category, {});
+  PhysicsBody[eid].body = PhysicsBodyRegistry.length + 1;
   PhysicsBodyRegistry.push(body);
 }
 
@@ -100,13 +103,13 @@ export function destroyBodyForEntity(
   planckWorld: any,
   eid: number
 ): void {
-  const idx = PhysicsBody.body[eid];
+  const idx = PhysicsBody[eid].body;
   if (idx > 0) {
     const body = PhysicsBodyRegistry[idx - 1];
     if (body) {
       planckWorld.destroyBody(body);
     }
-    PhysicsBody.body[eid] = 0;
+    PhysicsBody[eid].body = 0;
   }
 }
 
@@ -131,17 +134,20 @@ export function checkEntityOverlap(
   eid: number,
   predicate: (otherEid: number) => boolean
 ): boolean {
-  const { x: px, y: py } = Position;
-  const { value: r } = Radius;
-
-  const ex = px[eid];
-  const ey = py[eid];
-  const er = r[eid];
+  const pos = Position[eid];
+  const rad = Radius[eid];
+  if (!pos || !rad) return false;
+  const ex = pos.x;
+  const ey = pos.y;
+  const er = rad.value;
 
   for (const otherEid of query(world, [Position, Radius])) {
     if (otherEid === eid) continue;
+    const oPos = Position[otherEid];
+    const oRad = Radius[otherEid];
+    if (!oPos || !oRad) continue;
 
-    if (circlesOverlap(ex, ey, er, px[otherEid], py[otherEid], r[otherEid])) {
+    if (circlesOverlap(ex, ey, er, oPos.x, oPos.y, oRad.value)) {
       if (predicate(otherEid)) {
         return true;
       }
@@ -156,18 +162,21 @@ export function findOverlappingEntities(
   eid: number,
   predicate: (otherEid: number) => boolean
 ): number[] {
-  const { x: px, y: py } = Position;
-  const { value: r } = Radius;
-
-  const ex = px[eid];
-  const ey = py[eid];
-  const er = r[eid];
+  const pos = Position[eid];
+  const rad = Radius[eid];
+  if (!pos || !rad) return [];
+  const ex = pos.x;
+  const ey = pos.y;
+  const er = rad.value;
   const results: number[] = [];
 
   for (const otherEid of query(world, [Position, Radius])) {
     if (otherEid === eid) continue;
+    const oPos = Position[otherEid];
+    const oRad = Radius[otherEid];
+    if (!oPos || !oRad) continue;
 
-    if (circlesOverlap(ex, ey, er, px[otherEid], py[otherEid], r[otherEid])) {
+    if (circlesOverlap(ex, ey, er, oPos.x, oPos.y, oRad.value)) {
       if (predicate(otherEid)) {
         results.push(otherEid);
       }

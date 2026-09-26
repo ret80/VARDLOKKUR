@@ -72,8 +72,9 @@ export class FogLayer implements IRenderLayer {
     // Запросить освещённые святилища
     const shrineSpots: Array<{ x: number; y: number }> = [];
     for (const eid of query(ctx.world, [Shrine])) {
-      if (hasComponent(ctx.world, eid, Shrine) && Shrine.lit[eid]) {
-        shrineSpots.push({ x: Position.x[eid], y: Position.y[eid] });
+      const shrineData = Shrine[eid];
+      if (shrineData && shrineData.lit) {
+        shrineSpots.push({ x: Position[eid].x, y: Position[eid].y });
       }
     }
 
@@ -81,8 +82,8 @@ export class FogLayer implements IRenderLayer {
     this.fx.redrawFog(
       ctx.dt,
       this.fogState.fogRadius,
-      Position.x[this.playerEid],
-      Position.y[this.playerEid],
+      Position[this.playerEid].x,
+      Position[this.playerEid].y,
       this.cam.x,
       this.cam.y,
       this.viewW,

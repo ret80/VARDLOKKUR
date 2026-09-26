@@ -42,7 +42,7 @@ import { HudSystem } from "./hud/hud-system";
 
 import type { World } from 'bitecs';
 // ECS интеграция
-import { createEcsWorld, createPrefabWorld } from './ecs/ecs-world';
+import { createEcsWorld } from './ecs/ecs-world';
 import { createEcsGameLoop, type EcsGameLoop } from './ecs/ecs-game-loop';
 import { EcsMapLoader } from './ecs/ecs-map-loader';
 import { PlanckWorld, Cat, type PhysicsCallbacks, getEnemyCategory, getEnemyMask } from './physics/planck-world';
@@ -133,7 +133,6 @@ export class Engine {
 
   // ECS интеграция
   private ecsWorld: World | null = null;
-  private prefabWorld: World | null = null;
   private ecsGameLoop: EcsGameLoop | null = null;
   private ecsMapLoader: EcsMapLoader | null = null;
   private ecsPlayerBody: any = null;
@@ -200,9 +199,9 @@ export class Engine {
     );
     // g уже в IRenderer layer
     // Set aggro и прямую ссылку на пьедестал (не индекс!)
-    EcsEnemy.aggro[eid] = 1;
-    EcsEnemy.guardOf[eid] = 1; // 1 = guard spawned
-    EcsEnemy.guardPedestalEid[eid] = pedestalEid;
+    EcsEnemy[eid].aggro = 1;
+    EcsEnemy[eid].guardOf = 1; // 1 = guard spawned
+    EcsEnemy[eid].guardPedestalEid = pedestalEid;
   }
 
   private _debugMode: boolean;
@@ -279,9 +278,7 @@ export class Engine {
     // Регистрируем ввод
     this.input.register();
 
-    // Инициализация ECS мира (только мир и префабы)
-    // prefabWorld — отдельный мир для шаблонов, живёт на протяжении всей жизни приложения
-    this.prefabWorld = createPrefabWorld();
+    // Инициализация ECS мира
     this.ecsWorld = createEcsWorld();
 
     // Подписки на абстрактные действия ввода
@@ -375,7 +372,7 @@ export class Engine {
     this.renderQueue = new RenderQueue();
     setGlobalRenderQueue(this.renderQueue);
 
-    this.mapLoader = new MapLoaderService(store, this.viewport, this.scene, this.ecsWorld!, this.prefabWorld!);
+    this.mapLoader = new MapLoaderService(store, this.viewport, this.scene, this.ecsWorld!);
     // Фаза 3: инициализируем MapLoaderService с IRenderer и RenderQueue
     this.mapLoader.init(getRenderer(), this.renderQueue);
     this.playerLifecycle = new PlayerLifecycle(
@@ -574,12 +571,12 @@ export class Engine {
           logger.warn('engine', `teleportPlayer: invalid coords x=${x} y=${y}`);
           return false;
         }
-        Position.x[eid] = x;
-        Position.y[eid] = y;
-        Velocity.x[eid] = 0;
-        Velocity.y[eid] = 0;
+        Position[eid].x = x;
+        Position[eid].y = y;
+        Velocity[eid].x = 0;
+        Velocity[eid].y = 0;
         // Move physics body to match — otherwise syncBodyToPosition overwrites Position back
-        const pbIdx = PhysicsBody.body[eid];
+        const pbIdx = PhysicsBody[eid].body;
         if (pbIdx > 0) {
           const body = PhysicsBodyRegistry[pbIdx - 1];
           if (body) {
@@ -603,13 +600,13 @@ export class Engine {
         const eid = this.ecsGameLoop?.getPlayerEid() ?? -1;
         if (!this.ecsWorld || eid < 0) return false;
         if (typeof hp !== 'number' || isNaN(hp)) return false;
-        Health.current[eid] = Math.max(0, hp);
+        Health[eid].current = Math.max(0, hp);
         return true;
       },
       killPlayer: () => {
         const eid = this.ecsGameLoop?.getPlayerEid() ?? -1;
         if (!this.ecsWorld || eid < 0) return false;
-        Health.current[eid] = 0;
+        Health[eid].current = 0;
         return true;
       },
       respawnPlayer: () => {
@@ -628,7 +625,7 @@ export class Engine {
           category, mask
         );
         // g уже в IRenderer layer
-        EcsEnemy.aggro[eid] = 1;
+        EcsEnemy[eid].aggro = 1;
         return eid;
       },
       removeEnemy: (eid: number) => {
@@ -675,20 +672,20 @@ export class Engine {
       freePlayer: () => {
         const eid = this.ecsGameLoop?.getPlayerEid() ?? -1;
         if (this.ecsWorld && eid >= 0) {
-          EcsPlayer.slowT[eid] = 0;
+          EcsPlayer[eid].slowT = 0;
         }
       },
       fullHealPlayer: () => {
         const eid = this.ecsGameLoop?.getPlayerEid() ?? -1;
         if (!this.ecsWorld || eid < 0) return;
-        Health.current[eid] = Health.max[eid];
+        Health[eid].current = Health[eid].max;
       },
       clearDrops: () => {
         if (!this.ecsWorld) return 0;
         let count = 0;
         for (const eid of query(this.ecsWorld, [Drop])) {
           // sprite — это GraphicsHandle (number), не PixiJS объект
-          EcsSprite.ref[eid] = 0;
+          EcsSprite[eid].ref = 0;
           removeEntity(this.ecsWorld!, eid);
           count++;
         }
@@ -698,7 +695,7 @@ export class Engine {
         if (!this.ecsWorld) return 0;
         let count = 0;
         for (const eid of query(this.ecsWorld, [EcsProjectile])) {
-          EcsSprite.ref[eid] = 0;
+          EcsSprite[eid].ref = 0;
           removeEntity(this.ecsWorld!, eid);
           count++;
         }
@@ -938,14 +935,22 @@ export class Engine {
         const shrines: Array<{ x: number; y: number; lit: number }> = [];
         if (this.ecsWorld) {
           for (const eid of query(this.ecsWorld, [Shrine, Position])) {
-            shrines.push({ x: Position.x[eid], y: Position.y[eid], lit: Shrine.lit[eid] });
+            const pos = Position[eid];
+            const shrine = Shrine[eid];
+            if (pos && shrine) {
+              shrines.push({ x: pos.x, y: pos.y, lit: shrine.lit });
+            }
           }
         }
         // ECS pedestals
         const pedestals: Array<{ x: number; y: number; taken: boolean }> = [];
         if (this.ecsWorld) {
           for (const eid of query(this.ecsWorld, [Pedestal, Position])) {
-            pedestals.push({ x: Position.x[eid], y: Position.y[eid], taken: !!Pedestal.taken[eid] });
+            const pos = Position[eid];
+            const pedestal = Pedestal[eid];
+            if (pos && pedestal) {
+              pedestals.push({ x: pos.x, y: pos.y, taken: !!pedestal.taken });
+            }
           }
         }
         drawMinimap(ctx, this.mmBase, {
