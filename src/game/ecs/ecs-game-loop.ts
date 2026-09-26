@@ -635,9 +635,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // Проверить смерть игрока (lifeCheckSystem помечает Dead, но не эмитит player:died)
     if (peid >= 0 && !!Dead[peid] && !playerDomain?.isAlive()) {
       bus.emit("player:died", {});
-      // Удалить спрайт из display list (не destroy — render system всё ещё может обращаться)
-      // Sprite.ref[eid] теперь хранит GraphicsHandle (number), а не PixiJS объект
-      Sprite[peid] = { ref: 0 };
+      // НЕ уничтожать Sprite.ref — render system обновляет позицию и ставит alpha=0
       // Уничтожить физ. тело
       const pb = PhysicsBody[peid];
       if (pb && pb.body > 0) {

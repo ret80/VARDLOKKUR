@@ -72,7 +72,8 @@ function getSpriteHandle(eid: number): number | undefined {
     return undefined;
   }
   const handle = sprite.ref;
-  if (!handle) {
+  // Проверяем undefined, а не falsy — handle=0 может быть валидным значением
+  if (handle === undefined) {
     return undefined;
   }
   return handle;
