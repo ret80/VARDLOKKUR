@@ -42,12 +42,14 @@ export class OverlayLayer implements IRenderLayer {
     if (!this.hintG) return;
     const r = this.renderer;
 
+    const queue = getRenderQueue();
+
     if (!this.nearestInteractable) {
+      // Удалить запись из RenderQueue — flush() не будет трогать Graphics
+      if (queue) queue.takeByKey('hint');
       r.setGraphicsVisible(this.hintG, false);
       return;
     }
-
-    r.setGraphicsVisible(this.hintG, true);
 
     // Мировые координаты интерактивного объекта
     const hx = this.nearestInteractable.x;
@@ -77,7 +79,6 @@ export class OverlayLayer implements IRenderLayer {
     // Добавить в RenderQueue с максимальным слоем и пропуском culling.
     // upsert вызывает make() только при первом создании — на последующих кадрах
     // запись уже есть, поэтому x/y нужно обновлять явно (анимация зависит от time).
-    const queue = getRenderQueue();
     const hintG = this.hintG;
     if (queue && hintG) {
       const entry = queue.upsert('hint', () => ({
