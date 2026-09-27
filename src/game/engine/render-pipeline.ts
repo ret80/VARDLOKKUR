@@ -11,8 +11,9 @@ import type { RenderQueue, Viewport } from '../render/RenderQueue';
  * Управляет порядком отрисовки слоёв:
  * 1. EntityLayer — ECS-сущности (игрок, враги, дропы, NPC, объекты)
  * 2. ParticleLayer — частицы, снег, FX-графика
- * 3. FogLayer — туман, руны, глаза в тумане
- * 4. OverlayLayer — UI, подсказки, плавающий текст
+ * 3. OverlayLayer — UI, подсказки, плавающий текст
+ *
+ * Туман рендерится через FogRenderer (шейдерный слой) — не в пайплайне.
  *
  * После render() всех слоёв вызывается renderer.render() для финального вывода.
  *
@@ -20,7 +21,6 @@ import type { RenderQueue, Viewport } from '../render/RenderQueue';
  *   const pipeline = new RenderPipeline();
  *   pipeline.addLayer(entityLayer);
  *   pipeline.addLayer(particleLayer);
- *   pipeline.addLayer(fogLayer);
  *   pipeline.addLayer(overlayLayer);
  *   pipeline.init(renderer, context);
  *

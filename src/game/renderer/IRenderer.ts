@@ -78,6 +78,16 @@ export interface IRenderer {
   getLayerContainer(layer: LayerHandle): any;
   /** Получить корневой Container мира (сдвигается камерой) */
   getWorldContainer(): any;
+  /** Применить фильтр к произвольному контейнеру */
+  applyFilterToContainer(container: any, shader: ShaderHandle): void;
+  /** Создать fullscreen quad для screen-space эффектов */
+  createFullscreenQuad(): GraphicsHandle;
+  /** Применить filter к fullscreen quad */
+  applyFilterToQuad(handle: GraphicsHandle, shader: ShaderHandle): void;
+  /** Включить/выключить Graphics */
+  setGraphicsVisible(handle: GraphicsHandle, visible: boolean): void;
+  /** Получить физические размеры экрана */
+  getScreenSize(): { w: number; h: number };
   /** Получить PixiJS Graphics по handle */
   getGraphicsPixi(handle: GraphicsHandle): any;
   /** Сбросить счётчик ID (вызывать при очистке карты) */

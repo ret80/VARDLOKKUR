@@ -56,7 +56,7 @@ import { SceneLayers } from '../engine/scene-layers';
 import { RenderPipeline } from '../engine/render-pipeline';
 import { TextureCacheManager } from '../renderers/core/TextureCacheManager';
 import { EntityLayer } from '../engine/entity-layer';
-import { FogLayer } from '../engine/fog-layer';
+import { FogRenderer } from '../renderers/fog/FogRenderer';
 import { OverlayLayer } from '../engine/overlay-layer';
 import { ParticleLayer } from '../engine/particle-layer';
 import {
@@ -273,7 +273,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   // Создаём слои пайплайна
   const entityLayer = new EntityLayer(renderQueue);
   const particleLayer = new ParticleLayer(particleSys); // Этап 6: извлечение из FxManager
-  const fogLayer = new FogLayer(fx);
   const overlayLayer = new OverlayLayer();
 
   // Создаём пайплайн и добавляем слои
@@ -284,7 +283,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   pipeline.viewportProvider = () => ({ camX: cam.x, camY: cam.y, viewW, viewH });
   pipeline.addLayer(entityLayer);
   pipeline.addLayer(particleLayer);
-  pipeline.addLayer(fogLayer);
   pipeline.addLayer(overlayLayer);
 
   // Инициализируем пайплайн (Этап 8: IRenderer)
@@ -293,6 +291,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   // Инициализируем RenderSystem — нужен для overlay-слоя и _hintG
   _renderSystemInstance.init(renderer);
+
+  // Инициализируем FogRenderer (шейдерный туман)
+  let fogRenderer: FogRenderer | null = null;
+  fogRenderer = new FogRenderer();
+  fogRenderer.init(renderer);
 
   // Локальные копии для updateConfig
   let config_map = map;
@@ -713,13 +716,22 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
     entityLayer.setOptions(entityLayerOpts);
 
-    // Обновляем состояние FogLayer
-    if (_fogState) {
-      fogLayer.setFogState(_fogState);
+    // Обновляем FogRenderer (шейдерный туман)
+    if (_fogState && renderer && fogRenderer) {
+      fogRenderer.setAlpha(_fogState.fogAlpha);
+      fogRenderer.setRadius(_fogState.fogRadius);
+      
+      // Получаем зажжённые святилища
+      const shrineSpots: Array<{ x: number; y: number }> = [];
+      for (const eid of query(world, [Shrine])) {
+        const shrineData = Shrine[eid];
+        if (shrineData && shrineData.lit) {
+          shrineSpots.push({ x: Position[eid].x, y: Position[eid].y });
+        }
+      }
+      fogRenderer.setShrines(shrineSpots);
+      fogRenderer.update(_realT, Position[_playerEid], cam, viewW, viewH);
     }
-    fogLayer.setPlayerEid(_playerEid);
-    fogLayer.setRunesEnabled(config_flags.runes > 0);
-    fogLayer.setCamera(cam);
 
     // Обновляем OverlayLayer
     overlayLayer.setNearestInteractable(nearestInteractable);
@@ -741,7 +753,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
     // Вызываем update() и render() пайплайна
     // app.render() вызывается внутри RenderPipeline.render() после всех слоёв
-    // (включая FogLayer — это устраняет 1-кадровый лаг тумана)
     pipeline.update({ dt: rdt, time: _realT, world });
     pipeline.render({ dt: rdt, time: _realT, world });
   }

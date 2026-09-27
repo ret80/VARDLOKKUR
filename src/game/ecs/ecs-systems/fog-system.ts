@@ -56,6 +56,9 @@ export interface FogState {
   fogWarned: boolean;
   fogAmbient: boolean;
   ghostClangT: number;
+  // Плавная альфа тумана (0..1) — интерполируется за 2 секунды
+  fogAlpha: number;
+  fogAlphaTarget: number;
 }
 
 export function createFogState(): FogState {
@@ -68,6 +71,8 @@ export function createFogState(): FogState {
     fogWarned: false,
     fogAmbient: false,
     ghostClangT: 0,
+    fogAlpha: 0,
+    fogAlphaTarget: 0,
   };
 }
 
@@ -96,10 +101,18 @@ export function fogUpdateSystem(
   
   fogState.ghostClangT = Math.max(0, fogState.ghostClangT - dt);
   
+  // Плавная интерполяция альфы тумана за 2 секунды
+  const alphaSpeed = 0.5; // 1 / 2.0s
+  fogState.fogAlpha += (fogState.fogAlphaTarget - fogState.fogAlpha) * Math.min(1, rdt * alphaSpeed);
+  
   // Disable fog in dungeon or after snake death
   if (map.isDungeon || f.snakeDead) {
+    logger.debug('fog', `SNAKE_DEAD/DUNGEON: isDungeon=${map.isDungeon} snakeDead=${f.snakeDead} fogActive=${fogState.fogActive}`);
     fogState.fogRadius += (2600 - fogState.fogRadius) * Math.min(1, rdt * 0.8);
-    if (fogState.fogActive) endWave(fogState, false, bus, getRunes, f);
+    if (fogState.fogActive) {
+      fogState.fogAlphaTarget = 0;
+      endWave(fogState, false, bus, getRunes, f);
+    }
     return;
   }
   
@@ -112,81 +125,27 @@ export function fogUpdateSystem(
   const ay = map.treeAltar.y * T + 8;
   const nearAltar = !f.snakeStarted && dist2(px, py, ax, ay) < 240 * 240;
   
-  // Проверка зажжённых святилищ — безопасная зона
-  const shrines = map.shrines || [];
-  let nearShrine = false;
-  for (let j = 0; j < shrines.length; j++) {
-    const s = shrines[j];
-    if (s.lit && dist2(px, py, s.x * T + 8, s.y * T + 8) < 240 * 240) {
-      nearShrine = true;
-      break;
-    }
-  }
+  logger.debug('fog', `STATE: px=${px.toFixed(0)} py=${py.toFixed(0)} ax=${ax.toFixed(0)} ay=${ay.toFixed(0)} dist2=${dist2(px, py, ax, ay).toFixed(0)} inVillage=${inVillage} zn="${zn}" snakeStarted=${f.snakeStarted} nearAltar=${nearAltar}`);
   
   if (inVillage) {
-    if (fogState.fogActive) endWave(fogState, true, bus, getRunes, f);
+    logger.debug('fog', `IN_VILLAGE: zone="${zn}" → fog OFF`);
+    // Не отключаем туман — просто не включаем ambient
     fogState.fogRadius += (2600 - fogState.fogRadius) * Math.min(1, rdt * 0.8);
     return;
   }
   
-  if (nearAltar && !nearShrine) {
-    if (!fogState.fogActive) {
-      fogState.fogActive = true;
-      fogState.fogAmbient = true;
-      audio.setFog(true);
-      bus.emit('toast', { msg: 'Саван Древа... оно не отпустит просто так' });
-    }
-    fogState.fogAmbient = true;
-    fogState.fogRadius += (350 - fogState.fogRadius) * Math.min(1, rdt * 0.6);
-    ensureGhosts(world, 2, true, map, px, py, spawnEnemyInEcs);
-    return;
-  }
-  
-  // Игрок рядом с зажжённым святилищем — безопасная зона, туман отключён
-  if (nearShrine) {
-    if (fogState.fogActive) {
-      endWave(fogState, true, bus, getRunes, f);
-    }
-    fogState.fogRadius += (600 - fogState.fogRadius) * Math.min(1, rdt * 0.6);
-    return;
-  }
-  
-  // Игрок ушёл от алтаря и святилищ — призраки исчезают
-  if (fogState.fogAmbient) {
-    bus.emit('fog:altarLeave', {});
-    endWave(fogState, true, bus, getRunes, f);
-  }
-  
+  // Туман включён везде, кроме деревень. Святилища делают "дыры" через шейдер.
   if (!fogState.fogActive) {
-    fogState.fogTimer -= dt;
-    fogState.fogRadius += (2600 - fogState.fogRadius) * Math.min(1, rdt * 0.8);
-    
-    if (!fogState.fogWarned && fogState.fogTimer < 4 && fogState.fogTimer > 0 && f.hasItem('sword')) {
-      fogState.fogWarned = true;
-      audio.setFog(true);
-      audio.horn();
-      bus.emit('toast', { msg: 'Ветер стихает... Туман близко' });
-    }
-    
-    if (fogState.fogTimer <= 0 && f.hasItem('sword')) {
-      fogState.fogActive = true;
-      fogState.fogLeft = 40;
-      fogState.fogSpawned = false;
-      fogState.fogRadius = 900;
-      audio.setFog(true);
-      bus.emit('toast', { msg: 'ВОЛНА ТУМАНА. Ниды шепчут...' });
-    }
-  } else {
-    fogState.fogLeft -= dt;
-    fogState.fogRadius += (140 - fogState.fogRadius) * Math.min(1, rdt * 0.35);
-    
-    if (!fogState.fogSpawned && fogState.fogLeft < 38) {
-      fogState.fogSpawned = true;
-      ensureGhosts(world, 2 + Math.floor(getRunes() / 2), false, map, px, py, spawnEnemyInEcs);
-    }
-    
-    if (fogState.fogLeft <= 0) endWave(fogState, true, bus, getRunes, f);
+    fogState.fogActive = true;
+    fogState.fogAlphaTarget = 1;
+    fogState.fogAmbient = true;
+    audio.setFog(true);
+    bus.emit('toast', { msg: 'Саван Древа... оно не отпустит просто так' });
   }
+  fogState.fogAmbient = true;
+  fogState.fogRadius += (350 - fogState.fogRadius) * Math.min(1, rdt * 0.6);
+  ensureGhosts(world, 2, true, map, px, py, spawnEnemyInEcs);
+  return;
 }
 
 function zoneFor(map: any, tx: number, ty: number): string {

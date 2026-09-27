@@ -86,7 +86,7 @@ export function swordAttackSystem(
         const ex = Position[enemyEid].x + Math.sin(timeVal * 1.6) * 4;
         const ey = Position[enemyEid].y - 8;
         if (dist2(playerX + Direction[playerEid].x * 14, playerY + Direction[playerEid].y * 14, ex, ey) < 20 * 20) {
-          damageSnake(enemyEid, onFloatText, onAudioHit, () => {});
+          damageSnake(world, enemyEid, onFloatText, onAudioHit, () => {});
         }
       } else {
         const dist = Math.sqrt(dist2(playerX, playerY, Position[enemyEid].x, Position[enemyEid].y));
@@ -339,6 +339,7 @@ export function applyKnockback(
 
 /** Check if projectile should hit enemy (ghost immunity, draugr shield, snake phases) */
 export function canProjectileHitEnemy(
+  world: World,
   projKind: ProjectileKind,
   enemyEid: number,
   hasGhostBane: boolean,
@@ -546,6 +547,7 @@ export function hitEnemy(
 
 /** Damage snake (special case) */
 export function damageSnake(
+  world: World,
   enemyEid: number,
   onFloat: (x: number, y: number, text: string, color: number) => void,
   onAudioHit: () => void,
@@ -746,7 +748,7 @@ export function updateProjectilesEcs(
             const ex = ePos.x + Math.sin(tm.value * 1.6) * 4;
             const ey = ePos.y - 8;
             if ((pos.x - ex) ** 2 + (pos.y - ey) ** 2 < 11 * 11) {
-              damageSnake(enemyEid, onFloat, onAudioHit, onSnakeDeath);
+              damageSnake(world, enemyEid, onFloat, onAudioHit, onSnakeDeath);
               consumed = true;
               if (pKind !== 'axe') {
                 onProjectileRemove(eid);

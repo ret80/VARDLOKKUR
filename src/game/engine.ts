@@ -269,9 +269,6 @@ export class Engine {
     this.fx.buildVignette();
     // vignette теперь создаётся через IRenderer.createScreenSprite() — автоматически добавляется в stage
 
-    this.fx.buildFogVignette();
-    this.fx.buildNoiseTexture();
-    // fogVignette теперь создаётся через IRenderer.createScreenSprite() — автоматически добавляется в stage
     app.stage.addChild(this.scene.fadeG as any);
     this.fx.initSnow();
 

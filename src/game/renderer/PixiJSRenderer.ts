@@ -1,6 +1,7 @@
 /* PixiJSRenderer.ts — адаптер IRenderer для PixiJS v8 */
 
-import { Application, Container, Sprite, Graphics, RenderTexture, Texture, Text, Filter } from 'pixi.js';
+import { Application, Container, Sprite, Graphics, RenderTexture, Texture, Text, Filter, UniformGroup, GlProgram } from 'pixi.js';
+import type { UNIFORM_TYPES } from 'pixi.js';
 import type {
   IRenderer,
   SpriteHandle,
@@ -16,6 +17,22 @@ import type {
 } from './IRenderer';
 import { logger } from '../debug/logger';
 
+/**
+ * PixiJS v8 требует, чтобы каждая униформа была описана структурой
+ * {value, type} с WGSL-именем типа ('f32', 'vec2<f32>', ...).
+ * Определяем тип по сырому значению.
+ */
+function inferUniformType(value: unknown): string {
+  if (Array.isArray(value)) {
+    switch (value.length) {
+      case 2: return 'vec2<f32>';
+      case 3: return 'vec3<f32>';
+      case 4: return 'vec4<f32>';
+    }
+  }
+  return 'f32';
+}
+
 // ============================================================
 // Внутренние данные — НЕ экспортируются наружу
 // ============================================================
@@ -30,6 +47,10 @@ interface InternalGraphics {
   layer: LayerHandle | undefined;
 }
 
+interface InternalFullscreenQuad {
+  pixiSprite: Sprite;
+}
+
 interface InternalLayer {
   container: Container;
   zIndex: number;
@@ -38,7 +59,8 @@ interface InternalLayer {
 
 interface InternalShader {
   filter: Filter;
-  uniforms: Record<string, unknown>;
+  /** Единая группа униформ шейдера (Pixi v8 требует {value, type} структуры) */
+  group: UniformGroup;
 }
 
 // ============================================================
@@ -51,6 +73,7 @@ export class PixiJSRenderer implements IRenderer {
 
   private sprites = new Map<number, InternalSprite>();
   private graphics = new Map<number, InternalGraphics>();
+  private fullscreenQuads = new Map<number, InternalFullscreenQuad>();
   private layers = new Map<number, InternalLayer>();
   private textures = new Map<number, Texture>();
   private shaders = new Map<number, InternalShader>();
@@ -160,6 +183,54 @@ export class PixiJSRenderer implements IRenderer {
 
   getWorldContainer(): any {
     return this.worldContainer;
+  }
+
+  applyFilterToContainer(container: any, shader: ShaderHandle): void {
+    const s = this.shaders.get(shader as number);
+    if (!s) return;
+    container.filters = [s.filter];
+    console.log('[fog:filter] applied to container:', container.constructor.name, 'filters:', container.filters?.length ?? 0);
+  }
+
+  /** Создать fullscreen quad для screen-space эффектов (filter) */
+  createFullscreenQuad(): GraphicsHandle {
+    const id = this._nextId++;
+    // Используем Sprite с 1x1 текстурой — UV всегда 0..1, что ожидает фильтр
+    const sprite = new Sprite(Texture.WHITE);
+    sprite.x = 0;
+    sprite.y = 0;
+    sprite.width = this.app.screen.width;
+    sprite.height = this.app.screen.height;
+    sprite.anchor.set(0, 0);
+    this.app.stage.addChild(sprite);
+    this.fullscreenQuads.set(id, { pixiSprite: sprite });
+    return id as GraphicsHandle;
+  }
+
+  /** Применить filter к fullscreen quad */
+  applyFilterToQuad(handle: GraphicsHandle, shader: ShaderHandle): void {
+    const q = this.fullscreenQuads.get(handle as number);
+    const s = this.shaders.get(shader as number);
+    if (!q || !s) return;
+    q.pixiSprite.filters = [s.filter];
+    console.log('[fog:filter] applied to quad, filters:', q.pixiSprite.filters?.length ?? 0);
+  }
+
+  setGraphicsVisible(handle: GraphicsHandle, visible: boolean): void {
+    // Сначала проверяем fullscreen quads
+    const q = this.fullscreenQuads.get(handle as number);
+    if (q) { q.pixiSprite.visible = visible; return; }
+    const g = this.graphics.get(handle as number);
+    if (g) g.pixiGraphics.visible = visible;
+  }
+
+  getScreenSize(): { w: number; h: number } {
+    return { w: this.app.screen.width, h: this.app.screen.height };
+  }
+
+  setScreenSize(w: number, h: number): void {
+    // Физические размеры экрана уже установлены через app.screen
+    // Этот метод нужен только для совместимости с IRenderer
   }
 
   getGraphicsPixi(handle: GraphicsHandle): any {
@@ -315,6 +386,13 @@ export class PixiJSRenderer implements IRenderer {
   }
 
   destroyGraphics(handle: GraphicsHandle): void {
+    // Сначала проверяем fullscreen quads
+    const q = this.fullscreenQuads.get(handle as number);
+    if (q) {
+      q.pixiSprite.destroy();
+      this.fullscreenQuads.delete(handle as number);
+      return;
+    }
     const g = this.graphics.get(handle as number);
     if (g) {
       g.pixiGraphics.destroy();
@@ -393,11 +471,6 @@ export class PixiJSRenderer implements IRenderer {
       g.pixiGraphics.x = pos.x;
       g.pixiGraphics.y = pos.y;
     }
-  }
-
-  setGraphicsVisible(handle: GraphicsHandle, visible: boolean): void {
-    const g = this.graphics.get(handle as number);
-    if (g) g.pixiGraphics.visible = visible;
   }
 
   setGraphicsAlpha(handle: GraphicsHandle, alpha: number): void {
@@ -546,13 +619,24 @@ export class PixiJSRenderer implements IRenderer {
     uniforms?: Record<string, unknown>
   ): ShaderHandle {
     const id = this._nextId++;
-    // PixiJS v8: Filter.from() принимает { gl: { vertex, fragment }, resources }
-    const resources = uniforms ?? {};
-    const filter = Filter.from({
-      gl: { vertex, fragment },
-      resources,
+    // PixiJS v8: resources — это { имяГруппы: UniformGroup }, а униформа внутри
+    // группы описывается структурой {value, type}. Сырые числа/массивы приводят
+    // к краху ("Cannot create property 'name' on number"), поэтому оборачиваем.
+    const structures: Record<string, { value: unknown; type: UNIFORM_TYPES }> = {};
+    for (const [k, v] of Object.entries(uniforms ?? {})) {
+      if (typeof v === 'object' && v !== null && !Array.isArray(v) && 'value' in (v as object)) {
+        structures[k] = v as { value: unknown; type: UNIFORM_TYPES };
+      } else {
+        structures[k] = { value: v, type: inferUniformType(v) as UNIFORM_TYPES };
+      }
+    }
+    const group = new UniformGroup(structures);
+    // PixiJS v8: Filter создаётся через GlProgram, НЕ через vertexShader/fragmentShader
+    const filter = new Filter({
+      glProgram: new GlProgram({ fragment, vertex }),
+      resources: { shaderUniforms: group },
     });
-    this.shaders.set(id, { filter, uniforms: resources });
+    this.shaders.set(id, { filter, group });
     return id as ShaderHandle;
   }
 
@@ -567,7 +651,7 @@ export class PixiJSRenderer implements IRenderer {
 
     if (uniforms) {
       for (const [k, v] of Object.entries(uniforms)) {
-        (s.filter.resources as Record<string, unknown>)[k] = v;
+        (s.group.uniforms as Record<string, unknown>)[k] = v;
       }
     }
     l.container.filters = [s.filter];
@@ -575,7 +659,7 @@ export class PixiJSRenderer implements IRenderer {
 
   setShaderUniform(shader: ShaderHandle, name: string, value: unknown): void {
     const s = this.shaders.get(shader as number);
-    if (s) (s.filter.resources as Record<string, unknown>)[name] = value;
+    if (s) (s.group.uniforms as Record<string, unknown>)[name] = value;
   }
 
   destroyShader(handle: ShaderHandle): void {
