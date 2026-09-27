@@ -32,7 +32,7 @@ export function lifeCheckSystem(world: World): void {
   for (const eid of query(world, [Health])) {
     const hp = Health[eid];
     if (!hp) continue; // AoS элемент может быть undefined
-    if (hp.current <= 0 && !Dead[eid]) {
+    if (hp.current <= 0 && !hasComponent(world, eid, Dead)) {
       addComponent(world, eid, Dead);
       Dead[eid] = {};
       // Лог: игрок умер
