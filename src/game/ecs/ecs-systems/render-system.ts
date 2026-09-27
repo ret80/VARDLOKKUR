@@ -343,9 +343,9 @@ export class RenderSystem {
         entry.y = py;
 
         // Альфа: Dead/Hidden/hurt-мигание игрока
-        if (eid === playerEid && !!Dead[eid]) {
+        if (eid === playerEid && hasComponent(world, eid, Dead)) {
           entry.alpha = 0;
-        } else if (!!Hidden[eid]) {
+        } else if (hasComponent(world, eid, Hidden)) {
           entry.alpha = 0.25;
         } else if (eid === playerEid && Player[eid] && Player[eid].hurtT > 0 && Math.floor(time * 14) % 2 === 0) {
           entry.alpha = 0.35;
@@ -419,7 +419,7 @@ export class RenderSystem {
       return;
     }
     // Проверяем компонент Dead — чтобы не рендерить мёртвого игрока
-    if (hasComponent(world, playerEid, Dead) && !!Dead[playerEid]) {
+    if (hasComponent(world, playerEid, Dead)) {
       return;
     }
 
@@ -465,9 +465,9 @@ export class RenderSystem {
 
     for (const eid of query(world, mask)) {
       // Для врагов проверяем dead
-      if (isEnemy && !!Dead[eid]) continue;
+      if (isEnemy && hasComponent(world, eid, Dead)) continue;
       // Для дропов проверяем taken
-      if (isDrop && !!Taken[eid]) continue;
+      if (isDrop && hasComponent(world, eid, Taken)) continue;
 
       const entry = ensureRenderEntry(eid, isDrop ? ENTITY_LAYER.Drop : RENDER_LAYER.DYNAMIC);
       // Viewport culling по записи очереди

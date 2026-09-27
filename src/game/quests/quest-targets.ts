@@ -4,7 +4,7 @@ import { Vec, T, WorldData } from "../world";
 import { GameStore } from "../store";
 import { FlagDomain } from "../store/flag-domain";
 import { PlayerDomain } from "../store/player-domain";
-import { query } from "bitecs";
+import { query, hasComponent } from "bitecs";
 import {
   Enemy,
   Dead,
@@ -112,7 +112,7 @@ const RESOLVERS: Record<string, TargetResolver> = {
     const world = ctx.store.ecsWorld;
     if (world) {
       for (const eid of query(world, [Enemy])) {
-        if (!Dead[eid] && poolGet(StringPool.enemyKinds, Enemy[eid].kind) === 'snake') {
+        if (!hasComponent(world, eid, Dead) && poolGet(StringPool.enemyKinds, Enemy[eid].kind) === 'snake') {
           return { x: Position[eid].x, y: Position[eid].y };
         }
       }

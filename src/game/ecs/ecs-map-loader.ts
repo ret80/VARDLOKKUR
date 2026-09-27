@@ -30,6 +30,7 @@ import {
   Chest,
   MapState,
 } from './ecs-components';
+import { unregisterSpriteHandle } from './ecs-systems';
 import type { IRenderer, LayerHandle } from '../renderer/IRenderer';
 import { createMapTileGraphics, destroyAllMapTileGraphics } from '../render/map-render-system';
 
@@ -187,6 +188,7 @@ export class EcsMapLoader {
     // в отличие от query(world, []) который может кэшировать результаты
     const entities = getAllEntities(world);
     for (const eid of entities) {
+      unregisterSpriteHandle(eid);
       removeEntity(world, eid);
     }
 

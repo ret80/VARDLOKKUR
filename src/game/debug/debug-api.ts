@@ -174,7 +174,7 @@ export function getPlayerState(world: World, playerEid: number): DebugPlayer | n
     arrows: 0,
     runes: Player[playerEid].runes,
     hearts: 0,
-    dead: !!Dead[playerEid],
+    dead: hasComponent(world, playerEid, Dead),
     moving: Player[playerEid].moving,
     swingT: Player[playerEid].swingT,
     hurtT: Player[playerEid].hurtT,
@@ -606,7 +606,7 @@ export function getWorldDump(world: World): { entities: DebugEntity[]; stats: an
       }
     }
 
-    if (Dead[eid]) {
+    if (hasComponent(world, eid, Dead)) {
       entity.components.push('Dead');
       componentCounts['Dead']++;
       entity.Dead = 1;
@@ -800,7 +800,7 @@ export function inspectEntity(world: World, eid: number): DebugEntity | null {
   for (const mc of markerComponents) {
     if (mc.arr[eid]) add(mc.name);
   }
-  if (Dead[eid]) add('Dead');
+  if (hasComponent(world, eid, Dead)) add('Dead');
 
   if (!hasAny) {
     return null;
@@ -894,7 +894,7 @@ export function removeEnemy(
   onRemoveSprite?: (sprite: any) => void
 ): boolean {
   if (eid < 0 || !hasComponent(world, eid, Enemy)) return false;
-  if (Dead[eid]) return false;
+  if (hasComponent(world, eid, Dead)) return false;
   
   // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
   Sprite[eid].ref = 0;
@@ -942,7 +942,7 @@ export function removeAllGhosts(
   const toRemove: number[] = [];
   
   for (const eid of query(world, [Enemy])) {
-    if (!Dead[eid] && poolGet(StringPool.enemyKinds, Enemy[eid].kind) === 'ghost') {
+    if (!hasComponent(world, eid, Dead) && poolGet(StringPool.enemyKinds, Enemy[eid].kind) === 'ghost') {
       toRemove.push(eid);
       count++;
     }

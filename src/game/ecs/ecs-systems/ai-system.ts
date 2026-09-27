@@ -1,6 +1,6 @@
 /* ai-system.ts — AI система врагов на основе ECS */
 
-import { query, type World } from 'bitecs';
+import { query, hasComponent, type World } from 'bitecs';
 import {
   Position,
   Velocity,
@@ -83,7 +83,7 @@ export function aiUpdateSystem(
   const inVillage = zone === 'Поселение выживших' || zone === 'Воронья Гавань';
 
   for (const enemyEid of query(world, [Enemy, Position, Velocity, Health])) {
-    if (!!Dead[enemyEid]) continue;
+    if (hasComponent(world, enemyEid, Dead)) continue;
     if (!Enemy[enemyEid]) continue; // AoS элемент может быть undefined
 
     // Common updates

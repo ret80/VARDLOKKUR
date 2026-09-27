@@ -1,6 +1,6 @@
 /* drops-system.ts — система дропов на основе ECS */
 
-import { query, removeEntity, type World } from 'bitecs';
+import { query, removeEntity, hasComponent, type World } from 'bitecs';
 import {
   Position,
   Radius,
@@ -74,7 +74,7 @@ export function dropsUpdateSystem(
     const drop = Drop[eid];
     const tm = Time[eid];
     if (!pos || !drop || !tm) continue; // AoS элемент может быть undefined
-    if (Taken[eid]) continue;
+    if (hasComponent(world, eid, Taken)) continue;
 
     tm.value += dt;
 

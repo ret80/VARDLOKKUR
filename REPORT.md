@@ -117,8 +117,29 @@
 
 - **Технические детали:**
   - Вместо прямого доступа `Position[eid].x` используется `const pos = Position[eid]; if (!pos) continue; pos.x`
-  - Это защищает от крашей при любой рассинхронизации bitecs masks и AoS-массивов
-  - Все изменения проверены через `tsc --noEmit` — компиляция проходит без ошибок
+   - Это защищает от крашей при любой рассинхронизации bitecs masks и AoS-массивов
+   - Все изменения проверены через `tsc --noEmit` — компиляция проходит без ошибок
 
 - **Следующие шаги:** Проверить игру — краш после смерти игрока должен исчезнуть.
+
+### Исправление регрессии перезагрузки мира (task_17)
+- **Статус:** Выполнено
+- **Измененные файлы:** 
+  - `src/game/ecs/ecs-map-loader.ts`
+  - `src/game/ecs/ecs-systems/ai-system.ts`
+  - `src/game/ecs/ecs-systems/combat-system.ts`
+  - `src/game/ecs/ecs-systems/render-system.ts`
+  - `src/game/ecs/ecs-systems/drops-system.ts`
+  - `src/game/ecs/ecs-game-loop.ts`
+  - `src/game/debug/debug-api.ts`
+  - `src/game/quests/quest-targets.ts`
+- **Описание изменений:**
+  - **Проблема 1 (RenderQueue):** Добавлен `unregisterSpriteHandle(eid)` в `clearWorld()` — удаляет записи из `RenderQueue.byKey` и `RenderQueue.entries`. Предотвращает рендеринг "призрачных" спрайтов на старых позициях.
+  - **Проблема 2 (маркеры):** Заменены все 21 проверка маркеров через AoS-массивы (`!!Dead[eid]`, `!!Hidden[eid]`, `Taken[eid]`, `Magnet[eid]`) на bitecs `hasComponent(world, eid, Marker)`.
+  - **Корневая причина:** `!!Dead[eid]` читает AoS-массив, который bitecs не трогает при `removeEntity`. `hasComponent()` читает bitecs `entityMasks`, которые корректно сбрасываются.
+  - **Файлы с заменами:** ai-system.ts (1), combat-system.ts (7), ecs-game-loop.ts (1), render-system.ts (4), drops-system.ts (1), debug-api.ts (5), quest-targets.ts (1)
+  - **Не изменено:** `Magnet[eid]` в life-system.ts — это проверка значения (0 или 1), а не маркера. Паттерн другой.
+  - **Не используется `resetAllComponents()`** — по-прежнему опасен (StringPool).
+- **Верификация:** `grep -rn "!!Dead\[" src/game/` — только закомментированный код. `grep -rn "hasComponent.*Dead"` — 19 замен. `hasComponent.*Hidden` — 1. `hasComponent.*Taken` — 2. Итого 22 замены.
+- **Следующие шаги:** Функциональное тестирование — смерть игрока, респавн, поведение врагов после перезагрузки карты.
 

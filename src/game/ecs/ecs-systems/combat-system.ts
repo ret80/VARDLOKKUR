@@ -74,7 +74,7 @@ export function swordAttackSystem(
 
   // Check all enemies in range
   for (const enemyEid of query(world, [Enemy, Health, Position, Radius])) {
-    if (!!Dead[enemyEid]) continue;
+    if (hasComponent(world, enemyEid, Dead)) continue;
     if (!Enemy[enemyEid]) continue; // AoS элемент может быть undefined
 
     // Snake special case
@@ -135,7 +135,7 @@ export function swordAttackSystem(
     // Hit!
     onDamageEnemy(enemyEid, dmg, playerX, playerY);
     applyKnockback(planckWorld, enemyEid, playerX, playerY, 5);
-    if (hasHammer && !Dead[enemyEid] && Enemy[enemyEid].freezeT <= 0) {
+    if (hasHammer && !hasComponent(world, enemyEid, Dead) && Enemy[enemyEid].freezeT <= 0) {
       Enemy[enemyEid].freezeT = 0.8;
     }
   }
@@ -256,7 +256,7 @@ export function projectileEnemyCollisionSystem(
     if (!pRad) continue;
 
     for (const enemyEid of query(world, [Position, Health, Radius])) {
-      if (!!Dead[enemyEid]) continue;
+      if (hasComponent(world, enemyEid, Dead)) continue;
 
       const ePos = Position[enemyEid];
       const eRad = Radius[enemyEid];
@@ -347,7 +347,7 @@ export function canProjectileHitEnemy(
   fromX: number,
   fromY: number
 ): boolean {
-  if (!!Dead[enemyEid]) return false;
+  if (hasComponent(world, enemyEid, Dead)) return false;
 
   const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
   const enemyState = getEnemyStateName(Enemy[enemyEid].state);
@@ -430,7 +430,7 @@ export function killEnemy(
   isBoss: (kind: string) => boolean,
   getBossId: (kind: string) => number
 ): void {
-  if (!!Dead[enemyEid]) return;
+  if (hasComponent(world, enemyEid, Dead)) return;
 
   const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
 
@@ -488,7 +488,7 @@ export function hitEnemy(
   onEnemyKilled: (eid: number) => void,
   freezeDuration?: number
 ): void {
-  if (!!Dead[enemyEid]) return;
+  if (hasComponent(world, enemyEid, Dead)) return;
 
   const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
 
@@ -551,7 +551,7 @@ export function damageSnake(
   onAudioHit: () => void,
   onSnakeDeath: () => void
 ): void {
-  if (!!Dead[enemyEid]) return;
+  if (hasComponent(world, enemyEid, Dead)) return;
 
   Health[enemyEid].current -= 1;
   Enemy[enemyEid].flashT = 0.15;
@@ -719,7 +719,7 @@ export function updateProjectilesEcs(
     if (pKind === 'arrow' || pKind === 'axe') {
       let consumed = false;
       for (const enemyEid of query(world, [Enemy, Position, Health, Radius])) {
-        if (!!Dead[enemyEid]) continue;
+        if (hasComponent(world, enemyEid, Dead)) continue;
         if (!Enemy[enemyEid]) continue; // AoS элемент может быть undefined
 
         const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);

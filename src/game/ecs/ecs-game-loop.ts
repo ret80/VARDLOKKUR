@@ -1,6 +1,6 @@
 /* ecs-game-loop.ts — минимальный ECS game loop */
 
-import { type World, query, removeEntity, addComponent } from 'bitecs';
+import { type World, query, removeEntity, addComponent, hasComponent } from 'bitecs';
 import type { FloatTextLayer } from '../renderers/float/FloatTextLayer';
 import {
   syncPositionToBody,
@@ -633,7 +633,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     lifeCheckSystem(world);
 
     // Проверить смерть игрока (lifeCheckSystem помечает Dead, но не эмитит player:died)
-    if (peid >= 0 && !!Dead[peid] && !playerDomain?.isAlive()) {
+    if (peid >= 0 && hasComponent(world, peid, Dead) && !playerDomain?.isAlive()) {
       bus.emit("player:died", {});
       // НЕ уничтожать Sprite.ref — render system обновляет позицию и ставит alpha=0
       // Уничтожить физ. тело
