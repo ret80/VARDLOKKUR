@@ -91,7 +91,6 @@ import {
   updateZone,
   checkDungeonBoss,
 } from './ecs-systems/world-system';
-import { hasComponent } from 'bitecs';
 import { type EntityFactory } from './entity-factory';
 import {
   Position, Velocity, PhysicsBody, Player, Direction, Health,
@@ -708,10 +707,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       dt: rdt,
       float: floatLayer,
       playerEid: _playerEid,
-      cam,
       getNpcSig: npcSig,
       talkedSig: talkedSig.value,
-      nearestInteractable,
     };
 
     entityLayer.setOptions(entityLayerOpts);

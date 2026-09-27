@@ -21,6 +21,8 @@ export const RENDER_LAYER = {
   DROP: 20,
   /** Стены, дома, NPC, враги, игрок, снаряды */
   DYNAMIC: 40,
+  /** Подсказки, UI, оверлеи (поверх всего) */
+  OVERLAY: 9999,
 } as const;
 
 /**
@@ -38,7 +40,7 @@ export interface Viewport {
 export interface RenderEntry {
   x: number;
   y: number;
-  /** 0=ground, 20=drop, 40=dynamic */
+  /** 0=ground, 20=drop, 40=dynamic, 9999=overlay */
   layer: number;
   alpha: number;
   visible: boolean;
@@ -49,6 +51,8 @@ export interface RenderEntry {
   height?: number;
   /** Необязательный ключ (eid динамической сущности) для быстрого поиска */
   key?: number;
+  /** Пропустить viewport culling (для screen-space элементов: подсказок, UI) */
+  skipCull?: boolean;
 }
 
 /** Дефолтный размер объекта для culling, если width/height не заданы (тайл ~32px + запас на высоту спрайта) */
@@ -155,7 +159,8 @@ export class RenderQueue {
     for (const e of this.entries) {
       // Viewport culling: гарантированно невидимые объекты не трогаем
       // (кроме принудительного скрытия, т.к. в прошлом кадре они могли быть видны)
-      if (viewport && !isInViewport(e, viewport)) {
+      // skipCull=true — пропуск culling (для screen-space элементов: подсказок, UI)
+      if (viewport && !e.skipCull && !isInViewport(e, viewport)) {
         if (e.visible) renderer.setGraphicsVisible(e.handle, false);
         continue;
       }

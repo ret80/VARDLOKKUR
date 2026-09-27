@@ -55,7 +55,6 @@ import {
   eidToAltarData,
   playerToRenderData,
 } from '../../renderers/ecs-mappers';
-import type { InteractableHit } from './interaction-system';
 import type { RenderContext } from '../../renderers';
 import { FloatTextLayer } from '../../renderers/float/FloatTextLayer';
 import { logger } from '../../debug/logger';
@@ -152,14 +151,10 @@ export interface RenderSystemOptions {
   float: FloatTextLayer;
   /** ID игрока */
   playerEid: number;
-  /** Позиция камеры (для screen-space элементов: hint-подсказки) */
-  cam: { x: number; y: number };
   /** Callback для получения сигнатуры NPC */
   getNpcSig?: (npcId: string) => string;
   /** Карта сигнатур диалогов */
   talkedSig?: Map<string, string>;
-  /** Ближайший интерактивный объект */
-  nearestInteractable?: InteractableHit | null;
 }
 
 // ============================================================
@@ -197,9 +192,6 @@ export class RenderSystem {
   /** IRenderer — внедряется через init() (DIP) */
   private renderer: IRenderer | null = null;
 
-  /** Persistent GraphicsHandle для подсказки взаимодействия */
-  private _hintG: GraphicsHandle | null = null;
-
   /** Конфигурация всех статических объектов окружения */
   private readonly OBJECT_QUERIES: ObjectQueryConfig[] = [
     { components: [Sprite, Chest], key: "chest", mapper: eidToChestData },
@@ -213,9 +205,6 @@ export class RenderSystem {
   /** Инициализировать рендерер (внедрение зависимости) */
   init(renderer: IRenderer): void {
     this.renderer = renderer;
-    // Подсказка взаимодействия рисуется поверх всего — отдельный Graphics в overlay-слое
-    const overlay = renderer.createLayer('overlay', 9999);
-    this._hintG = renderer.createGraphics(overlay);
   }
 
   /** Получить рендерер (для внутренних методов) */
@@ -311,7 +300,7 @@ export class RenderSystem {
     world: World,
     opts: RenderSystemOptions
   ): void {
-    const { time, dt, float, playerEid, nearestInteractable } = opts;
+    const { time, dt, float, playerEid } = opts;
     const r = this.getR();
 
     // Lazy-init FloatTextLayer — один раз при первом вызове render()
@@ -403,9 +392,6 @@ export class RenderSystem {
     // Обновить плавающий текст
     float.update(dt);
 
-    // Interaction hint (E) — подсказка взаимодействия над ближайшим объектом
-    this.renderInteractionHint(opts.cam, nearestInteractable, time);
-
     // Сортировка и применение записей очереди — в RenderPipeline (queue.flush)
   }
 
@@ -491,46 +477,6 @@ export class RenderSystem {
     }
   }
 
-  /** Отрисовать подсказку взаимодействия над ближайшим интерактивным объектом */
-  private renderInteractionHint(
-    cam: { x: number; y: number },
-    nearestInteractable: InteractableHit | null | undefined,
-    time: number
-  ): void {
-    if (!this._hintG) return;
-    const r = this.getR();
-
-    if (!nearestInteractable) {
-      r.setGraphicsVisible(this._hintG, false);
-      return;
-    }
-
-    r.setGraphicsVisible(this._hintG, true);
-
-    // _hintG находится в overlay-слое внутри worldContainer —
-    // worldContainer уже сдвинут камерой, используем мировые координаты напрямую
-    const hx = nearestInteractable.x;
-    const hy = nearestInteractable.y - 20 + Math.sin(time * 5) * 1.5;
-
-    r.clearGraphics(this._hintG);
-
-    // Тёмный фон (нормализованные цвета 0–1)
-    r.drawRect(this._hintG,
-      { x: hx - 6, y: hy - 6, width: 12, height: 10 },
-      { r: 0x0a / 255, g: 0x0f / 255, b: 0x16 / 255, a: 0.85 }, true);
-
-    // Золотая рамка
-    r.drawRect(this._hintG,
-      { x: hx - 6, y: hy - 6, width: 12, height: 10 },
-      { r: 0xc9 / 255, g: 0xa2 / 255, b: 0x4b / 255, a: 0.8 }, false, 1);
-
-    // Буква "E" — пиксель-арт стиль
-    r.drawPoly(this._hintG, [
-      hx - 2, hy - 3, hx + 2, hy - 3,
-      hx + 2, hy - 1, hx, hy - 1,
-      hx, hy + 2, hx - 2, hy + 2
-    ], { r: 0xe8 / 255, g: 0xdc / 255, b: 0xc0 / 255, a: 1 });
-  }
 }
 
 // ============================================================
