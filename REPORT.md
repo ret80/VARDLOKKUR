@@ -31,22 +31,21 @@
 - **Следующие шаги:** Этап 2 — Устранение мира префабов (Prefab World) и клонирования из entity-factory.ts
 
 ### Этап 2: Удаление prefabWorld и клонирования
-- **Статус:** Не начат
-- **Планируемые изменения:** 
-  - Удалить prefabWorld из entity-factory.ts
-  - Убрать клонирование сущностей
-  - Обновить entity-factory.ts под AoS
+- **Статус:** Выполнено
+- **Измененные файлы:** entity-factory.ts, ecs-world.ts (ранее)
+- **Описание изменений:** 
+  - prefabWorld полностью удалён из кодовой базы
+  - Удалены clonePrefab, CLONEABLE_FIELDS, initPrefabs()
+  - EntityFactory создаёт сущности напрямую через addEntity + addComponents
+  - Все сущности создаются в игровом мире без клонирования
 
 ### Этап 3: Обновление ECS-систем под AoS
-- **Статус:** В процессе
-- **Осталось файлов:** 16 файлов с ошибками (всего ~1526 ошибок)
-- **Основные файлы:**
-  - `src/game/ecs/ecs-systems/ai-system.ts` (472 ошибки)
-  - `src/game/ecs/entity-factory.ts` (318 ошибок)
-  - `src/game/ecs/ecs-systems/combat-system.ts` (205 ошибок)
-  - `src/game/renderers/ecs-mappers.ts` (69 ошибок)
-  - `src/game/ecs/ecs-game-loop.ts` (62 ошибки)
-  - и другие...
+- **Статус:** Выполнено
+- **Описание изменений:** 
+  - Все ECS-системы адаптированы под AoS архитектуру
+  - TypeScript компиляция проходит без ошибок (tsc --noEmit — 0 ошибок)
+  - Все компоненты доступны через Position[eid].x, Health[eid].current и т.д.
+  - hasComponent() используется для проверки наличия компонентов
 
 ### Этап 4: Рефакторинг debug-api.ts
 - **Статус:** Выполнено
