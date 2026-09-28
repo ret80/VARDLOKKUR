@@ -43,6 +43,42 @@ const FOG_WAVE_INTERVAL = 60; // seconds
 const FOG_GHOST_HP = 5;
 const FOG_GHOST_SPEED = 100;
 
+// --- Радиусы тумана ---
+const FOG_RADIUS_DEFAULT = 2600;     // радиум по умолчанию / вне волны
+const FOG_RADIUS_ALTAR = 350;        // радиус тумана у алтаря
+const FOG_RADIUS_SHRINE = 600;       // радиус тумана у зажжённого святилища
+const FOG_RADIUS_WAVE = 900;         // радиус при начале волны
+const FOG_RADIUS_WAVE_ACTIVE = 140;  // радиус активной волны
+
+// --- Зоны безопасности ---
+const SAFE_ZONE_ALTAR = 240;         // радиус безопасности у алтаря
+const SAFE_ZONE_SHRINE = 70;         // радиус безопасности у святилища
+
+// --- Параметры волны ---
+const FOG_WAVE_DURATION = 40;        // длительность волны в секундах
+const FOG_WARNING_TIME = 4;          // время предупреждения до волны (сек)
+const FOG_GHOST_SPAWN_DELAY = 38;    // время появления призраков после начала волны (40 - 2)
+
+// --- Скорости интерполяции ---
+const FOG_ALPHA_SPEED = 0.5;         // скорость изменения альфы (1 / 2.0s)
+const FOG_RADIUS_SPEED_DEFAULT = 0.8;// скорость интерполяции радиуса (default)
+const FOG_RADIUS_SPEED_AMBIENT = 0.6;// скорость интерполяции радиуса (ambient)
+const FOG_RADIUS_SPEED_WAVE = 0.35;  // скорость интерполяции радиуса (wave)
+
+// --- Призраки ---
+const GHOST_COUNT_MIN = 2;           // минимальное количество призраков
+const GHOST_COUNT_MAX = 4;           // максимальное количество призраков
+const GHOST_SPAWN_MIN_DIST = 110;    // минимальная дистанция спавна призраков
+const GHOST_SPAWN_DIST_RAND = 60;    // разброс дистанции спавна призраков
+const GHOST_STATE_T_BASE = 1.5;      // базовое время состояния призрака
+const GHOST_STATE_T_RAND = 0.5;      // разброс времени состояния
+const GHOST_FOG_ONLY = 1;            // флаг: только для тумана
+
+// --- Таймер волны (endWave) ---
+const FOG_TIMER_BASE = 80;           // базовый таймер волны
+const FOG_TIMER_RUNE_FACTOR = 4;     // множитель рун для таймера
+const FOG_TIMER_RANDOM_MAX = 30;     // макс. случайный разброс таймера
+
 // ============================================================
 // Fog State Interface
 // ============================================================
@@ -63,10 +99,10 @@ export interface FogState {
 
 export function createFogState(): FogState {
   return {
-    fogTimer: 60,
+    fogTimer: FOG_WAVE_INTERVAL,
     fogActive: false,
     fogLeft: 0,
-    fogRadius: 2600,
+    fogRadius: FOG_RADIUS_DEFAULT,
     fogSpawned: false,
     fogWarned: false,
     fogAmbient: false,
@@ -102,13 +138,12 @@ export function fogUpdateSystem(
   fogState.ghostClangT = Math.max(0, fogState.ghostClangT - dt);
   
   // Плавная интерполяция альфы тумана за 2 секунды
-  const alphaSpeed = 0.5; // 1 / 2.0s
-  fogState.fogAlpha += (fogState.fogAlphaTarget - fogState.fogAlpha) * Math.min(1, rdt * alphaSpeed);
+  fogState.fogAlpha += (fogState.fogAlphaTarget - fogState.fogAlpha) * Math.min(1, rdt * FOG_ALPHA_SPEED);
   
   // Disable fog in dungeon or after snake death
   if (map.isDungeon || f.snakeDead) {
     logger.debug('fog', `SNAKE_DEAD/DUNGEON: isDungeon=${map.isDungeon} snakeDead=${f.snakeDead} fogActive=${fogState.fogActive}`);
-    fogState.fogRadius += (2600 - fogState.fogRadius) * Math.min(1, rdt * 0.8);
+    fogState.fogRadius += (FOG_RADIUS_DEFAULT - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_DEFAULT);
     if (fogState.fogActive) {
       fogState.fogAlphaTarget = 0;
       endWave(fogState, false, bus, getRunes, f);
@@ -123,14 +158,14 @@ export function fogUpdateSystem(
   // Check altar proximity
   const ax = map.treeAltar.x * T + 8;
   const ay = map.treeAltar.y * T + 8;
-  const nearAltar = !f.snakeStarted && dist2(px, py, ax, ay) < 240 * 240;
+  const nearAltar = !f.snakeStarted && dist2(px, py, ax, ay) < SAFE_ZONE_ALTAR * SAFE_ZONE_ALTAR;
   
   // Проверка зажжённых святилищ — безопасная зона
   const shrines = map.shrines || [];
   let nearShrine = false;
   for (let j = 0; j < shrines.length; j++) {
     const s = shrines[j];
-    if (s.lit && dist2(px, py, s.x * T + 8, s.y * T + 8) < 240 * 240) {
+    if (s.lit && dist2(px, py, s.x * T + 8, s.y * T + 8) < SAFE_ZONE_SHRINE * SAFE_ZONE_SHRINE) {
       nearShrine = true;
       break;
     }
@@ -142,7 +177,7 @@ export function fogUpdateSystem(
   if (inVillage) {
     logger.debug('fog', `IN_VILLAGE: zone="${zn}" → fog OFF`);
     if (fogState.fogActive) endWave(fogState, true, bus, getRunes, f);
-    fogState.fogRadius += (2600 - fogState.fogRadius) * Math.min(1, rdt * 0.8);
+    fogState.fogRadius += (FOG_RADIUS_DEFAULT - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_DEFAULT);
     return;
   }
   
@@ -156,8 +191,8 @@ export function fogUpdateSystem(
       bus.emit('toast', { msg: 'Саван Древа... оно не отпустит просто так' });
     }
     fogState.fogAmbient = true;
-    fogState.fogRadius += (350 - fogState.fogRadius) * Math.min(1, rdt * 0.6);
-    ensureGhosts(world, 2, true, map, px, py, spawnEnemyInEcs);
+    fogState.fogRadius += (FOG_RADIUS_ALTAR - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_AMBIENT);
+    ensureGhosts(world, GHOST_COUNT_MIN, true, map, px, py, spawnEnemyInEcs);
     return;
   }
   
@@ -167,7 +202,7 @@ export function fogUpdateSystem(
     if (fogState.fogActive) {
       endWave(fogState, true, bus, getRunes, f);
     }
-    fogState.fogRadius += (600 - fogState.fogRadius) * Math.min(1, rdt * 0.6);
+    fogState.fogRadius += (FOG_RADIUS_SHRINE - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_AMBIENT);
     return;
   }
   
@@ -182,10 +217,10 @@ export function fogUpdateSystem(
   if (!fogState.fogActive) {
     // --- Фаза ожидания: fogTimer отсчитывает до волны ---
     fogState.fogTimer -= dt;
-    fogState.fogRadius += (2600 - fogState.fogRadius) * Math.min(1, rdt * 0.8);
+    fogState.fogRadius += (FOG_RADIUS_DEFAULT - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_DEFAULT);
     
     // Предупреждение за 4 секунды до волны
-    if (!fogState.fogWarned && fogState.fogTimer < 4 && fogState.fogTimer > 0 && f.hasItem('sword')) {
+    if (!fogState.fogWarned && fogState.fogTimer < FOG_WARNING_TIME && fogState.fogTimer > 0 && f.hasItem('sword')) {
       fogState.fogWarned = true;
       audio.setFog(true);
       audio.horn();
@@ -195,9 +230,9 @@ export function fogUpdateSystem(
     // Волна началась!
     if (fogState.fogTimer <= 0 && f.hasItem('sword')) {
       fogState.fogActive = true;
-      fogState.fogLeft = 40;       // волна длится 40 секунд
+      fogState.fogLeft = FOG_WAVE_DURATION;       // волна длится 40 секунд
       fogState.fogSpawned = false; // призраки ещё не появились
-      fogState.fogRadius = 900;    // радиус волны
+      fogState.fogRadius = FOG_RADIUS_WAVE;    // радиус волны
       fogState.fogAlphaTarget = 1;
       audio.setFog(true);
       bus.emit('toast', { msg: 'ВОЛНА ТУМАНА. Ниды шепчут...' });
@@ -205,10 +240,10 @@ export function fogUpdateSystem(
   } else {
     // --- Активная волна: fogLeft отсчитывает до конца ---
     fogState.fogLeft -= dt;
-    fogState.fogRadius += (140 - fogState.fogRadius) * Math.min(1, rdt * 0.35);
+    fogState.fogRadius += (FOG_RADIUS_WAVE_ACTIVE - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_WAVE);
     
     // Через 2 секунды после начала волны — появляются призраки
-    if (!fogState.fogSpawned && fogState.fogLeft < 38) {
+    if (!fogState.fogSpawned && fogState.fogLeft < FOG_GHOST_SPAWN_DELAY) {
       fogState.fogSpawned = true;
       ensureGhosts(world, 2 + Math.floor(getRunes() / 2), false, map, px, py, spawnEnemyInEcs);
     }
@@ -237,7 +272,7 @@ function endWave(state: FogState, dropDew: boolean, bus: any, getRunes: () => nu
   state.fogSpawned = false;
   state.fogLeft = 0;
   state.fogAlphaTarget = 0;
-  state.fogTimer = Math.max(60, 80 - getRunes() * 4 + Math.random() * 30);
+  state.fogTimer = Math.max(FOG_WAVE_INTERVAL, FOG_TIMER_BASE - getRunes() * FOG_TIMER_RUNE_FACTOR + Math.random() * FOG_TIMER_RANDOM_MAX);
   
   if (flags) {
     flags.fogWaves = (flags.fogWaves || 0) + 1;
@@ -286,9 +321,9 @@ export function ensureGhosts(
   const targetCy = leashed ? altarY : cy;
   // logger.debug('fog', `ensureGhosts: targetCx=${targetCx} targetCy=${targetCy} limit=${Math.min(4, n)}`);
   
-  for (let i = alive; i < Math.min(4, n); i++) {
+  for (let i = alive; i < Math.min(GHOST_COUNT_MAX, n); i++) {
     const a = Math.random() * Math.PI * 2;
-    const d = 110 + Math.random() * 60;
+    const d = GHOST_SPAWN_MIN_DIST + Math.random() * GHOST_SPAWN_DIST_RAND;
     const x = targetCx + Math.cos(a) * d;
     const y = targetCy + Math.sin(a) * d;
     
@@ -297,8 +332,8 @@ export function ensureGhosts(
     const eid = spawnEnemyInEcs('ghost', x, y);
     Enemy[eid].aggro = 1;
     Enemy[eid].state = EnemyState.appear;
-    Enemy[eid].stateT = 1.5 + Math.random() * 0.5;
-    Enemy[eid].fogOnly = 1;
+    Enemy[eid].stateT = GHOST_STATE_T_BASE + Math.random() * GHOST_STATE_T_RAND;
+    Enemy[eid].fogOnly = GHOST_FOG_ONLY;
     // Привязка к алтарю
     if (leashed) {
       Enemy[eid].leashX = altarX;
