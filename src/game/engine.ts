@@ -225,7 +225,7 @@ export class Engine {
     this.viewport = new ViewportController(container, null, { x: 0, y: 0 });
     this.viewport.applyViewSize();
     await app.init({
-      background: 0x05080d, antialias: false, resolution: 1,
+      background: 0x05080d, antialias: false, resolution: window.devicePixelRatio,
       width: this.viewport.viewW, height: this.viewport.viewH,
     });
     this.app = app;

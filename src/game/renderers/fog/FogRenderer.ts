@@ -65,34 +65,39 @@ varying vec2 vTextureCoord;
 varying vec2 vPosition;
 
 // ============================================================
-// FBM noise (4 октавы) с дрейфом
+// Smooth 2D noise (cubic interpolation)
 // ============================================================
 
 float hash(vec2 p) {
-  p = fract(p * vec2(123.34, 456.21));
-  p += dot(p, p + 45.32);
-  return fract(p.x * p.y);
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 
 float noise(vec2 p) {
   vec2 i = floor(p);
   vec2 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
   
-  float a = hash(i);
-  float b = hash(i + vec2(1.0, 0.0));
-  float c = hash(i + vec2(0.0, 1.0));
-  float d = hash(i + vec2(1.0, 1.0));
+  // Cubic smoothstep
+  vec2 u = f * f * (3.0 - 2.0 * f);
   
-  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+  return mix(
+    mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+    mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x),
+    u.y
+  );
 }
+
+// ============================================================
+// FBM (6 октав) для детального тумана
+// ============================================================
 
 float fbm(vec2 p) {
   float value = 0.0;
   float amplitude = 0.5;
   float frequency = 1.0;
   
-  for (int i = 0; i < 4; i++) {
+  for (int i = 0; i < 6; i++) {
     value += amplitude * noise(p * frequency);
     frequency *= 2.0;
     amplitude *= 0.5;
@@ -109,15 +114,19 @@ void main(void) {
   // vPosition — это UV 0..1 fullscreen quad (экранное пространство)
   vec2 uv = vPosition;
   
-  // --- 1. Базовый туман через FBM noise с дрейфом ---
-  vec2 drifted = uv * 3.0 + uTime * 0.05;
+  // --- 1. Базовый туман через FBM noise с плавным дрейфом ---
+  // Фиксированная частота: ~16 ячеек на экран для мягкого тумана
+  vec2 p = uv * 16.0;
+  vec2 drifted = p + vec2(uTime * 0.1, uTime * 0.05);
   float fog = fbm(drifted);
-  fog = fog * 0.6 + 0.2; // нормализуем в диапазон [0.2, 0.8]
+  
+  // Нормализация в диапазон [0.3, 0.7] для мягких переходов
+  fog = fog * 0.4 + 0.3;
   
   // --- 2. Радиальное затемнение от игрока ---
   float d = distance(vec2(uPlayerPosX, uPlayerPosY), uv);
-  float radialFog = smoothstep(uFogRadius * 0.3, uFogRadius, d);
-  fog = mix(fog, 1.0, radialFog * 0.5);
+  float radialFog = smoothstep(uFogRadius * 0.2, uFogRadius, d);
+  fog = mix(fog, 1.0, radialFog * 0.6);
   
   // --- 3. Дыры у святилищ ---
   float shrineInfluence = 0.0;
@@ -136,8 +145,8 @@ void main(void) {
   fog = mix(fog, 0.0, shrineInfluence);
   
   // --- 4. Цвет тумана с лёгкой пульсацией ---
-  float pulse = sin(uTime * 0.3) * 0.03;
-  vec3 fogColor = vec3(0.06 + pulse, 0.08 + pulse, 0.12);
+  float pulse = sin(uTime * 0.3) * 0.02;
+  vec3 fogColor = vec3(0.05 + pulse, 0.07 + pulse, 0.11);
   
   // --- 5. Итоговая альфа ---
   float alpha = fog * uFogAlpha;
