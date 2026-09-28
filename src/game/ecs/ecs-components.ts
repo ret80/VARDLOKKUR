@@ -97,6 +97,7 @@ export interface MapTileInfo {
   x: number;
   y: number;
   layer: number;
+  tileType: number; // Tl.WATER, Tl.SHORE и т.д.
 }
 
 /** Хранение per-tile Graphics: ключ → информация о Graphics */

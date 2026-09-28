@@ -40,11 +40,9 @@ export interface MapRenderSystemOptions {
  *
  * Вызывается каждый кадр в фазе render() игрового цикла.
  * Каждый кадр:
- *  1. Очистка RenderQueue (очередь не кэширует — чистится после каждого кадра).
- *  2. Вычисление видимого диапазона тайлов из viewport.
- *  3. Добавление в очередь только видимых тайлов (ground, walls по диапазону,
- *     houses по пересечению с viewport).
- *  4. RenderQueue.flush() — сортировка по (layer, y), viewport culling, zIndex.
+ *  1. Вычисление видимого диапазона тайлов из viewport.
+ *  2. Для каждого видимого тайла: clearGraphics + drawTileLocal + enqueue.
+ *  3. RenderQueue.flush() — сортировка по (layer, y), viewport culling, zIndex.
  */
 export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {}): void {
   const queue = getRenderQueue();
@@ -79,6 +77,10 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
       for (let x = startTileX; x <= endTileX; x++) {
         const tile = MapTiles.get(`${x}_${y}`);
         if (tile) {
+          const r = opts.renderer!;
+          const g = tile.handle as GraphicsHandle;
+          r.clearGraphics(g);
+          drawTileLocal(g, tile.tileType, 0, 0, r);
           queue.enqueue({
             x: tile.x,
             y: tile.y,
@@ -87,7 +89,7 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
             layer: tile.layer,
             alpha: 1,
             visible: true,
-            handle: tile.handle as GraphicsHandle,
+            handle: g,
           });
         }
       }
@@ -98,6 +100,10 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
       for (let x = startTileX; x <= endTileX; x++) {
         const tile = MapTiles.get(`wall_${x}_${y}`);
         if (tile) {
+          const r = opts.renderer!;
+          const g = tile.handle as GraphicsHandle;
+          r.clearGraphics(g);
+          drawWallGeometry(r, g, tile.tileType, 0, 0, 0);
           queue.enqueue({
             x: tile.x,
             y: tile.y,
@@ -106,7 +112,7 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
             layer: tile.layer,
             alpha: 1,
             visible: true,
-            handle: tile.handle as GraphicsHandle,
+            handle: g,
           });
         }
       }
@@ -168,10 +174,11 @@ function hideLegacyLayerSprites(renderer: IRenderer | undefined): void {
 // ============================================================
 
 /**
- * Создать per-tile Graphics для карты (земля, стены, дома).
+ * Создать Graphics для карты (земля, стены, дома).
  *
  * Вызывается ОДИН раз при загрузке карты (EcsMapLoader.createMapEntity).
- * Каждый тайл получает СВОЙ GraphicsHandle, который рисуется в (0,0).
+ * Ground и стены: один Graphics на тип тайла (Tl.WATER, Tl.SHORE и т.д.).
+ * Дома: один Graphics на каждый блок домов (уникальные).
  * Координаты (x,y) сохраняются в MapTiles.
  * Регистрация в RenderQueue -> задача mapRenderSystem (каждый кадр).
  */
@@ -196,53 +203,78 @@ export function createMapTileGraphics(
     return v - Math.floor(v);
   };
 
-  // ===== 1. Ground: один Graphics на каждый тайл (ВСЕХ, включая деревья/дома) =====
+  // ===== 1. Ground: один Graphics на тип тайла =====
+  const groundTypes = new Set<number>();
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      groundTypes.add(map.tiles[y * W + x]);
+    }
+  }
+
+  // Создаём по одному Graphics на тип
+  const groundGraphicsByType = new Map<number, GraphicsHandle>();
+  for (const t of groundTypes) {
+    const g = renderer.createGraphics();
+    renderer.setGraphicsPosition(g, { x: 0, y: 0 });
+    drawTileLocal(g, t, 0, 0, renderer);
+    groundGraphicsByType.set(t, g as GraphicsHandle);
+  }
+
+  // Заполняем MapTiles с указанием типа тайла
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const t = map.tiles[y * W + x];
-
-      const g = renderer.createGraphics();
-      renderer.setGraphicsPosition(g, { x: 0, y: 0 });
-      drawTileLocal(g, t, 0, 0, renderer);
+      const handle = groundGraphicsByType.get(t)!;
 
       const key = x + "_" + y;
       MapTiles.set(key, {
-        handle: g as GraphicsHandle,
+        handle,
         x: x * T,
         y: y * T,
         layer: RENDER_LAYER.GROUND,
+        tileType: t,
       });
 
       count++;
     }
   }
 
-  // ===== 2. Стены: один Graphics на каждый тайл =====
+  // ===== 2. Стены: один Graphics на тип тайла =====
   const WALL_TILES = new Set<number>([
     Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.COLUMN, Tl.DWALL, Tl.CAVEWALL,
   ]);
+
+  const wallGraphicsByType = new Map<number, GraphicsHandle>();
+  for (const t of WALL_TILES) {
+    // Проверяем, есть ли такой тип на карте
+    let found = false;
+    for (let y = 0; y < H && !found; y++) {
+      for (let x = 0; x < W && !found; x++) {
+        if (map.tiles[y * W + x] === t) found = true;
+      }
+    }
+    if (!found) continue;
+
+    const g = renderer.createGraphics();
+    renderer.setGraphicsPosition(g, { x: 0, y: 0 });
+    drawWallGeometry(renderer, g, t, 0, map.dungeonId ?? 0, 0, 0);
+    wallGraphicsByType.set(t, g as GraphicsHandle);
+  }
 
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const t = map.tiles[y * W + x];
       if (!WALL_TILES.has(t)) continue;
 
-      const variant =
-        t === Tl.TREE ? ((rnd(x, y, 13) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
-        : t === Tl.ROCK ? (rnd(x, y, 11) > 0.5 ? 1 : 0)
-        : t === Tl.COLUMN ? ((rnd(x, y, 11) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
-        : 0;
-
-      const g = renderer.createGraphics();
-      renderer.setGraphicsPosition(g, { x: 0, y: 0 });
-      drawWallGeometry(renderer, g, t, variant, map.dungeonId ?? 0, 0, 0);
+      const handle = wallGraphicsByType.get(t)!;
 
       const key = "wall_" + x + "_" + y;
       MapTiles.set(key, {
-        handle: g as GraphicsHandle,
+        handle,
         x: x * T,
         y: y * T,
         layer: RENDER_LAYER.DYNAMIC,
+        tileType: t,
       });
 
       count++;
@@ -297,13 +329,15 @@ export function createMapTileGraphics(
         x: x * T,
         y: y * T,
         layer: RENDER_LAYER.DYNAMIC,
+        tileType: Tl.HOUSE,
       });
 
       count++;
     }
   }
 
-  logger.info("map-render", "Map tile graphics created: " + count + " Graphics (ground + walls + houses)");
+  logger.info("map-render", "Map tile graphics created: " + count + " tiles, " +
+    (groundGraphicsByType.size + wallGraphicsByType.size + count) + " Graphics (types + houses)");
 }
 
 /**
