@@ -253,7 +253,7 @@ export class FogRenderer {
    * Заворачивать это значение по модулю НЕЛЬЗЯ: fbm не периодичен, и на стыке
    * периода узор резко телепортируется — виден скачок при движении игрока.
    */
-  private readonly FOG_SCROLL_FACTOR = 0.002;
+  private readonly FOG_SCROLL_FACTOR = 3.0;
 
   /** Смещение тумана за камерой в единицах шума (highp-точность это терпит) */
   private scrollOffset(value: number, scale: number): number {
