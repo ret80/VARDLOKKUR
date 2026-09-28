@@ -257,8 +257,8 @@ export class FogRenderer {
   private readonly FOG_SCROLL_FACTOR = 0.002;
 
   /** Смещение тумана за камерой в единицах шума (highp-точность это терпит) */
-  private scrollOffset(value: number): number {
-    return value * this.FOG_SCROLL_FACTOR;
+  private scrollOffset(value: number, scale: number): number {
+    return value * scale * this.FOG_SCROLL_FACTOR;
   }
 
   /** Инициализация FogRenderer */
@@ -405,8 +405,9 @@ export class FogRenderer {
     r.setShaderUniform(this._shader, 'uPlayerPosY', uvY);
     // Туман привязан к миру: узор скроллится вместе с камерой.
     // Масштаб и "ворот" считаются в JS — в шейдере униформы остаются маленькими.
-    r.setShaderUniform(this._shader, 'uCamOffsetX', this.scrollOffset(camPos.x));
-    r.setShaderUniform(this._shader, 'uCamOffsetY', this.scrollOffset(camPos.y));
+    // Нормализуем по viewport: X делим на viewW, Y на viewH — чтобы скорость была одинаковой.
+    r.setShaderUniform(this._shader, 'uCamOffsetX', this.scrollOffset(camPos.x, 1 / viewW));
+    r.setShaderUniform(this._shader, 'uCamOffsetY', this.scrollOffset(camPos.y, 1 / viewH));
     r.setShaderUniform(this._shader, 'uFogAlpha', this._fogAlpha);
     r.setShaderUniform(this._shader, 'uFogRadius', normalizedRadius);
     for (let i = 0; i < 10; i++) {
