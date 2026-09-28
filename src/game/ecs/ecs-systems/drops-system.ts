@@ -1,6 +1,6 @@
 /* drops-system.ts — система дропов на основе ECS */
 
-import { query, removeEntity, hasComponent, type World } from 'bitecs';
+import { query, removeEntity, hasComponent, addComponent, type World } from 'bitecs';
 import {
   Position,
   Radius,
@@ -42,6 +42,7 @@ export interface DropRt {
 
 /** Создать дроп */
 export function spawnDrop(
+  world: World,
   factory: EntityFactory,
   kind: DropKind,
   x: number,
@@ -50,7 +51,7 @@ export function spawnDrop(
   life?: number
 ): number {
   const eid = factory.createDrop(kind, x, y, magnet, life ?? 0);
-  Magnet[eid] = magnet ? 1 : 0;
+  if (magnet) addComponent(world, eid, Magnet);
   return eid;
 }
 
@@ -115,7 +116,7 @@ export function dropsUpdateSystem(
       const distSq = dx * dx + dy * dy;
 
       if (distSq < 11 * 11) {
-        Taken[eid] = 1;
+        addComponent(world, eid, Taken);
         // Collect drop via drop-handlers
         const dropKind = poolGet(StringPool.dropKinds, drop.kind) as DropKind;
         const handler = dropRegistry?.get(dropKind);

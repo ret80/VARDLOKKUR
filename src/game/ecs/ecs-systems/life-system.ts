@@ -34,7 +34,6 @@ export function lifeCheckSystem(world: World): void {
     if (!hp) continue; // AoS элемент может быть undefined
     if (hp.current <= 0 && !hasComponent(world, eid, Dead)) {
       addComponent(world, eid, Dead);
-      Dead[eid] = {};
       // Лог: игрок умер
       if (hasComponent(world, eid, Player)) {
         logger.info('life', `PLAYER DIED! eid=${eid} hp=${hp.current}`);

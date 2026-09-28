@@ -455,13 +455,11 @@ export function killEnemy(
     if (Math.random() < 0.35) {
       onDropSpawn(Math.random() < 0.5 ? 'shard' : 'heart', Position[enemyEid].x, Position[enemyEid].y);
     }
-    Dead[enemyEid] = {};
     addComponents(world, enemyEid, [Dead]);
     return;
   }
 
   // Normal enemy death
-  Dead[enemyEid] = {};
   addComponents(world, enemyEid, [Dead]);
   Enemy[enemyEid].pathI = 0;
   onEnemyKilled(enemyKind, Position[enemyEid].x, Position[enemyEid].y);
