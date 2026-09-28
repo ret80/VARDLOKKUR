@@ -14,17 +14,15 @@
  */
 
 import { query, type World } from 'bitecs';
-import type { IRenderer, GraphicsHandle, LayerHandle } from '../renderer/IRenderer';
-import { getRenderQueue, RENDER_LAYER, type RenderEntry, type Viewport } from './RenderQueue';
-import { MapState, MapTiles, type MapTileInfo } from '../ecs/ecs-components';
+import type { IRenderer, GraphicsHandle } from '../renderer/IRenderer';
+import { getRenderQueue, RENDER_LAYER, type Viewport } from './RenderQueue';
+import { MapState, MapTiles } from '../ecs/ecs-components';
 import { T, Tl, type WorldData } from '../world';
 import { drawTileLocal } from '../geometry/tile-geom';
 import { drawWallGeometry } from '../geometry/wall-geom';
 import { drawHouseGeometry, houseMetrics } from '../geometry/house-geom';
 import { logger } from '../debug/logger';
 
-/** Значение "хэндл не создан" (handle'ы IRenderer >= 1) */
-const NO_HANDLE = 0;
 
 /**
  * Опции mapRenderSystem (передаются из ecs-game-loop при каждом кадре).
@@ -41,7 +39,12 @@ export interface MapRenderSystemOptions {
  * mapRenderSystem -> ECS-система: per-tile Graphics -> RenderQueue.
  *
  * Вызывается каждый кадр в фазе render() игрового цикла.
- * Регистрация всех видимых тайлов в RenderQueue для сортировки по (layer, y).
+ * Каждый кадр:
+ *  1. Очистка RenderQueue (очередь не кэширует — чистится после каждого кадра).
+ *  2. Вычисление видимого диапазона тайлов из viewport.
+ *  3. Добавление в очередь только видимых тайлов (ground, walls по диапазону,
+ *     houses по пересечению с viewport).
+ *  4. RenderQueue.flush() — сортировка по (layer, y), viewport culling, zIndex.
  */
 export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {}): void {
   const queue = getRenderQueue();
@@ -50,60 +53,102 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
 
   // Проверяем, загружена ли карта
   let mapEid = -1;
+  let mapW = 0, mapH = 0;
   for (const eid of query(world, [MapState])) {
     mapEid = eid;
+    mapW = MapState[eid].width;
+    mapH = MapState[eid].height;
     break;
   }
 
-  // Карта не загружена -> очищаем RenderQueue от тайлов карты
+  // Карта не загружена -> очередь уже пуста (flush очищает после каждого кадра)
   if (mapEid < 0) {
-    clearMapTilesFromQueue(queue);
     hideLegacyLayerSprites(opts.renderer);
     return;
   }
 
-  // === Регистрируем все тайлы карты в RenderQueue ===
-  for (const [key, tile] of MapTiles) {
-    const handle = tile.handle;
-    if (handle === NO_HANDLE) continue;
+  // === 1. Очистка RenderQueue (каждый кадр — полная пересборка) ===
+  queue.clear(opts.renderer!);
 
-    // Проверяем, жив ли Graphics
-    if (opts.renderer) {
-      try {
-        const g = (opts.renderer as any).getGraphicsPixi?.(handle as GraphicsHandle);
-        if (!g || g.destroyed) {
-          MapTiles.delete(key);
-          continue;
+  // === 2. Вычисление видимого диапазона тайлов ===
+  if (viewport) {
+    const startTileX = Math.max(0, Math.floor(viewport.camX / T));
+    const endTileX = Math.min(mapW - 1, Math.ceil((viewport.camX + viewport.viewW) / T));
+    const startTileY = Math.max(0, Math.floor(viewport.camY / T));
+    const endTileY = Math.min(mapH - 1, Math.ceil((viewport.camY + viewport.viewH) / T));
+
+    // === 3. Ground тайлы — проход по видимому диапазону ===
+    for (let y = startTileY; y <= endTileY; y++) {
+      for (let x = startTileX; x <= endTileX; x++) {
+        const key = `${x}_${y}`;
+        const tile = MapTiles.get(key);
+        if (tile) {
+          queue.addOrUpdate({
+            x: tile.x,
+            y: tile.y,
+            width: T,
+            height: T,
+            layer: tile.layer,
+            alpha: 1,
+            visible: true,
+            handle: tile.handle as GraphicsHandle,
+            key,
+          });
         }
-      } catch {
-        MapTiles.delete(key);
-        continue;
       }
     }
 
-    // Добавляем в очередь (upsert по ключу)
-    queue.upsert(key, (): RenderEntry => ({
-      x: tile.x,
-      y: tile.y,
-      width: T,
-      height: T,
-      layer: tile.layer,
-      alpha: 1,
-      visible: true,
-      handle: handle as GraphicsHandle,
-    }));
+    // === 4. Wall тайлы — проход по видимому диапазону ===
+    for (let y = startTileY; y <= endTileY; y++) {
+      for (let x = startTileX; x <= endTileX; x++) {
+        const key = `wall_${x}_${y}`;
+        const tile = MapTiles.get(key);
+        if (tile) {
+          queue.addOrUpdate({
+            x: tile.x,
+            y: tile.y,
+            width: T,
+            height: T,
+            layer: tile.layer,
+            alpha: 1,
+            visible: true,
+            handle: tile.handle as GraphicsHandle,
+            key,
+          });
+        }
+      }
+    }
+
+    // === 5. House тайлы — проверка пересечения с viewport ===
+    const HOUSE_CULL_PAD = T * 4; // запас для bounding box дома
+    for (const [key, tile] of MapTiles) {
+      if (!key.startsWith('house_')) continue;
+      // AABB-пересечение bounding box дома с viewport
+      const houseW = T * 4;
+      const houseH = T * 4;
+      if (
+        tile.x + houseW + HOUSE_CULL_PAD >= viewport.camX &&
+        tile.x - HOUSE_CULL_PAD <= viewport.camX + viewport.viewW &&
+        tile.y + houseH + HOUSE_CULL_PAD >= viewport.camY &&
+        tile.y - HOUSE_CULL_PAD <= viewport.camY + viewport.viewH
+      ) {
+        queue.addOrUpdate({
+          x: tile.x,
+          y: tile.y,
+          width: T * 4, // запас для bounding box дома
+          height: T * 4,
+          layer: tile.layer,
+          alpha: 1,
+          visible: true,
+          handle: tile.handle as GraphicsHandle,
+          key,
+        });
+      }
+    }
   }
 
-  // === Скрываем legacy-спрайты карты ===
+  // === 6. Скрываем legacy-спрайты карты ===
   hideLegacyLayerSprites(opts.renderer);
-}
-
-/** Очистить все записи тайлов карты из RenderQueue */
-function clearMapTilesFromQueue(queue: ReturnType<typeof getRenderQueue>): void {
-  if (!queue) return;
-  for (const key of MapTiles.keys()) {
-    queue.takeByKey(key);
-  }
 }
 
 /**

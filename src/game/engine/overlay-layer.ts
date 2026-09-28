@@ -46,7 +46,7 @@ export class OverlayLayer implements IRenderLayer {
 
     if (!this.nearestInteractable) {
       // Удалить запись из RenderQueue — flush() не будет трогать Graphics
-      if (queue) queue.takeByKey('hint');
+      if (queue) queue.removeByKey('hint');
       r.setGraphicsVisible(this.hintG, false);
       return;
     }
@@ -77,21 +77,19 @@ export class OverlayLayer implements IRenderLayer {
     ], { r: 0xe8 / 255, g: 0xdc / 255, b: 0xc0 / 255, a: 1 });
 
     // Добавить в RenderQueue с максимальным слоем и пропуском culling.
-    // upsert вызывает make() только при первом создании — на последующих кадрах
-    // запись уже есть, поэтому x/y нужно обновлять явно (анимация зависит от time).
+    // addOrUpdate обновляет запись по ключу 'hint' — x/y задаются явно.
     const hintG = this.hintG;
     if (queue && hintG) {
-      const entry = queue.upsert('hint', () => ({
+      queue.addOrUpdate({
         x: hx,
         y: hy,
         layer: RENDER_LAYER.OVERLAY,
         alpha: 1,
         visible: true,
         handle: hintG,
+        key: 'hint',
         skipCull: true,
-      }));
-      entry.x = hx;
-      entry.y = hy;
+      });
     }
   }
 

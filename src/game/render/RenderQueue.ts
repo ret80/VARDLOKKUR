@@ -49,8 +49,8 @@ export interface RenderEntry {
   width?: number;
   /** Высота bounding box объекта (для viewport culling) */
   height?: number;
-  /** Необязательный ключ (eid динамической сущности) для быстрого поиска */
-  key?: number;
+  /** Необязательный ключ (eid динамической сущности или строковый ключ батча) для быстрого поиска */
+  key?: string | number;
   /** Пропустить viewport culling (для screen-space элементов: подсказок, UI) */
   skipCull?: boolean;
 }
@@ -87,18 +87,15 @@ export function computeZIndex(layer: number, y: number): number {
 export class RenderQueue {
   private entries: RenderEntry[] = [];
 
-  /** Добавить запись в очередь (если у неё есть key — зарегистрировать по ключу) */
+  /** Добавить запись в очередь */
   enqueue(e: RenderEntry): void {
     this.entries.push(e);
-    if (e.key !== undefined) this.byKey.set(e.key, e);
   }
 
   /** Удалить все записи с данным handle (при уничтожении графики) */
   remove(handle: GraphicsHandle): void {
     for (let i = this.entries.length - 1; i >= 0; i--) {
       if (this.entries[i].handle === handle) {
-        const e = this.entries[i];
-        if (e.key !== undefined) this.byKey.delete(e.key);
         this.entries.splice(i, 1);
       }
     }
@@ -106,31 +103,38 @@ export class RenderQueue {
 
   /** Найти запись по ключу (eid динамической сущности или строковый ключ батча) */
   getByKey(key: string | number): RenderEntry | undefined {
-    return this.byKey.get(key);
+    for (const e of this.entries) {
+      if (e.key === key) return e;
+    }
+    return undefined;
   }
 
-  /** Обновить запись под ключом (создаётся при первом update) */
-  upsert(key: string | number, make: () => RenderEntry): RenderEntry {
-    let e = this.byKey.get(key);
-    if (!e) {
-      e = make();
-      this.enqueue(e);
-      this.byKey.set(key, e);
+  /**
+   * Добавить запись или обновить существующую с таким же key.
+   * Ищет запись по key в массиве entries — если найдена, заменяет её.
+   * Иначе — добавляет новую запись.
+   */
+  addOrUpdate(e: RenderEntry): void {
+    for (let i = 0; i < this.entries.length; i++) {
+      if (this.entries[i].key === e.key) {
+        this.entries[i] = e;
+        return;
+      }
     }
-    return e;
+    this.entries.push(e);
   }
 
   /** Удалить запись под ключом, вернув её handle (или null) */
-  takeByKey(key: string | number): GraphicsHandle | null {
-    const e = this.byKey.get(key);
-    if (!e) return null;
-    this.byKey.delete(key);
-    this.remove(e.handle);
-    return e.handle;
+  removeByKey(key: string | number): GraphicsHandle | null {
+    for (let i = this.entries.length - 1; i >= 0; i--) {
+      if (this.entries[i].key === key) {
+        const e = this.entries[i];
+        this.entries.splice(i, 1);
+        return e.handle;
+      }
+    }
+    return null;
   }
-
-  /** Ключевые записи (для динамических сущностей, живущих между кадрами) */
-  private byKey = new Map<string | number, RenderEntry>();
 
   /** Количество записей */
   get size(): number {
@@ -181,7 +185,6 @@ export class RenderQueue {
       }
     }
     this.entries.length = 0;
-    this.byKey.clear();
   }
 }
 

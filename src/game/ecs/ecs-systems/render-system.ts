@@ -81,27 +81,26 @@ function getSpriteHandle(eid: number): number | undefined {
 /**
  * Обеспечить запись в RenderQueue для сущности.
  * Создаёт запись при первом обращении (Graphics уже создан spriteFactory).
+ * Добавляет или обновляет запись по key (eid) — без Map, только массив entries.
  */
 export function ensureRenderEntry(eid: number, layer: number): RenderEntry | null {
   const q = getRenderQueue();
   if (!q) return null;
-  const existing = q.getByKey(eid);
-  if (existing) return existing;
   const handle = getSpriteHandle(eid);
   if (handle === undefined) return null;
   // Проверка что Position инициализирован (AoS объект может быть undefined)
   const pos = Position[eid];
   if (!pos) return null;
-    const entry: RenderEntry = {
-      x: pos.x,
-      y: pos.y,
+  const entry: RenderEntry = {
+    x: pos.x,
+    y: pos.y,
     layer,
     alpha: 1,
     visible: true,
     handle: handle as GraphicsHandle,
     key: eid,
   };
-  q.enqueue(entry);
+  q.addOrUpdate(entry);
   return entry;
 }
 
@@ -111,7 +110,7 @@ export function ensureRenderEntry(eid: number, layer: number): RenderEntry | nul
  */
 export function unregisterSpriteHandle(eid: number): void {
   const q = getRenderQueue();
-  if (q) q.takeByKey(eid);
+  if (q) q.removeByKey(eid);
 }
 
 /** Конфигурация диспетчера объектов окружения */
