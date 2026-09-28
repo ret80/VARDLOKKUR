@@ -113,7 +113,7 @@ export function magnetSystem(world: World, playerEid: number, dt: number): void 
   const magnetSpeed = 150;
 
   for (const eid of query(world, [Position, Velocity, Magnet])) {
-    if (!Magnet[eid]) continue;
+    if (!hasComponent(world, eid, Magnet)) continue;
     const pos = Position[eid];
     const vel = Velocity[eid];
     if (!pos || !vel) continue;

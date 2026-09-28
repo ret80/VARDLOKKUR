@@ -918,10 +918,8 @@ export function removeAllEnemies(
   const toRemove: number[] = [];
   
   for (const eid of query(world, [Enemy])) {
-    if (!Dead[eid]) {
-      toRemove.push(eid);
-      count++;
-    }
+    if (hasComponent(world, eid, Dead)) continue;
+    toRemove.push(eid);
   }
   
   for (const eid of toRemove) {

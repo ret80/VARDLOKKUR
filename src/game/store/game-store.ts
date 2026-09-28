@@ -15,7 +15,7 @@ import type { Screen, EngineCallbacks, EngineServices, GameActions } from "../mo
 import type { Player } from "../entities";
 import type { World } from "bitecs";
 import type { WorldStore } from "./world-store";
-import { query } from "bitecs";
+import { query, hasComponent } from "bitecs";
 import {
   Enemy,
   Dead,
@@ -205,7 +205,8 @@ export class GameStore {
     if (!this._state.ecsWorld) return [];
     const result: number[] = [];
     for (const eid of query(this._state.ecsWorld!, [Enemy])) {
-      if (!Dead[eid]) result.push(eid);
+      if (hasComponent(this._state.ecsWorld!, eid, Dead)) continue;
+      result.push(eid);
     }
     return result;
   }

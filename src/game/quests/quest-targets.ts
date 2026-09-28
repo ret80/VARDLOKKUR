@@ -30,9 +30,8 @@ function getAliveEnemiesEcs(ctx: TargetContext): Array<{ kind: string; x: number
   if (!world) return [];
   const result: Array<{ kind: string; x: number; y: number }> = [];
   for (const eid of query(world, [Enemy])) {
-    if (!Dead[eid]) {
-      result.push({ kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind), x: Position[eid].x, y: Position[eid].y });
-    }
+    if (hasComponent(world, eid, Dead)) continue;
+    result.push({ kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind), x: Position[eid].x, y: Position[eid].y });
   }
   return result;
 }
