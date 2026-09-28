@@ -310,6 +310,7 @@ export function ensureGhosts(
     Enemy[eid].aggro = 1;
     Enemy[eid].state = EnemyState.appear;
     Enemy[eid].stateT = GHOST_STATE_T_BASE + Math.random() * GHOST_STATE_T_RAND;
+    Enemy[eid].fade = 0; // начать с полной прозрачности для плавного появления
     Enemy[eid].fogOnly = GHOST_FOG_ONLY;
     // Привязка к алтарю
     if (leashed) {

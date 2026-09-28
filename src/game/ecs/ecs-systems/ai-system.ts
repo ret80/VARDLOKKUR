@@ -448,9 +448,6 @@ function updateGhost(
     return;
   }
 
-  // --- Появление (fade in) ---
-  if (Enemy[eid].fade < 0.85) Enemy[eid].fade = Math.min(0.85, Enemy[eid].fade + dt / 1.5);
-
   // --- Leash mechanic (привязка) ---
   const lmx = Enemy[eid].leashX;
   const lmy = Enemy[eid].leashY;
@@ -469,7 +466,7 @@ function updateGhost(
     // 0. ПОЯВЛЕНИЕ — призрак плавно проявляется при появлении тумана
     case EnemyState.appear: {
       Enemy[eid].stateT -= dt;
-      Enemy[eid].fade = Math.min(0.85, Enemy[eid].fade + dt * 1.2);
+      Enemy[eid].fade = Math.min(0.85, Enemy[eid].fade + dt / 2);
       Velocity[eid].x = 0;
       Velocity[eid].y = 0;
 
