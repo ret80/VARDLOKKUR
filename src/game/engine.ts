@@ -735,10 +735,9 @@ export class Engine {
     audio.startMusic();
     audio.uiClick();
 
-    // Debug mode: загружаем тестовую карту без генерации мира
-    if (this._debugMode || this._testMapMode) {
-      const mode = this._debugMode ? "DEBUG" : "TEST_MAP";
-      logger.info('engine', `${mode} MODE: loading test map`);
+    // Test map mode: загружаем тестовую карту без генерации мира
+    if (this._testMapMode) {
+      logger.info('engine', 'TEST MAP MODE: loading test map');
       try {
         const { createTestMap } = await import("./generators/createTestMap");
         const testMap = createTestMap(21, { x: 10 * 16 + 8, y: 10 * 16 + 8 });

@@ -106,16 +106,7 @@ export default function App() {
       });
   };
 
-  // Автозапуск в debug-режиме — пропускаем меню
-  useEffect(() => {
-    if (debugMode && engineRef.current && screen === "title") {
-      logger.info('app', 'DEBUG MODE: auto-starting game...');
-      startSaga();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debugMode, screen]);
-
-  // Автозапуск в test_map режиме — тоже пропускаем меню
+  // Автозапуск в test_map режиме — пропускаем меню
   useEffect(() => {
     if (testMapMode && engineRef.current && screen === "title") {
       logger.info('app', 'TEST MAP MODE: auto-starting game...');
