@@ -426,6 +426,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     if (nearAltar) {
       _fogState.fogActive = true;
       _fogState.fogAmbient = true;
+      _fogState.fogAlphaTarget = 1;
       _fogState.fogSpawned = false;
       _fogState.fogLeft = 0;
       ensureGhosts(world, 2, true, config_map, px, py, spawnGhost);

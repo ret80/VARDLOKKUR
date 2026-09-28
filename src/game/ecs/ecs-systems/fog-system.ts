@@ -125,27 +125,99 @@ export function fogUpdateSystem(
   const ay = map.treeAltar.y * T + 8;
   const nearAltar = !f.snakeStarted && dist2(px, py, ax, ay) < 240 * 240;
   
-  logger.debug('fog', `STATE: px=${px.toFixed(0)} py=${py.toFixed(0)} ax=${ax.toFixed(0)} ay=${ay.toFixed(0)} dist2=${dist2(px, py, ax, ay).toFixed(0)} inVillage=${inVillage} zn="${zn}" snakeStarted=${f.snakeStarted} nearAltar=${nearAltar}`);
+  // Проверка зажжённых святилищ — безопасная зона
+  const shrines = map.shrines || [];
+  let nearShrine = false;
+  for (let j = 0; j < shrines.length; j++) {
+    const s = shrines[j];
+    if (s.lit && dist2(px, py, s.x * T + 8, s.y * T + 8) < 240 * 240) {
+      nearShrine = true;
+      break;
+    }
+  }
   
+  logger.debug('fog', `STATE: px=${px.toFixed(0)} py=${py.toFixed(0)} ax=${ax.toFixed(0)} ay=${ay.toFixed(0)} dist2=${dist2(px, py, ax, ay).toFixed(0)} inVillage=${inVillage} zn="${zn}" snakeStarted=${f.snakeStarted} nearAltar=${nearAltar} nearShrine=${nearShrine} fogActive=${fogState.fogActive} fogTimer=${fogState.fogTimer.toFixed(1)} fogLeft=${fogState.fogLeft.toFixed(1)}`);
+  
+  // === Деревня — безопасная зона, туман выключен ===
   if (inVillage) {
     logger.debug('fog', `IN_VILLAGE: zone="${zn}" → fog OFF`);
-    // Не отключаем туман — просто не включаем ambient
+    if (fogState.fogActive) endWave(fogState, true, bus, getRunes, f);
     fogState.fogRadius += (2600 - fogState.fogRadius) * Math.min(1, rdt * 0.8);
     return;
   }
   
-  // Туман включён везде, кроме деревень. Святилища делают "дыры" через шейдер.
-  if (!fogState.fogActive) {
-    fogState.fogActive = true;
-    fogState.fogAlphaTarget = 1;
+  // === Алтарь — постоянный туман с призраками ===
+  if (nearAltar && !nearShrine) {
+    if (!fogState.fogActive) {
+      fogState.fogActive = true;
+      fogState.fogAmbient = true;
+      fogState.fogAlphaTarget = 1;
+      audio.setFog(true);
+      bus.emit('toast', { msg: 'Саван Древа... оно не отпустит просто так' });
+    }
     fogState.fogAmbient = true;
-    audio.setFog(true);
-    bus.emit('toast', { msg: 'Саван Древа... оно не отпустит просто так' });
+    fogState.fogRadius += (350 - fogState.fogRadius) * Math.min(1, rdt * 0.6);
+    ensureGhosts(world, 2, true, map, px, py, spawnEnemyInEcs);
+    return;
   }
-  fogState.fogAmbient = true;
-  fogState.fogRadius += (350 - fogState.fogRadius) * Math.min(1, rdt * 0.6);
-  ensureGhosts(world, 2, true, map, px, py, spawnEnemyInEcs);
-  return;
+  
+  // === Зажжённое святилище — безопасная зона, туман выключен ===
+  if (nearShrine) {
+    logger.debug('fog', `NEAR_SHRINE: safe zone, fog OFF`);
+    if (fogState.fogActive) {
+      endWave(fogState, true, bus, getRunes, f);
+    }
+    fogState.fogRadius += (600 - fogState.fogRadius) * Math.min(1, rdt * 0.6);
+    return;
+  }
+  
+  // === Игрок ушёл от алтаря и святилищ — призраки исчезают ===
+  if (fogState.fogAmbient) {
+    logger.debug('fog', `LEFT_ALTAR: fogAmbient=true → endWave`);
+    bus.emit('fog:altarLeave', {});
+    endWave(fogState, true, bus, getRunes, f);
+  }
+  
+  // === Таймер волн / активная волна ===
+  if (!fogState.fogActive) {
+    // --- Фаза ожидания: fogTimer отсчитывает до волны ---
+    fogState.fogTimer -= dt;
+    fogState.fogRadius += (2600 - fogState.fogRadius) * Math.min(1, rdt * 0.8);
+    
+    // Предупреждение за 4 секунды до волны
+    if (!fogState.fogWarned && fogState.fogTimer < 4 && fogState.fogTimer > 0 && f.hasItem('sword')) {
+      fogState.fogWarned = true;
+      audio.setFog(true);
+      audio.horn();
+      bus.emit('toast', { msg: 'Ветер стихает... Туман близко' });
+    }
+    
+    // Волна началась!
+    if (fogState.fogTimer <= 0 && f.hasItem('sword')) {
+      fogState.fogActive = true;
+      fogState.fogLeft = 40;       // волна длится 40 секунд
+      fogState.fogSpawned = false; // призраки ещё не появились
+      fogState.fogRadius = 900;    // радиус волны
+      fogState.fogAlphaTarget = 1;
+      audio.setFog(true);
+      bus.emit('toast', { msg: 'ВОЛНА ТУМАНА. Ниды шепчут...' });
+    }
+  } else {
+    // --- Активная волна: fogLeft отсчитывает до конца ---
+    fogState.fogLeft -= dt;
+    fogState.fogRadius += (140 - fogState.fogRadius) * Math.min(1, rdt * 0.35);
+    
+    // Через 2 секунды после начала волны — появляются призраки
+    if (!fogState.fogSpawned && fogState.fogLeft < 38) {
+      fogState.fogSpawned = true;
+      ensureGhosts(world, 2 + Math.floor(getRunes() / 2), false, map, px, py, spawnEnemyInEcs);
+    }
+    
+    // Волна закончилась
+    if (fogState.fogLeft <= 0) {
+      endWave(fogState, true, bus, getRunes, f);
+    }
+  }
 }
 
 function zoneFor(map: any, tx: number, ty: number): string {
@@ -164,6 +236,7 @@ function endWave(state: FogState, dropDew: boolean, bus: any, getRunes: () => nu
   state.fogAmbient = false;
   state.fogSpawned = false;
   state.fogLeft = 0;
+  state.fogAlphaTarget = 0;
   state.fogTimer = Math.max(60, 80 - getRunes() * 4 + Math.random() * 30);
   
   if (flags) {
