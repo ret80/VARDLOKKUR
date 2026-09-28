@@ -11,6 +11,7 @@ import type { IRenderer, ShaderHandle, LayerHandle, GraphicsHandle } from '../..
 const FOG_VERTEX = `
 attribute vec2 aPosition;
 varying vec2 vTextureCoord;
+varying vec2 vPosition;
 
 uniform vec4 uInputSize;
 uniform vec4 uOutputFrame;
@@ -30,6 +31,7 @@ vec2 filterTextureCoord(void) {
 void main(void) {
   gl_Position = filterVertexPosition();
   vTextureCoord = filterTextureCoord();
+  vPosition = aPosition;
 }
 `;
 
@@ -60,6 +62,7 @@ uniform float uShrineHoleRadius;
 uniform float uShrineTransitionUV;
 
 varying vec2 vTextureCoord;
+varying vec2 vPosition;
 
 // ============================================================
 // FBM noise (4 октавы) с дрейфом
@@ -103,7 +106,8 @@ float fbm(vec2 p) {
 // ============================================================
 
 void main(void) {
-  vec2 uv = vTextureCoord;
+  // vPosition — это UV 0..1 fullscreen quad (экранное пространство)
+  vec2 uv = vPosition;
   
   // --- 1. Базовый туман через FBM noise с дрейфом ---
   vec2 drifted = uv * 3.0 + uTime * 0.05;
@@ -270,15 +274,10 @@ export class FogRenderer {
     this._viewW = viewW;
     this._viewH = viewH;
 
-    // Получаем физические размеры экрана из рендерера
-    const screenSize = r.getScreenSize();
-    const screenW = screenSize.w;
-    const screenH = screenSize.h;
-
-    // Конвертируем мировую позицию игрока в screen-space UV (0..1)
-    // Используем физические размеры экрана, а не логические viewW/viewH
-    const uvX = 0.5 + (playerPos.x - camPos.x) / screenW;
-    const uvY = 0.5 + (playerPos.y - camPos.y) / screenH;
+    // Конвертируем мировую позицию игрока в UV-пространство шейдера (0..1)
+    // camPos — левый верхний угол viewport (world units), viewW/viewH — размеры viewport в тех же единицах
+    const uvX = (playerPos.x - camPos.x) / viewW;
+    const uvY = (playerPos.y - camPos.y) / viewH;
 
     // Нормализуем радиус тумана относительно viewport
     const normalizedRadius = Math.min(viewW, viewH) > 0
@@ -292,17 +291,14 @@ export class FogRenderer {
     const shrines: { x: number; y: number }[] = [];
     for (let i = 0; i < this.SHRINE_COUNT_MAX; i++) {
       if (i < this._shrineCount) {
-        // Screen-space: центр экрана = (0.5, 0.5)
-        const sx = 0.5 + (this._shrines[i].x - camPos.x) / screenW;
-        const sy = 0.5 + (this._shrines[i].y - camPos.y) / screenH;
+        // UV-пространство шейдера: (0,0) = левый верхний угол viewport, (1,1) = правый нижний
+        const sx = (this._shrines[i].x - camPos.x) / viewW;
+        const sy = (this._shrines[i].y - camPos.y) / viewH;
         shrines.push({ x: sx, y: sy });
       } else {
         shrines.push({ x: 0, y: 0 });
       }
     }
-
-    // Отладочное логирование — каждый кадр
-    console.log('[fog:update] viewW=' + viewW + ' viewH=' + viewH + ' screenW=' + screenW + ' screenH=' + screenH + ' player=' + playerPos.x.toFixed(0) + ',' + playerPos.y.toFixed(0) + ' cam=' + camPos.x.toFixed(0) + ',' + camPos.y.toFixed(0) + ' playerUV=' + uvX.toFixed(3) + ',' + uvY.toFixed(3) + ' shrines=' + shrines.map(s => '(' + s.x.toFixed(3) + ',' + s.y.toFixed(3) + ')').join(', '));
 
     r.setShaderUniform(this._shader, 'uTime', time);
     r.setShaderUniform(this._shader, 'uPlayerPosX', uvX);

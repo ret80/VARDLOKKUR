@@ -199,8 +199,9 @@ export class PixiJSRenderer implements IRenderer {
     const sprite = new Sprite(Texture.WHITE);
     sprite.x = 0;
     sprite.y = 0;
-    sprite.width = this.app.screen.width;
-    sprite.height = this.app.screen.height;
+    // Используем физические размеры canvas для предотвращения растяжения low-res текстуры фильтра
+    sprite.width = this.app.canvas.width;
+    sprite.height = this.app.canvas.height;
     sprite.anchor.set(0, 0);
     this.app.stage.addChild(sprite);
     this.fullscreenQuads.set(id, { pixiSprite: sprite });
