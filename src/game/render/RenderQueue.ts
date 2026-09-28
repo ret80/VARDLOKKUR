@@ -120,18 +120,6 @@ export class RenderQueue {
     }
     this.entries.length = 0;
   }
-
-  /** Освободить все Graphics-ресурсы очереди и очистить её (при выгрузке карты) */
-  clear(renderer: IRenderer): void {
-    for (const e of this.entries) {
-      try {
-        renderer.destroyGraphics(e.handle);
-      } catch {
-        // уже уничтожен — игнорируем
-      }
-    }
-    this.entries.length = 0;
-  }
 }
 
 // ============================================================
