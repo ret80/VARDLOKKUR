@@ -44,15 +44,13 @@ const FOG_GHOST_HP = 5;
 const FOG_GHOST_SPEED = 100;
 
 // --- Радиусы тумана ---
-const FOG_RADIUS_DEFAULT = 2600;     // радиум по умолчанию / вне волны
+const FOG_RADIUS_DEFAULT = 2600;     // радиус по умолчанию / вне волны
 const FOG_RADIUS_ALTAR = 350;        // радиус тумана у алтаря
-const FOG_RADIUS_SHRINE = 600;       // радиус тумана у зажжённого святилища
 const FOG_RADIUS_WAVE = 900;         // радиус при начале волны
 const FOG_RADIUS_WAVE_ACTIVE = 140;  // радиус активной волны
 
 // --- Зоны безопасности ---
 const SAFE_ZONE_ALTAR = 240;         // радиус безопасности у алтаря
-const SAFE_ZONE_SHRINE = 70;         // радиус безопасности у святилища
 
 // --- Параметры волны ---
 const FOG_WAVE_DURATION = 40;        // длительность волны в секундах
@@ -160,18 +158,7 @@ export function fogUpdateSystem(
   const ay = map.treeAltar.y * T + 8;
   const nearAltar = !f.snakeStarted && dist2(px, py, ax, ay) < SAFE_ZONE_ALTAR * SAFE_ZONE_ALTAR;
   
-  // Проверка зажжённых святилищ — безопасная зона
-  const shrines = map.shrines || [];
-  let nearShrine = false;
-  for (let j = 0; j < shrines.length; j++) {
-    const s = shrines[j];
-    if (s.lit && dist2(px, py, s.x * T + 8, s.y * T + 8) < SAFE_ZONE_SHRINE * SAFE_ZONE_SHRINE) {
-      nearShrine = true;
-      break;
-    }
-  }
-  
-  logger.debug('fog', `STATE: px=${px.toFixed(0)} py=${py.toFixed(0)} ax=${ax.toFixed(0)} ay=${ay.toFixed(0)} dist2=${dist2(px, py, ax, ay).toFixed(0)} inVillage=${inVillage} zn="${zn}" snakeStarted=${f.snakeStarted} nearAltar=${nearAltar} nearShrine=${nearShrine} fogActive=${fogState.fogActive} fogTimer=${fogState.fogTimer.toFixed(1)} fogLeft=${fogState.fogLeft.toFixed(1)}`);
+  logger.debug('fog', `STATE: px=${px.toFixed(0)} py=${py.toFixed(0)} ax=${ax.toFixed(0)} ay=${ay.toFixed(0)} dist2=${dist2(px, py, ax, ay).toFixed(0)} inVillage=${inVillage} zn="${zn}" snakeStarted=${f.snakeStarted} nearAltar=${nearAltar} fogActive=${fogState.fogActive} fogTimer=${fogState.fogTimer.toFixed(1)} fogLeft=${fogState.fogLeft.toFixed(1)}`);
   
   // === Деревня — безопасная зона, туман выключен ===
   if (inVillage) {
@@ -182,7 +169,7 @@ export function fogUpdateSystem(
   }
   
   // === Алтарь — постоянный туман с призраками ===
-  if (nearAltar && !nearShrine) {
+  if (nearAltar) {
     if (!fogState.fogActive) {
       fogState.fogActive = true;
       fogState.fogAmbient = true;
@@ -196,17 +183,7 @@ export function fogUpdateSystem(
     return;
   }
   
-  // === Зажжённое святилище — безопасная зона, туман выключен ===
-  if (nearShrine) {
-    logger.debug('fog', `NEAR_SHRINE: safe zone, fog OFF`);
-    if (fogState.fogActive) {
-      endWave(fogState, true, bus, getRunes, f);
-    }
-    fogState.fogRadius += (FOG_RADIUS_SHRINE - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_AMBIENT);
-    return;
-  }
-  
-  // === Игрок ушёл от алтаря и святилищ — призраки исчезают ===
+  // === Игрок ушёл от алтаря — призраки исчезают ===
   if (fogState.fogAmbient) {
     logger.debug('fog', `LEFT_ALTAR: fogAmbient=true → endWave`);
     bus.emit('fog:altarLeave', {});

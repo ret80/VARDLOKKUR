@@ -39,7 +39,7 @@ const AGGRO_RANGE = 100;
 const PATH_REPATH_TIME = 0.5;
 const CONTACT_COOLDOWN = 0.5;
 const GHOST_SLOW_DURATION = 2.0; // призрак замедляет игрока на 2 секунды
-const SHRINE_PROTECT_RADIUS = 80; // радиус защиты святилища (в пикселях)
+const SHRINE_PROTECT_RADIUS = 25; // радиус защиты святилища (в пикселях)
 
 // ============================================================
 // Кэш для isPlayerNearLitShrine — вычисляется один раз за кадр
