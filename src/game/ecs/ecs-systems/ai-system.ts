@@ -1,6 +1,6 @@
 /* ai-system.ts — AI система врагов на основе ECS */
 
-import { query, hasComponent, type World } from 'bitecs';
+import { query, hasComponent, addComponent, type World } from 'bitecs';
 import {
   Position,
   Velocity,
@@ -443,7 +443,7 @@ function updateGhost(
       if (!!Enemy[eid].dropDew) {
         // bus.emit("drop:spawn", { kind: "dew", x: px[eid], y: py[eid], life: 40 });
       }
-      Dead[eid] = {};
+      addComponent(world, eid, Dead);
     }
     return;
   }
