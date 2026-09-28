@@ -155,8 +155,7 @@ void main(void) {
 
   // --- 1. Туман привязан к миру: скроллится вместе с камерой ---
   // uCamOffsetX/Y приходят из JS отмасштабированными (FOG_SCROLL_FACTOR).
-  // Слагаемое uTime — клубение продолжается, когда игрок стоит на месте.
-  vec2 p = uv * 3.0 + vec2(uCamOffsetX, uCamOffsetY) + uTime * 0.04;
+  vec2 p = uv * 3.0 + vec2(uCamOffsetX, uCamOffsetY);
 
   // --- 2. Клубящийся, кусковой туман ---
   float fog = billowingFog(p, uTime);
