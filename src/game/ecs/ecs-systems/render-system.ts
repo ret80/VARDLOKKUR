@@ -81,7 +81,6 @@ function getSpriteHandle(eid: number): number | undefined {
 /**
  * Обеспечить запись в RenderQueue для сущности.
  * Создаёт запись при первом обращении (Graphics уже создан spriteFactory).
- * Добавляет или обновляет запись по key (eid) — без Map, только массив entries.
  */
 export function ensureRenderEntry(eid: number, layer: number): RenderEntry | null {
   const q = getRenderQueue();
@@ -98,19 +97,9 @@ export function ensureRenderEntry(eid: number, layer: number): RenderEntry | nul
     alpha: 1,
     visible: true,
     handle: handle as GraphicsHandle,
-    key: eid,
   };
-  q.addOrUpdate(entry);
+  q.enqueue(entry);
   return entry;
-}
-
-/**
- * Убрать запись очереди для удалённой сущности.
- * Graphics уничтожает вызывающий код (renderer.destroyGraphics).
- */
-export function unregisterSpriteHandle(eid: number): void {
-  const q = getRenderQueue();
-  if (q) q.removeByKey(eid);
 }
 
 /** Конфигурация диспетчера объектов окружения */

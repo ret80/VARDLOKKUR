@@ -67,23 +67,19 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
     return;
   }
 
-  // === 1. Очистка RenderQueue (каждый кадр — полная пересборка) ===
-  queue.clear(opts.renderer!);
-
-  // === 2. Вычисление видимого диапазона тайлов ===
+  // === 1. Вычисление видимого диапазона тайлов ===
   if (viewport) {
     const startTileX = Math.max(0, Math.floor(viewport.camX / T));
     const endTileX = Math.min(mapW - 1, Math.ceil((viewport.camX + viewport.viewW) / T));
     const startTileY = Math.max(0, Math.floor(viewport.camY / T));
     const endTileY = Math.min(mapH - 1, Math.ceil((viewport.camY + viewport.viewH) / T));
 
-    // === 3. Ground тайлы — проход по видимому диапазону ===
+    // === 2. Ground тайлы — проход по видимому диапазону ===
     for (let y = startTileY; y <= endTileY; y++) {
       for (let x = startTileX; x <= endTileX; x++) {
-        const key = `${x}_${y}`;
-        const tile = MapTiles.get(key);
+        const tile = MapTiles.get(`${x}_${y}`);
         if (tile) {
-          queue.addOrUpdate({
+          queue.enqueue({
             x: tile.x,
             y: tile.y,
             width: T,
@@ -92,19 +88,17 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
             alpha: 1,
             visible: true,
             handle: tile.handle as GraphicsHandle,
-            key,
           });
         }
       }
     }
 
-    // === 4. Wall тайлы — проход по видимому диапазону ===
+    // === 3. Wall тайлы — проход по видимому диапазону ===
     for (let y = startTileY; y <= endTileY; y++) {
       for (let x = startTileX; x <= endTileX; x++) {
-        const key = `wall_${x}_${y}`;
-        const tile = MapTiles.get(key);
+        const tile = MapTiles.get(`wall_${x}_${y}`);
         if (tile) {
-          queue.addOrUpdate({
+          queue.enqueue({
             x: tile.x,
             y: tile.y,
             width: T,
@@ -113,13 +107,12 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
             alpha: 1,
             visible: true,
             handle: tile.handle as GraphicsHandle,
-            key,
           });
         }
       }
     }
 
-    // === 5. House тайлы — проверка пересечения с viewport ===
+    // === 4. House тайлы — проверка пересечения с viewport ===
     const HOUSE_CULL_PAD = T * 4; // запас для bounding box дома
     for (const [key, tile] of MapTiles) {
       if (!key.startsWith('house_')) continue;
@@ -132,7 +125,7 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
         tile.y + houseH + HOUSE_CULL_PAD >= viewport.camY &&
         tile.y - HOUSE_CULL_PAD <= viewport.camY + viewport.viewH
       ) {
-        queue.addOrUpdate({
+        queue.enqueue({
           x: tile.x,
           y: tile.y,
           width: T * 4, // запас для bounding box дома
@@ -141,7 +134,6 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
           alpha: 1,
           visible: true,
           handle: tile.handle as GraphicsHandle,
-          key,
         });
       }
     }

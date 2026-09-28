@@ -1,9 +1,7 @@
 /* RenderQueue.ts — плоская очередь записей на отрисовку (task_14).
  *
- * Все объекты (ground-тайлы, стены, дома, динамические сущности) перед
- * отрисовкой помещаются в RenderEntry. Один flush(renderer, viewport) на кадр:
- * сортировка по (layer, y), viewport culling по bounding box объекта и
- * применение позиции/alpha/visible/zIndex через IRenderer (только для видимых).
+ * Immediate mode: каждый кадр системы enqueue-ят свои объекты,
+ * flush(renderer, viewport) — одна сортировка, один проход, очистка.
  *
  * Y-sort: zIndex = layer * 100000 + Math.round(y)
  */
@@ -49,8 +47,6 @@ export interface RenderEntry {
   width?: number;
   /** Высота bounding box объекта (для viewport culling) */
   height?: number;
-  /** Необязательный ключ (eid динамической сущности или строковый ключ батча) для быстрого поиска */
-  key?: string | number;
   /** Пропустить viewport culling (для screen-space элементов: подсказок, UI) */
   skipCull?: boolean;
 }
@@ -83,6 +79,8 @@ export function computeZIndex(layer: number, y: number): number {
 /**
  * RenderQueue — плоский массив RenderEntry.
  * В кадре 1000–1500 записей — сортировка тривиальна.
+ *
+ * Immediate mode: enqueue → flush (сортировка + culling + применение + clear).
  */
 export class RenderQueue {
   private entries: RenderEntry[] = [];
@@ -90,60 +88,6 @@ export class RenderQueue {
   /** Добавить запись в очередь */
   enqueue(e: RenderEntry): void {
     this.entries.push(e);
-  }
-
-  /** Удалить все записи с данным handle (при уничтожении графики) */
-  remove(handle: GraphicsHandle): void {
-    for (let i = this.entries.length - 1; i >= 0; i--) {
-      if (this.entries[i].handle === handle) {
-        this.entries.splice(i, 1);
-      }
-    }
-  }
-
-  /** Найти запись по ключу (eid динамической сущности или строковый ключ батча) */
-  getByKey(key: string | number): RenderEntry | undefined {
-    for (const e of this.entries) {
-      if (e.key === key) return e;
-    }
-    return undefined;
-  }
-
-  /**
-   * Добавить запись или обновить существующую с таким же key.
-   * Ищет запись по key в массиве entries — если найдена, заменяет её.
-   * Иначе — добавляет новую запись.
-   */
-  addOrUpdate(e: RenderEntry): void {
-    for (let i = 0; i < this.entries.length; i++) {
-      if (this.entries[i].key === e.key) {
-        this.entries[i] = e;
-        return;
-      }
-    }
-    this.entries.push(e);
-  }
-
-  /** Удалить запись под ключом, вернув её handle (или null) */
-  removeByKey(key: string | number): GraphicsHandle | null {
-    for (let i = this.entries.length - 1; i >= 0; i--) {
-      if (this.entries[i].key === key) {
-        const e = this.entries[i];
-        this.entries.splice(i, 1);
-        return e.handle;
-      }
-    }
-    return null;
-  }
-
-  /** Количество записей */
-  get size(): number {
-    return this.entries.length;
-  }
-
-  /** Итерация по всем записям (для внешних систем) */
-  forEach(fn: (e: RenderEntry) => void): void {
-    for (const e of this.entries) fn(e);
   }
 
   /**
@@ -156,6 +100,7 @@ export class RenderQueue {
    *    чтобы он не остался на экране после предыдущего кадра).
    * 3. Для видимых записей применяются позиция/alpha/visible/zIndex
    *    через IRenderer.
+   * 4. Очистка очереди.
    */
   flush(renderer: IRenderer, viewport?: Viewport): void {
     // Сортировка по (layer, y) — плоский массив, 1000–1500 элементов
@@ -173,9 +118,10 @@ export class RenderQueue {
       renderer.setGraphicsVisible(e.handle, e.visible);
       renderer.setGraphicsZIndex(e.handle, computeZIndex(e.layer, e.y));
     }
+    this.entries.length = 0;
   }
 
-  /** Освободить все Graphics-ресурсы очереди и очистить её */
+  /** Освободить все Graphics-ресурсы очереди и очистить её (при выгрузке карты) */
   clear(renderer: IRenderer): void {
     for (const e of this.entries) {
       try {

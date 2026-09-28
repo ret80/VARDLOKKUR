@@ -74,7 +74,6 @@ import {
 import {
   renderSystem,
   cleanupRenderedEnemy,
-  unregisterSpriteHandle,
   ENTITY_LAYER,
   _renderSystemInstance,
 } from './ecs-systems/render-system';
@@ -668,10 +667,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
           PhysicsBodyRegistry[pbIdx - 1] = null as any;
         }
       }
-      // Очистить кэш текстуры (GPU), данные рендера (CPU), handle спрайта
+      // Очистить кэш текстуры (GPU), данные рендера (CPU)
       TextureCacheManager.instance.destroyEntity(eid);
       cleanupRenderedEnemy(eid);
-      unregisterSpriteHandle(eid);
       // Удалить из ECS
       removeEntity(world, eid);
     }

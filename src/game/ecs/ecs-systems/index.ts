@@ -72,7 +72,6 @@ export {
   renderSystem,
   RenderSystem,
   ensureRenderEntry,
-  unregisterSpriteHandle,
   ENTITY_LAYER,
   type RenderSystemOptions,
 } from './render-system';
