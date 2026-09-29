@@ -5,12 +5,15 @@
  *     видимый тайл земли, стены и дома. Каждый Graphics рисуется в (0,0).
  *  2. Каждый Graphics регистрируется в MapTiles с координатами (x,y).
  *  3. mapRenderSystem(world, opts) вызывается каждый кадр:
- *     — регистрирует все тайлы из MapTiles в RenderQueue.
+ *     — регистрирует только видимые тайлы из MapTiles в RenderQueue.
  *     — RenderQueue сортирует по (layer, y) -> корректный Z-sort.
  *  4. Если карта уничтожена -> все Graphics уничтожаются.
  *
  * Y-sort: zIndex = layer * 100000 + Math.round(y)
  * Каждый тайл -> отдельный Graphics, поэтому игрок может зайти ЗА дом.
+ *
+ * Важно: тайлы статичны — рисуем ОДИН раз при загрузке карты.
+ * mapRenderSystem только enqueue в RenderQueue, без перерисовки.
  */
 
 import { query, type World } from 'bitecs';
@@ -41,8 +44,10 @@ export interface MapRenderSystemOptions {
  * Вызывается каждый кадр в фазе render() игрового цикла.
  * Каждый кадр:
  *  1. Вычисление видимого диапазона тайлов из viewport.
- *  2. Для каждого видимого тайла: clearGraphics + drawTileLocal + enqueue.
+ *  2. Для каждого видимого тайла: enqueue из MapTiles (без перерисовки).
  *  3. RenderQueue.flush() — сортировка по (layer, y), viewport culling, zIndex.
+ *
+ * Тайлы статичны — рисуются ОДИН раз при загрузке карты.
  */
 export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {}): void {
   const queue = getRenderQueue();
@@ -77,10 +82,6 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
       for (let x = startTileX; x <= endTileX; x++) {
         const tile = MapTiles.get(`${x}_${y}`);
         if (tile) {
-          const r = opts.renderer!;
-          const g = tile.handle as GraphicsHandle;
-          r.clearGraphics(g);
-          drawTileLocal(g, tile.tileType, 0, 0, r);
           queue.enqueue({
             x: tile.x,
             y: tile.y,
@@ -89,7 +90,7 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
             layer: tile.layer,
             alpha: 1,
             visible: true,
-            handle: g,
+            handle: tile.handle as GraphicsHandle,
           });
         }
       }
@@ -100,10 +101,6 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
       for (let x = startTileX; x <= endTileX; x++) {
         const tile = MapTiles.get(`wall_${x}_${y}`);
         if (tile) {
-          const r = opts.renderer!;
-          const g = tile.handle as GraphicsHandle;
-          r.clearGraphics(g);
-          drawWallGeometry(r, g, tile.tileType, 0, 0, 0);
           queue.enqueue({
             x: tile.x,
             y: tile.y,
@@ -112,7 +109,7 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
             layer: tile.layer,
             alpha: 1,
             visible: true,
-            handle: g,
+            handle: tile.handle as GraphicsHandle,
           });
         }
       }
@@ -145,7 +142,7 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
     }
   }
 
-  // === 6. Скрываем legacy-спрайты карты ===
+  // === 5. Скрываем legacy-спрайты карты ===
   hideLegacyLayerSprites(opts.renderer);
 }
 
@@ -177,7 +174,7 @@ function hideLegacyLayerSprites(renderer: IRenderer | undefined): void {
  * Создать Graphics для карты (земля, стены, дома).
  *
  * Вызывается ОДИН раз при загрузке карты (EcsMapLoader.createMapEntity).
- * Ground и стены: один Graphics на тип тайла (Tl.WATER, Tl.SHORE и т.д.).
+ * Ground и стены: один Graphics на каждый тайл (статичный кэш).
  * Дома: один Graphics на каждый блок домов (уникальные).
  * Координаты (x,y) сохраняются в MapTiles.
  * Регистрация в RenderQueue -> задача mapRenderSystem (каждый кадр).
@@ -203,78 +200,53 @@ export function createMapTileGraphics(
     return v - Math.floor(v);
   };
 
-  // ===== 1. Ground: один Graphics на тип тайла =====
-  const groundTypes = new Set<number>();
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      groundTypes.add(map.tiles[y * W + x]);
-    }
-  }
-
-  // Создаём по одному Graphics на тип
-  const groundGraphicsByType = new Map<number, GraphicsHandle>();
-  for (const t of groundTypes) {
-    const g = renderer.createGraphics();
-    renderer.setGraphicsPosition(g, { x: 0, y: 0 });
-    drawTileLocal(g, t, 0, 0, renderer);
-    groundGraphicsByType.set(t, g as GraphicsHandle);
-  }
-
-  // Заполняем MapTiles с указанием типа тайла
+  // ===== 1. Ground: один Graphics на каждый тайл =====
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const t = map.tiles[y * W + x];
-      const handle = groundGraphicsByType.get(t)!;
+
+      const g = renderer.createGraphics();
+      renderer.setGraphicsPosition(g, { x: 0, y: 0 });
+      drawTileLocal(g, t, 0, 0, renderer);
 
       const key = x + "_" + y;
       MapTiles.set(key, {
-        handle,
+        handle: g as GraphicsHandle,
         x: x * T,
         y: y * T,
         layer: RENDER_LAYER.GROUND,
-        tileType: t,
       });
 
       count++;
     }
   }
 
-  // ===== 2. Стены: один Graphics на тип тайла =====
+  // ===== 2. Стены: один Graphics на каждый тайл =====
   const WALL_TILES = new Set<number>([
     Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.COLUMN, Tl.DWALL, Tl.CAVEWALL,
   ]);
-
-  const wallGraphicsByType = new Map<number, GraphicsHandle>();
-  for (const t of WALL_TILES) {
-    // Проверяем, есть ли такой тип на карте
-    let found = false;
-    for (let y = 0; y < H && !found; y++) {
-      for (let x = 0; x < W && !found; x++) {
-        if (map.tiles[y * W + x] === t) found = true;
-      }
-    }
-    if (!found) continue;
-
-    const g = renderer.createGraphics();
-    renderer.setGraphicsPosition(g, { x: 0, y: 0 });
-    drawWallGeometry(renderer, g, t, 0, map.dungeonId ?? 0, 0, 0);
-    wallGraphicsByType.set(t, g as GraphicsHandle);
-  }
 
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const t = map.tiles[y * W + x];
       if (!WALL_TILES.has(t)) continue;
 
-      const handle = wallGraphicsByType.get(t)!;
+      const variant =
+        t === Tl.TREE ? ((rnd(x, y, 13) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
+        : t === Tl.ROCK ? (rnd(x, y, 11) > 0.5 ? 1 : 0)
+        : t === Tl.COLUMN ? ((rnd(x, y, 11) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
+        : 0;
+
+      const g = renderer.createGraphics();
+      renderer.setGraphicsPosition(g, { x: 0, y: 0 });
+      drawWallGeometry(renderer, g, t, variant, map.dungeonId ?? 0, 0, 0);
 
       const key = "wall_" + x + "_" + y;
       MapTiles.set(key, {
-        handle,
+        handle: g as GraphicsHandle,
         x: x * T,
         y: y * T,
         layer: RENDER_LAYER.DYNAMIC,
-        tileType: t,
       });
 
       count++;
@@ -329,15 +301,13 @@ export function createMapTileGraphics(
         x: x * T,
         y: y * T,
         layer: RENDER_LAYER.DYNAMIC,
-        tileType: Tl.HOUSE,
       });
 
       count++;
     }
   }
 
-  logger.info("map-render", "Map tile graphics created: " + count + " tiles, " +
-    (groundGraphicsByType.size + wallGraphicsByType.size + count) + " Graphics (types + houses)");
+  logger.info("map-render", "Map tile graphics created: " + count + " Graphics (ground + walls + houses)");
 }
 
 /**
