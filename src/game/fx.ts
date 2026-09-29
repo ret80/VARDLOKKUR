@@ -47,6 +47,8 @@ export class FxManager {
   // worldParticleG удалён в Этап 6 — перемещён в ParticleSystem
   private screenFxG: any = null; // Для снега (поверх UI) — GraphicsHandle
   public vignette: SpriteHandle | null = null;
+  /** Текстура виньетки — уничтожается в destroy() */
+  private _vignetteTexture: TextureHandle | null = null;
 
   // --- Данные (deprecated: перенесено в ParticleSystem) ---
   private particles: Particle[] = [];
@@ -168,7 +170,15 @@ export class FxManager {
     grad.addColorStop(1, "rgba(4,6,10,0.66)");
     vx.fillStyle = grad; vx.fillRect(0, 0, vw, vh);
     
+    // Уничтожить старую текстуру виньетки, если есть
+    if (this._vignetteTexture !== null) {
+      this._renderer.destroyTexture(this._vignetteTexture);
+      this._vignetteTexture = null;
+    }
+
     const texHandle = this._renderer.createTextureFromCanvas(vc);
+    this._vignetteTexture = texHandle;
+
     if (this.vignette !== null) {
       // Обновляем существующий спрайт (пересоздаём с новой текстурой)
       this._renderer.destroySprite(this.vignette);
@@ -230,6 +240,11 @@ export class FxManager {
   /* ---------- Жизненный цикл ---------- */
 
   public destroy() {
+    // Уничтожить текстуру виньетки
+    if (this._vignetteTexture !== null) {
+      this._renderer.destroyTexture(this._vignetteTexture);
+      this._vignetteTexture = null;
+    }
     if (this.vignette !== null) {
       this._renderer.destroySprite(this.vignette);
       this.vignette = null;

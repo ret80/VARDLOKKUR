@@ -32,6 +32,7 @@ import {
 } from './ecs-components';
 import type { IRenderer, LayerHandle } from '../renderer/IRenderer';
 import { createMapTileGraphics, destroyAllMapTileGraphics } from '../render/map-render-system';
+import { getRenderer } from '../renderer/RendererFactory';
 
 // ============================================================
 // Конфигурация Map Loader
@@ -113,7 +114,12 @@ export class EcsMapLoader {
     // 1-1. Очистить старый мир (ECS сущности + SoA массивы)
     this.clearWorld(world, savedPlayerG);
 
-    // 1-2. Сбросить ссылку на barrierBody
+    // 1-2. Уничтожить графику старой карты (ground + wall/house тайлы)
+    if (this.config.renderer) {
+      destroyAllMapTileGraphics(this.config.renderer);
+    }
+
+    // 1-3. Сбросить ссылку на barrierBody
     this.barrierBody = null;
 
     // 2. Создать тайловые коллайдеры

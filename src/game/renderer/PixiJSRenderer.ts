@@ -136,6 +136,10 @@ export class PixiJSRenderer implements IRenderer {
   }
 
   destroy(): void {
+    // 1. Уничтожить fullscreen quads (screen-space эффекты: fog)
+    this.fullscreenQuads.forEach((q) => q.pixiSprite.destroy());
+    this.fullscreenQuads.clear();
+
     this.sprites.forEach((s) => s.pixiSprite.destroy());
     this.graphics.forEach((g) => g.pixiGraphics.destroy());
     this.textures.forEach((t) => t.destroy(true));
@@ -492,6 +496,12 @@ export class PixiJSRenderer implements IRenderer {
   }
 
   // === Textures ===
+  //
+  // Примечание: Texture.from(url/canvas) кэшируется внутренним AssetManager
+  // PixiJS v8. Текстуры, созданные через loadTexture / createTextureFromCanvas,
+  // отслеживаются в this.textures и уничтожаются в destroy().
+  // Текстуры, созданные неявно через createSprite(options: {texture: string}),
+  // кэшируются PixiJS и освобождаются при app.destroy({ texture: true }).
 
   async loadTexture(url: string): Promise<TextureHandle> {
     const id = this._nextId++;
