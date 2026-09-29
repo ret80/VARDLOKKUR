@@ -103,7 +103,7 @@ export class RenderQueue {
    * 4. Очистка очереди.
    */
   flush(renderer: IRenderer, viewport?: Viewport): void {
-    // Сортировка по (layer, y) — плоский массив, 1000–1500 элементов
+    // Сортировка по (layer, y) — плоский массив, 800–1500 элементов
     this.entries.sort((a, b) => a.layer - b.layer || a.y - b.y);
     for (const e of this.entries) {
       // Viewport culling: гарантированно невидимые объекты не трогаем

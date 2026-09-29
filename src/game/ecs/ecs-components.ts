@@ -93,10 +93,11 @@ export const MapState = aos<{ width: number; height: number; dungeonId: number }
 
 /** Информация о per-tile Graphics карты */
 export interface MapTileInfo {
-  handle: number;
   x: number;
   y: number;
   layer: number;
+  /** Handle для стен/домов (ground — в _groundGraphics) */
+  handle?: number;
 }
 
 /** Хранение per-tile Graphics: ключ → информация о Graphics */

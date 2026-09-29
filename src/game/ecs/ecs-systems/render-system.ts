@@ -180,6 +180,9 @@ export class RenderSystem {
   /** IRenderer — внедряется через init() (DIP) */
   private renderer: IRenderer | null = null;
 
+  /** Кэш результата query для Position+Sprite — избегаем аллокации массива каждый кадр */
+  private _renderEntityCache: number[] = [];
+
   /** Конфигурация всех статических объектов окружения */
   private readonly OBJECT_QUERIES: ObjectQueryConfig[] = [
     { components: [Sprite, Chest], key: "chest", mapper: eidToChestData },
@@ -304,8 +307,12 @@ export class RenderSystem {
     // === Единый проход: обновить записи очереди (позиция + видимость + альфа) ===
     const q = getRenderQueue();
     if (q) {
-      const entities = [...query(world, [Position, Sprite])];
-      for (const eid of entities) {
+      // Кэшируем результат query — избегаем аллокации массива каждый кадр
+      this._renderEntityCache.length = 0;
+      for (const eid of query(world, [Position, Sprite])) {
+        this._renderEntityCache.push(eid);
+      }
+      for (const eid of this._renderEntityCache) {
         const entry = ensureRenderEntry(eid, RENDER_LAYER.DYNAMIC);
         if (!entry) {
           continue;

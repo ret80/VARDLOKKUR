@@ -1,19 +1,16 @@
-/* map-render-system.ts — ECS-система рендеринга карты (per-tile Graphics).
+/* map-render-system.ts — ECS-система рендеринга карты.
  *
  * Архитектура:
- *  1. При загрузке карты (EcsMapLoader) создаётся ПО ОДНОМУ Graphics на каждый
- *     видимый тайл земли, стены и дома. Каждый Graphics рисуется в (0,0).
- *  2. Каждый Graphics регистрируется в MapTiles с координатами (x,y).
- *  3. mapRenderSystem(world, opts) вызывается каждый кадр:
- *     — регистрирует только видимые тайлы из MapTiles в RenderQueue.
- *     — RenderQueue сортирует по (layer, y) -> корректный Z-sort.
- *  4. Если карта уничтожена -> все Graphics уничтожаются.
- *
- * Y-sort: zIndex = layer * 100000 + Math.round(y)
- * Каждый тайл -> отдельный Graphics, поэтому игрок может зайти ЗА дом.
+ *  1. Ground: ОДИН Graphics на ВСЮ карту (через drawTileBatch).
+ *     Рисуются ОДИН раз при загрузке карты, каждый кадр — один draw call.
+ *  2. Стены: один Graphics на каждый тайл (варианты деревьев/скал).
+ *  3. Дома: один Graphics на каждый блок домов.
+ *  4. mapRenderSystem(world, opts) вызывается каждый кадр:
+ *     — ground: один entry в RenderQueue.
+ *     — стены/дома: enqueue видимых тайлов.
+ *  5. RenderQueue.flush() — сортировка по (layer, y) -> Z-sort.
  *
  * Важно: тайлы статичны — рисуем ОДИН раз при загрузке карты.
- * mapRenderSystem только enqueue в RenderQueue, без перерисовки.
  */
 
 import { query, type World } from 'bitecs';
@@ -21,11 +18,13 @@ import type { IRenderer, GraphicsHandle } from '../renderer/IRenderer';
 import { getRenderQueue, RENDER_LAYER, type Viewport } from './RenderQueue';
 import { MapState, MapTiles } from '../ecs/ecs-components';
 import { T, Tl, type WorldData } from '../world';
-import { drawTileLocal } from '../geometry/tile-geom';
+import { drawTileBatch, drawTileLocal } from '../geometry/tile-geom';
 import { drawWallGeometry } from '../geometry/wall-geom';
 import { drawHouseGeometry, houseMetrics } from '../geometry/house-geom';
 import { logger } from '../debug/logger';
 
+/** Ground Graphics для карты (один на всю карту) */
+let _groundGraphics: GraphicsHandle | null = null;
 
 /**
  * Опции mapRenderSystem (передаются из ecs-game-loop при каждом кадре).
@@ -70,37 +69,32 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
     return;
   }
 
-  // === 1. Вычисление видимого диапазона тайлов ===
+  // === 1. Ground: единый Graphics на всю карту ===
+  if (_groundGraphics) {
+    queue.enqueue({
+      x: 0,
+      y: 0,
+      width: mapW * T,
+      height: mapH * T,
+      layer: RENDER_LAYER.GROUND,
+      alpha: 1,
+      visible: true,
+      skipCull: true, // ground всегда рисуем (viewport culling не нужен)
+      handle: _groundGraphics,
+    });
+  }
+
+  // === 2. Wall тайлы — отдельный Graphics на каждый тайл (варианты) ===
   if (viewport) {
     const startTileX = Math.max(0, Math.floor(viewport.camX / T));
     const endTileX = Math.min(mapW - 1, Math.ceil((viewport.camX + viewport.viewW) / T));
     const startTileY = Math.max(0, Math.floor(viewport.camY / T));
     const endTileY = Math.min(mapH - 1, Math.ceil((viewport.camY + viewport.viewH) / T));
 
-    // === 2. Ground тайлы — проход по видимому диапазону ===
-    for (let y = startTileY; y <= endTileY; y++) {
-      for (let x = startTileX; x <= endTileX; x++) {
-        const tile = MapTiles.get(`${x}_${y}`);
-        if (tile) {
-          queue.enqueue({
-            x: tile.x,
-            y: tile.y,
-            width: T,
-            height: T,
-            layer: tile.layer,
-            alpha: 1,
-            visible: true,
-            handle: tile.handle as GraphicsHandle,
-          });
-        }
-      }
-    }
-
-    // === 3. Wall тайлы — проход по видимому диапазону ===
     for (let y = startTileY; y <= endTileY; y++) {
       for (let x = startTileX; x <= endTileX; x++) {
         const tile = MapTiles.get(`wall_${x}_${y}`);
-        if (tile) {
+        if (tile && tile.handle) {
           queue.enqueue({
             x: tile.x,
             y: tile.y,
@@ -115,10 +109,11 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
       }
     }
 
-    // === 4. House тайлы — проверка пересечения с viewport ===
+    // === 3. House тайлы — отдельный Graphics на каждый дом ===
     const HOUSE_CULL_PAD = T * 4; // запас для bounding box дома
     for (const [key, tile] of MapTiles) {
       if (!key.startsWith('house_')) continue;
+      if (!tile.handle) continue;
       // AABB-пересечение bounding box дома с viewport
       const houseW = T * 4;
       const houseH = T * 4;
@@ -140,9 +135,10 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
         });
       }
     }
+    // Конец if (viewport) для walls/houses
   }
 
-  // === 5. Скрываем legacy-спрайты карты ===
+  // === 4. Скрываем legacy-спрайты карты ===
   hideLegacyLayerSprites(opts.renderer);
 }
 
@@ -174,10 +170,9 @@ function hideLegacyLayerSprites(renderer: IRenderer | undefined): void {
  * Создать Graphics для карты (земля, стены, дома).
  *
  * Вызывается ОДИН раз при загрузке карты (EcsMapLoader.createMapEntity).
- * Ground и стены: один Graphics на каждый тайл (статичный кэш).
- * Дома: один Graphics на каждый блок домов (уникальные).
- * Координаты (x,y) сохраняются в MapTiles.
- * Регистрация в RenderQueue -> задача mapRenderSystem (каждый кадр).
+ * Ground: ОДИН Graphics на ВСЮ карту (через drawTileBatch).
+ * Стены: один Graphics на каждый тайл (варианты).
+ * Дома: один Graphics на каждый блок домов.
  */
 export function createMapTileGraphics(
   map: WorldData,
@@ -200,26 +195,11 @@ export function createMapTileGraphics(
     return v - Math.floor(v);
   };
 
-  // ===== 1. Ground: один Graphics на каждый тайл =====
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      const t = map.tiles[y * W + x];
-
-      const g = renderer.createGraphics();
-      renderer.setGraphicsPosition(g, { x: 0, y: 0 });
-      drawTileLocal(g, t, 0, 0, renderer);
-
-      const key = x + "_" + y;
-      MapTiles.set(key, {
-        handle: g as GraphicsHandle,
-        x: x * T,
-        y: y * T,
-        layer: RENDER_LAYER.GROUND,
-      });
-
-      count++;
-    }
-  }
+  // ===== 1. Ground: ОДИН Graphics на ВСЮ карту =====
+  const groundG = renderer.createGraphics();
+  drawTileBatch(renderer, groundG, map);
+  _groundGraphics = groundG as GraphicsHandle;
+  count++;
 
   // ===== 2. Стены: один Graphics на каждый тайл =====
   const WALL_TILES = new Set<number>([
@@ -316,11 +296,24 @@ export function createMapTileGraphics(
 export function destroyAllMapTileGraphics(
   renderer: IRenderer,
 ): void {
-  for (const [key, tile] of MapTiles) {
+  // Ground — уничтожаем единый Graphics
+  if (_groundGraphics) {
     try {
-      renderer.destroyGraphics(tile.handle as GraphicsHandle);
+      renderer.destroyGraphics(_groundGraphics);
     } catch {
       // уже уничтожен
+    }
+    _groundGraphics = null;
+  }
+
+  // Стены и дома — уничтожаем по MapTiles
+  for (const [key, tile] of MapTiles) {
+    if (tile.handle) {
+      try {
+        renderer.destroyGraphics(tile.handle as GraphicsHandle);
+      } catch {
+        // уже уничтожен
+      }
     }
   }
   MapTiles.clear();

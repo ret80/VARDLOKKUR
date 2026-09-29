@@ -95,10 +95,14 @@ export class PixiJSRenderer implements IRenderer {
       }
     } else {
       this.app = new Application();
+      // Ограничиваем DPR для снижения нагрузки на GPU (макс. 1.5x)
+      // На Retina-дисплеях DPR=2 → 4x нагрузка на GPU, но для изометрии/2D это избыточно
+      const maxDPR = 1.0;
+      const resolution = Math.min(window.devicePixelRatio ?? 1, maxDPR);
       await this.app.init({
         background: 0x05080d,
         antialias: false,
-        resolution: 1,
+        resolution,
         width,
         height,
       });
@@ -107,7 +111,9 @@ export class PixiJSRenderer implements IRenderer {
 
     // Корневой контейнер мира (сдвигается камерой)
     this.worldContainer = new Container();
-    this.worldContainer.sortableChildren = true;
+    // sortableChildren = false: Z-order управляется через RenderQueue (setGraphicsZIndex),
+    // PixiJS не нужно пересортировывать children каждый кадр — это O(n log n) впустую.
+    this.worldContainer.sortableChildren = false;
     this.app.stage.addChild(this.worldContainer);
 
     // Восстановление WebGL контекста после потери (GPU crash, tab switch, etc.)
@@ -164,7 +170,8 @@ export class PixiJSRenderer implements IRenderer {
   createLayer(name: string, zIndex: number): LayerHandle {
     const id = this._nextId++;
     const container = new Container();
-    container.sortableChildren = true;
+    // Z-order управляется через RenderQueue, PixiJS не нужно пересортировывать
+    container.sortableChildren = false;
     container.zIndex = zIndex;
     this.worldContainer.addChild(container);
     this.layers.set(id, { container, zIndex, name });

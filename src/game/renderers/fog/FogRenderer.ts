@@ -105,7 +105,8 @@ float fbm(vec2 p) {
   float amplitude = 0.5;
   float frequency = 1.0;
 
-  for (int i = 0; i < 4; i++) {
+  // 3 октавы — компромисс качество/производительность
+  for (int i = 0; i < 3; i++) {
     value += amplitude * noise(p * frequency);
     frequency *= 2.0;
     amplitude *= 0.5;
@@ -173,16 +174,26 @@ void main(void) {
   float edgeDistortion = (fbm(uv * 12.0 + uTime * 0.4) - 0.5) * 0.05;
   float shrineInfluence = 0.0;
 
-  if (uShrineCount > 0.5) { float dist = distance(uv, uShrineUV0) + edgeDistortion; float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist); shrineInfluence = max(shrineInfluence, shrineFog); }
-  if (uShrineCount > 1.5) { float dist = distance(uv, uShrineUV1) + edgeDistortion; float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist); shrineInfluence = max(shrineInfluence, shrineFog); }
-  if (uShrineCount > 2.5) { float dist = distance(uv, uShrineUV2) + edgeDistortion; float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist); shrineInfluence = max(shrineInfluence, shrineFog); }
-  if (uShrineCount > 3.5) { float dist = distance(uv, uShrineUV3) + edgeDistortion; float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist); shrineInfluence = max(shrineInfluence, shrineFog); }
-  if (uShrineCount > 4.5) { float dist = distance(uv, uShrineUV4) + edgeDistortion; float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist); shrineInfluence = max(shrineInfluence, shrineFog); }
-  if (uShrineCount > 5.5) { float dist = distance(uv, uShrineUV5) + edgeDistortion; float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist); shrineInfluence = max(shrineInfluence, shrineFog); }
-  if (uShrineCount > 6.5) { float dist = distance(uv, uShrineUV6) + edgeDistortion; float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist); shrineInfluence = max(shrineInfluence, shrineFog); }
-  if (uShrineCount > 7.5) { float dist = distance(uv, uShrineUV7) + edgeDistortion; float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist); shrineInfluence = max(shrineInfluence, shrineFog); }
-  if (uShrineCount > 8.5) { float dist = distance(uv, uShrineUV8) + edgeDistortion; float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist); shrineInfluence = max(shrineInfluence, shrineFog); }
-  if (uShrineCount > 9.5) { float dist = distance(uv, uShrineUV9) + edgeDistortion; float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist); shrineInfluence = max(shrineInfluence, shrineFog); }
+  // Цикл вместо 10 if-блоков — компилятор WebGL разворачивает автоматически
+  for (int i = 0; i < 10; i++) {
+    if (float(i) < uShrineCount) {
+      vec2 shrineUV;
+      if (i == 0) shrineUV = uShrineUV0;
+      else if (i == 1) shrineUV = uShrineUV1;
+      else if (i == 2) shrineUV = uShrineUV2;
+      else if (i == 3) shrineUV = uShrineUV3;
+      else if (i == 4) shrineUV = uShrineUV4;
+      else if (i == 5) shrineUV = uShrineUV5;
+      else if (i == 6) shrineUV = uShrineUV6;
+      else if (i == 7) shrineUV = uShrineUV7;
+      else if (i == 8) shrineUV = uShrineUV8;
+      else shrineUV = uShrineUV9;
+
+      float dist = distance(uv, shrineUV) + edgeDistortion;
+      float shrineFog = 1.0 - smoothstep(uShrineHoleRadius, uShrineHoleRadius + uShrineTransitionUV, dist);
+      shrineInfluence = max(shrineInfluence, shrineFog);
+    }
+  }
 
   // --- 5. Плотность тумана ---
   // Дыры святилищ вычитаем из плотности (а не из fog), чтобы они
