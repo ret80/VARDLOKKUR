@@ -83,8 +83,8 @@ export function dropsUpdateSystem(
     if (drop.life !== 0) {
       drop.life -= dt;
       if (drop.life <= 0) {
-        removeEntity(world, eid);
         onDropRemove(eid);
+        removeEntity(world, eid);
         continue;
       }
       if (drop.life < 5) {
@@ -127,8 +127,8 @@ export function dropsUpdateSystem(
           bus,
         });
         }
-        removeEntity(world, eid);
         onDropRemove(eid);
+        removeEntity(world, eid);
       }
     }
   }

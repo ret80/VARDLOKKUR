@@ -91,6 +91,9 @@ export const Altar = aos<{ runes: number }>();
 /** Параметры текущей карты (синглтон-сущность) */
 export const MapState = aos<{ width: number; height: number; dungeonId: number }>();
 
+/** Флаг: босс подземелья уже спавнился (для предотвращения повторного спавна) */
+export const BossSpawned = aos<{}>();
+
 /** Информация о per-tile Graphics карты */
 export interface MapTileInfo {
   x: number;
@@ -238,13 +241,30 @@ export const SpriteBakedSprite: any[] = [];
 // 6. УТИЛИТЫ
 // ============================================================
 
+/** Очистить AoS-данные конкретной сущности (при удалении) */
+export function cleanupEntityAos(eid: number): void {
+  // Сбросить все AoS-массивы для данной сущности
+  // Это предотвращает утечку данных при переиспользовании ID
+  const arrays = [
+    Position, Velocity, Health, Radius, Time, Direction, RenderLayer,
+    Player, Enemy, Projectile, Drop, NPC, Chest, Pedestal,
+    Shrine, Door, Barrier, Altar, MapState, BossSpawned,
+    Dead, Hidden, Taken, Magnet, Moving, Attacking, Aiming,
+    Frozen, Flashing, Slowed, Returning, ShrineLit,
+    EnemyAI, Sprite, PhysicsBody,
+  ];
+  for (const arr of arrays) {
+    arr[eid] = undefined as any;
+  }
+}
+
 /** Сбросить все AoS-массивы компонентов (при перезагрузке карты) */
 export function resetAllComponents(): void {
   // Clear all AoS arrays (they grow dynamically)
   const arrays = [
     Position, Velocity, Health, Radius, Time, Direction, RenderLayer,
     Player, Enemy, Projectile, Drop, NPC, Chest, Pedestal,
-    Shrine, Door, Barrier, Altar, MapState,
+    Shrine, Door, Barrier, Altar, MapState, BossSpawned,
     Dead, Hidden, Taken, Magnet, Moving, Attacking, Aiming,
     Frozen, Flashing, Slowed, Returning, ShrineLit,
     EnemyAI, Sprite, PhysicsBody,

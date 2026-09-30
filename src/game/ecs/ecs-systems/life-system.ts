@@ -18,6 +18,7 @@ import {
   Position,
   Velocity,
   Sprite,
+  cleanupEntityAos,
 } from '../ecs-components';
 import { logger } from '../../debug/logger';
 import { getRenderer } from '../../renderer/RendererFactory';
@@ -62,6 +63,8 @@ export function deathCleanupSystem(world: World): void {
     // Не удалять игрока — его Dead сбрасывается в respawn(), а спрайт удаляется в game loop
     if (hasComponent(world, eid, Player)) continue;
     // bus.emit('entity:dead', { eid });
+    // Очистить AoS-данные ПЕРЕД удалением — bitecs не чистит их при removeEntity
+    cleanupEntityAos(eid);
     removeEntity(world, eid);
   }
 }

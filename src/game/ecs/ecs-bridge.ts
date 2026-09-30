@@ -41,7 +41,7 @@ export function teardownWorld(
   // 1. Уничтожить спрайты и физические тела всех сущностей
   for (const eid of query(world, [PhysicsBody])) {
     // Уничтожить спрайт (GraphicsHandle) — хранится напрямую в Sprite.ref
-    const spriteRef = Sprite[eid].ref;
+    const spriteRef = Sprite[eid]?.ref;
     if (spriteRef && spriteRef !== preservePlayerG) {
       renderer.destroyGraphics(spriteRef as GraphicsHandle);
     }

@@ -88,14 +88,14 @@ import type { InputState } from '../input/input-system';
 import {
   updateDoors,
   updateZone,
-  checkDungeonBoss,
 } from './ecs-systems/world-system';
+import { bossSpawnSystem } from './ecs-systems/boss-system';
 import { type EntityFactory } from './entity-factory';
 import {
   Position, Velocity, PhysicsBody, Player, Direction, Health,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
   Flashing, Enemy, EnemyState, Sprite, Radius,
-  Shrine, Dead,
+  Shrine, Dead, cleanupEntityAos,
 } from '../ecs/ecs-components';
 import type { InputSystem } from '../input/input-system';
 import type { EventBus } from '../event-bus';
@@ -544,6 +544,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       (eid) => {
         // onProjectileRemove: удалить Graphics + Planck body снаряда
         // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
+        // Очистить AoS-данные ПЕРЕД удалением — bitecs не чистит их при removeEntity
+        cleanupEntityAos(eid);
         Sprite[eid] = { ref: 0 };
         const pb = PhysicsBody[eid];
         if (pb && pb.body > 0) {
@@ -585,6 +587,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       (eid: number) => {
         // Удалить Graphics + Planck body дропа
         // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
+        // Очистить AoS-данные ПЕРЕД удалением — bitecs не чистит их при removeEntity
+        cleanupEntityAos(eid);
         Sprite[eid] = { ref: 0 };
       },
       playerDomain,
@@ -629,7 +633,23 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // ===== 16. Двери, зоны, боссы =====
     updateDoors(world, peid, store, flags, toast, pushHud);
     updateZone(world, peid, config_map, store, toast, pushHud);
-    if (config_map) checkDungeonBoss(world, peid, config_map, dungeonBossDead, bus);
+    // ECS: спавн босса подземелья (заменяет checkDungeonBoss + bus.emit)
+    if (config_map && entityFactory) {
+      bossSpawnSystem(
+        world, peid, entityFactory, _planckWorld, spriteFactory,
+        {
+          isDungeon: config_map.isDungeon,
+          dungeonId: config_map.dungeonId,
+          dungeonName: config_map.dungeonName,
+          bossRoom: config_map.bossRoom,
+          bossSpot: config_map.bossSpot,
+          doors: config_map.doors,
+        },
+        dungeonBossDead,
+        toast,
+        pushHud
+      );
+    }
 
     // ===== 17. Проверка здоровья, очистка спрайтов/тел и удаление мёртвых =====
     lifeCheckSystem(world);
