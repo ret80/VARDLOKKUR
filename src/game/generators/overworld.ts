@@ -28,6 +28,12 @@ export function generateOverworld(seed: number): WorldData {
   const { w: baseWorld, cx, cy, R1, R2, ruinsC } = islandGen.generate();
   const w = baseWorld;
 
+  // --- Система отслеживания занятых клеток ---
+  const occupiedCells = new Set<string>();
+  const occKey = (x: number, y: number) => `${x},${y}`;
+  const isCellOccupied = (x: number, y: number) => occupiedCells.has(occKey(x, y));
+  const markOccupied = (x: number, y: number) => occupiedCells.add(occKey(x, y));
+
   // 2. Поселения
   const villageGen = new VillageGenerator(rng);
   const vA: VillageResult = villageGen.generate(w, 92 + Math.floor(rng() * 5), 96, 15, 12);
@@ -59,7 +65,9 @@ export function generateOverworld(seed: number): WorldData {
 
   // --- Святилища на площадях ---
   w.shrines.push({ x: vA.plazaCenter.x, y: vA.plazaCenter.y });
+  markOccupied(vA.plazaCenter.x, vA.plazaCenter.y);
   w.shrines.push({ x: vB.plazaCenter.x, y: vB.plazaCenter.y });
+  markOccupied(vB.plazaCenter.x, vB.plazaCenter.y);
   setTile(w, vR.plazaCenter.x, vR.plazaCenter.y, Tl.COLUMN);
 
   // 3. Глобальные дороги
@@ -79,6 +87,7 @@ export function generateOverworld(seed: number): WorldData {
     setTile(w, p.x, p.y, Tl.STAIRS);
     clearAround(w, p.x, p.y, 1);
     dungeonEntries.push({ x: p.x, y: p.y, id, name });
+    markOccupied(p.x, p.y);
     return p;
   };
   mkEntry(cx + 6, cy + 2, Tl.MTN, 2, "Каменная Крепость");
@@ -96,6 +105,7 @@ export function generateOverworld(seed: number): WorldData {
   const allNpcs: NpcDef[] = [];
   const addNpc = (id: string, name: string, x: number, y: number) => {
     allNpcs.push({ id, name, x, y });
+    markOccupied(x, y);
     clearAround(w, x, y, 1);
   };
 
@@ -176,17 +186,24 @@ export function generateOverworld(seed: number): WorldData {
   // --- Статисты ---
   for (let i = 0; i < Math.min(3, vA.residentSpots.length); i++) {
     const pos = vA.residentSpots[i];
-    allNpcs.push({ id: `villager_A_${i}`, name: "Поселенец", x: pos.x, y: pos.y });
+    if (!isCellOccupied(pos.x, pos.y)) {
+      allNpcs.push({ id: `villager_A_${i}`, name: "Поселенец", x: pos.x, y: pos.y });
+      markOccupied(pos.x, pos.y);
+    }
   }
   for (let i = 0; i < Math.min(3, vB.residentSpots.length); i++) {
     const pos = vB.residentSpots[i];
-    allNpcs.push({ id: `villager_B_${i}`, name: "Поселенец", x: pos.x, y: pos.y });
+    if (!isCellOccupied(pos.x, pos.y)) {
+      allNpcs.push({ id: `villager_B_${i}`, name: "Поселенец", x: pos.x, y: pos.y });
+      markOccupied(pos.x, pos.y);
+    }
   }
   w.npcs = allNpcs;
 
   // Остальные элементы
   const midRoad = { x: Math.round((vA.gate.x + vB.gate.x) / 2), y: Math.round((vA.gate.y + vB.gate.y) / 2) };
   w.bundleSpot = findFree(w, midRoad.x, midRoad.y, 4, undefined, rng);
+  markOccupied(w.bundleSpot.x, w.bundleSpot.y);
 
   const shrineSpots: Vec[] = [
     { x: vA.x0 - 3, y: vA.y1 - 2 },
@@ -195,25 +212,39 @@ export function generateOverworld(seed: number): WorldData {
     { x: vB.x0 - 3, y: vB.y1 },
   ];
   for (const s of shrineSpots) {
-    clearAround(w, s.x, s.y, 1);
-    w.shrines.push({ x: s.x, y: s.y });
+    if (!isCellOccupied(s.x, s.y)) {
+      clearAround(w, s.x, s.y, 1);
+      w.shrines.push({ x: s.x, y: s.y });
+      markOccupied(s.x, s.y);
+    }
   }
 
   w.bearSpot = findFree(w, cx + R2 + 6, cy + 14, 8, Tl.SWAMP, rng);
   setTile(w, w.bearSpot.x, w.bearSpot.y, Tl.POOL);
+  markOccupied(w.bearSpot.x, w.bearSpot.y);
   w.hornSpot = findFree(w, cx + 10, cy - 8, 9, Tl.MTN, rng);
+  markOccupied(w.hornSpot.x, w.hornSpot.y);
   w.meadSpot = findFree(w, cx - R1 - 14, cy - 6, 9, Tl.FOREST, rng);
+  markOccupied(w.meadSpot.x, w.meadSpot.y);
   w.oreSpot = findFree(w, cx - 8, cy + 8, 9, Tl.MTN, rng);
+  markOccupied(w.oreSpot.x, w.oreSpot.y);
   w.mossSpot = findFree(w, cx + R2 + 4, cy + 4, 8, Tl.SWAMP, rng);
+  markOccupied(w.mossSpot.x, w.mossSpot.y);
   w.amberSpot = findFree(w, cx + 14, cy + 8, 9, Tl.MTN, rng);
+  markOccupied(w.amberSpot.x, w.amberSpot.y);
   w.flowerSpot = findFree(w, ruinsC.x + 6, ruinsC.y - 4, 8, Tl.RUINS, rng);
+  markOccupied(w.flowerSpot.x, w.flowerSpot.y);
   w.diarySpot = { x: vR.x0 + 2 + Math.floor(rng() * 6), y: vR.y0 + 2 + Math.floor(rng() * 4) };
   setTile(w, w.diarySpot.x, w.diarySpot.y, Tl.RUINS);
+  markOccupied(w.diarySpot.x, w.diarySpot.y);
   w.relicSpot = findFree(w, 44, 50, 9, undefined, rng);
+  markOccupied(w.relicSpot.x, w.relicSpot.y);
   w.oldAltar = findFree(w, w.relicSpot.x + 7, w.relicSpot.y + 3, 5, undefined, rng);
   setTile(w, w.oldAltar.x, w.oldAltar.y, Tl.ALTAR);
   clearAround(w, w.oldAltar.x, w.oldAltar.y, 1);
+  markOccupied(w.oldAltar.x, w.oldAltar.y);
   w.stashSpot = findFree(w, ruinsC.x - 4, ruinsC.y + 5, 6, undefined, rng);
+  markOccupied(w.stashSpot.x, w.stashSpot.y);
 
   // Сундуки
   const bowSpot = findFree(w, cx - R1 - 8, cy + 12, 9, Tl.FOREST, rng);
@@ -224,6 +255,9 @@ export function generateOverworld(seed: number): WorldData {
     { x: arrowsSpot.x, y: arrowsSpot.y, item: "arrows" },
     { x: heartSpot.x, y: heartSpot.y, item: "heartPiece" },
   ];
+  markOccupied(bowSpot.x, bowSpot.y);
+  markOccupied(arrowsSpot.x, arrowsSpot.y);
+  markOccupied(heartSpot.x, heartSpot.y);
 
   // Души
   const soulSpots = [
@@ -232,6 +266,7 @@ export function generateOverworld(seed: number): WorldData {
     { x: ruinsC.x - 8, y: ruinsC.y - 6 },
   ];
   w.souls = soulSpots;
+  for (const s of soulSpots) markOccupied(s.x, s.y);
 
   // Колонны в руинах
   for (let i = 0; i < 10; i++) {
@@ -255,6 +290,7 @@ export function generateOverworld(seed: number): WorldData {
     const p = findFree(w, c.x, c.y, 6, undefined, rng);
     clearAround(w, p.x, p.y, 2);
     w.pedestals.push({ x: p.x, y: p.y, guards: guardPool[i] });
+    markOccupied(p.x, p.y);
   });
 
   // Украшения
