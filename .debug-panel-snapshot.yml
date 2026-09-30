@@ -1,49 +1,33 @@
-- generic [ref=f12e2]:
-  - generic:
-    - generic:
-      - generic: 2/12
-      - generic:
-        - generic: "12"
-        - generic: "2"
-        - generic: 0/5
-    - generic:
-      - generic: Тестовая Карта
-      - generic:
-        - generic: 0:00
-        - generic: ⚔ 0
-        - generic: † 0
-  - generic:
-    - button "Большая карта" [ref=f12e50] [cursor=pointer]
-    - generic:
-      - button "Инвентарь (Tab)" [ref=f12e52] [cursor=pointer]
-      - button "Журнал квестов (Q)" [ref=f12e58] [cursor=pointer]
-  - button "᛫ цель Пробуждение — Поговори с Эйриком Старшим — он вернёт твой клинок" [ref=f12e64] [cursor=pointer]:
-    - generic [ref=f12e65]: ᛫ цель
-    - generic [ref=f12e66]: Пробуждение — Поговори с Эйриком Старшим — он вернёт твой клинок
-  - generic [ref=f12e25]:
-    - generic [ref=f12e26]:
-      - generic [ref=f12e27]: DEBUG
-      - generic [ref=f12e30]: connected
-    - generic [ref=f12e68]:
-      - generic [ref=f12e69]: "Session:"
-      - combobox [ref=f12e70]:
-        - option "All (last)" [selected]
-        - option "52f122e4 · HP:4/0 · 👾4"
-    - generic [ref=f12e31]:
-      - button "World" [ref=f12e32]
-      - button "Player" [ref=f12e33]
-      - button "Enemies" [ref=f12e34]
-      - button "Drops" [ref=f12e35]
-      - button "Proj." [ref=f12e36]
-      - button "Flags" [ref=f12e37]
-      - button "Time" [ref=f12e38]
-    - generic [ref=f12e41]:
-      - generic [ref=f12e42]: ECS Introspection
-      - generic [ref=f12e43]:
-        - button "World Dump" [ref=f12e44] [cursor=pointer]
-        - button "Profile Queries" [ref=f12e45] [cursor=pointer]
-        - button "Resource Stats" [active] [ref=f12e46] [cursor=pointer]
-      - generic [ref=f12e71]: no getStats
-      - generic [ref=f12e47]:
-        - spinbutton "eid" [ref=f12e48]: "0"
-        - button "Inspect" [ref=f12e49] [cursor=pointer]
+- generic [ref=f1e2]:
+  - generic [ref=f1e7]:
+    - generic [ref=f1e8]: ᛒ
+    - heading "ВАРДЛОКУР" [level=1] [ref=f1e18]
+    - generic [ref=f1e19]: ⚠ DEBUG MODE ⚠
+    - generic [ref=f1e20]: Эхо Ветвей Иггдрасиля
+    - generic [ref=f1e21]:
+      - button "⟡ Начать сагу ⟡" [ref=f1e22] [cursor=pointer]
+      - button "Помощь" [ref=f1e23] [cursor=pointer]
+    - generic [ref=f1e24]: ДУХОВНЫЙ НАСЛЕДНИК LINK'S AWAKENING · МИР ГЕНЕРИРУЕТСЯ ЗАНОВО В КАЖДОЙ САГЕ
+  - generic [ref=f1e25]:
+    - generic [ref=f1e26]:
+      - generic [ref=f1e27]: DEBUG
+      - generic [ref=f1e30]: disconnected
+    - generic [ref=f1e31]:
+      - button "World" [ref=f1e32]
+      - button "Player" [ref=f1e33]
+      - button "Enemies" [ref=f1e34]
+      - button "Drops" [ref=f1e35]
+      - button "Proj." [ref=f1e36]
+      - button "Flags" [ref=f1e37]
+      - button "Time" [ref=f1e38]
+    - generic [ref=f1e39]:
+      - generic [ref=f1e40]: Not connected to debug server. Make sure the game is running with --debug flag.
+      - generic [ref=f1e42]:
+        - generic [ref=f1e43]: ECS Introspection
+        - generic [ref=f1e44]:
+          - button "World Dump" [ref=f1e45] [cursor=pointer]
+          - button "Profile Queries" [ref=f1e46] [cursor=pointer]
+          - button "Resource Stats" [ref=f1e47] [cursor=pointer]
+        - generic [ref=f1e48]:
+          - spinbutton "eid" [ref=f1e49]: "0"
+          - button "Inspect" [ref=f1e50] [cursor=pointer]

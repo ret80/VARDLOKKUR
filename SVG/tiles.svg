@@ -1,0 +1,362 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="936" height="730" viewBox="0 0 936 730">
+  <rect width="936" height="730" fill="#070a0e"/>
+  <text x="24" y="36" font-family="monospace" font-size="16" fill="#c8d4e0">tile-geom.ts · ground tiles · T=16 · dither 6px</text>
+
+  <!-- ================= ROW 1 ================= -->
+
+  <!-- WATER: base #0a1620 -->
+  <g transform="translate(24,64)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#0a1620"/>
+      <rect x="2" y="3" width="1" height="1" fill="#12303e"/>
+      <rect x="13" y="6" width="1" height="1" fill="#12303e"/>
+      <rect x="11" y="12" width="1" height="1" fill="#12303e"/>
+      <rect x="9" y="1" width="1" height="1" fill="#081219"/>
+      <rect x="5" y="9" width="1" height="1" fill="#081219"/>
+      <rect x="3" y="13" width="1" height="1" fill="#081219"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">WATER</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">0a1620</text>
+  </g>
+
+  <!-- SHORE: base #4a5a64 -->
+  <g transform="translate(176,64)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#4a5a64"/>
+      <rect x="6" y="2" width="1" height="1" fill="#5a6a74"/>
+      <rect x="1" y="6" width="1" height="1" fill="#5a6a74"/>
+      <rect x="14" y="10" width="1" height="1" fill="#5a6a74"/>
+      <rect x="12" y="3" width="1" height="1" fill="#3d4d57"/>
+      <rect x="8" y="8" width="1" height="1" fill="#3d4d57"/>
+      <rect x="4" y="13" width="1" height="1" fill="#3d4d57"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">SHORE</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">4a5a64</text>
+  </g>
+
+  <!-- SNOW: base #8b98a6 -->
+  <g transform="translate(328,64)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#8b98a6"/>
+      <rect x="11" y="2" width="1" height="1" fill="#9aa7b5"/>
+      <rect x="7" y="7" width="1" height="1" fill="#9aa7b5"/>
+      <rect x="1" y="11" width="1" height="1" fill="#9aa7b5"/>
+      <rect x="3" y="5" width="1" height="1" fill="#7e8b99"/>
+      <rect x="13" y="9" width="1" height="1" fill="#7e8b99"/>
+      <rect x="9" y="13" width="1" height="1" fill="#7e8b99"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">SNOW</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">8b98a6</text>
+  </g>
+
+  <!-- SNOW2: base #7e8b99 -->
+  <g transform="translate(480,64)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#7e8b99"/>
+      <rect x="4" y="1" width="1" height="1" fill="#8d9aa8"/>
+      <rect x="2" y="8" width="1" height="1" fill="#8d9aa8"/>
+      <rect x="6" y="11" width="1" height="1" fill="#8d9aa8"/>
+      <rect x="10" y="4" width="1" height="1" fill="#717e8c"/>
+      <rect x="14" y="6" width="1" height="1" fill="#717e8c"/>
+      <rect x="12" y="14" width="1" height="1" fill="#717e8c"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">SNOW2</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">7e8b99</text>
+  </g>
+
+  <!-- PATH: base #55636e -->
+  <g transform="translate(632,64)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#55636e"/>
+      <rect x="8" y="3" width="1" height="1" fill="#61707b"/>
+      <rect x="13" y="7" width="1" height="1" fill="#61707b"/>
+      <rect x="3" y="10" width="1" height="1" fill="#61707b"/>
+      <rect x="1" y="2" width="1" height="1" fill="#495762"/>
+      <rect x="6" y="6" width="1" height="1" fill="#495762"/>
+      <rect x="10" y="12" width="1" height="1" fill="#495762"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">PATH</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">55636e</text>
+  </g>
+
+  <!-- FOREST: base #26333c -->
+  <g transform="translate(784,64)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#26333c"/>
+      <rect x="2" y="3" width="1" height="1" fill="#2e3d47"/>
+      <rect x="13" y="6" width="1" height="1" fill="#2e3d47"/>
+      <rect x="11" y="12" width="1" height="1" fill="#2e3d47"/>
+      <rect x="9" y="1" width="1" height="1" fill="#1e2a32"/>
+      <rect x="5" y="9" width="1" height="1" fill="#1e2a32"/>
+      <rect x="3" y="13" width="1" height="1" fill="#1e2a32"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">FOREST</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">26333c</text>
+  </g>
+
+  <!-- ================= ROW 2 ================= -->
+
+  <!-- MTN: base #5f6b78 -->
+  <g transform="translate(24,228)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#5f6b78"/>
+      <rect x="6" y="2" width="1" height="1" fill="#6d7986"/>
+      <rect x="1" y="6" width="1" height="1" fill="#6d7986"/>
+      <rect x="14" y="10" width="1" height="1" fill="#6d7986"/>
+      <rect x="12" y="3" width="1" height="1" fill="#525e6b"/>
+      <rect x="8" y="8" width="1" height="1" fill="#525e6b"/>
+      <rect x="4" y="13" width="1" height="1" fill="#525e6b"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">MTN</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">5f6b78</text>
+  </g>
+
+  <!-- SWAMP: base #2c3a3e -->
+  <g transform="translate(176,228)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#2c3a3e"/>
+      <rect x="11" y="2" width="1" height="1" fill="#354347"/>
+      <rect x="7" y="7" width="1" height="1" fill="#354347"/>
+      <rect x="1" y="11" width="1" height="1" fill="#354347"/>
+      <rect x="3" y="5" width="1" height="1" fill="#243034"/>
+      <rect x="13" y="9" width="1" height="1" fill="#243034"/>
+      <rect x="9" y="13" width="1" height="1" fill="#243034"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">SWAMP</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">2c3a3e</text>
+  </g>
+
+  <!-- POOL: base #1b2a30 + блики #2a4a55 -->
+  <g transform="translate(328,228)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#1b2a30"/>
+      <rect x="4" y="1" width="1" height="1" fill="#223339"/>
+      <rect x="2" y="8" width="1" height="1" fill="#223339"/>
+      <rect x="6" y="11" width="1" height="1" fill="#223339"/>
+      <rect x="10" y="4" width="1" height="1" fill="#152127"/>
+      <rect x="14" y="6" width="1" height="1" fill="#152127"/>
+      <rect x="12" y="14" width="1" height="1" fill="#152127"/>
+      <rect x="3" y="4" width="5" height="1" fill="#2a4a55"/>
+      <rect x="8" y="10" width="4" height="1" fill="#2a4a55"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">POOL</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">1b2a30</text>
+  </g>
+
+  <!-- VILLAGE: base #635a4c -->
+  <g transform="translate(480,228)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#635a4c"/>
+      <rect x="8" y="3" width="1" height="1" fill="#6f6658"/>
+      <rect x="13" y="7" width="1" height="1" fill="#6f6658"/>
+      <rect x="3" y="10" width="1" height="1" fill="#6f6658"/>
+      <rect x="1" y="2" width="1" height="1" fill="#575043"/>
+      <rect x="6" y="6" width="1" height="1" fill="#575043"/>
+      <rect x="10" y="12" width="1" height="1" fill="#575043"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">VILLAGE</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">635a4c</text>
+  </g>
+
+  <!-- RUINS: base #4e5a68 -->
+  <g transform="translate(632,228)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#4e5a68"/>
+      <rect x="2" y="3" width="1" height="1" fill="#5c6875"/>
+      <rect x="13" y="6" width="1" height="1" fill="#5c6875"/>
+      <rect x="11" y="12" width="1" height="1" fill="#5c6875"/>
+      <rect x="9" y="1" width="1" height="1" fill="#424d5a"/>
+      <rect x="5" y="9" width="1" height="1" fill="#424d5a"/>
+      <rect x="3" y="13" width="1" height="1" fill="#424d5a"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">RUINS</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">4e5a68</text>
+  </g>
+
+  <!-- CAVE: base #2b3646 -->
+  <g transform="translate(784,228)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#2b3646"/>
+      <rect x="6" y="2" width="1" height="1" fill="#343f50"/>
+      <rect x="1" y="6" width="1" height="1" fill="#343f50"/>
+      <rect x="14" y="10" width="1" height="1" fill="#343f50"/>
+      <rect x="12" y="3" width="1" height="1" fill="#222b38"/>
+      <rect x="8" y="8" width="1" height="1" fill="#222b38"/>
+      <rect x="4" y="13" width="1" height="1" fill="#222b38"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">CAVE</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">2b3646</text>
+  </g>
+
+  <!-- ================= ROW 3 ================= -->
+
+  <!-- CAVEWALL: #12181f + шапка #1a222c (6px) -->
+  <g transform="translate(24,392)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#12181f"/>
+      <rect width="16" height="6" fill="#1a222c"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">CAVEWALL</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">12181f</text>
+  </g>
+
+  <!-- STAIRS: base #39424e + ступени #222b38 -->
+  <g transform="translate(176,392)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#39424e"/>
+      <rect x="11" y="2" width="1" height="1" fill="#4e5a68"/>
+      <rect x="1" y="11" width="1" height="1" fill="#4e5a68"/>
+      <rect x="3" y="5" width="1" height="1" fill="#2b3646"/>
+      <rect x="13" y="9" width="1" height="1" fill="#2b3646"/>
+      <rect x="9" y="13" width="1" height="1" fill="#2b3646"/>
+      <rect x="2" y="3" width="12" height="2" fill="#222b38"/>
+      <rect x="3" y="7" width="10" height="2" fill="#222b38"/>
+      <rect x="4" y="11" width="8" height="2" fill="#222b38"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">STAIRS</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">39424e</text>
+  </g>
+
+  <!-- DFLOOR: base #39424e -->
+  <g transform="translate(328,392)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#39424e"/>
+      <rect x="4" y="1" width="1" height="1" fill="#445060"/>
+      <rect x="2" y="8" width="1" height="1" fill="#445060"/>
+      <rect x="6" y="11" width="1" height="1" fill="#445060"/>
+      <rect x="10" y="4" width="1" height="1" fill="#2f3844"/>
+      <rect x="14" y="6" width="1" height="1" fill="#2f3844"/>
+      <rect x="12" y="14" width="1" height="1" fill="#2f3844"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">DFLOOR</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">39424e</text>
+  </g>
+
+  <!-- DWALL: #10151c + шапка #232c38 (5px) -->
+  <g transform="translate(480,392)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#10151c"/>
+      <rect width="16" height="5" fill="#232c38"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">DWALL</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">10151c</text>
+  </g>
+
+  <!-- ALTAR: base #1a222c -->
+  <g transform="translate(632,392)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#1a222c"/>
+      <rect x="8" y="3" width="1" height="1" fill="#232c38"/>
+      <rect x="13" y="7" width="1" height="1" fill="#232c38"/>
+      <rect x="3" y="10" width="1" height="1" fill="#232c38"/>
+      <rect x="1" y="2" width="1" height="1" fill="#141a22"/>
+      <rect x="6" y="6" width="1" height="1" fill="#141a22"/>
+      <rect x="10" y="12" width="1" height="1" fill="#141a22"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">ALTAR</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">1a222c</text>
+  </g>
+
+  <!-- TREE: base #1c262e -->
+  <g transform="translate(784,392)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#1c262e"/>
+      <rect x="2" y="3" width="1" height="1" fill="#232e37"/>
+      <rect x="13" y="6" width="1" height="1" fill="#232e37"/>
+      <rect x="11" y="12" width="1" height="1" fill="#232e37"/>
+      <rect x="9" y="1" width="1" height="1" fill="#161f26"/>
+      <rect x="5" y="9" width="1" height="1" fill="#161f26"/>
+      <rect x="3" y="13" width="1" height="1" fill="#161f26"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">TREE</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">1c262e</text>
+  </g>
+
+  <!-- ================= ROW 4 ================= -->
+
+  <!-- ROCK: base #5f6b78 (палитра = MTN) -->
+  <g transform="translate(24,556)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#5f6b78"/>
+      <rect x="6" y="2" width="1" height="1" fill="#6d7986"/>
+      <rect x="1" y="6" width="1" height="1" fill="#6d7986"/>
+      <rect x="14" y="10" width="1" height="1" fill="#6d7986"/>
+      <rect x="12" y="3" width="1" height="1" fill="#525e6b"/>
+      <rect x="8" y="8" width="1" height="1" fill="#525e6b"/>
+      <rect x="4" y="13" width="1" height="1" fill="#525e6b"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">ROCK</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">5f6b78</text>
+  </g>
+
+  <!-- PALISADE: base #3a3020 -->
+  <g transform="translate(176,556)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#3a3020"/>
+      <rect x="11" y="2" width="1" height="1" fill="#46382a"/>
+      <rect x="7" y="7" width="1" height="1" fill="#46382a"/>
+      <rect x="1" y="11" width="1" height="1" fill="#46382a"/>
+      <rect x="3" y="5" width="1" height="1" fill="#2e2618"/>
+      <rect x="13" y="9" width="1" height="1" fill="#2e2618"/>
+      <rect x="9" y="13" width="1" height="1" fill="#2e2618"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">PALISADE</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">3a3020</text>
+  </g>
+
+  <!-- HOUSE: однотонный #2c2620 -->
+  <g transform="translate(328,556)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#2c2620"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">HOUSE</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">2c2620</text>
+  </g>
+
+  <!-- COLUMN: base #4e5a68 (палитра = RUINS) -->
+  <g transform="translate(480,556)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#4e5a68"/>
+      <rect x="4" y="1" width="1" height="1" fill="#5c6875"/>
+      <rect x="2" y="8" width="1" height="1" fill="#5c6875"/>
+      <rect x="6" y="11" width="1" height="1" fill="#5c6875"/>
+      <rect x="10" y="4" width="1" height="1" fill="#424d5a"/>
+      <rect x="14" y="6" width="1" height="1" fill="#424d5a"/>
+      <rect x="12" y="14" width="1" height="1" fill="#424d5a"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">COLUMN</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">4e5a68</text>
+  </g>
+
+  <!-- DEFAULT: однотонный #10151c -->
+  <g transform="translate(632,556)">
+    <g transform="scale(8)" shape-rendering="crispEdges">
+      <rect width="16" height="16" fill="#10151c"/>
+    </g>
+    <rect width="128" height="128" fill="none" stroke="#1c2733"/>
+    <text x="64" y="144" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">DEFAULT</text>
+    <text x="64" y="157" text-anchor="middle" font-family="monospace" font-size="9" fill="#54626f">10151c</text>
+  </g>
+</svg>

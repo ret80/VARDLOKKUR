@@ -25,6 +25,10 @@ export class VillageGenerator {
     this.buildHouseRoads(w, houses, plazaCenter, gate);
     this.paveGate(w, gate);
 
+    // Каменный столб на месте святилища (после дорог, чтобы carveRoad не затер)
+    if (inB(w, plazaCenter.x, plazaCenter.y))
+      w.tiles[idx(w, plazaCenter.x, plazaCenter.y)] = Tl.COLUMN;
+
     const residentSpots = this.collectResidentSpots(w, cx, cy, rw, rh);
     return {
       x0: cx, y0: cy, x1: cx + rw, y1: cy + rh,
