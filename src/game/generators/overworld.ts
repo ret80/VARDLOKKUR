@@ -63,11 +63,9 @@ export function generateOverworld(seed: number): WorldData {
   w.villageB = vB.gate;
   w.ruinedVillage = { x: vR.x0 + 5, y: vR.y0 + 4 };
 
-  // --- Святилища на площадях ---
-  w.shrines.push({ x: vA.plazaCenter.x, y: vA.plazaCenter.y });
-  markOccupied(vA.plazaCenter.x, vA.plazaCenter.y);
-  w.shrines.push({ x: vB.plazaCenter.x, y: vB.plazaCenter.y });
-  markOccupied(vB.plazaCenter.x, vB.plazaCenter.y);
+  // --- Каменные столбы на площадях (вместо святилищ) ---
+  setTile(w, vA.plazaCenter.x, vA.plazaCenter.y, Tl.COLUMN);
+  setTile(w, vB.plazaCenter.x, vB.plazaCenter.y, Tl.COLUMN);
   setTile(w, vR.plazaCenter.x, vR.plazaCenter.y, Tl.COLUMN);
 
   // 3. Глобальные дороги
