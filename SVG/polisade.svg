@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1088" height="700" viewBox="0 0 1088 700" shape-rendering="crispEdges">
+  <defs>
+    <!-- H: прямой горизонтальный -->
+    <g id="ph">
+      <rect x="0" y="6" width="16" height="1" fill="#5a4632"/><rect x="0" y="7" width="16" height="1" fill="#463626"/>
+      <rect x="0" y="10" width="16" height="1" fill="#5a4632"/><rect x="0" y="11" width="16" height="1" fill="#463626"/>
+      <rect x="2" y="1" width="1" height="1" fill="#6e5840"/><rect x="1" y="2" width="3" height="13" fill="#4e3c28"/><rect x="1" y="2" width="1" height="13" fill="#63503a"/><rect x="3" y="2" width="1" height="13" fill="#3a2c1c"/>
+      <rect x="6" y="1" width="1" height="1" fill="#6e5840"/><rect x="5" y="2" width="3" height="13" fill="#4e3c28"/><rect x="5" y="2" width="1" height="13" fill="#63503a"/><rect x="7" y="2" width="1" height="13" fill="#3a2c1c"/>
+      <rect x="10" y="1" width="1" height="1" fill="#6e5840"/><rect x="9" y="2" width="3" height="13" fill="#4e3c28"/><rect x="9" y="2" width="1" height="13" fill="#63503a"/><rect x="11" y="2" width="1" height="13" fill="#3a2c1c"/>
+      <rect x="14" y="1" width="1" height="1" fill="#6e5840"/><rect x="13" y="2" width="3" height="13" fill="#4e3c28"/><rect x="13" y="2" width="1" height="13" fill="#63503a"/><rect x="15" y="2" width="1" height="13" fill="#3a2c1c"/>
+    </g>
+    <!-- V: воткнутые палки с джиттером ±1px -->
+    <g id="pv">
+      <rect x="7" y="0" width="1" height="1" fill="#6e5840"/><rect x="6" y="1" width="3" height="1" fill="#5a4632"/>
+      <rect x="6" y="2" width="1" height="10" fill="#63503a"/><rect x="7" y="2" width="1" height="10" fill="#4e3c28"/><rect x="8" y="2" width="1" height="10" fill="#3a2c1c"/>
+      <rect x="8" y="8" width="1" height="1" fill="#6e5840"/><rect x="7" y="9" width="3" height="1" fill="#5a4632"/>
+      <rect x="7" y="10" width="1" height="6" fill="#63503a"/><rect x="8" y="10" width="1" height="6" fill="#4e3c28"/><rect x="9" y="10" width="1" height="6" fill="#3a2c1c"/>
+    </g>
+    <!-- угол E: ЗЕРКАЛО угла W (перекладины вправо, кол у края, зазор 2px) -->
+    <g id="ce">
+      <rect x="6" y="6" width="10" height="1" fill="#5a4632"/><rect x="6" y="7" width="10" height="1" fill="#463626"/>
+      <rect x="6" y="10" width="10" height="1" fill="#5a4632"/><rect x="6" y="11" width="10" height="1" fill="#463626"/>
+      <rect x="13" y="1" width="1" height="1" fill="#6e5840"/><rect x="12" y="2" width="3" height="13" fill="#4e3c28"/><rect x="12" y="2" width="1" height="13" fill="#63503a"/><rect x="14" y="2" width="1" height="13" fill="#3a2c1c"/>
+      <rect x="8" y="0" width="1" height="1" fill="#6e5840"/><rect x="7" y="1" width="3" height="1" fill="#5a4632"/>
+      <rect x="7" y="2" width="1" height="10" fill="#63503a"/><rect x="8" y="2" width="1" height="10" fill="#4e3c28"/><rect x="9" y="2" width="1" height="10" fill="#3a2c1c"/>
+      <rect x="7" y="8" width="1" height="1" fill="#6e5840"/><rect x="6" y="9" width="3" height="1" fill="#5a4632"/>
+      <rect x="6" y="10" width="1" height="6" fill="#63503a"/><rect x="7" y="10" width="1" height="6" fill="#4e3c28"/><rect x="8" y="10" width="1" height="6" fill="#3a2c1c"/>
+    </g>
+    <!-- угол W: без изменений -->
+    <g id="cw">
+      <rect x="0" y="6" width="10" height="1" fill="#5a4632"/><rect x="0" y="7" width="10" height="1" fill="#463626"/>
+      <rect x="0" y="10" width="10" height="1" fill="#5a4632"/><rect x="0" y="11" width="10" height="1" fill="#463626"/>
+      <rect x="2" y="1" width="1" height="1" fill="#6e5840"/><rect x="1" y="2" width="3" height="13" fill="#4e3c28"/><rect x="1" y="2" width="1" height="13" fill="#63503a"/><rect x="3" y="2" width="1" height="13" fill="#3a2c1c"/>
+      <rect x="7" y="0" width="1" height="1" fill="#6e5840"/><rect x="6" y="1" width="3" height="1" fill="#5a4632"/>
+      <rect x="6" y="2" width="1" height="10" fill="#63503a"/><rect x="7" y="2" width="1" height="10" fill="#4e3c28"/><rect x="8" y="2" width="1" height="10" fill="#3a2c1c"/>
+      <rect x="8" y="8" width="1" height="1" fill="#6e5840"/><rect x="7" y="9" width="3" height="1" fill="#5a4632"/>
+      <rect x="7" y="10" width="1" height="6" fill="#63503a"/><rect x="8" y="10" width="1" height="6" fill="#4e3c28"/><rect x="9" y="10" width="1" height="6" fill="#3a2c1c"/>
+    </g>
+  </defs>
+
+  <rect width="1088" height="700" fill="#070a0e"/>
+  <text x="24" y="34" font-family="monospace" font-size="16" fill="#c8d4e0">PALISADE v6 · угол E = флип угла W: доски вплотную (зазор 2px)</text>
+
+  <!-- ===== шит ===== -->
+  <g transform="translate(24,64) scale(8)"><use href="#ph"/></g>
+  <text x="88" y="210" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">H · прямой</text>
+  <g transform="translate(176,64) scale(8)"><use href="#pv"/></g>
+  <text x="240" y="210" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">V · палки с джиттером</text>
+  <g transform="translate(328,64) scale(8)"><use href="#ce"/></g>
+  <text x="392" y="210" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">угол E (флип W)</text>
+  <g transform="translate(480,64) scale(8)"><use href="#cw"/></g>
+  <text x="544" y="210" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">угол W</text>
+
+  <!-- ===== загон 3×3 ===== -->
+  <g transform="translate(24,260) scale(8)"><use href="#ce"/></g>
+  <g transform="translate(152,260) scale(8)"><use href="#ph"/></g>
+  <g transform="translate(280,260) scale(8)"><use href="#cw"/></g>
+  <g transform="translate(24,388) scale(8)"><use href="#pv"/></g>
+  <g transform="translate(280,388) scale(8)"><use href="#pv"/></g>
+  <g transform="translate(24,516) scale(8)"><use href="#ce"/></g>
+  <g transform="translate(152,516) scale(8)"><use href="#ph"/></g>
+  <g transform="translate(280,516) scale(8)"><use href="#cw"/></g>
+  <text x="208" y="664" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">загон 3×3: симметричные углы, одинаковый зазор досок с обеих сторон</text>
+
+  <!-- ===== вертикальный простенок ×3 ===== -->
+  <g transform="translate(488,260) scale(8)"><use href="#pv"/></g>
+  <g transform="translate(488,388) scale(8)"><use href="#pv"/></g>
+  <g transform="translate(488,516) scale(8)"><use href="#pv"/></g>
+  <text x="552" y="664" text-anchor="middle" font-family="monospace" font-size="11" fill="#8fa3b5">V ×3: цепочка без швов</text>
+</svg>

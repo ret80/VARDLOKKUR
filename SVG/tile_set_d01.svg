@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1088" height="820" viewBox="0 0 1088 820" shape-rendering="crispEdges">
+  <defs>
+    <pattern id="slab" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#39424e"/>
+      <rect x="0" y="7" width="8" height="1" fill="#2b333d"/><rect x="7" y="0" width="1" height="7" fill="#2b333d"/>
+      <rect x="2" y="3" width="1" height="1" fill="#4a5563"/><rect x="5" y="5" width="1" height="1" fill="#4a5563"/><rect x="4" y="1" width="1" height="1" fill="#2b333d"/>
+    </pattern>
+    <pattern id="brk" width="8" height="8" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#10151c"/>
+      <rect x="0" y="0" width="7" height="1" fill="#39424e"/><rect x="0" y="1" width="7" height="3" fill="#232b36"/>
+      <rect x="4" y="4" width="4" height="1" fill="#39424e"/><rect x="0" y="4" width="3" height="1" fill="#39424e"/>
+      <rect x="4" y="5" width="4" height="3" fill="#232b36"/><rect x="0" y="5" width="3" height="3" fill="#232b36"/>
+    </pattern>
+    <g id="sl"><rect width="16" height="16" fill="url(#slab)"/></g>
+    <g id="bF"><rect y="5" width="16" height="1" fill="#202832"/><rect y="6" width="16" height="10" fill="url(#brk)"/></g>
+    <g id="sNV"><rect width="16" height="1" fill="#1a222c"/><rect y="1" width="16" height="1" fill="#2b333d"/></g>
+    <g id="sNF"><rect width="16" height="1" fill="#4a5563"/><rect y="1" width="16" height="1" fill="#2b333d"/></g>
+    <g id="sWV"><rect width="1" height="16" fill="#1a222c"/><rect x="1" width="1" height="16" fill="#2b333d"/></g>
+    <g id="sWF"><rect width="1" height="16" fill="#4a5563"/><rect x="1" width="1" height="16" fill="#2b333d"/></g>
+    <g id="sEV"><rect x="15" width="1" height="16" fill="#1a222c"/><rect x="14" width="1" height="16" fill="#2b333d"/></g>
+    <g id="sEF"><rect x="15" width="1" height="16" fill="#4a5563"/><rect x="14" width="1" height="16" fill="#2b333d"/></g>
+    <g id="t00"><rect width="16" height="16" fill="#141a22"/><rect width="16" height="1" fill="#0a0e14"/><rect width="1" height="16" fill="#0a0e14"/></g>
+    <g id="t01"><use href="#sl"/><use href="#sNV"/><use href="#sWV"/></g>
+    <g id="t02"><use href="#sl"/><use href="#sNV"/><use href="#bF"/></g>
+    <g id="t03"><use href="#sl"/><use href="#sNV"/><use href="#sEV"/></g>
+    <g id="t04L"><use href="#sl"/><use href="#sWV"/><use href="#sEF"/></g>
+    <g id="t04R"><use href="#sl"/><use href="#sEV"/><use href="#sWF"/></g>
+    <g id="t05"><use href="#sl"/><use href="#sWV"/></g>
+    <g id="t06"><use href="#sl"/><use href="#sNF"/><use href="#bF"/></g>
+    <g id="t07"><use href="#sl"/><use href="#sNF"/><use href="#bF"/><use href="#sEF"/></g>
+    <g id="t08"><use href="#sl"/><use href="#sNF"/><use href="#bF"/><use href="#sWF"/></g>
+    <g id="t09"><use href="#sl"/><use href="#sEV"/></g>
+    <g id="t10"><use href="#sl"/><use href="#bF"/><use href="#sWV"/></g>
+    <g id="t11"><use href="#sl"/><use href="#sNF"/><use href="#bF"/></g>
+    <g id="t12"><use href="#sl"/><use href="#bF"/><use href="#sEV"/></g>
+    <g id="t13"><use href="#sl"/><use href="#bF"/></g>
+    <g id="t14"><use href="#sl"/><use href="#sNF"/><use href="#sWF"/><use href="#sEF"/></g>
+    <g id="t15"><use href="#sl"/><use href="#sNV"/></g>
+    <g id="t16"><use href="#sl"/><use href="#sWF"/><use href="#sEF"/></g>
+    <g id="t17"><use href="#sl"/><use href="#bF"/><use href="#sWF"/><use href="#sEF"/></g>
+    <g id="t18"><use href="#sl"/></g>
+  </defs>
+
+  <rect width="1088" height="820" fill="#070a0e"/>
+  <text x="24" y="36" font-family="monospace" font-size="16" fill="#c8d4e0">DWALL 2.5D · финальный тайлсет: пример сборки + все уникальные тайлы</text>
+
+  <!-- ===== СЛЕВА: пример сборки (сетка 7×11) ===== -->
+  <g transform="translate(24,64) scale(4)">
+    <use href="#t01" x="0" y="0"/><use href="#t02" x="16" y="0"/><use href="#t02" x="32" y="0"/><use href="#t15" x="48" y="0"/><use href="#t02" x="64" y="0"/><use href="#t02" x="80" y="0"/><use href="#t03" x="96" y="0"/>
+    <use href="#t04L" x="0" y="16"/><use href="#t00" x="16" y="16"/><use href="#t00" x="32" y="16"/><use href="#t16" x="48" y="16"/><use href="#t00" x="64" y="16"/><use href="#t00" x="80" y="16"/><use href="#t04R" x="96" y="16"/>
+    <use href="#t04L" x="0" y="32"/><use href="#t00" x="16" y="32"/><use href="#t00" x="32" y="32"/><use href="#t17" x="48" y="32"/><use href="#t00" x="64" y="32"/><use href="#t00" x="80" y="32"/><use href="#t04R" x="96" y="32"/>
+    <use href="#t04L" x="0" y="48"/><use href="#t00" x="16" y="48"/><use href="#t00" x="32" y="48"/><use href="#t00" x="48" y="48"/><use href="#t00" x="64" y="48"/><use href="#t00" x="80" y="48"/><use href="#t04R" x="96" y="48"/>
+    <use href="#t04L" x="0" y="64"/><use href="#t00" x="16" y="64"/><use href="#t00" x="32" y="64"/><use href="#t14" x="48" y="64"/><use href="#t00" x="64" y="64"/><use href="#t00" x="80" y="64"/><use href="#t04R" x="96" y="64"/>
+    <use href="#t04L" x="0" y="80"/><use href="#t00" x="16" y="80"/><use href="#t08" x="32" y="80"/><use href="#t18" x="48" y="80"/><use href="#t07" x="64" y="80"/><use href="#t00" x="80" y="80"/><use href="#t04R" x="96" y="80"/>
+    <use href="#t04L" x="0" y="96"/><use href="#t00" x="16" y="96"/><use href="#t00" x="32" y="96"/><use href="#t17" x="48" y="96"/><use href="#t00" x="64" y="96"/><use href="#t00" x="80" y="96"/><use href="#t04R" x="96" y="96"/>
+    <use href="#t04L" x="0" y="112"/><use href="#t00" x="16" y="112"/><use href="#t00" x="32" y="112"/><use href="#t00" x="48" y="112"/><use href="#t00" x="64" y="112"/><use href="#t00" x="80" y="112"/><use href="#t04R" x="96" y="112"/>
+    <use href="#t05" x="0" y="128"/><use href="#t06" x="16" y="128"/><use href="#t07" x="32" y="128"/><use href="#t00" x="48" y="128"/><use href="#t00" x="64" y="128"/><use href="#t08" x="80" y="128"/><use href="#t09" x="96" y="128"/>
+    <use href="#t04L" x="0" y="144"/><use href="#t00" x="16" y="144"/><use href="#t00" x="32" y="144"/><use href="#t14" x="48" y="144"/><use href="#t00" x="64" y="144"/><use href="#t00" x="80" y="144"/><use href="#t04R" x="96" y="144"/>
+    <use href="#t10" x="0" y="160"/><use href="#t11" x="16" y="160"/><use href="#t11" x="32" y="160"/><use href="#t13" x="48" y="160"/><use href="#t11" x="64" y="160"/><use href="#t11" x="80" y="160"/><use href="#t12" x="96" y="160"/>
+  </g>
+  <text x="24" y="790" font-family="monospace" font-size="11" fill="#8fa3b5">пример: 3 комнаты, перегородки, двери, аппендиксы — все стыки сходятся</text>
+
+  <!-- ===== СПРАВА: сетка уникальных тайлов 5×4 ===== -->
+  <g transform="translate(540,64) scale(5)"><use href="#t00"/></g><text x="580" y="158" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">00 · пол</text>
+  <g transform="translate(640,64) scale(5)"><use href="#t01"/></g><text x="680" y="158" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">01 · угол NW</text>
+  <g transform="translate(740,64) scale(5)"><use href="#t02"/></g><text x="780" y="158" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">02 · верх</text>
+  <g transform="translate(840,64) scale(5)"><use href="#t03"/></g><text x="880" y="158" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">03 · угол NE</text>
+  <g transform="translate(940,64) scale(5)"><use href="#t04L"/></g><text x="980" y="158" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">04L · колонна W</text>
+
+  <g transform="translate(540,176) scale(5)"><use href="#t04R"/></g><text x="580" y="270" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">04R · колонна E</text>
+  <g transform="translate(640,176) scale(5)"><use href="#t05"/></g><text x="680" y="270" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">05 · Т-стык W</text>
+  <g transform="translate(740,176) scale(5)"><use href="#t06"/></g><text x="780" y="270" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">06 · гориз. тело</text>
+  <g transform="translate(840,176) scale(5)"><use href="#t07"/></g><text x="880" y="270" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">07 · торец E</text>
+  <g transform="translate(940,176) scale(5)"><use href="#t08"/></g><text x="980" y="270" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">08 · торец W</text>
+
+  <g transform="translate(540,288) scale(5)"><use href="#t09"/></g><text x="580" y="382" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">09 · Т-стык E</text>
+  <g transform="translate(640,288) scale(5)"><use href="#t10"/></g><text x="680" y="382" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">10 · угол SW</text>
+  <g transform="translate(740,288) scale(5)"><use href="#t11"/></g><text x="780" y="382" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">11 · низ</text>
+  <g transform="translate(840,288) scale(5)"><use href="#t12"/></g><text x="880" y="382" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">12 · угол SE</text>
+  <g transform="translate(940,288) scale(5)"><use href="#t13"/></g><text x="980" y="382" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">13 · низ под стенкой</text>
+
+  <g transform="translate(540,400) scale(5)"><use href="#t14"/></g><text x="580" y="494" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">14 · торец вертикали N</text>
+  <g transform="translate(640,400) scale(5)"><use href="#t15"/></g><text x="680" y="494" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">15 · старт вертикали</text>
+  <g transform="translate(740,400) scale(5)"><use href="#t16"/></g><text x="780" y="494" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">16 · тело вертикали</text>
+  <g transform="translate(840,400) scale(5)"><use href="#t17"/></g><text x="880" y="494" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">17 · торец вертикали S</text>
+  <g transform="translate(940,400) scale(5)"><use href="#t18"/></g><text x="980" y="494" text-anchor="middle" font-family="monospace" font-size="9" fill="#8fa3b5">18 · перекрестие</text>
+
+  <text x="540" y="540" font-family="monospace" font-size="11" fill="#8fa3b5">правило: сторона = f(сосед): стена→нейтрально, пол→кант #4a5563, пустота→контур #1a222c; юг открыт→фасад-кирпич</text>
+</svg>

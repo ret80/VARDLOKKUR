@@ -5,6 +5,9 @@ dist/
 *.pid
 .gigacode_vsc/
 .playwright-mcp/
+.codegraph/
+.consoles/
+.codeassistant/
 *.png
 *.zip
 *tmp
