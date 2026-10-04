@@ -61,7 +61,7 @@ export const Enemy = aos<{
 // ============================================================
 
 export const Projectile = aos<{
-  kind: number; dmg: number; life: number; dist: number; returning: number; spin: number;
+  kind: number; dmg: number; life: number; dist: number; returning: number; spin: number; owner: number;
 }>();
 
 export const Drop = aos<{
@@ -70,7 +70,10 @@ export const Drop = aos<{
 
 export const NPC = aos<{ id: number; name: number }>();
 
-export const Chest = aos<{ item: number; opened: number }>();
+export const Chest = aos<{
+  item: number; opened: number;
+  items: number[];  // массив предметов (для множественных дропов)
+}>();
 
 export const Pedestal = aos<{
   id: number; taken: number; guardsLeft: number; guardsSpawned: number;

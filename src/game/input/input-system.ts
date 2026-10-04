@@ -29,6 +29,7 @@ export class InputSystem {
   private virt = { x: 0, y: 0, atk: false, axe: false, bow: false, act: false };
   private prevVirt = { atk: false, axe: false, act: false, bow: false };
   private bowHeld = false;
+  private bowJustReleased = false;
 
   private onKeyDown = (e: KeyboardEvent) => this.keyDown(e);
   private onKeyUp = (e: KeyboardEvent) => this.keys.delete(e.code);
@@ -117,13 +118,22 @@ export class InputSystem {
   updateBow(bowKeyDown: boolean): void {
     if (bowKeyDown && !this.bowHeld) {
       this.bowHeld = true;
+      this.bowJustReleased = false;
     } else if (!bowKeyDown && this.bowHeld) {
       this.bowHeld = false;
+      this.bowJustReleased = true;
     }
   }
 
   getBowHeld(): boolean {
     return this.bowHeld;
+  }
+
+  /** Проверить, была ли клавиша лука только что отпущена. */
+  getBowJustReleased(): boolean {
+    const released = this.bowJustReleased;
+    this.bowJustReleased = false;
+    return released;
   }
 
   /** Проверить, удерживается ли клавиша. */

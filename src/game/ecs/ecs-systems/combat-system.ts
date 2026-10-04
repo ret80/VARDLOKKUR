@@ -715,12 +715,16 @@ export function updateProjectilesEcs(
       }
     }
 
-    // Collision check with enemies
-    if (pKind === 'arrow' || pKind === 'axe') {
-      let consumed = false;
+    // Collision check with enemies (для player и enemy снарядов)
+    let enemyHit = false;
+    if (pKind === 'arrow' || pKind === 'axe' || pKind === 'spore' || pKind === 'fire') {
+      const projOwner = proj.owner;
       for (const enemyEid of query(world, [Enemy, Position, Health, Radius])) {
         if (hasComponent(world, enemyEid, Dead)) continue;
         if (!Enemy[enemyEid]) continue; // AoS элемент может быть undefined
+
+        // Пропустить владельца снаряда
+        if (enemyEid === projOwner) continue;
 
         const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
         const enemyState = getEnemyStateName(Enemy[enemyEid].state);
@@ -733,7 +737,7 @@ export function updateProjectilesEcs(
             onProjectileRemove(eid);
             removeEntity(world, eid);
           }
-          consumed = true;
+          enemyHit = true;
           break;
         }
 
@@ -747,7 +751,7 @@ export function updateProjectilesEcs(
             const ey = ePos.y - 8;
             if ((pos.x - ex) ** 2 + (pos.y - ey) ** 2 < 11 * 11) {
               damageSnake(world, enemyEid, onFloat, onAudioHit, onSnakeDeath);
-              consumed = true;
+              enemyHit = true;
               if (pKind !== 'axe') {
                 onProjectileRemove(eid);
                 removeEntity(world, eid);
@@ -757,7 +761,7 @@ export function updateProjectilesEcs(
           } else {
             if ((pos.x - ePos.x) ** 2 + (pos.y - ePos.y) ** 2 < (eRad.value + 6) ** 2) {
               onAudioClang();
-              consumed = true;
+              enemyHit = true;
               if (pKind !== 'axe') {
                 onProjectileRemove(eid);
                 removeEntity(world, eid);
@@ -784,7 +788,7 @@ export function updateProjectilesEcs(
           } else {
             hitEnemy(world, enemyEid, proj.dmg, pos.x, pos.y, true, hasGhostBane, planckWorld, onFloat, onAudioClang, onAudioHit, onAudioFreeze, onEnemyHit, onEnemyKilled);
           }
-          consumed = true;
+          enemyHit = true;
           if (pKind !== 'axe') {
             onProjectileRemove(eid);
             removeEntity(world, eid);
@@ -792,13 +796,14 @@ export function updateProjectilesEcs(
           break;
         }
       }
-      if (consumed && pKind === 'axe') {
+      if (enemyHit && pKind === 'axe') {
         proj.returning = 1;
-        continue;
       }
-      if (consumed) continue;
-    } else {
-      // Enemy projectile hits player
+      if (enemyHit) continue;
+    }
+
+    // Если снаряд не попал во врага — проверить попадание в игрока (для enemy снарядов)
+    if (!enemyHit && (pKind === 'spore' || pKind === 'fire')) {
       const pPos = Position[playerEid];
       if (!pPos) continue;
       const pr = pPos.x;

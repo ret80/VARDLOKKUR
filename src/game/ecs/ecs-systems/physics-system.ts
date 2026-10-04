@@ -84,7 +84,9 @@ export function createBodyForEntity(
   eid: number,
   radius: number,
   category: number,
-  mask: number
+  mask: number,
+  vx?: number,
+  vy?: number
 ): void {
   // Добавляем компонент PhysicsBody (если ещё не добавлен)
   addComponent(world, eid, PhysicsBody);
@@ -94,6 +96,9 @@ export function createBodyForEntity(
   const pos = Position[eid];
   if (!pos) return; // AoS элемент может быть undefined
   const body = planckWorld.createEntityBody(pos.x, pos.y, radius, category, {});
+  if (vx !== undefined && vy !== undefined) {
+    body.setLinearVelocity({ x: vx, y: vy });
+  }
   PhysicsBody[eid].body = PhysicsBodyRegistry.length + 1;
   PhysicsBodyRegistry.push(body);
 }

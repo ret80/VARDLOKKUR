@@ -29,6 +29,8 @@ import { dist2 } from '../../utils';
 
 import type { EnemyKind } from '../../generators/types';
 import { solidTileAt, T, zoneFor, type WorldData } from '../../world';
+import { audio } from '../../audio';
+import type { EventBus } from '../../event-bus';
 
 // ============================================================
 // Конфигурация AI
@@ -68,7 +70,8 @@ export function aiUpdateSystem(
   onEnemyDied: (eid: number) => void,
   onPlayerDamaged?: (dmg: number, sx: number, sy: number) => void,
   onPlayerSlowed?: (duration: number) => void,
-  fogActive?: boolean
+  fogActive?: boolean,
+  bus?: EventBus | null
 ): void {
   if (playerEid < 0 || !map) return;
 
@@ -160,7 +163,7 @@ export function aiUpdateSystem(
         updateRaven(world, enemyEid, playerEid, playerX, playerY, map, dt);
         break;
       case 'shroom':
-        updateShroom(world, enemyEid, playerEid, playerX, playerY, dt);
+        updateShroom(world, enemyEid, playerEid, playerX, playerY, dt, bus);
         break;
       case 'crawler':
         updateCrawler(world, enemyEid, playerEid, playerX, playerY, map, dt);
@@ -172,16 +175,16 @@ export function aiUpdateSystem(
         updateGhost(world, enemyEid, playerEid, playerX, playerY, map, dt, fogActive ?? false);
         break;
       case 'reaper':
-        updateReaper(world, enemyEid, playerEid, playerX, playerY, map, dt);
+        updateReaper(world, enemyEid, playerEid, playerX, playerY, map, dt, onPlayerDamaged ?? (() => {}), bus ?? null);
         break;
       case 'spider':
-        updateSpider(world, enemyEid, playerEid, playerX, playerY, map, dt);
+        updateSpider(world, enemyEid, playerEid, playerX, playerY, map, dt, bus);
         break;
       case 'giant':
         updateGiant(world, enemyEid, playerEid, playerX, playerY, map, dt);
         break;
       case 'snake':
-        updateSnake(world, enemyEid, playerEid, playerX, playerY, map, dt);
+        updateSnake(world, enemyEid, playerEid, playerX, playerY, map, dt, bus);
         break;
     }
   }
@@ -307,7 +310,7 @@ function updateRaven(
 /** Shroom — стреляет спорами когда видит игрока */
 function updateShroom(
   world: World, eid: number, playerEid: number,
-  playerX: number, playerY: number, dt: number
+  playerX: number, playerY: number, dt: number, bus?: EventBus | null
 ): void {
 
   const d = Math.sqrt((Position[eid].x - playerX) ** 2 + (Position[eid].y - playerY) ** 2);
@@ -331,7 +334,9 @@ function updateShroom(
       Enemy[eid].state = EnemyState.cool;
       Enemy[eid].stateT = 2.5;
       // Shoot spore projectile toward player
-      // bus.emit("projectile:fire", { kind: "spore", x: px[eid], y: py[eid] - 4, vx: ((playerX - px[eid]) / d) * 74, vy: ((playerY - py[eid]) / d) * 74, dmg: 1 });
+      if (bus) {
+        bus.emit("projectile:fire", { kind: "spore", x: Position[eid].x, y: Position[eid].y - 4, vx: ((playerX - Position[eid].x) / d) * 74, vy: ((playerY - Position[eid].y) / d) * 74, dmg: 1, owner: eid });
+      }
     }
   } else {
     Enemy[eid].state = EnemyState.idle;
@@ -630,7 +635,9 @@ function updateGhost(
 /** Reaper — enter → chase → wind → swing → stuck (phase2 at HP ≤ 50%) */
 function updateReaper(
   world: World, eid: number, playerEid: number,
-  playerX: number, playerY: number, map: WorldData, dt: number
+  playerX: number, playerY: number, map: WorldData, dt: number,
+  onPlayerDamaged: (dmg: number, sx: number, sy: number) => void,
+  bus: EventBus | null
 ): void {
 
   const dx = playerX - Position[eid].x;
@@ -663,21 +670,26 @@ function updateReaper(
         Enemy[eid].stateT = phase2 ? 0.42 : 0.6;
         Velocity[eid].x = 0;
         Velocity[eid].y = 0;
+        audio.swing();
       }
       break;
     case EnemyState.wind:
       Velocity[eid].x = 0;
       Velocity[eid].y = 0;
-      if (Enemy[eid].stateT <= 0) { Enemy[eid].state = EnemyState.swing; Enemy[eid].stateT = 0.26; }
+      if (Enemy[eid].stateT <= 0) {
+        Enemy[eid].state = EnemyState.swing;
+        Enemy[eid].stateT = 0.26;
+        audio.swing();
+      }
       break;
     case EnemyState.swing:
       Velocity[eid].x = 0;
       Velocity[eid].y = 0;
-      // Contact damage during swing
+      // Contact damage during swing (коса в полу)
       if (Enemy[eid].contactCd <= 0 && d < 40) {
-        // Damage player via bus
+        onPlayerDamaged(2, Position[eid].x, Position[eid].y);
+        Enemy[eid].contactCd = 0.6;
       }
-      Enemy[eid].contactCd = Math.max(0, Enemy[eid].contactCd - dt);
       if (Enemy[eid].stateT <= 0) {
         Enemy[eid].state = EnemyState.stuck;
         Enemy[eid].stateT = phase2 ? 1.25 : 1.8;
@@ -692,8 +704,16 @@ function updateReaper(
 
   // Common contact damage (reaper close contact)
   if (Enemy[eid].contactCd <= 0 && d < Enemy[eid].radius + 5 + 4) {
-    // bus.emit("player:damaged", { dmg: 1, sx: px[eid], sy: py[eid] });
+    onPlayerDamaged(1, Position[eid].x, Position[eid].y);
     Enemy[eid].contactCd = 1.1;
+  }
+
+  // Boss death check
+  if (Health[eid].current <= 0 && !hasComponent(world, eid, Dead)) {
+    addComponent(world, eid, Dead);
+    if (bus) {
+      bus.emit("boss:killed", { kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind) as EnemyKind, id: (map as any)?.dungeonId ?? 0 });
+    }
   }
 }
 
@@ -704,7 +724,7 @@ function updateReaper(
 /** Spider — enter → aim → ring (shoots spores), spawns crawlers */
 function updateSpider(
   world: World, eid: number, playerEid: number,
-  playerX: number, playerY: number, map: WorldData, dt: number
+  playerX: number, playerY: number, map: WorldData, dt: number, bus?: EventBus | null
 ): void {
 
   const dx = playerX - Position[eid].x;
@@ -724,14 +744,23 @@ function updateSpider(
   } else if (Enemy[eid].state === EnemyState.aim) {
     if (Enemy[eid].stateT <= 0) {
       // Shoot 3 spores in a fan toward player
-      // bus.emit("projectile:fire", { kind: "spore", x: px[eid], y: py[eid] - 6, vx: Math.cos(base) * 110, vy: Math.sin(base) * 110, dmg: 1 });
+      if (bus) {
+        const base = Math.atan2(playerY - Position[eid].y, playerX - Position[eid].x);
+        bus.emit("projectile:fire", { kind: "spore", x: Position[eid].x, y: Position[eid].y - 6, vx: Math.cos(base) * 110, vy: Math.sin(base) * 110, dmg: 1, owner: eid });
+      }
       Enemy[eid].state = EnemyState.ring;
       Enemy[eid].stateT = 1.8;
     }
   } else if (Enemy[eid].state === EnemyState.ring) {
     if (Enemy[eid].stateT <= 0) {
       // Shoot 8 spores in a ring
-      // bus.emit("projectile:fire", { kind: "spore", x: px[eid], y: py[eid] - 6, vx: Math.cos(a) * 85, vy: Math.sin(a) * 85, dmg: 1 });
+      if (bus) {
+        const base = Math.atan2(playerY - Position[eid].y, playerX - Position[eid].x);
+        for (let i = 0; i < 8; i++) {
+          const a = (Math.PI * 2 / 8) * i;
+          bus.emit("projectile:fire", { kind: "spore", x: Position[eid].x, y: Position[eid].y - 6, vx: Math.cos(a) * 85, vy: Math.sin(a) * 85, dmg: 1, owner: eid });
+        }
+      }
       Enemy[eid].state = EnemyState.aim;
       Enemy[eid].stateT = 1.4;
     }
@@ -832,7 +861,7 @@ function updateGiant(
 /** Snake — closed → open phases, shoots fire projectiles from mouth */
 function updateSnake(
   world: World, eid: number, playerEid: number,
-  playerX: number, playerY: number, map: WorldData, dt: number
+  playerX: number, playerY: number, map: WorldData, dt: number, bus?: EventBus | null
 ): void {
 
   // Snake doesn't move
@@ -848,11 +877,13 @@ function updateSnake(
     if (Enemy[eid].stateT <= 1.5 && Enemy[eid].seed > 0.5) {
       Enemy[eid].seed = 0.2;
       // Fire 3 fire projectiles toward player
-      // const base = Math.atan2(playerY - mouthY, playerX - mouthX);
-      // for (let i = -1; i <= 1; i++) {
-      //   const a = base + i * 0.3;
-      //   bus.emit("projectile:fire", { kind: "fire", x: mouthX, y: mouthY, vx: Math.cos(a) * 84, vy: Math.sin(a) * 84, dmg: 1 });
-      // }
+      if (bus) {
+        const base = Math.atan2(playerY - mouthY, playerX - mouthX);
+        for (let i = -1; i <= 1; i++) {
+          const a = base + i * 0.3;
+          bus.emit("projectile:fire", { kind: "fire", x: mouthX, y: mouthY, vx: Math.cos(a) * 84, vy: Math.sin(a) * 84, dmg: 1, owner: eid });
+        }
+      }
     }
     if (Enemy[eid].stateT <= 0.7 && Enemy[eid].seed < 0.5) {
       Enemy[eid].seed = -1;

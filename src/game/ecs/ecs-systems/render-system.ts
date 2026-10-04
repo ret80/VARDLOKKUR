@@ -271,10 +271,10 @@ export class RenderSystem {
         // Viewport culling по записи очереди
         if (entry && !entry.visible) continue;
 
-        const spriteData = Sprite[eid];
-        if (!spriteData) continue;
-        const sprite = spriteData.ref;
-        if (!sprite) continue;
+      const spriteData = Sprite[eid];
+      if (!spriteData) continue;
+      const sprite = spriteData.ref;
+      if (sprite === undefined) continue;
 
         const data = config.mapper(eid, world);
         try {

@@ -75,3 +75,5 @@ export {
   ENTITY_LAYER,
   type RenderSystemOptions,
 } from './render-system';
+
+export { addChestItem } from '../ecs-bridge';

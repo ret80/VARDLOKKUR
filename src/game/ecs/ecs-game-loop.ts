@@ -94,7 +94,7 @@ import { type EntityFactory } from './entity-factory';
 import {
   Position, Velocity, PhysicsBody, Player, Direction, Health,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
-  Flashing, Enemy, EnemyState, Sprite, Radius,
+  Flashing, Enemy, EnemyState, Sprite, Radius, Projectile,
   Shrine, Dead, cleanupEntityAos,
 } from '../ecs/ecs-components';
 import type { InputSystem } from '../input/input-system';
@@ -343,7 +343,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     });
     if (eid >= 0) {
       // Добавить физику для топора
-      createBodyForEntity(_planckWorld, world, eid, 3, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground);
+      createBodyForEntity(_planckWorld, world, eid, 3, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground, Velocity[eid].x, Velocity[eid].y);
     }
   });
 
@@ -356,12 +356,17 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       lifetime,
       (eid: number) => {
         const g = spriteFactory.create(e.x, e.y);
-        // g уже в IRenderer layer через spriteFactory
+        Sprite[eid] = { ref: g };
+        logger.info('projectile', `created ${e.kind} eid=${eid} at (${e.x.toFixed(1)},${e.y.toFixed(1)}) sprite=${g}`);
+        // Установить владельца снаряда (если есть — значит снаряд от врага)
+        if (e.owner !== undefined) {
+          Projectile[eid].owner = e.owner;
+        }
       }
     );
     if (eid >= 0) {
       // Добавить физику для снаряда
-      createBodyForEntity(_planckWorld, world, eid, 4, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground);
+      createBodyForEntity(_planckWorld, world, eid, 4, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground, e.vx, e.vy);
     }
   });
 
@@ -528,6 +533,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         (duration: number) => {
           Player[peid].slowT = duration;
         },
+        undefined, // fogActive
+        bus       // bus для boss:killed event
       );
     }
 

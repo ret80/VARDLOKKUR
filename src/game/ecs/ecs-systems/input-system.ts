@@ -9,6 +9,7 @@ import {
 } from '../ecs-components';
 import type { InputSystem, InputState } from '../../input/input-system';
 import type { EventBus } from '../../event-bus';
+import { logger } from '../../debug/logger';
 
 // ============================================================
 // Обновление ввода игрока
@@ -64,9 +65,10 @@ export function updatePlayerInput(
   const bowKeyDown = input.isKeyHeld("KeyL") || input.isBowVirtualHeld();
   if (bowKeyDown) {
     input.updateBow(true);
+    logger.debug('input-system', `bowKeyDown=true, updateBow(true)`);
   } else if (input.getBowHeld()) {
     input.updateBow(false);
-    // Стрельба будет обрабатываться через событие bus
+    logger.debug('input-system', `bowKeyDown=false, bowHeld=true, updateBow(false)`);
   }
 
   return { stepT, realT };
@@ -105,21 +107,23 @@ export function updateBow(
 ): void {
   if (playerEid < 0) return;
 
-  if (input.getBowHeld()) {
-    input.updateBow(false);
-    if (flags.hasBow && flags.arrows > 0) {
-      flags.arrows--;
-      const a = Math.atan2(Direction[playerEid].y, Direction[playerEid].x);
-      bus.emit("projectile:fire", {
-        kind: "arrow",
-        x: Position[playerEid].x + Math.cos(a) * 8,
-        y: Position[playerEid].y - 2 + Math.sin(a) * 8,
-        vx: Math.cos(a) * 260,
-        vy: Math.sin(a) * 260,
-        dmg: 2,
-      });
-    } else {
-      onNoArrows();
-    }
+  const justReleased = input.getBowJustReleased();
+  logger.debug('input-system', `updateBow: playerEid=${playerEid} justReleased=${justReleased} hasBow=${flags.hasBow} arrows=${flags.arrows}`);
+
+  // Стрельба ОДИН РАЗ при отпускании клавиши
+  if (justReleased && flags.hasBow && flags.arrows > 0) {
+    flags.arrows--;
+    logger.debug('input-system', `SHOOTING! arrows now=${flags.arrows}`);
+    const a = Math.atan2(Direction[playerEid].y, Direction[playerEid].x);
+    bus.emit("projectile:fire", {
+      kind: "arrow",
+      x: Position[playerEid].x + Math.cos(a) * 8,
+      y: Position[playerEid].y - 2 + Math.sin(a) * 8,
+      vx: Math.cos(a) * 260,
+      vy: Math.sin(a) * 260,
+      dmg: 2,
+    });
+  } else if (justReleased && (!flags.hasBow || flags.arrows <= 0)) {
+    onNoArrows();
   }
 }

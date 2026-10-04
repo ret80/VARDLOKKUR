@@ -88,14 +88,15 @@ export class EntityFactory {
     lifetime: number
   ): number {
     const eid = addEntity(this.gameWorld);
-    addComponents(this.gameWorld, eid, [Position, Velocity, Projectile, Time, RenderLayer, Radius]);
+    addComponents(this.gameWorld, eid, [Position, Velocity, Projectile, Time, RenderLayer, Radius, Sprite]);
 
     Position[eid] = { x, y };
     Velocity[eid] = { x: vx, y: vy };
-    Projectile[eid] = { kind: poolAdd(StringPool.projectileKinds, kind), dmg, life: lifetime, dist: 0, returning: 0, spin: 0 };
+    Projectile[eid] = { kind: poolAdd(StringPool.projectileKinds, kind), dmg, life: lifetime, dist: 0, returning: 0, spin: 0, owner: -1 };
     Time[eid] = { value: 0 };
     RenderLayer[eid] = { value: 60 };
     Radius[eid] = { value: kind === 'fire' ? 5 : 4 };
+    Sprite[eid] = { ref: 0 };
 
     return eid;
   }

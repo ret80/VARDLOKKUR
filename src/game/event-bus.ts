@@ -45,7 +45,7 @@ type GameEvents = {
   "pedestal:unsealed":    { pedestalIndex: number };
 
   // Снаряды
-  "projectile:fire":  { kind: ProjectileKind; x: number; y: number; vx: number; vy: number; dmg: number };
+  "projectile:fire":  { kind: ProjectileKind; x: number; y: number; vx: number; vy: number; dmg: number; owner?: number };
   "projectile:spawned": { g: Graphics; x: number; y: number };
 
   // Дропы

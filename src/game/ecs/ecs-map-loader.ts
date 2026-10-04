@@ -18,6 +18,7 @@ import {
   createDropInEcs,
   createPlayerInEcs,
   teardownWorld,
+  addChestItem,
 } from './ecs-bridge';
 import type { EntityFactory } from './entity-factory';
 import { EventBus } from '../event-bus';
@@ -246,6 +247,12 @@ export class EcsMapLoader {
       logger.info('map-loader', `  Chest at tile(${c.x},${c.y}) -> pixel(${cx},${cy})`);
       const g = sf.create(cx, cy);
       const eid = createChestInEcs(factory, world, cx, cy, c.item, g);
+      // Добавить дополнительные предметы в сундук (лук и стрелы для тестовой карты)
+      if (c.x === 12 && c.y === 10) {
+        addChestItem(world, eid, 'bow');
+        addChestItem(world, eid, 'arrows');
+        logger.info('map-loader', `  Added bow and arrows to chest at (${c.x},${c.y})`);
+      }
       // Восстановить состояние opened из store.openedChests
       if (openedChests.has(`${c.x}_${c.y}`)) {
         Chest[eid].opened = 1;

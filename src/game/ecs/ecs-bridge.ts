@@ -278,10 +278,20 @@ function addNpcComponents(world: World, eid: number, id: string, name: string, x
 
 function addChestComponents(world: World, eid: number, item: string, x: number, y: number, spriteRef: number): void {
   addComponents(world, eid, [Chest, Sprite]);
-  Chest[eid] = { item: poolAdd(StringPool.chestItems, item), opened: 0 };
+  const itemIdx = poolAdd(StringPool.chestItems, item);
+  Chest[eid] = { item: itemIdx, opened: 0, items: [itemIdx] };
   Sprite[eid] = { ref: spriteRef };
   Position[eid].x = x;
   Position[eid].y = y;
+}
+
+/** Добавить предмет в сундук (если ещё не открыт) */
+export function addChestItem(world: World, chestEid: number, item: string): void {
+  if (!Chest[chestEid]) return;
+  const itemIdx = poolAdd(StringPool.chestItems, item);
+  if (!Chest[chestEid].items.includes(itemIdx)) {
+    Chest[chestEid].items.push(itemIdx);
+  }
 }
 
 function addPedestalComponents(world: World, eid: number, id: string, x: number, y: number, guardsLeft: number, spriteRef: number): void {

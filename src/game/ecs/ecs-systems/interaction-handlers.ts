@@ -182,12 +182,23 @@ class ChestHandler implements InteractionHandler {
     store.openedChests.add(`${cx}_${cy}`);
     audio.chest();
 
-    // Выдать предмет из сундука через ChestItemHandlerRegistry
-    const itemKind = poolGet(StringPool.chestItems, Chest[chestEid].item);
-    if (chestItemRegistry) {
-      chestItemRegistry.collect(itemKind, chestEid, store, bus);
+    // Выдать все предметы из сундука через ChestItemHandlerRegistry
+    const items = Chest[chestEid].items;
+    if (items && items.length > 0) {
+      for (const itemIdx of items) {
+        const itemKind = poolGet(StringPool.chestItems, itemIdx);
+        if (chestItemRegistry) {
+          chestItemRegistry.collect(itemKind, chestEid, store, bus);
+        } else {
+          logger.warn('interaction', `No chestItemRegistry for chest ${chestEid}, item: ${itemKind}`);
+        }
+      }
     } else {
-      logger.warn('interaction', `No chestItemRegistry for chest ${chestEid}, item: ${itemKind}`);
+      // Fallback: старый формат с single item
+      const itemKind = poolGet(StringPool.chestItems, Chest[chestEid].item);
+      if (chestItemRegistry) {
+        chestItemRegistry.collect(itemKind, chestEid, store, bus);
+      }
     }
     bus.emit('hud:dirty', {});
     return true;
