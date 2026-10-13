@@ -142,6 +142,15 @@ export class PlanckWorld {
       const catA = dataA?.category;
       const catB = dataB?.category;
 
+      // Projectile → Tile (уничтожение о стену/тайл)
+      if ((catA === Cat.Projectile && catB === Cat.Tile) || (catA === Cat.Tile && catB === Cat.Projectile)) {
+        const projBody = catA === Cat.Projectile ? bodyA : bodyB;
+        if (this.callbacks.onProjectileHitTile) {
+          this.callbacks.onProjectileHitTile(projBody, projBody.getUserData());
+        }
+        this.pendingDestroy.push(projBody);
+      }
+
       // Projectile → Enemy
       if ((catA === Cat.Projectile && catB === Cat.Enemy) || (catA === Cat.Enemy && catB === Cat.Projectile)) {
         const projBody = catA === Cat.Projectile ? bodyA : bodyB;
@@ -162,22 +171,16 @@ export class PlanckWorld {
         this.pendingDestroy.push(projBody);
       }
 
-      // Projectile → Player
+      // Projectile → Player (только вражеские снаряды, не свои)
       if ((catA === Cat.Projectile && catB === Cat.Player) || (catA === Cat.Player && catB === Cat.Projectile)) {
         const projBody = catA === Cat.Projectile ? bodyA : bodyB;
-        if (this.callbacks.onProjectileHitPlayer) {
-          this.callbacks.onProjectileHitPlayer(projBody, catA === Cat.Player ? bodyA : bodyB, projBody.getUserData());
+        const projData = projBody.getUserData() as any;
+        if (projData?.fromEnemy === true) {
+          if (this.callbacks.onProjectileHitPlayer) {
+            this.callbacks.onProjectileHitPlayer(projBody, catA === Cat.Player ? bodyA : bodyB, projData);
+          }
+          this.pendingDestroy.push(projBody);
         }
-        this.pendingDestroy.push(projBody);
-      }
-
-      // Projectile → Tile
-      if ((catA === Cat.Projectile && catB === Cat.Tile) || (catA === Cat.Tile && catB === Cat.Projectile)) {
-        const projBody = catA === Cat.Projectile ? bodyA : bodyB;
-        if (this.callbacks.onProjectileHitTile) {
-          this.callbacks.onProjectileHitTile(projBody, projBody.getUserData());
-        }
-        this.pendingDestroy.push(projBody);
       }
 
       // Enemy → Player
@@ -222,6 +225,17 @@ export class PlanckWorld {
       const dataB = bodyB.getUserData() as any;
       if ((dataA?.dead === true || dataB?.dead === true) &&
           dataA?.category !== Cat.Tile && dataB?.category !== Cat.Tile) {
+        contact.setEnabled(false);
+      }
+      // Снаряд не должен коллидировать со своим владельцем
+      const catA = dataA?.category;
+      const catB = dataB?.category;
+      if ((catA === Cat.Projectile && catB === Cat.Player) ||
+          (catA === Cat.Player && catB === Cat.Projectile)) {
+        contact.setEnabled(false);
+      }
+      if ((catA === Cat.Projectile && catB === Cat.Enemy) ||
+          (catA === Cat.Enemy && catB === Cat.Projectile)) {
         contact.setEnabled(false);
       }
     });

@@ -116,12 +116,16 @@ export class InputSystem {
 
   /** Обновить bowHeld (вызывается из Engine.update). */
   updateBow(bowKeyDown: boolean): void {
+    const oldHeld = this.bowHeld;
+    const oldReleased = this.bowJustReleased;
     if (bowKeyDown && !this.bowHeld) {
       this.bowHeld = true;
       this.bowJustReleased = false;
+      console.log('[InputSystem] updateBow: KEY_DOWN held=false->true justReleased=false->false');
     } else if (!bowKeyDown && this.bowHeld) {
       this.bowHeld = false;
       this.bowJustReleased = true;
+      console.log('[InputSystem] updateBow: KEY_UP held=true->false justReleased=false->true');
     }
   }
 
@@ -133,6 +137,9 @@ export class InputSystem {
   getBowJustReleased(): boolean {
     const released = this.bowJustReleased;
     this.bowJustReleased = false;
+    if (released) {
+      console.log('[InputSystem] getBowJustReleased: RETURNING true (consuming)');
+    }
     return released;
   }
 

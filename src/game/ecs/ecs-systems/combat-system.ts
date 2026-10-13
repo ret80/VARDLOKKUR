@@ -670,17 +670,10 @@ export function updateProjectilesEcs(
       continue;
     }
 
-    // Sync position from Planck body
-    const pbIdx = PhysicsBody[eid].body;
-    if (pbIdx > 0) {
-      const body = PhysicsBodyRegistry[pbIdx - 1];
-      if (body) {
-        const pos2 = body.getPosition();
-        pos.x = pos2.x;
-        pos.y = pos2.y;
-      }
-    }
+    // Decrement lifetime
+    proj.life -= dt;
 
+    // Rotate axe
     proj.spin += dt * 18;
 
     // Axe return logic
@@ -695,17 +688,8 @@ export function updateProjectilesEcs(
         const pdx = pPos.x - pos.x;
         const pdy = pPos.y - 2 - pos.y;
         const pd = Math.hypot(pdx, pdy) || 1;
-        const newVx = (pdx / pd) * 240;
-        const newVy = (pdy / pd) * 240;
-
-        if (pbIdx > 0) {
-          const body = PhysicsBodyRegistry[pbIdx - 1];
-          if (body) {
-            body.setLinearVelocity(Vec2(newVx, newVy));
-          }
-        }
-        vel.x = newVx;
-        vel.y = newVy;
+        vel.x = (pdx / pd) * 240;
+        vel.y = (pdy / pd) * 240;
 
         if (pd < 12) {
           onProjectileRemove(eid);

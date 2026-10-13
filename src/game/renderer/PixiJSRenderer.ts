@@ -111,9 +111,8 @@ export class PixiJSRenderer implements IRenderer {
 
     // Корневой контейнер мира (сдвигается камерой)
     this.worldContainer = new Container();
-    // sortableChildren = false: Z-order управляется через RenderQueue (setGraphicsZIndex),
-    // PixiJS не нужно пересортировывать children каждый кадр — это O(n log n) впустую.
-    this.worldContainer.sortableChildren = false;
+    // sortableChildren = true: RenderQueue управляет Z-order через setGraphicsZIndex
+    this.worldContainer.sortableChildren = true;
     this.app.stage.addChild(this.worldContainer);
 
     // Восстановление WebGL контекста после потери (GPU crash, tab switch, etc.)

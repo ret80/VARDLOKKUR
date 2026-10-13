@@ -15,6 +15,7 @@ import type { IPlayerData, IPlayerExtra } from '../models';
 import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
 import {
   Position,
+  Velocity,
   Health,
   Radius,
   Enemy,
@@ -115,8 +116,8 @@ export function eidToProjectileData(eid: number, _world: World): IProjectileData
     kind,
     r: 3,
     spin: Projectile[eid].spin,
-    vx: 0,
-    vy: 0,
+    vx: Velocity[eid].x,
+    vy: Velocity[eid].y,
   };
 }
 

@@ -461,7 +461,7 @@ export class RenderSystem {
       const spriteData = Sprite[eid];
       if (!spriteData) continue;
       const sprite = spriteData.ref;
-      if (!sprite) continue;
+      if (sprite === undefined) continue;
 
       const data = mapper(eid);
       try {

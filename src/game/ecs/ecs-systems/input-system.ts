@@ -10,6 +10,7 @@ import {
 import type { InputSystem, InputState } from '../../input/input-system';
 import type { EventBus } from '../../event-bus';
 import { logger } from '../../debug/logger';
+import type { FlagDomain } from '../../store/flag-domain';
 
 // ============================================================
 // Обновление ввода игрока
@@ -102,28 +103,51 @@ export function updateBow(
   playerEid: number,
   input: InputSystem,
   bus: EventBus,
-  flags: { hasBow: boolean; arrows: number },
+  flags: FlagDomain,
   onNoArrows: () => void
 ): void {
-  if (playerEid < 0) return;
+  if (playerEid < 0) {
+    logger.warn('input-system', `updateBow: playerEid=${playerEid} < 0, RETURN`);
+    return;
+  }
 
   const justReleased = input.getBowJustReleased();
-  logger.debug('input-system', `updateBow: playerEid=${playerEid} justReleased=${justReleased} hasBow=${flags.hasBow} arrows=${flags.arrows}`);
+  const bowHeld = input.getBowHeld();
+  const isKeyHeld = input.isKeyHeld("KeyL");
+  const isVirtualHeld = input.isBowVirtualHeld();
+  const hasBow = flags.hasItem('bow');
+  const arrows = flags.getArrows();
+  logger.info('input-system', `updateBow: playerEid=${playerEid} justReleased=${justReleased} bowHeld=${bowHeld} isKeyHeld=${isKeyHeld} isVirtualHeld=${isVirtualHeld} hasBow=${hasBow} arrows=${arrows} pos=(${Position[playerEid].x.toFixed(0)},${Position[playerEid].y.toFixed(0)}) dir=(${Direction[playerEid].x.toFixed(2)},${Direction[playerEid].y.toFixed(2)})`);
 
   // Стрельба ОДИН РАЗ при отпускании клавиши
-  if (justReleased && flags.hasBow && flags.arrows > 0) {
-    flags.arrows--;
-    logger.debug('input-system', `SHOOTING! arrows now=${flags.arrows}`);
+  if (justReleased && hasBow && arrows > 0) {
+    flags.incrementFlag('arrows', -1);
+    const newArrows = flags.getArrows();
+    logger.info('input-system', `SHOOTING! arrows now=${newArrows}, emitting projectile:fire`);
     const a = Math.atan2(Direction[playerEid].y, Direction[playerEid].x);
+    const px = Position[playerEid].x + Math.cos(a) * 8;
+    const py = Position[playerEid].y - 2 + Math.sin(a) * 8;
+    const vx = Math.cos(a) * 260;
+    const vy = Math.sin(a) * 260;
+    logger.info('input-system', `  projectile params: x=${px.toFixed(1)} y=${py.toFixed(1)} vx=${vx.toFixed(1)} vy=${vy.toFixed(1)} dmg=2`);
     bus.emit("projectile:fire", {
       kind: "arrow",
-      x: Position[playerEid].x + Math.cos(a) * 8,
-      y: Position[playerEid].y - 2 + Math.sin(a) * 8,
-      vx: Math.cos(a) * 260,
-      vy: Math.sin(a) * 260,
+      x: px,
+      y: py,
+      vx: vx,
+      vy: vy,
       dmg: 2,
     });
-  } else if (justReleased && (!flags.hasBow || flags.arrows <= 0)) {
-    onNoArrows();
+    bus.emit("hud:dirty", {});
+    logger.info('input-system', `  projectile:fire emitted OK, hud:dirty emitted`);
+  } else if (justReleased) {
+    if (!hasBow) {
+      logger.warn('input-system', `justReleased but hasBow=${hasBow}`);
+    } else if (arrows <= 0) {
+      logger.warn('input-system', `justReleased but arrows=${arrows} <= 0`);
+      onNoArrows();
+    } else {
+      logger.debug('input-system', `justReleased=${justReleased} but conditions not met`);
+    }
   }
 }
