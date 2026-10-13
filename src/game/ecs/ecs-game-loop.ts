@@ -578,8 +578,12 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       config_flags.ghostBane,
       _planckWorld,
       (eid) => {
-        // onProjectileRemove: удалить Graphics + Planck body снаряда
-        // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
+        // onProjectileRemove: уничтожить Graphics + Planck body снаряда
+        // Sprite.ref[eid] хранит GraphicsHandle (number) — нужно удалить объект из сцены
+        const spriteHandle = Sprite[eid]?.ref;
+        if (spriteHandle !== undefined && spriteHandle !== 0) {
+          renderer.destroyGraphics(spriteHandle as any);
+        }
         // Очистить AoS-данные ПЕРЕД удалением — bitecs не чистит их при removeEntity
         cleanupEntityAos(eid);
         Sprite[eid] = { ref: 0 };
@@ -622,7 +626,11 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       bus,
       (eid: number) => {
         // Удалить Graphics + Planck body дропа
-        // Sprite.ref[eid] теперь хранит GraphicsHandle (number), не PixiJS объект
+        // Sprite.ref[eid] хранит GraphicsHandle (number) — нужно удалить объект из сцены
+        const spriteHandle = Sprite[eid]?.ref;
+        if (spriteHandle !== undefined && spriteHandle !== 0) {
+          renderer.destroyGraphics(spriteHandle as any);
+        }
         // Очистить AoS-данные ПЕРЕД удалением — bitecs не чистит их при removeEntity
         cleanupEntityAos(eid);
         Sprite[eid] = { ref: 0 };
