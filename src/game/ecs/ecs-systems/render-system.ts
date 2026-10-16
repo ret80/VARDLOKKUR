@@ -90,6 +90,15 @@ export function ensureRenderEntry(eid: number, layer: number): RenderEntry | nul
   // Проверка что Position инициализирован (AoS объект может быть undefined)
   const pos = Position[eid];
   if (!pos) return null;
+
+  // Deduplication: если запись уже есть (из предыдущего прохода),
+  // возвращаем существующую и обновляем layer — избегаем дубликатов в очереди
+  const existing = q.ensureEntry(handle as number);
+  if (existing) {
+    existing.layer = layer;
+    return existing;
+  }
+
   const entry: RenderEntry = {
     x: pos.x,
     y: pos.y,

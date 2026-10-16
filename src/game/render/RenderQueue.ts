@@ -84,10 +84,25 @@ export function computeZIndex(layer: number, y: number): number {
  */
 export class RenderQueue {
   private entries: RenderEntry[] = [];
+  /** Кэш маппинга handle → индекс в entries — для deduplication записей */
+  private _handleIndex: Map<number, number> = new Map();
 
-  /** Добавить запись в очередь */
+  /** Добавить запись в очередь (с индексацией по handle) */
   enqueue(e: RenderEntry): void {
+    this._handleIndex.set(e.handle as number, this.entries.length);
     this.entries.push(e);
+  }
+
+  /**
+   * Найти запись по handle. Если есть — вернуть существующую (deduplication),
+   * если нет — вернуть null (вызывающий создаст новую и вызовет enqueue).
+   */
+  ensureEntry(handle: number): RenderEntry | null {
+    const idx = this._handleIndex.get(handle);
+    if (idx !== undefined) {
+      return this.entries[idx];
+    }
+    return null;
   }
 
   /**
@@ -119,6 +134,7 @@ export class RenderQueue {
       renderer.setGraphicsZIndex(e.handle, computeZIndex(e.layer, e.y));
     }
     this.entries.length = 0;
+    this._handleIndex.clear();
   }
 }
 
