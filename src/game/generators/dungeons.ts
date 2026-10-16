@@ -5,6 +5,16 @@ import { WorldData, Vec, Tl, idx, inB, EnemyKind, DungeonCfg, isSolidTileId } fr
 import { tileAt, setTile } from "./utils";
 import { NavBuilder } from "./nav-builder";
 import { resolveDungeonTiles } from "../dungeon-tiles";
+import { logger } from "../debug/logger";
+import {
+  carveLayout,
+  generateLayout,
+  graphDistances,
+  validateLayout,
+  type DungeonLayout,
+  type LayoutOptions,
+  type LayoutRoom,
+} from "./dungeon-layout";
 
 function baseDungeon(cfg: DungeonCfg, W: number, H: number, exitSpot: Vec): WorldData {
   return {
@@ -25,27 +35,31 @@ function baseDungeon(cfg: DungeonCfg, W: number, H: number, exitSpot: Vec): Worl
 }
 
 function finalizeDungeon(w: WorldData, rng: () => number, cfg: DungeonCfg, pool: EnemyKind[]) {
-  const br = w.bossRoom;
-  const bx = Math.floor(br.x / 16), by = Math.floor(br.y / 16);
-  const bw = Math.floor(br.w / 16), bh = Math.floor(br.h / 16);
-  const doorCandidates: Vec[] = [];
-  for (let x = bx; x < bx + bw; x++) {
-    for (const [y, dy] of [[by - 1, -1], [by + bh, 1]] as [number, number][]) {
-      if (tileAt(w, x, y) === Tl.DFLOOR && tileAt(w, x, y + dy) !== Tl.DFLOOR) doorCandidates.push(px(x, y));
+  // Дверь босса: если генератор уже задал её (w.doors не пуст) — не трогаем.
+  if (w.doors.length === 0) {
+    const br = w.bossRoom;
+    const bx = Math.floor(br.x / 16), by = Math.floor(br.y / 16);
+    const bw = Math.floor(br.w / 16), bh = Math.floor(br.h / 16);
+    const doorCandidates: Vec[] = [];
+    for (let x = bx; x < bx + bw; x++) {
+      for (const [y, dy] of [[by - 1, -1], [by + bh, 1]] as [number, number][]) {
+        if (tileAt(w, x, y) === Tl.DFLOOR && tileAt(w, x, y + dy) !== Tl.DFLOOR) doorCandidates.push(px(x, y));
+      }
     }
-  }
-  for (let y = by; y < by + bh; y++) {
-    for (const [x, dx] of [[bx - 1, -1], [bx + bw, 1]] as [number, number][]) {
-      if (tileAt(w, x, y) === Tl.DFLOOR && tileAt(w, x + dx, y) !== Tl.DFLOOR) doorCandidates.push(px(x, y));
+    for (let y = by; y < by + bh; y++) {
+      for (const [x, dx] of [[bx - 1, -1], [bx + bw, 1]] as [number, number][]) {
+        if (tileAt(w, x, y) === Tl.DFLOOR && tileAt(w, x + dx, y) !== Tl.DFLOOR) doorCandidates.push(px(x, y));
+      }
     }
+    doorCandidates.sort((a, b) => Math.abs(a.x - w.bossSpot.x) - Math.abs(b.x - w.bossSpot.x));
+    if (doorCandidates.length) w.doors.push(doorCandidates[0]);
+    else w.doors.push(px(bx + Math.floor(bw / 2), by + bh));
   }
-  doorCandidates.sort((a, b) => Math.abs(a.x - w.bossSpot.x) - Math.abs(b.x - w.bossSpot.x));
-  if (doorCandidates.length) w.doors.push(doorCandidates[0]);
-  else w.doors.push(px(bx + Math.floor(bw / 2), by + bh));
 
   for (const c of w.chests) setTile(w, c.x, c.y, Tl.DFLOOR);
 
-  if (w.spawns.length > 16) w.spawns.length = 16;
+  // Подземелья стали крупнее (id 0 — 88×60), поэтому лимит спавнов выше.
+  if (w.spawns.length > 24) w.spawns.length = 24;
   for (const s of w.spawns) {
     if (!pool.includes(s.kind)) s.kind = pool[Math.floor(rng() * pool.length)];
   }
@@ -55,97 +69,174 @@ function finalizeDungeon(w: WorldData, rng: () => number, cfg: DungeonCfg, pool:
   w.nav = navBuilder.build(w);
 }
 
-// Склеп Хранителя
+// Склеп Хранителя — процедурная планировка «комнаты + коридоры» (dungeon-layout.ts).
+const CRYPT_W = 88, CRYPT_H = 60;
+
+/** Опции планировки Склепа: просторнее дефолта, тупиковая арена босса. */
+const CRYPT_LAYOUT: Partial<LayoutOptions> = {
+  targetRooms: 14, minRooms: 8, margin: 3, padding: 2,
+  corridorWidth: 2, mainWidth: 3, bossMinW: 16, bossMinH: 12,
+};
+
+/** Случайная клетка пола внутри комнаты (с отступом от края). */
+function randomFloorInRoom(w: WorldData, r: LayoutRoom, rng: () => number): Vec | null {
+  const m = 1, iw = r.w - 2 * m, ih = r.h - 2 * m;
+  if (iw > 0 && ih > 0) {
+    for (let t = 0; t < 48; t++) {
+      const x = r.x + m + Math.floor(rng() * iw);
+      const y = r.y + m + Math.floor(rng() * ih);
+      if (inB(w, x, y) && w.tiles[idx(w, x, y)] === Tl.DFLOOR) return { x, y };
+    }
+  }
+  return null;
+}
+
+/** Любая клетка пола внутри комнаты (страховка). */
+function anyFloorInRoom(w: WorldData, r: LayoutRoom): Vec | null {
+  for (let y = r.y; y < r.y + r.h; y++)
+    for (let x = r.x; x < r.x + r.w; x++)
+      if (inB(w, x, y) && w.tiles[idx(w, x, y)] === Tl.DFLOOR) return { x, y };
+  return null;
+}
+
+function roomFloorTile(w: WorldData, r: LayoutRoom, rng: () => number): Vec | null {
+  return randomFloorInRoom(w, r, rng) ?? anyFloorInRoom(w, r);
+}
+
 function genCrypt(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   const rng = mulberry((seed ^ 0x5eed) + cfg.id * 7919);
-  const w = baseDungeon(cfg, 60, 45, exitSpot);
-  const COLS = 6, ROWS = 4, CW = 9, CH = 8;
-  const cellX = (c: number) => 3 + c * CW;
-  const cellY = (r: number) => 12 + r * CH;
-  const cells: { c: number; r: number }[] = [];
-  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) cells.push({ c, r });
-  const ci = (c: number, r: number) => r * COLS + c;
+  const baseSeed = (seed ^ 0x5eed) + cfg.id * 7919;
+  const W = CRYPT_W, H = CRYPT_H;
 
-  const adj: number[][] = cells.map(() => []);
-  const visited = new Uint8Array(cells.length);
-  const stack = [ci(Math.floor(rng() * COLS), 0)];
-  visited[stack[0]] = 1;
-  while (stack.length) {
-    const cur = stack[stack.length - 1];
-    const cc = cells[cur];
-    const nb: number[] = [];
-    if (cc.c > 0 && !visited[ci(cc.c - 1, cc.r)]) nb.push(ci(cc.c - 1, cc.r));
-    if (cc.c < COLS - 1 && !visited[ci(cc.c + 1, cc.r)]) nb.push(ci(cc.c + 1, cc.r));
-    if (cc.r > 0 && !visited[ci(cc.c, cc.r - 1)]) nb.push(ci(cc.c, cc.r - 1));
-    if (cc.r < ROWS - 1 && !visited[ci(cc.c, cc.r + 1)]) nb.push(ci(cc.c, cc.r + 1));
-    if (!nb.length) { stack.pop(); continue; }
-    const next = nb[Math.floor(rng() * nb.length)];
-    adj[cur].push(next); adj[next].push(cur);
-    visited[next] = 1;
-    stack.push(next);
+  let w = baseDungeon(cfg, W, H, exitSpot);
+  let layout: DungeonLayout | null = null;
+  let bossEntrance: Vec | null = null;
+
+  // До 20 попыток: планировка пересобирается, пока не пройдёт проверку связности.
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const lrng = mulberry(baseSeed + attempt * 104729);
+    const candidate = generateLayout(lrng, W, H, CRYPT_LAYOUT);
+    if (!candidate) continue;
+    const map = baseDungeon(cfg, W, H, exitSpot);
+    const carved = carveLayout(map.tiles, W, H, candidate, lrng, Tl.DFLOOR, CRYPT_LAYOUT);
+    const be = candidate.edges.find((e) => e.a === candidate.boss || e.b === candidate.boss);
+    const expected = be ? be.width : undefined;
+    const check = validateLayout(map.tiles, W, H, candidate, Tl.DFLOOR, expected);
+    if (!check.ok) continue;
+    w = map;
+    layout = candidate;
+    bossEntrance = carved.bossEntrance;
+    logger.info("dungeon", `genCrypt: планировка принята с попытки ${attempt} (комнат=${candidate.rooms.length}, рёбер=${candidate.edges.length})`);
+    break;
   }
 
-  for (const cell of cells) {
-    const x0 = cellX(cell.c), y0 = cellY(cell.r);
-    for (let y = y0 + 1; y < y0 + CH - 2; y++) for (let x = x0 + 1; x < x0 + CW - 2; x++) setTile(w, x, y, Tl.DFLOOR);
+  if (!layout) {
+    logger.warn("dungeon", "genCrypt: процедурная планировка не сложилась, резервная карта");
+    return fallbackCrypt(cfg, exitSpot);
   }
-  for (let i = 0; i < cells.length; i++) {
-    for (const j of adj[i]) {
-      if (j <= i) continue;
-      const a = cells[i], b = cells[j];
-      if (a.r === b.r) {
-        const x0 = Math.min(cellX(a.c), cellX(b.c)) + CW - 2;
-        const y0 = cellY(a.r) + 2;
-        for (let x = x0; x < x0 + 3; x++) for (let y = y0; y < y0 + 2; y++) setTile(w, x, y, Tl.DFLOOR);
-      } else {
-        const x0 = cellX(a.c) + 3;
-        const y0 = Math.min(cellY(a.r), cellY(b.r)) + CH - 2;
-        for (let x = x0; x < x0 + 2; x++) for (let y = y0; y < y0 + 3; y++) setTile(w, x, y, Tl.DFLOOR);
+
+  const rooms = layout.rooms;
+  const dist = graphDistances(layout);
+
+  // --- Вход: лестница и точка спавна в комнате входа ---
+  const entryRoom = rooms[layout.entry];
+  const stairPt = roomFloorTile(w, entryRoom, rng) ?? { x: Math.round(entryRoom.cx), y: Math.round(entryRoom.cy) };
+  setTile(w, stairPt.x, stairPt.y, Tl.STAIRS);
+  w.entryStairs = px(stairPt.x, stairPt.y);
+  const spawnPt = roomFloorTile(w, entryRoom, rng) ?? stairPt;
+  w.spawn = px(spawnPt.x, spawnPt.y);
+
+  // --- Комната босса и дверь (единственный проход) ---
+  const bossRoom = rooms[layout.boss];
+  w.bossRoom = { x: bossRoom.x * 16, y: bossRoom.y * 16, w: bossRoom.w * 16, h: bossRoom.h * 16 };
+  w.bossSpot = px(Math.round(bossRoom.cx), Math.round(bossRoom.cy));
+  if (bossEntrance) w.doors.push({ x: bossEntrance.x * 16 + 8, y: bossEntrance.y * 16 + 8 });
+
+  // --- Колонны в больших залах (до сундуков, чтобы не занять их клетки) ---
+  for (let i = 0; i < rooms.length; i++) {
+    if (i === layout.entry || i === layout.boss) continue;
+    const r = rooms[i];
+    if (r.w < 11 || r.h < 8) continue;
+    for (const [dx, dy] of [[2, 2], [r.w - 3, 2], [2, r.h - 3], [r.w - 3, r.h - 3]] as [number, number][]) {
+      const x = r.x + dx, y = r.y + dy;
+      if (!inB(w, x, y) || w.tiles[idx(w, x, y)] !== Tl.DFLOOR) continue;
+      // Колонна — только на открытой площадке (не перекрывая проходы).
+      let open = true;
+      for (const [nx, ny] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
+        if (!inB(w, x + nx, y + ny) || w.tiles[idx(w, x + nx, y + ny)] !== Tl.DFLOOR) { open = false; break; }
       }
+      if (open) setTile(w, x, y, Tl.COLUMN);
     }
   }
 
-  const BRX = 22, BRY = 2, BRW = 15, BRH = 8;
+  // --- Ключ — в самой далёкой от входа комнате (кроме босса) ---
+  let keyRoom = -1, keyDist = -1;
+  for (let i = 0; i < rooms.length; i++) {
+    if (i === layout.entry || i === layout.boss) continue;
+    if (dist[i] > keyDist) { keyDist = dist[i]; keyRoom = i; }
+  }
+  if (keyRoom >= 0) {
+    const p = roomFloorTile(w, rooms[keyRoom], rng);
+    if (p) w.chests.push({ x: p.x, y: p.y, item: "key" });
+  }
+  for (let i = 0; i < rooms.length; i++) {
+    if (i === layout.entry || i === layout.boss || i === keyRoom) continue;
+    if (rng() < 0.42) {
+      const p = roomFloorTile(w, rooms[i], rng);
+      if (p) w.chests.push({ x: p.x, y: p.y, item: rng() < 0.3 ? "heartPiece" : "arrows" });
+    }
+  }
+
+  // --- Враги: плотность растёт с размером комнаты и расстоянием от входа ---
+  for (let i = 0; i < rooms.length; i++) {
+    if (i === layout.entry) continue;
+    const r = rooms[i];
+    let n = Math.max(1, Math.min(4, Math.round((r.w * r.h) / 22)));
+    if (i === layout.boss) n = Math.min(n, 2);
+    if (dist[i] > 1) n += Math.min(2, dist[i] - 1);
+    for (let k = 0; k < n; k++) {
+      const p = roomFloorTile(w, r, rng);
+      if (!p) break;
+      w.spawns.push({ kind: cfg.pool[Math.floor(rng() * cfg.pool.length)], x: p.x * 16 + 8, y: p.y * 16 + 8 });
+    }
+  }
+
+  // --- Декор: осколки/кости ---
+  const ambientCount = 4 + Math.floor(rng() * 4);
+  for (let k = 0; k < ambientCount; k++) {
+    const i = Math.floor(rng() * rooms.length);
+    if (i === layout.entry || i === layout.boss) continue;
+    const p = roomFloorTile(w, rooms[i], rng);
+    if (p) w.ambient.push({ kind: rng() < 0.5 ? "shard" : "bones", x: p.x, y: p.y });
+  }
+
+  finalizeDungeon(w, rng, cfg, cfg.pool);
+  return w;
+}
+
+/** Резервная карта Склепа (если процедурная планировка не сложилась). */
+function fallbackCrypt(cfg: DungeonCfg, exitSpot: Vec): WorldData {
+  const w = baseDungeon(cfg, CRYPT_W, CRYPT_H, exitSpot);
+  // Главный зал
+  for (let y = 26; y < 54; y++) for (let x = 12; x < 76; x++) setTile(w, x, y, Tl.DFLOOR);
+  // Арена босса
+  const BRX = 30, BRY = 6, BRW = 28, BRH = 16;
   for (let y = BRY; y < BRY + BRH; y++) for (let x = BRX; x < BRX + BRW; x++) setTile(w, x, y, Tl.DFLOOR);
-  for (let x = 28; x <= 30; x++) for (let y = BRY + BRH - 1; y <= cellY(0) + 2; y++) setTile(w, x, y, Tl.DFLOOR);
+  // Единственный проход босс → зал (ширина 2)
+  for (let y = BRY + BRH - 1; y <= 27; y++) for (let x = 43; x <= 44; x++) setTile(w, x, y, Tl.DFLOOR);
   w.bossRoom = { x: BRX * 16, y: BRY * 16, w: BRW * 16, h: BRH * 16 };
   w.bossSpot = px(BRX + Math.floor(BRW / 2), BRY + Math.floor(BRH / 2));
-
-  const ec = 2 + Math.floor(rng() * 2);
-  const ex = cellX(ec) + 4, ey = cellY(ROWS - 1) + CH - 3;
-  setTile(w, ex, ey, Tl.STAIRS);
-  w.entryStairs = px(ex, ey);
-  w.spawn = px(ex, ey - 2);
-
-  const dist = new Array(cells.length).fill(-1);
-  const q = [ci(ec, ROWS - 1)]; dist[q[0]] = 0;
-  while (q.length) {
-    const c = q.shift()!;
-    for (const n of adj[c]) if (dist[n] === -1) { dist[n] = dist[c] + 1; q.push(n); }
-  }
-  let far = 0;
-  for (let i = 0; i < cells.length; i++) if (dist[i] > dist[far]) far = i;
-  const farCell = cells[far];
-  w.chests.push({ x: cellX(farCell.c) + 3, y: cellY(farCell.r) + 2, item: "key" });
-  cells.forEach((cell, i) => {
-    if (i % 2 === 0 || i === ci(ec, ROWS - 1) || i === far) return;
-    if (rng() < 0.5) {
-      w.chests.push({ x: cellX(cell.c) + 2 + Math.floor(rng() * 3), y: cellY(cell.r) + 2, item: rng() < 0.3 ? "heartPiece" : "arrows" });
-    }
-  });
-
-  cells.forEach((cell, i) => {
-    if (i === ci(ec, ROWS - 1) || dist[i] <= 0) return;
-    const n = 1 + Math.floor(rng() * 2);
-    for (let k = 0; k < n; k++) {
-      w.spawns.push({
-        kind: cfg.pool[Math.floor(rng() * cfg.pool.length)],
-        x: (cellX(cell.c) + 2 + Math.floor(rng() * 4)) * 16 + 8,
-        y: (cellY(cell.r) + 2 + Math.floor(rng() * 3)) * 16 + 8,
-      });
-    }
-  });
-  finalizeDungeon(w, rng, cfg, cfg.pool);
+  w.doors.push({ x: 43.5 * 16 + 8, y: (BRY + BRH) * 16 + 8 });
+  setTile(w, 44, 50, Tl.STAIRS);
+  w.entryStairs = px(44, 50);
+  w.spawn = px(44, 49);
+  w.chests.push({ x: 16, y: 30, item: "key" }, { x: 70, y: 50, item: "arrows" });
+  w.spawns.push(
+    { kind: cfg.pool[0], x: 20 * 16 + 8, y: 34 * 16 + 8 },
+    { kind: cfg.pool[1 % cfg.pool.length], x: 66 * 16 + 8, y: 44 * 16 + 8 },
+    { kind: cfg.pool[2 % cfg.pool.length], x: 44 * 16 + 8, y: 12 * 16 + 8 },
+  );
+  finalizeDungeon(w, mulberry((cfg.id * 7919) ^ 0x5eed), cfg, cfg.pool);
   return w;
 }
 
