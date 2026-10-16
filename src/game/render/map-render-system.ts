@@ -18,13 +18,17 @@ import type { IRenderer, GraphicsHandle } from '../renderer/IRenderer';
 import { getRenderQueue, RENDER_LAYER, type Viewport } from './RenderQueue';
 import { MapState, MapTiles } from '../ecs/ecs-components';
 import { T, Tl, type WorldData } from '../world';
-import { drawTileBatch, drawTileLocal } from '../geometry/tile-geom';
+import { drawTileBatch } from '../geometry/tile-geom';
+import { drawDungeonFloorBatch, drawDungeonWallBatch } from '../geometry/dungeon-tile-geom';
 import { drawWallGeometry } from '../geometry/wall-geom';
 import { drawHouseGeometry, houseMetrics } from '../geometry/house-geom';
 import { logger } from '../debug/logger';
 
 /** Ground Graphics для карты (один на всю карту) */
 let _groundGraphics: GraphicsHandle | null = null;
+
+/** Батч стен подземелья DWALL (один на всю карту), null для overworld */
+let _dungeonWallGraphics: GraphicsHandle | null = null;
 
 /**
  * Опции mapRenderSystem (передаются из ecs-game-loop при каждом кадре).
@@ -81,6 +85,20 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
       visible: true,
       skipCull: true, // ground всегда рисуем (viewport culling не нужен)
       handle: _groundGraphics,
+    });
+  }
+
+  // === 1b. Подземелье: стены DWALL — единый батч на всю карту ===
+  if (_dungeonWallGraphics) {
+    queue.enqueue({
+      x: 0,
+      y: 0,
+      width: mapW * T,
+      height: mapH * T,
+      layer: RENDER_LAYER.DYNAMIC,
+      alpha: 1,
+      visible: true,
+      handle: _dungeonWallGraphics,
     });
   }
 
@@ -187,6 +205,8 @@ export function createMapTileGraphics(
 
   const { W, H } = map;
   const roofSnow = opts.roofSnow ?? false;
+  const isDungeon = !!map.isDungeon;
+  _dungeonWallGraphics = null; // пересоздаётся только для подземелий (ниже)
   let count = 0;
 
   // Детерминированный шум вариантов
@@ -197,9 +217,19 @@ export function createMapTileGraphics(
 
   // ===== 1. Ground: ОДИН Graphics на ВСЮ карту =====
   const groundG = renderer.createGraphics();
-  drawTileBatch(renderer, groundG, map);
+  if (isDungeon) drawDungeonFloorBatch(renderer, groundG, map);
+  else drawTileBatch(renderer, groundG, map);
   _groundGraphics = groundG as GraphicsHandle;
   count++;
+
+  // ===== 1b. Подземелье: стены DWALL — ОДИН батч на всю карту =====
+  if (isDungeon) {
+    const wallG = renderer.createGraphics();
+    renderer.setGraphicsPosition(wallG, { x: 0, y: 0 });
+    drawDungeonWallBatch(renderer, wallG, map);
+    _dungeonWallGraphics = wallG as GraphicsHandle;
+    count++;
+  }
 
   // ===== 2. Стены: один Graphics на каждый тайл =====
   const WALL_TILES = new Set<number>([
@@ -210,6 +240,8 @@ export function createMapTileGraphics(
     for (let x = 0; x < W; x++) {
       const t = map.tiles[y * W + x];
       if (!WALL_TILES.has(t)) continue;
+      // DWALL подземелья рисуется единым батчем выше
+      if (isDungeon && t === Tl.DWALL) continue;
 
       const variant =
         t === Tl.TREE ? ((rnd(x, y, 13) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
@@ -304,6 +336,16 @@ export function destroyAllMapTileGraphics(
       // уже уничтожен
     }
     _groundGraphics = null;
+  }
+
+  // Стены подземелья — единый батч
+  if (_dungeonWallGraphics) {
+    try {
+      renderer.destroyGraphics(_dungeonWallGraphics);
+    } catch {
+      // уже уничтожен
+    }
+    _dungeonWallGraphics = null;
   }
 
   // Стены и дома — уничтожаем по MapTiles

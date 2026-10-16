@@ -58,6 +58,8 @@ export interface WorldData {
    bossRoom: { x: number; y: number; w: number; h: number }; bossSpot: Vec; entryStairs: Vec;
    ruinedHouses: HouseDef[];
   noBarrier?: boolean;
+  /** Коды тайлов стен подземелья (DUNGEON_FLOOR / 0..53), заполняется генератором. */
+  dungeonWall?: Uint8Array;
 }
 
 export const idx = (w: { W: number }, x: number, y: number) => y * w.W + x;

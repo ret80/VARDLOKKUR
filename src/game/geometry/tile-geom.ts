@@ -61,10 +61,15 @@ export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number
       renderer.drawRect(g, { x: x + 3, y: y + 7, width: 10, height: 2 }, rgb(0x222b38));
       renderer.drawRect(g, { x: x + 4, y: y + 11, width: 8, height: 2 }, rgb(0x222b38));
       break;
-    case Tl.DFLOOR: dither(0x39424e, 0x2f3844, 0x445060); break;
+    case Tl.DFLOOR:
+      // t00 из SVG/tile_set_d01.svg: тёмная заливка + линии сетки сверху/слева
+      renderer.drawRect(g, tileRect, rgb(0x141a22));
+      renderer.drawRect(g, { x, y, width: T, height: 1 }, rgb(0x0a0e14));
+      renderer.drawRect(g, { x, y, width: 1, height: T }, rgb(0x0a0e14));
+      break;
     case Tl.DWALL:
-      renderer.drawRect(g, tileRect, rgb(0x10151c));
-      renderer.drawRect(g, { x, y, width: T, height: 5 }, rgb(0x232c38));
+      // fallback: стены подземелья рисуются отдельным батчем (drawDungeonWallBatch)
+      renderer.drawRect(g, tileRect, rgb(0x0a0e14));
       break;
     case Tl.ALTAR: dither(0x1a222c, 0x141a22, 0x232c38); break;
     case Tl.TREE: dither(0x1c262e, 0x161f26, 0x232e37); break;
