@@ -708,6 +708,16 @@ function FlagsTab({ state, sendCommand }: { state: DebugGameState | null; sendCo
   const flags = state?.flags;
   if (!flags) return <div className="text-[11px] text-[#ffffff]">Flags not available</div>;
 
+  const handleToggleBoolean = (key: string) => {
+    const currentValue = (flags as any)[key];
+    sendCommand('set-flag', { key, value: !currentValue });
+  };
+
+  const handleIncrement = (key: string, delta: number) => {
+    const currentValue = (flags as any)[key] || 0;
+    sendCommand('set-flag', { key, value: currentValue + delta });
+  };
+
   const flagGroups: Record<string, string[]> = {
     'Inventory': ['hasSword', 'hasAxe', 'hasBow', 'hasHammer', 'hasKey', 'swordUp', 'axeUp', 'furyRune', 'nornsFavor'],
     'Resources': ['hearts', 'arrows', 'runes', 'dew', 'fogWaves'],
@@ -724,13 +734,53 @@ function FlagsTab({ state, sendCommand }: { state: DebugGameState | null; sendCo
           <div className="grid grid-cols-2 gap-1">
             {keys.map(key => {
               const value = (flags as any)[key];
-              const displayValue = typeof value === 'boolean' ? (value ? 'ON' : 'OFF') : value;
+              const isBoolean = typeof value === 'boolean';
+              const isNumeric = typeof value === 'number';
+              const displayValue = isBoolean ? (value ? 'ON' : 'OFF') : value;
+
+              if (isBoolean) {
+                return (
+                  <div key={key} className="flex justify-between items-center text-[10px]">
+                    <span className="text-[#ffffff]">{key}</span>
+                    <button
+                      onClick={() => handleToggleBoolean(key)}
+                      className={`font-mono px-1.5 py-0.5 rounded cursor-pointer transition-colors ${
+                        value ? 'bg-[#8fd8e8]/20 text-[#8fd8e8] hover:bg-[#8fd8e8]/30' : 'bg-[#ffffff]/10 text-[#ffffff] hover:bg-[#ffffff]/20'
+                      }`}
+                    >
+                      {displayValue}
+                    </button>
+                  </div>
+                );
+              }
+
+              if (isNumeric) {
+                return (
+                  <div key={key} className="flex justify-between items-center text-[10px]">
+                    <span className="text-[#ffffff]">{key}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleIncrement(key, -1)}
+                        className="w-4 h-4 flex items-center justify-center text-[#8fd8e8] hover:text-[#ffffff] hover:bg-[#ffffff]/10 rounded text-[10px] font-mono"
+                      >
+                        −
+                      </button>
+                      <span className="font-mono text-[#ffffff] w-6 text-right">{value}</span>
+                      <button
+                        onClick={() => handleIncrement(key, 1)}
+                        className="w-4 h-4 flex items-center justify-center text-[#8fd8e8] hover:text-[#ffffff] hover:bg-[#ffffff]/10 rounded text-[10px] font-mono"
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
                 <div key={key} className="flex justify-between items-center text-[10px]">
                   <span className="text-[#ffffff]">{key}</span>
-                  <span className={`font-mono ${typeof value === 'boolean' ? (value ? 'text-[#8fd8e8]' : 'text-[#ffffff]') : 'text-[#ffffff]'}`}>
-                    {displayValue}
-                  </span>
+                  <span className="font-mono text-[#ffffff]">{displayValue}</span>
                 </div>
               );
             })}

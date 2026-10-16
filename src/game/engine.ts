@@ -501,16 +501,52 @@ export class Engine {
         return { fogActive: false, fogAmbient: false, fogLeft: 0, fogTimer: 60, fogRadius: 2600 };
       },
       getFlags: () => {
-        const flat: Record<string, any> = {};
         const raw = this.store.flags;
-        if (raw && typeof raw === 'object') {
-          for (const [k, v] of Object.entries(raw)) {
-            if (typeof v === 'number' || typeof v === 'boolean' || typeof v === 'string' || v == null) {
-              flat[k] = v;
-            }
-          }
-        }
-        return flat;
+        if (!raw || typeof raw !== 'object') return {};
+        return {
+          hasSword: raw.hasSword,
+          hasAxe: raw.hasAxe,
+          hasBow: raw.hasBow,
+          hasHammer: raw.hasHammer,
+          hasKey: raw.hasKey,
+          swordUp: raw.swordUp,
+          axeUp: raw.axeUp,
+          furyRune: raw.furyRune,
+          nornsFavor: raw.nornsFavor,
+          hearts: raw.hearts,
+          arrows: raw.arrows,
+          runes: raw.runes,
+          dew: raw.dew,
+          fogWaves: raw.fogWaves,
+          bear: raw.bear,
+          horn: raw.horn,
+          mead: raw.mead,
+          ore: raw.ore,
+          moss: raw.moss,
+          amber: raw.amber,
+          flower: raw.flower,
+          diary: raw.diary,
+          bundle: raw.bundle,
+          relic: raw.relic,
+          hornDone: raw.hornDone,
+          meadDone: raw.meadDone,
+          oreDone: raw.oreDone,
+          shamanDone: raw.shamanDone,
+          refugeeDone: raw.refugeeDone,
+          merchantDone: raw.merchantDone,
+          atoneDone: raw.atoneDone,
+          cullDone: raw.cullDone,
+          shrineQuestDone: raw.shrineQuestDone,
+          huntDone: raw.huntDone,
+          reaperDead: raw.reaperDead,
+          spiderDead: raw.spiderDead,
+          giantDead: raw.giantDead,
+          snakeStarted: raw.snakeStarted,
+          snakeDead: raw.snakeDead,
+          secretKnown: raw.secretKnown,
+          ghostBane: raw.ghostBane,
+          shrineIdx: raw.shrineIdx,
+        };
       },
       getMap: () => {
         if (!this.map) return null;
@@ -655,7 +691,7 @@ export class Engine {
         this.state.tsTarget = scale;
       },
       setFlag: (key: string, value: any) => {
-        (this.store.flags as any)[key] = value;
+        this.store.flags.setFlag(key as any, value);
       },
       addRunes: (count: number) => {
         this.store.flags.runes += count;
