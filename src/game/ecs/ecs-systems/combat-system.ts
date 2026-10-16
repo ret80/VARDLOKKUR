@@ -663,6 +663,22 @@ export function updateProjectilesEcs(
     if (!pos || !vel || !proj || !tm || !rad) continue; // AoS элемент может быть undefined
 
     const pKind = projKinds[proj.kind] ?? '';
+
+    // ── Ключевая проверка: если PhysicsBody есть, но тело уже удалено
+    //    (Planck.js begin-contact → pendingDestroy → step() удалил body),
+    //    то немедленно уничтожаем ECS Projectile — иначе он «зависнет» в воздухе
+    //    до истечения life.
+    const pb = PhysicsBody[eid];
+    if (pb && pb.body > 0) {
+      const body = PhysicsBodyRegistry[pb.body - 1];
+      if (!body) {
+        // Физическое тело уже уничтожено, но ECS Projectile всё ещё жив — чистим
+        onProjectileRemove(eid);
+        removeEntity(world, eid);
+        continue;
+      }
+    }
+
     const pLife = proj.life;
     if (pLife <= 0) {
       onProjectileRemove(eid);
