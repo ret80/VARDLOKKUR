@@ -181,7 +181,7 @@ export function aiUpdateSystem(
         updateSpider(world, enemyEid, playerEid, playerX, playerY, map, dt, bus);
         break;
       case 'giant':
-        updateGiant(world, enemyEid, playerEid, playerX, playerY, map, dt);
+        updateGiant(world, enemyEid, playerEid, playerX, playerY, map, dt, bus);
         break;
       case 'snake':
         updateSnake(world, enemyEid, playerEid, playerX, playerY, map, dt, bus);
@@ -712,7 +712,7 @@ function updateReaper(
   if (Health[eid].current <= 0 && !hasComponent(world, eid, Dead)) {
     addComponent(world, eid, Dead);
     if (bus) {
-      bus.emit("boss:killed", { kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind) as EnemyKind, id: (map as any)?.dungeonId ?? 0 });
+      bus.emit("boss:killed", { kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind) as EnemyKind, id: (map as any)?.dungeonId ?? 0, x: Position[eid].x, y: Position[eid].y });
     }
   }
 }
@@ -776,6 +776,14 @@ function updateSpider(
     // bus.emit("player:damaged", { dmg: 1, sx: px[eid], sy: py[eid] });
     Enemy[eid].contactCd = 1.1;
   }
+
+  // Boss death check
+  if (Health[eid].current <= 0 && !hasComponent(world, eid, Dead)) {
+    addComponent(world, eid, Dead);
+    if (bus) {
+      bus.emit("boss:killed", { kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind) as EnemyKind, id: (map as any)?.dungeonId ?? 0, x: Position[eid].x, y: Position[eid].y });
+    }
+  }
 }
 
 // ============================================================
@@ -785,7 +793,7 @@ function updateSpider(
 /** Giant — enter → chase → wind → swing → stuck (phase2 at HP ≤ 50%) */
 function updateGiant(
   world: World, eid: number, playerEid: number,
-  playerX: number, playerY: number, map: WorldData, dt: number
+  playerX: number, playerY: number, map: WorldData, dt: number, bus?: EventBus | null
 ): void {
 
   const dx = playerX - Position[eid].x;
@@ -851,6 +859,14 @@ function updateGiant(
   if (Enemy[eid].contactCd <= 0 && d < Enemy[eid].radius + 5 + 4) {
     // bus.emit("player:damaged", { dmg: 2, sx: px[eid], sy: py[eid] });
     Enemy[eid].contactCd = 1.1;
+  }
+
+  // Boss death check
+  if (Health[eid].current <= 0 && !hasComponent(world, eid, Dead)) {
+    addComponent(world, eid, Dead);
+    if (bus) {
+      bus.emit("boss:killed", { kind: poolGet(StringPool.enemyKinds, Enemy[eid].kind) as EnemyKind, id: (map as any)?.dungeonId ?? 0, x: Position[eid].x, y: Position[eid].y });
+    }
   }
 }
 

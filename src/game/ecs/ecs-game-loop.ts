@@ -40,6 +40,7 @@ import {
 } from './ecs-systems/ai-system';
 import {
   dropsUpdateSystem,
+  rollDropsForEnemy,
 } from './ecs-systems/drops-system';
 import {
   DropHandlerRegistry,
@@ -95,7 +96,7 @@ import {
   Position, Velocity, PhysicsBody, Player, Direction, Health,
   Drop, poolGet, StringPool, PhysicsBodyRegistry,
   Flashing, Enemy, EnemyState, Sprite, Radius, Projectile,
-  Shrine, Dead, cleanupEntityAos,
+  Shrine, Dead, Magnet, cleanupEntityAos,
 } from '../ecs/ecs-components';
 import type { InputSystem } from '../input/input-system';
 import type { EventBus } from '../event-bus';
@@ -108,6 +109,7 @@ import type { FxManager } from '../fx';
 import type { StateManager } from '../state/state-manager';
 import { audio } from '../audio';
 import type { WorldData } from '../world';
+import type { DropKind } from '../generators/types';
 import type { FlagDomain } from '../store/flag-domain';
 import type { PlayerDomain, IEcsPlayerHelpers } from '../store/player-domain';
 import type { HudSystem } from '../hud/hud-system';
@@ -255,6 +257,13 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   let _planckWorld = planckWorld;
   let _fogState: FogState | null = null;
 
+  /**
+   * eid'ы врагов, для которых `enemy:killed` уже обработан в текущем кадре.
+   * Защищает от дублирования дропов/учёта, если несколько снарядов попали
+   * в одного врага до того, как `lifeCheckSystem` пометит его `Dead`.
+   */
+  const _killedThisFrame = new Set<number>();
+
   // Используем фабрику из конфига — она всегда передаётся из engine.ts
   if (!configFactory) {
     throw new Error('EntityFactory not provided to EcsGameLoop. This should never happen.');
@@ -299,6 +308,59 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   // Локальные копии для updateConfig
   let config_map = map;
   let config_flags = flags;
+
+  // ── Дропы и смерть боссов: общие хелперы ──
+
+  /**
+   * Создать дроп как ECS-сущность с графикой.
+   * Используется для награды босса, события `drop:spawn` и дропов со смерти врагов.
+   */
+  function spawnDropEntity(kind: DropKind, x: number, y: number, magnet = false, life = 0): number {
+    const eid = entityFactory.createDrop(kind, x, y, magnet, life);
+    if (magnet) addComponent(world, eid, Magnet);
+    try {
+      const g = spriteFactory.create(x, y);
+      addComponent(world, eid, Sprite);
+      Sprite[eid] = { ref: g };
+    } catch (err) {
+      logger.error('drop', `spriteFactory.create FAILED for ${kind}: ${err}`);
+    }
+    return eid;
+  }
+
+  /**
+   * Обработать смерть босса подземелья: выставить флаг, проиграть звук,
+   * выбросить награду и показать тост.
+   * Идемпотентно: событие может прийти и из AI (`boss:killed`), и из `enemy:killed`.
+   */
+  function handleBossKilled(kind: string, x: number, y: number): void {
+    if (kind !== 'reaper' && kind !== 'spider' && kind !== 'giant') return;
+    const alreadyDead =
+      kind === 'reaper' ? config_flags.reaperDead
+      : kind === 'spider' ? config_flags.spiderDead
+      : config_flags.giantDead;
+    if (alreadyDead) return;
+
+    if (kind === 'reaper') config_flags.reaperDead = true;
+    else if (kind === 'spider') config_flags.spiderDead = true;
+    else config_flags.giantDead = true;
+
+    audio.bossDie();
+
+    const reward = config_map?.bossReward ?? null;
+    if (reward) spawnDropEntity(reward, x, y, false, 0);
+
+    const msg: Record<string, string> = {
+      axe: "Жнец пал. Ледяная Секира твоя — метай её на [J]",
+      bow: "Корень иссох. Лук Сумерек твой — целься на [L]",
+      hammer: "Великан рассыпался. Рунический Молот твой — меч оглушает",
+    };
+    toast(reward ? (msg[reward] ?? "Страж подземелья повержен") : "Страж подземелья повержен");
+    // Продвинуть сюжетные квесты. Вызываем здесь, т.к. при убийстве босса
+    // снарядом событие boss:killed (из AI) может не успеть эмитнуться.
+    quests.checkQuestProgress();
+    bus.emit("hud:dirty", {});
+  }
 
   // ── Подписки на события боя (обработка атак игрока) ──
 
@@ -461,10 +523,51 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     }
   });
 
-  // ── Обработка убийства врага-стража пьедестала ──
+  // ── Обработка убийства врага ──
 
   bus.on("enemy:killed", (e) => {
+    // Защита от повторной обработки одного врага в пределах кадра
+    // (несколько снарядов могут снять HP до нуля до пометки Dead).
+    if (_killedThisFrame.has(e.enemy)) return;
+    _killedThisFrame.add(e.enemy);
+
     onEnemyKilledEcs(world, e.enemy, store, bus);
+
+    const kind = e.kind as string;
+    // Смерть боссов подземелий обрабатывается отдельно (boss:killed из AI);
+    // здесь лишь подстраховка на случай убийства босса стрелой/снарядом.
+    if (kind === 'reaper' || kind === 'spider' || kind === 'giant') {
+      handleBossKilled(kind, e.x, e.y);
+      return;
+    }
+
+    // Дропы со смерти обычного врага
+    const enemyData = Enemy[e.enemy];
+    const leashed = !!enemyData && (enemyData.leashX !== 0 || enemyData.leashY !== 0);
+    rollDropsForEnemy(
+      world,
+      kind,
+      e.x,
+      e.y,
+      leashed,
+      (dropKind, x, y, life) => {
+        const magnet = dropKind === 'heart' || dropKind === 'arrows' || dropKind === 'dew';
+        spawnDropEntity(dropKind, x, y, magnet, life ?? 0);
+      }
+    );
+  });
+
+  // ── Смерть босса подземелья: флаг, награда, тост ──
+
+  bus.on("boss:killed", (e) => {
+    handleBossKilled(e.kind, e.x ?? Position[_playerEid]?.x ?? 0, e.y ?? Position[_playerEid]?.y ?? 0);
+  });
+
+  // ── Спавн дропов по запросу (руны пьедесталов и т.п.) ──
+
+  bus.on("drop:spawn", (e) => {
+    const magnet = e.kind === 'heart' || e.kind === 'arrows' || e.kind === 'dew';
+    spawnDropEntity(e.kind, e.x, e.y, magnet, e.life ?? 0);
   });
 
   // ── При смерти игрока — dissipate ВСЕХ призраков ──
@@ -478,6 +581,8 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   function tick(rdt: number, timeScale: number): void {
     const dt = rdt * timeScale;
     const peid = _playerEid;
+
+    _killedThisFrame.clear();
 
     // ===== 0. Синхронизация ECS Player.hasSword ↔ store flags (до ввода) =====
     if (peid >= 0 && config_flags.hasItem('sword')) {

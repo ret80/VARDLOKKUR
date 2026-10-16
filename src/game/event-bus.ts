@@ -37,7 +37,7 @@ type GameEvents = {
 
   // Боссы
   "boss:spawned":     { kind: EnemyKind; id: number };
-  "boss:killed":      { kind: EnemyKind; id: number };
+  "boss:killed":      { kind: EnemyKind; id: number; x?: number; y?: number };
   "snake:death":      {};
 
   // Пьедесталы
