@@ -89,6 +89,7 @@ import type { InputState } from '../input/input-system';
 import {
   updateDoors,
   updateZone,
+  unsealDoors,
 } from './ecs-systems/world-system';
 import { bossSpawnSystem } from './ecs-systems/boss-system';
 import { type EntityFactory } from './entity-factory';
@@ -344,6 +345,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     if (kind === 'reaper') config_flags.reaperDead = true;
     else if (kind === 'spider') config_flags.spiderDead = true;
     else config_flags.giantDead = true;
+
+    // Снять печать с арены — дверь вновь откроется.
+    unsealDoors(world);
 
     audio.bossDie();
 
@@ -775,7 +779,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     );
 
     // ===== 16. Двери, зоны, боссы =====
-    updateDoors(world, peid, store, flags, toast, pushHud);
+    updateDoors(world, peid, _planckWorld, store, flags, toast, pushHud);
     updateZone(world, peid, config_map, store, toast, pushHud);
     // ECS: спавн босса подземелья (заменяет checkDungeonBoss + bus.emit)
     if (config_map && entityFactory) {

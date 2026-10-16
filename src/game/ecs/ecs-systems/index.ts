@@ -28,6 +28,7 @@ export {
   syncBodyToPosition,
   createBodyForEntity,
   destroyBodyForEntity,
+  createDoorBody,
   circlesOverlap,
   checkEntityOverlap,
   findOverlappingEntities,

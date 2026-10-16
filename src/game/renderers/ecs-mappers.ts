@@ -169,6 +169,7 @@ export function eidToDoorData(eid: number, _world: World): IDoorData {
     y: Position[eid].y,
     open: Door[eid].open,
     locked: !!Door[eid].locked,
+    dir: Door[eid].dir,
   };
 }
 

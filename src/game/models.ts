@@ -112,6 +112,8 @@ export interface DoorRt {
   x: number; y: number;
   open: number;
   locked: boolean;
+  /** Сторона проёма: 0 = вниз, 1 = влево, 2 = вверх, 3 = вправо. */
+  dir: number;
   g: Graphics;
 }
 
@@ -270,6 +272,8 @@ export interface IDoorData {
   x: number; y: number;
   open: number;
   locked: boolean;
+  /** Сторона проёма: 0 = вниз, 1 = влево, 2 = вверх, 3 = вправо. */
+  dir: number;
 }
 
 export interface IBarrierData {

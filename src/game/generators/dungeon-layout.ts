@@ -15,6 +15,8 @@
  * Модуль не знает про Tl: тайл пола передаётся в carveLayout/validateLayout.
  */
 
+import type { DoorDir } from "./types";
+
 /** Форма комнаты */
 export type RoomShape = "rect" | "L" | "cross" | "round";
 /** Роль комнаты */
@@ -82,6 +84,8 @@ export interface CarveResult {
   bossEntrance: { x: number; y: number } | null;
   /** Сколько тайлов прохода открыто в стене комнаты босса. */
   bossOpenings: number;
+  /** Сторона стены комнаты босса, в которой пробит проход (или null). */
+  bossDir: DoorDir | null;
 }
 
 export interface ValidationResult {
@@ -629,7 +633,20 @@ export function carveLayout(
         y: openings.reduce((s, o) => s + o.y, 0) / openings.length,
       }
     : null;
-  return { bossEntrance, bossOpenings: openings.length };
+
+  // Сторона стены арены, в которой пробит проход — направление двери.
+  let bossDir: DoorDir | null = null;
+  if (openings.length) {
+    const o = openings[0];
+    const br = rooms[boss];
+    if (o.y < br.y) bossDir = "up";
+    else if (o.y >= br.y + br.h) bossDir = "down";
+    else if (o.x < br.x) bossDir = "left";
+    else if (o.x >= br.x + br.w) bossDir = "right";
+    else bossDir = "down";
+  }
+
+  return { bossEntrance, bossOpenings: openings.length, bossDir };
 }
 
 /** Проверка: пол связен от входа, все комнаты достижимы, у босса один проход. */

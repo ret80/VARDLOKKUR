@@ -516,7 +516,7 @@ export function getWorldDump(world: World): { entities: DebugEntity[]; stats: an
       entity.components.push('Door');
       componentCounts['Door']++;
       if (Door[eid]) {
-        entity.Door = { open: Door[eid].open, locked: !!Door[eid].locked };
+        entity.Door = { open: Door[eid].open, locked: !!Door[eid].locked, sealed: !!Door[eid].sealed, dir: Door[eid].dir };
       }
       hasAnyComponent = true;
     }
@@ -756,7 +756,7 @@ export function inspectEntity(world: World, eid: number): DebugEntity | null {
     if (Shrine[eid]) add('Shrine', { lit: !!Shrine[eid].lit });
   }
   if (check(Door as any, 'Door')) {
-    if (Door[eid]) add('Door', { open: Door[eid].open, locked: !!Door[eid].locked });
+    if (Door[eid]) add('Door', { open: Door[eid].open, locked: !!Door[eid].locked, dir: Door[eid].dir, sealed: Door[eid].sealed });
   }
   if (check(Barrier as any, 'Barrier')) {
     if (Barrier[eid]) add('Barrier', { active: !!Barrier[eid].active });

@@ -20,6 +20,12 @@ export type DropKind = "heart" | "arrows" | "axe" | "sword" | "bear" | "hammer" 
 export type ProjectileKind = "arrow" | "axe" | "spore" | "fire";
 
 export interface Vec { x: number; y: number }
+/**
+ * Сторона проёма двери (куда «смотрит» проём относительно помещения):
+ * `down` — нижняя стена, `up` — верхняя, `left`/`right` — боковые.
+ */
+export type DoorDir = "up" | "down" | "left" | "right";
+export interface DoorSpec extends Vec { dir?: DoorDir }
 export interface ChestDef { x: number; y: number; item: ChestItem }
 export interface PedestalDef { x: number; y: number; guards: EnemyKind[] }
 export interface NpcDef { id: string; name: string; x: number; y: number }
@@ -44,7 +50,7 @@ export interface WorldData {
   chests: ChestDef[];
   pedestals: PedestalDef[];
   spawns: SpawnDef[];
-  doors: Vec[];
+  doors: DoorSpec[];
   souls: Vec[];
   ambient: AmbientDef[];
   dungeonEntries: DungeonEntry[];

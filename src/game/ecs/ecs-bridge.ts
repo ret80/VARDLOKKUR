@@ -11,7 +11,7 @@ import {
   PhysicsBody,
 } from './ecs-components';
 import { type EntityFactory } from './entity-factory';
-import type { EnemyKind, DropKind, ProjectileKind } from '../generators/types';
+import type { EnemyKind, DropKind, ProjectileKind, DoorDir } from '../generators/types';
 import type { PlanckWorld } from '../physics/planck-world';
 import type { Cat } from '../physics/planck-world';
 import type { GraphicsHandle } from '../renderer/IRenderer';
@@ -181,10 +181,11 @@ export function createDoorInEcs(
   x: number,
   y: number,
   locked: boolean,
+  dir: DoorDir,
   _spriteRef: number
 ): number {
   const eid = factory.createStaticEntity(15);
-  addDoorComponents(world, eid, x, y, locked, _spriteRef);
+  addDoorComponents(world, eid, x, y, locked, dir, _spriteRef);
   return eid;
 }
 
@@ -260,6 +261,7 @@ import {
   Pedestal,
   Shrine,
   Door,
+  DOOR_DIR,
   Barrier,
   Altar,
   poolAdd,
@@ -310,12 +312,22 @@ function addShrineComponents(world: World, eid: number, x: number, y: number, sp
   Position[eid].y = y;
 }
 
-function addDoorComponents(world: World, eid: number, x: number, y: number, locked: boolean, spriteRef: number): void {
+function addDoorComponents(world: World, eid: number, x: number, y: number, locked: boolean, dir: DoorDir, spriteRef: number): void {
   addComponents(world, eid, [Door, Sprite]);
-  Door[eid] = { open: 0, locked: locked ? 1 : 0 };
+  Door[eid] = { open: 0, locked: locked ? 1 : 0, dir: doorDirCode(dir), sealed: 0 };
   Sprite[eid] = { ref: spriteRef };
   Position[eid].x = x;
   Position[eid].y = y;
+}
+
+/** Преобразовать строковое направление двери в код компонента Door. */
+export function doorDirCode(dir: DoorDir): number {
+  switch (dir) {
+    case "up": return DOOR_DIR.up;
+    case "left": return DOOR_DIR.left;
+    case "right": return DOOR_DIR.right;
+    default: return DOOR_DIR.down;
+  }
 }
 
 function addBarrierComponents(world: World, eid: number, x: number, y: number, active: boolean, spriteRef: number): void {

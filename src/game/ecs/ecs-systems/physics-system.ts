@@ -6,10 +6,12 @@ import {
   Position,
   Velocity,
   Radius,
+  Door,
   PhysicsBody,
   PhysicsBodyRegistry,
   Projectile,
 } from '../ecs-components';
+import { Cat } from '../../physics/planck-world';
 
 // ============================================================
 // Callbacks для Planck.js collision
@@ -124,6 +126,30 @@ export function destroyBodyForEntity(
     }
     PhysicsBody[eid].body = 0;
   }
+}
+
+/**
+ * Создать (или пересоздать) кинематическое тело двери.
+ * Размер коллайдера зависит от ориентации проёма: для проёмов сверху/снизу —
+ * широкий (18×16), для боковых — высокий (16×18).
+ */
+export function createDoorBody(
+  planckWorld: any,
+  world: World,
+  eid: number
+): void {
+  const pos = Position[eid];
+  const door = Door[eid];
+  if (!pos || !door) return;
+
+  const horizontal = door.dir === 0 || door.dir === 2; // 0 = вниз, 2 = вверх
+  const w = horizontal ? 18 : 16;
+  const h = horizontal ? 16 : 18;
+
+  const body = planckWorld.createKinematicBody(pos.x, pos.y, w, h, Cat.Door);
+  addComponent(world, eid, PhysicsBody);
+  PhysicsBody[eid] = { body: PhysicsBodyRegistry.length + 1 };
+  PhysicsBodyRegistry.push(body);
 }
 
 // ============================================================

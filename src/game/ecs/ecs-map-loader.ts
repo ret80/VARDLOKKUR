@@ -31,6 +31,7 @@ import {
   Chest,
   MapState,
 } from './ecs-components';
+import { createDoorBody } from './ecs-systems/physics-system';
 import type { IRenderer, LayerHandle } from '../renderer/IRenderer';
 import { createMapTileGraphics, destroyAllMapTileGraphics } from '../render/map-render-system';
 import { getRenderer } from '../renderer/RendererFactory';
@@ -343,8 +344,9 @@ export class EcsMapLoader {
     const sf = this.config.spriteFactory;
     for (const d of map.doors) {
       const g = sf.create(d.x, d.y);
-      const eid = createDoorInEcs(factory, world, d.x, d.y, true, g);
-      planckWorld.createKinematicBody(d.x, d.y, 18, 16, Cat.Door);
+      const eid = createDoorInEcs(factory, world, d.x, d.y, true, d.dir ?? "down", g);
+      // Тело двери привязано к сущности; коллайдер ставится/снимается в updateDoors.
+      createDoorBody(planckWorld, world, eid);
     }
   }
 

@@ -11,6 +11,7 @@ import {
 } from '../ecs-components';
 import { type EntityFactory } from '../entity-factory';
 import { createBodyForEntity } from './physics-system';
+import { sealDoors } from './world-system';
 import { Cat } from '../../physics/planck-world';
 import type { EnemyKind } from '../../generators/types';
 import { ENEMY_STATS } from '../../entities';
@@ -47,17 +48,17 @@ export function spawnDungeonBoss(
   dungeonName: string,
   onToast: (msg: string) => void,
   onHudDirty: () => void
-): void {
+): boolean {
   const bossKind = DUNGEON_BOSS_MAP[dungeonId];
   if (!bossKind) {
     logger.warn('boss-system', `No boss for dungeonId=${dungeonId}`);
-    return;
+    return false;
   }
 
   const stats = ENEMY_STATS[bossKind];
   if (!stats) {
     logger.warn('boss-system', `No stats for boss kind: ${bossKind}`);
-    return;
+    return false;
   }
 
   // Создать спрайт
@@ -90,6 +91,7 @@ export function spawnDungeonBoss(
   onHudDirty();
 
   logger.info('boss-system', `Boss spawned: kind=${bossKind} dungeonId=${dungeonId} eid=${eid} pos=(${bossSpotX},${bossSpotY})`);
+  return true;
 }
 
 // ============================================================
@@ -137,8 +139,8 @@ export function bossSpawnSystem(
   const br = map.bossRoom;
   if (playerPos.x > br.x && playerPos.x < br.x + br.w &&
       playerPos.y > br.y && playerPos.y < br.y + br.h) {
-    // Спавним босса!
-    spawnDungeonBoss(
+    // Спавним босса и запечатываем арену — выйти можно только после победы.
+    const spawned = spawnDungeonBoss(
       world,
       entityFactory,
       planckWorld,
@@ -150,5 +152,6 @@ export function bossSpawnSystem(
       onToast,
       onHudDirty
     );
+    if (spawned) sealDoors(world);
   }
 }

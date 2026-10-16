@@ -1,7 +1,7 @@
 /* Генерация данжинов: Склеп, Корень Иггдрасиля, Каменная Крепость */
 import { mulberry } from "../noise";
 import { px } from "../utils";
-import { WorldData, Vec, Tl, idx, inB, EnemyKind, DungeonCfg, isSolidTileId } from "./types";
+import { WorldData, Vec, Tl, idx, inB, EnemyKind, DungeonCfg, isSolidTileId, type DoorDir, type DoorSpec } from "./types";
 import { tileAt, setTile } from "./utils";
 import { NavBuilder } from "./nav-builder";
 import { resolveDungeonTiles } from "../dungeon-tiles";
@@ -40,20 +40,24 @@ function finalizeDungeon(w: WorldData, rng: () => number, cfg: DungeonCfg, pool:
     const br = w.bossRoom;
     const bx = Math.floor(br.x / 16), by = Math.floor(br.y / 16);
     const bw = Math.floor(br.w / 16), bh = Math.floor(br.h / 16);
-    const doorCandidates: Vec[] = [];
+    const doorCandidates: DoorSpec[] = [];
     for (let x = bx; x < bx + bw; x++) {
       for (const [y, dy] of [[by - 1, -1], [by + bh, 1]] as [number, number][]) {
-        if (tileAt(w, x, y) === Tl.DFLOOR && tileAt(w, x, y + dy) !== Tl.DFLOOR) doorCandidates.push(px(x, y));
+        if (tileAt(w, x, y) === Tl.DFLOOR && tileAt(w, x, y + dy) !== Tl.DFLOOR) {
+          doorCandidates.push({ ...px(x, y), dir: dy < 0 ? "up" : "down" });
+        }
       }
     }
     for (let y = by; y < by + bh; y++) {
       for (const [x, dx] of [[bx - 1, -1], [bx + bw, 1]] as [number, number][]) {
-        if (tileAt(w, x, y) === Tl.DFLOOR && tileAt(w, x + dx, y) !== Tl.DFLOOR) doorCandidates.push(px(x, y));
+        if (tileAt(w, x, y) === Tl.DFLOOR && tileAt(w, x + dx, y) !== Tl.DFLOOR) {
+          doorCandidates.push({ ...px(x, y), dir: dx < 0 ? "left" : "right" });
+        }
       }
     }
     doorCandidates.sort((a, b) => Math.abs(a.x - w.bossSpot.x) - Math.abs(b.x - w.bossSpot.x));
     if (doorCandidates.length) w.doors.push(doorCandidates[0]);
-    else w.doors.push(px(bx + Math.floor(bw / 2), by + bh));
+    else w.doors.push({ ...px(bx + Math.floor(bw / 2), by + bh), dir: "down" });
   }
 
   for (const c of w.chests) setTile(w, c.x, c.y, Tl.DFLOOR);
@@ -111,6 +115,7 @@ function genCrypt(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   let w = baseDungeon(cfg, W, H, exitSpot);
   let layout: DungeonLayout | null = null;
   let bossEntrance: Vec | null = null;
+  let bossDir: DoorDir = "down";
 
   // До 20 попыток: планировка пересобирается, пока не пройдёт проверку связности.
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -126,6 +131,7 @@ function genCrypt(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
     w = map;
     layout = candidate;
     bossEntrance = carved.bossEntrance;
+    bossDir = carved.bossDir ?? "down";
     logger.info("dungeon", `genCrypt: планировка принята с попытки ${attempt} (комнат=${candidate.rooms.length}, рёбер=${candidate.edges.length})`);
     break;
   }
@@ -150,7 +156,7 @@ function genCrypt(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   const bossRoom = rooms[layout.boss];
   w.bossRoom = { x: bossRoom.x * 16, y: bossRoom.y * 16, w: bossRoom.w * 16, h: bossRoom.h * 16 };
   w.bossSpot = px(Math.round(bossRoom.cx), Math.round(bossRoom.cy));
-  if (bossEntrance) w.doors.push({ x: bossEntrance.x * 16 + 8, y: bossEntrance.y * 16 + 8 });
+  if (bossEntrance) w.doors.push({ x: bossEntrance.x * 16 + 8, y: bossEntrance.y * 16 + 8, dir: bossDir });
 
   // --- Колонны в больших залах (до сундуков, чтобы не занять их клетки) ---
   for (let i = 0; i < rooms.length; i++) {
@@ -226,7 +232,7 @@ function fallbackCrypt(cfg: DungeonCfg, exitSpot: Vec): WorldData {
   for (let y = BRY + BRH - 1; y <= 27; y++) for (let x = 43; x <= 44; x++) setTile(w, x, y, Tl.DFLOOR);
   w.bossRoom = { x: BRX * 16, y: BRY * 16, w: BRW * 16, h: BRH * 16 };
   w.bossSpot = px(BRX + Math.floor(BRW / 2), BRY + Math.floor(BRH / 2));
-  w.doors.push({ x: 43.5 * 16 + 8, y: (BRY + BRH) * 16 + 8 });
+  w.doors.push({ x: 43.5 * 16 + 8, y: (BRY + BRH) * 16 + 8, dir: "down" });
   setTile(w, 44, 50, Tl.STAIRS);
   w.entryStairs = px(44, 50);
   w.spawn = px(44, 49);

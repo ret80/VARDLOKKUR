@@ -146,7 +146,14 @@ describe("generateDungeon (Склеп, id 0)", () => {
         x: br.x / 16, y: br.y / 16, w: br.w / 16, h: br.h / 16, cx: 0, cy: 0,
         shape: "rect" as const, kind: "boss" as const,
       };
-      expect(findBossOpenings(w.tiles, W, H, bossTiles, Tl.DFLOOR).length, `${tag} проход`).toBe(2);
+      const openings = findBossOpenings(w.tiles, W, H, bossTiles, Tl.DFLOOR);
+      expect(openings.length, `${tag} проход`).toBe(2);
+
+      // Направление двери соответствует стороне проёма в стене арены.
+      const o = openings[0];
+      const btx = br.x / 16, bty = br.y / 16, btw = br.w / 16, bth = br.h / 16;
+      const side = o.y < bty ? "up" : o.y >= bty + bth ? "down" : o.x < btx ? "left" : "right";
+      expect(w.doors[0].dir ?? "down", `${tag} направление двери`).toBe(side);
 
       // Ключ есть и находится в отдельном сундуке
       expect(w.chests.some((c) => c.item === "key"), `${tag} ключ`).toBe(true);

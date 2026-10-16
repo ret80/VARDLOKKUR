@@ -81,7 +81,15 @@ export const Pedestal = aos<{
 
 export const Shrine = aos<{ lit: number }>();
 
-export const Door = aos<{ open: number; locked: number }>();
+/**
+ * Дверь. `dir` — сторона проёма (сторона стены помещения):
+ * 0 = вниз, 1 = влево, 2 = вверх, 3 = вправо.
+ * `sealed` — арена босса запечатана (дверь заперта, пока страж жив).
+ */
+export const Door = aos<{ open: number; locked: number; dir: number; sealed: number }>();
+
+/** Коды направления двери для компонента Door. */
+export const DOOR_DIR = { down: 0, left: 1, up: 2, right: 3 } as const;
 
 export const Barrier = aos<{ active: number }>();
 

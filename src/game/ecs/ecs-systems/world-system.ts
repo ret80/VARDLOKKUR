@@ -5,6 +5,7 @@ import {
   Position,
   Radius,
   Door,
+  PhysicsBody,
   Barrier,
   Player,
 } from '../ecs-components';
@@ -12,6 +13,8 @@ import { dist2 } from '../../utils';
 import { zoneFor, T, Tl } from '../../world';
 import type { GameStore } from '../../store';
 import type { EventBus } from '../../event-bus';
+import type { PlanckWorld } from '../../physics/planck-world';
+import { destroyBodyForEntity, createDoorBody } from './physics-system';
 
 // ============================================================
 // Двери
@@ -21,6 +24,7 @@ import type { EventBus } from '../../event-bus';
 export function updateDoors(
   world: World,
   playerEid: number,
+  planckWorld: PlanckWorld,
   store: GameStore,
   flags: { hasKey: boolean },
   toast: (msg: string) => void,
@@ -31,16 +35,53 @@ export function updateDoors(
   for (const doorEid of query(world, [Position, Door])) {
     const doorPos = Position[doorEid];
     const playerPos = Position[playerEid];
-    if (Door[doorEid].locked && flags.hasKey && dist2(doorPos.x, doorPos.y, playerPos.x, playerPos.y) < 24 * 24) {
-      Door[doorEid].locked = 0;
+    const door = Door[doorEid];
+
+    // Разблокировка ключом — только если арена не запечатана.
+    if (door.locked && !door.sealed && flags.hasKey &&
+        dist2(doorPos.x, doorPos.y, playerPos.x, playerPos.y) < 24 * 24) {
+      door.locked = 0;
       flags.hasKey = false;
-      Door[doorEid].open = 0.01;
+      door.open = 0.01;
       toast("Ключ повернут — путь к стражу открыт");
       pushHud(true);
     }
-    if (Door[doorEid].open < 1 && Door[doorEid].open > 0 && !Door[doorEid].locked) {
-      Door[doorEid].open = Math.min(1, Door[doorEid].open + 0.032); // ~2 секунды при 60fps
+
+    // Целевое состояние створки: заперта/запечатана — закрывается, иначе открывается.
+    if (door.sealed || door.locked) {
+      if (door.open > 0) door.open = Math.max(0, door.open - 0.08);
+    } else if (door.open < 1) {
+      door.open = Math.min(1, door.open + 0.032); // ~2 секунды при 60fps
     }
+
+    // Коллизия есть, пока дверь должна быть закрыта: заперта/запечатана или
+    // створка ещё не поднялась достаточно. Иначе — снимаем.
+    const wantSolid = !!door.sealed || !!door.locked || door.open <= 0.5;
+    const hasBody = hasComponent(world, doorEid, PhysicsBody) && PhysicsBody[doorEid].body > 0;
+    if (wantSolid && !hasBody) {
+      createDoorBody(planckWorld, world, doorEid);
+    } else if (!wantSolid && hasBody) {
+      destroyBodyForEntity(planckWorld, doorEid);
+    }
+  }
+}
+
+/**
+ * Запечатать двери арены: запереть и закрыть. Вызывается, когда игрок
+ * входит в комнату босса. Коллайдер восстанавливается в updateDoors.
+ */
+export function sealDoors(world: World): void {
+  for (const doorEid of query(world, [Door])) {
+    Door[doorEid].sealed = 1;
+    Door[doorEid].locked = 1;
+  }
+}
+
+/** Снять печать после смерти стража — двери вновь открываются. */
+export function unsealDoors(world: World): void {
+  for (const doorEid of query(world, [Door])) {
+    Door[doorEid].sealed = 0;
+    Door[doorEid].locked = 0;
   }
 }
 
