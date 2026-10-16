@@ -140,7 +140,6 @@ export function fogUpdateSystem(
   
   // Disable fog in dungeon or after snake death
   if (map.isDungeon || f.snakeDead) {
-    logger.debug('fog', `SNAKE_DEAD/DUNGEON: isDungeon=${map.isDungeon} snakeDead=${f.snakeDead} fogActive=${fogState.fogActive}`);
     fogState.fogRadius += (FOG_RADIUS_DEFAULT - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_DEFAULT);
     if (fogState.fogActive) {
       fogState.fogAlphaTarget = 0;
@@ -158,11 +157,8 @@ export function fogUpdateSystem(
   const ay = map.treeAltar.y * T + 8;
   const nearAltar = !f.snakeStarted && dist2(px, py, ax, ay) < SAFE_ZONE_ALTAR * SAFE_ZONE_ALTAR;
   
-  logger.debug('fog', `STATE: px=${px.toFixed(0)} py=${py.toFixed(0)} ax=${ax.toFixed(0)} ay=${ay.toFixed(0)} dist2=${dist2(px, py, ax, ay).toFixed(0)} inVillage=${inVillage} zn="${zn}" snakeStarted=${f.snakeStarted} nearAltar=${nearAltar} fogActive=${fogState.fogActive} fogTimer=${fogState.fogTimer.toFixed(1)} fogLeft=${fogState.fogLeft.toFixed(1)}`);
-  
   // === Деревня — безопасная зона, туман выключен ===
   if (inVillage) {
-    logger.debug('fog', `IN_VILLAGE: zone="${zn}" → fog OFF`);
     if (fogState.fogActive) endWave(fogState, true, bus, getRunes, f);
     fogState.fogRadius += (FOG_RADIUS_DEFAULT - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_DEFAULT);
     return;
@@ -185,7 +181,6 @@ export function fogUpdateSystem(
   
   // === Игрок ушёл от алтаря — призраки исчезают ===
   if (fogState.fogAmbient) {
-    logger.debug('fog', `LEFT_ALTAR: fogAmbient=true → endWave`);
     bus.emit('fog:altarLeave', {});
     endWave(fogState, true, bus, getRunes, f);
   }

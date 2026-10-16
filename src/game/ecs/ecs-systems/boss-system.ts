@@ -71,7 +71,7 @@ export function spawnDungeonBoss(
   Sprite[eid] = { ref: spriteRef };
 
   // Создать физическое тело
-  createBodyForEntity(planckWorld, world, eid, stats.r, Cat.Enemy, Cat.Enemy | Cat.Player | Cat.Projectile | Cat.Ground);
+  createBodyForEntity(planckWorld, world, eid, stats.r, Cat.Enemy, Cat.Enemy | Cat.Player | Cat.Projectile | Cat.Ground, undefined, undefined, undefined, -(eid + 1));
 
   // Установить состояние "enter" (анимация появления)
   Enemy[eid].state = EnemyState.enter;

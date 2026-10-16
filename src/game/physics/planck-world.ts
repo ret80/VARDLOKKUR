@@ -85,11 +85,14 @@ export function getEnemyMask(kind: EnemyKind): number {
 // Настройка фильтра на fixture
 // ============================================================
 
-function applyFilter(fixture: Fixture, category: number): void {
+function applyFilter(fixture: Fixture, category: number, groupIndex: number = 0): void {
   fixture.setFilterCategoryBits(category);
   const mask = CollidesWith[category] || Cat.None;
   fixture.setFilterMaskBits(mask);
-  // НЕ устанавливаем группу — иначе коллизии между разными группами не будет
+  // groupIndex: одинаковый отрицательный индекс = никогда не коллидируют
+  // Например: враг (group=-3) и снаряд владельца (group=-3) не сталкиваются,
+  // но снаряд врага (group=-3) коллидирует с другим врагом (group=-5)
+  fixture.setFilterGroupIndex(groupIndex);
 }
 
 // ============================================================
@@ -223,21 +226,13 @@ export class PlanckWorld {
       const bodyB = contact.getFixtureB().getBody();
       const dataA = bodyA.getUserData() as any;
       const dataB = bodyB.getUserData() as any;
+      // Отключить контакт мёртвых сущностей (кроме тайлов)
       if ((dataA?.dead === true || dataB?.dead === true) &&
           dataA?.category !== Cat.Tile && dataB?.category !== Cat.Tile) {
         contact.setEnabled(false);
       }
-      // Снаряд не должен коллидировать со своим владельцем
-      const catA = dataA?.category;
-      const catB = dataB?.category;
-      if ((catA === Cat.Projectile && catB === Cat.Player) ||
-          (catA === Cat.Player && catB === Cat.Projectile)) {
-        contact.setEnabled(false);
-      }
-      if ((catA === Cat.Projectile && catB === Cat.Enemy) ||
-          (catA === Cat.Enemy && catB === Cat.Projectile)) {
-        contact.setEnabled(false);
-      }
+      // groupIndex автоматически предотвращает коллизии снаряда с владельцем
+      // (одинаковый отрицательный groupIndex = никогда не коллидируют)
     });
   }
 
@@ -254,14 +249,14 @@ export class PlanckWorld {
     return body;
   }
 
-  createEntityBody(x: number, y: number, radius: number, category: number, userData: any): Body {
+  createEntityBody(x: number, y: number, radius: number, category: number, userData: any, groupIndex: number = 0): Body {
     const body = this.world.createDynamicBody({
       position: Vec2(x, y),
       fixedRotation: true,
       bullet: true,
     });
     body.createFixture(CircleShape(radius), { density: 1.0 });
-    applyFilter(body.getFixtureList()!, category);
+    applyFilter(body.getFixtureList()!, category, groupIndex);
     body.setUserData({ ...userData, category });
     return body;
   }
@@ -295,7 +290,7 @@ export class PlanckWorld {
     return body;
   }
 
-  createProjectileBody(x: number, y: number, radius: number, vx: number, vy: number): Body {
+  createProjectileBody(x: number, y: number, radius: number, vx: number, vy: number, groupIndex: number = 0): Body {
     const body = this.world.createDynamicBody({
       position: Vec2(x, y),
       linearVelocity: Vec2(vx, vy),
@@ -303,7 +298,7 @@ export class PlanckWorld {
       bullet: true,
     });
     body.createFixture(CircleShape(radius), { density: 0.5 });
-    applyFilter(body.getFixtureList()!, Cat.Projectile);
+    applyFilter(body.getFixtureList()!, Cat.Projectile, groupIndex);
     body.setUserData({ category: Cat.Projectile, dead: false });
     return body;
   }

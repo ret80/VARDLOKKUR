@@ -174,7 +174,6 @@ export class EntityFactory {
       leashX: 0, leashY: 0, fogOnly: 0, nearLitShrine: 0,
       guardPedestalEid: 0,
     };
-    logger.debug('entity-factory', `createEnemy: eid=${eid} kind=${kind} Enemy[eid]=${!!Enemy[eid]}`);
     EnemyAI[eid] = {
       path: 0, lightspeedT: 0, slowT: 0, freezeT: 0, flashT: 0,
       lungeT: 0, repathT: 0.5, stateT: 0, contactCd: 0, guardsSpawned: 0,

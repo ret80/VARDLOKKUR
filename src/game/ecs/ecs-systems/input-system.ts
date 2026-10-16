@@ -66,10 +66,8 @@ export function updatePlayerInput(
   const bowKeyDown = input.isKeyHeld("KeyL") || input.isBowVirtualHeld();
   if (bowKeyDown) {
     input.updateBow(true);
-    logger.debug('input-system', `bowKeyDown=true, updateBow(true)`);
   } else if (input.getBowHeld()) {
     input.updateBow(false);
-    logger.debug('input-system', `bowKeyDown=false, bowHeld=true, updateBow(false)`);
   }
 
   return { stepT, realT };
@@ -117,19 +115,15 @@ export function updateBow(
   const isVirtualHeld = input.isBowVirtualHeld();
   const hasBow = flags.hasItem('bow');
   const arrows = flags.getArrows();
-  logger.info('input-system', `updateBow: playerEid=${playerEid} justReleased=${justReleased} bowHeld=${bowHeld} isKeyHeld=${isKeyHeld} isVirtualHeld=${isVirtualHeld} hasBow=${hasBow} arrows=${arrows} pos=(${Position[playerEid].x.toFixed(0)},${Position[playerEid].y.toFixed(0)}) dir=(${Direction[playerEid].x.toFixed(2)},${Direction[playerEid].y.toFixed(2)})`);
 
   // Стрельба ОДИН РАЗ при отпускании клавиши
   if (justReleased && hasBow && arrows > 0) {
     flags.incrementFlag('arrows', -1);
-    const newArrows = flags.getArrows();
-    logger.info('input-system', `SHOOTING! arrows now=${newArrows}, emitting projectile:fire`);
     const a = Math.atan2(Direction[playerEid].y, Direction[playerEid].x);
     const px = Position[playerEid].x + Math.cos(a) * 8;
     const py = Position[playerEid].y - 2 + Math.sin(a) * 8;
     const vx = Math.cos(a) * 260;
     const vy = Math.sin(a) * 260;
-    logger.info('input-system', `  projectile params: x=${px.toFixed(1)} y=${py.toFixed(1)} vx=${vx.toFixed(1)} vy=${vy.toFixed(1)} dmg=2`);
     bus.emit("projectile:fire", {
       kind: "arrow",
       x: px,
@@ -137,17 +131,15 @@ export function updateBow(
       vx: vx,
       vy: vy,
       dmg: 2,
+      owner: playerEid,
     });
     bus.emit("hud:dirty", {});
-    logger.info('input-system', `  projectile:fire emitted OK, hud:dirty emitted`);
   } else if (justReleased) {
     if (!hasBow) {
-      logger.warn('input-system', `justReleased but hasBow=${hasBow}`);
+      logger.warn('input-system', `justReleased but no bow`);
     } else if (arrows <= 0) {
-      logger.warn('input-system', `justReleased but arrows=${arrows} <= 0`);
+      logger.warn('input-system', `justReleased but no arrows`);
       onNoArrows();
-    } else {
-      logger.debug('input-system', `justReleased=${justReleased} but conditions not met`);
     }
   }
 }

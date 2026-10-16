@@ -353,21 +353,19 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   bus.on("projectile:fire", (e) => {
     const peid = _playerEid;
-    logger.info('projectile:fire', `RECEIVED: kind=${e.kind} x=${e.x.toFixed(1)} y=${e.y.toFixed(1)} vx=${e.vx.toFixed(1)} vy=${e.vy.toFixed(1)} dmg=${e.dmg} peid=${peid}`);
     if (peid < 0) {
-      logger.warn('projectile:fire', `peid=${peid} < 0, ABORT - player not created!`);
+      logger.warn('projectile:fire', `peid=${peid} < 0, ABORT`);
       return;
     }
     if (!entityFactory) {
-      logger.error('projectile:fire', `entityFactory is NOT SET! Cannot create projectile.`);
+      logger.error('projectile:fire', `entityFactory is NOT SET!`);
       return;
     }
     if (!spriteFactory) {
-      logger.error('projectile:fire', `spriteFactory is NOT SET! Cannot create sprite.`);
+      logger.error('projectile:fire', `spriteFactory is NOT SET!`);
       return;
     }
     const lifetime = e.kind === 'arrow' ? 2.2 : 3;
-    logger.info('projectile:fire', `creating projectile, lifetime=${lifetime}`);
     try {
       const eid = fireProjectileEcs(
         entityFactory, e.kind as any, e.x, e.y, e.vx, e.vy, e.dmg,
@@ -376,26 +374,23 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
           try {
             const g = spriteFactory.create(e.x, e.y);
             Sprite[eid] = { ref: g };
-            logger.info('projectile:fire', `  callback: eid=${eid} spriteHandle=${g}`);
             if (e.owner !== undefined) {
               Projectile[eid].owner = e.owner;
             }
           } catch (err) {
-            logger.error('projectile:fire', `  spriteFactory.create FAILED for eid=${eid}: ${err}`);
+            logger.error('projectile:fire', `spriteFactory.create FAILED: ${err}`);
           }
         }
       );
-      logger.info('projectile:fire', `  fireProjectileEcs returned eid=${eid}`);
       if (eid >= 0) {
-        logger.info('projectile:fire', `  creating physics body for eid=${eid}`);
-        // Снаряды от врагов (owner определён) должны коллиzyć с игроком;
-        // снаряды игрока — нет (иначе уничтожатся при создании о владельца).
-        const fromEnemy = e.owner !== undefined;
-        createBodyForEntity(_planckWorld, world, eid, 4, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground, e.vx, e.vy, { fromEnemy });
-        logger.info('projectile:fire', `  physics body created OK for eid=${eid}`);
+        // groupIndex: снаряд не коллидирует с владельцем (одинаковый отрицательный groupIndex)
+        const ownerEid = e.owner !== undefined ? e.owner : -1;
+        const groupIndex = ownerEid >= 0 ? -(ownerEid + 1) : 0;
+        const fromEnemy = ownerEid >= 0 && ownerEid !== peid;
+        createBodyForEntity(_planckWorld, world, eid, 4, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground, e.vx, e.vy, { fromEnemy }, groupIndex);
       }
     } catch (err) {
-      logger.error('projectile:fire', `  fireProjectileEcs THREW ERROR: ${err}`);
+      logger.error('projectile:fire', `THREW ERROR: ${err}`);
     }
   });
 

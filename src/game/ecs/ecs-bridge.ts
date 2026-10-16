@@ -92,7 +92,7 @@ export function createPlayerInEcs(
   addComponent(world, eid, Sprite);
   Sprite[eid] = { ref: spriteRef };
   // Create physics body
-  createBodyForEntity(planckWorld, world, eid, 5, category, mask);
+  createBodyForEntity(planckWorld, world, eid, 5, category, mask, undefined, undefined, undefined, -(eid + 1));
   return eid;
 }
 
@@ -113,7 +113,7 @@ export function createEnemyInEcs(
   addComponent(world, eid, Sprite);
   Sprite[eid] = { ref: spriteRef };
   // Create physics body
-  createBodyForEntity(planckWorld, world, eid, stats.r, category, mask);
+  createBodyForEntity(planckWorld, world, eid, stats.r, category, mask, undefined, undefined, undefined, -(eid + 1));
   return eid;
 }
 

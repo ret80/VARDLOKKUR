@@ -688,8 +688,14 @@ export function updateProjectilesEcs(
         const pdx = pPos.x - pos.x;
         const pdy = pPos.y - 2 - pos.y;
         const pd = Math.hypot(pdx, pdy) || 1;
-        vel.x = (pdx / pd) * 240;
-        vel.y = (pdy / pd) * 240;
+        // Все снаряды имеют PhysicsBody — управляем через setLinearVelocity
+        const pb = PhysicsBody[eid];
+        if (pb && pb.body > 0) {
+          const body = PhysicsBodyRegistry[pb.body - 1];
+          if (body) {
+            body.setLinearVelocity(Vec2((pdx / pd) * 240, (pdy / pd) * 240));
+          }
+        }
 
         if (pd < 12) {
           onProjectileRemove(eid);

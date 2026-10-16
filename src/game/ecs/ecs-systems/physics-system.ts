@@ -8,6 +8,7 @@ import {
   Radius,
   PhysicsBody,
   PhysicsBodyRegistry,
+  Projectile,
 } from '../ecs-components';
 
 // ============================================================
@@ -42,8 +43,11 @@ function getBody(eid: number): any {
 /** Синхронизировать позицию из Position в Planck.js body */
 export function syncPositionToBody(world: World): void {
   for (const eid of query(world, [Position, PhysicsBody])) {
+    // Снаряды управляются Planck.js напрямую — не сбрасывать позицию через setPosition
+    // Иначе тело "запирается" если пересекается с тайлом
+    if (hasComponent(world, eid, Projectile)) continue;
     const pos = Position[eid];
-    if (!pos) continue; // AoS элемент может быть undefined
+    if (!pos) continue; // AoS элемент может be undefined
     const body = getBody(eid);
     if (body) {
       body.setPosition({ x: pos.x, y: pos.y });
@@ -54,6 +58,8 @@ export function syncPositionToBody(world: World): void {
 /** Синхронизировать Velocity из ECS в Planck.js body */
 export function syncVelocityToBody(world: World, playerEid?: number): void {
   for (const eid of query(world, [Velocity, PhysicsBody])) {
+    // Снаряды управляются Planck.js напрямую — не перезаписывать velocity из Velocity[eid] (который = 0)
+    if (hasComponent(world, eid, Projectile)) continue;
     const vel = Velocity[eid];
     if (!vel) continue; // AoS элемент может быть undefined
     const body = getBody(eid);
@@ -87,7 +93,8 @@ export function createBodyForEntity(
   mask: number,
   vx?: number,
   vy?: number,
-  extraUserData?: Record<string, any>
+  extraUserData?: Record<string, any>,
+  groupIndex: number = 0
 ): void {
   // Добавляем компонент PhysicsBody (если ещё не добавлен)
   addComponent(world, eid, PhysicsBody);
@@ -96,7 +103,7 @@ export function createBodyForEntity(
   // Создаём физическое тело
   const pos = Position[eid];
   if (!pos) return; // AoS элемент может быть undefined
-  const body = planckWorld.createEntityBody(pos.x, pos.y, radius, category, { eid, ...extraUserData });
+  const body = planckWorld.createEntityBody(pos.x, pos.y, radius, category, { eid, ...extraUserData }, groupIndex);
   if (vx !== undefined && vy !== undefined) {
     body.setLinearVelocity({ x: vx, y: vy });
   }
