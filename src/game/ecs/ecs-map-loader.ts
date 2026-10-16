@@ -34,6 +34,7 @@ import {
 import type { IRenderer, LayerHandle } from '../renderer/IRenderer';
 import { createMapTileGraphics, destroyAllMapTileGraphics } from '../render/map-render-system';
 import { getRenderer } from '../renderer/RendererFactory';
+import { spawnWorldDrops } from './ecs-systems/drops-system';
 
 // ============================================================
 // Конфигурация Map Loader
@@ -54,12 +55,33 @@ export interface EcsMapLoaderConfig {
   openedChests: Set<string>;
   takenPedestals: Set<string>;
   visitedShrines: Set<number>;
+  takenAmbient: Set<number>;
   flags: {
     secretKnown: boolean;
     shrineIdx: number;
     runes: number;
     snakeStarted: boolean;
     hasKey: boolean;
+    // Квестовые предметы
+    bear: boolean;
+    bearGone: boolean;
+    horn: boolean;
+    hornDone: boolean;
+    mead: boolean;
+    meadDone: boolean;
+    ore: boolean;
+    oreDone: boolean;
+    giantDead: boolean;
+    shamanDone: boolean;
+    moss: boolean;
+    amber: boolean;
+    flower: boolean;
+    refugeeDone: boolean;
+    diary: boolean;
+    merchantDone: boolean;
+    bundle: boolean;
+    atoneDone: boolean;
+    relic: boolean;
   };
   map: WorldData;
   spawn: Vec;
@@ -151,6 +173,8 @@ export class EcsMapLoader {
     } else {
       this.spawnOverworldObjects(world, map, planckWorld);
     }
+    // Спавн квестовых предметов (bear, horn, mead и т.д.)
+    this.spawnQuestDrops(world, map);
     this.spawnDrops(world, map);
 
     // 12. ECS-рефакторинг рендеринга: создать синглтон-сущность карты
@@ -343,6 +367,24 @@ export class EcsMapLoader {
     const altarEid = createAltarInEcs(factory, world, ax, ay, altarG);
     // Статическое тело для коллизии
     this.planckWorld.createStaticBody(ax, ay, 8, Cat.Altar);
+  }
+
+  private spawnQuestDrops(world: World, map: WorldData): void {
+    // Спавн квестовых предметов (bear, horn, mead и т.д.)
+    // Добавляем новые дропы в savedDrops для сохранения при переходах
+    const { flags, takenAmbient, savedDrops, toast } = this.config;
+    
+    spawnWorldDrops(
+      world,
+      map,
+      flags,
+      takenAmbient,
+      (kind: DropKind, x: number, y: number, life?: number) => {
+        // Добавляем дроп в savedDrops для сохранения при переходах между картами
+        savedDrops.push({ kind, x, y, life });
+        logger.debug('map-loader', `spawnQuestDrops: ${kind} at ${x},${y}`);
+      }
+    );
   }
 
   private spawnDrops(world: World, map: WorldData): void {
