@@ -146,8 +146,9 @@ export function generateOverworld(seed: number): WorldData {
   markOccupied(treeAltar.x, treeAltar.y);
   markProtected(treeAltar.x, treeAltar.y, 9);
 
-  // --- Входы в подземелья (по биомам) ---
+  // --- Входы в подземелья (в биомах, не рядом с алтарём) ---
   const dungeonEntries: DungeonEntry[] = [];
+  const farFromAltar = (x: number, y: number) => Math.hypot(x - cx, y - cy) >= 13;
   const mkEntry = (spot: Vec, id: number, name: string): Vec => {
     clearAround(w, spot.x, spot.y, 2);
     setTile(w, spot.x, spot.y, Tl.STAIRS);
@@ -157,18 +158,18 @@ export function generateOverworld(seed: number): WorldData {
     return spot;
   };
 
-  // Каменная Крепость (giant) → хребет/перевал
+  // Каменная Крепость (giant) → хребет, внешнее кольцо (дальше от алтаря)
   const fortressSpot =
-    placeInBiome(Biome.RIDGE, R_RIDGE_OUT - 6, R_RIDGE_OUT + 4, 0.4, 3) ??
-    placeInBiome(Biome.RIDGE, 8, 40, 0.4, 3) ??
-    randRadial(R_RIDGE_OUT, R_RIDGE_OUT + 6);
+    placeInBiome(Biome.RIDGE, 14, R_RIDGE_OUT + 2, 0.4, 3, farFromAltar) ??
+    placeInBiome(Biome.RIDGE, 11, R_RIDGE_OUT + 2, 0.4, 3) ??
+    randRadial(R_RIDGE_OUT - 2, R_RIDGE_OUT + 5);
   mkEntry(fortressSpot, 2, "Каменная Крепость");
 
-  // Корень Иггдрасиля (spider) → лесной сектор вплотную к центральной гряде
+  // Корень Иггдрасиля (spider) → болото (по требованию)
   const rootSpot =
-    placeInBiome(Biome.FOREST, R_RIDGE_OUT + 1, R_RIDGE_OUT + 14, 0.5, 3) ??
-    placeInBiome(Biome.FOREST, 20, 50, 0.5, 3) ??
-    randRadial(R_RIDGE_OUT + 4, R_RIDGE_OUT + 12);
+    placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 4, 46, 0.4, 3, farFromAltar) ??
+    placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 1, 46, 0.4, 3) ??
+    randRadial(R_RIDGE_OUT + 6, 40);
   mkEntry(rootSpot, 1, "Корень Иггдрасиля");
 
   // Склеп Хранителя (reaper) → карман руин
@@ -190,14 +191,27 @@ export function generateOverworld(seed: number): WorldData {
     for (const s of sites) if (Math.hypot(p.x - s.x, p.y - s.y) < 34) return false;
     return true;
   };
-  for (let i = 0; i < 3000 && sites.length < 3; i++) {
-    const p = randRadial(R_RIDGE_OUT + 8, 46);
-    if (!inB(w, p.x, p.y)) continue;
-    if (biomeAtXY(p.x, p.y) !== Biome.MEADOW && biomeAtXY(p.x, p.y) !== Biome.WASTE) continue;
-    if (!siteAccept(p)) continue;
-    sites.push(p);
-  }
-  // Фолбэк: минимум 2 относительно далёких точки
+  // Две «жилые» деревни (vA, vB) ставим в разные биомы (луга/пустошь),
+  // чтобы святилище каждой стояло у её ворот и каждый биом имел ровно одно.
+  const pickSite = (avoidBiome?: number): Vec | null => {
+    for (let i = 0; i < 3000; i++) {
+      const p = randRadial(R_RIDGE_OUT + 8, 46);
+      if (!inB(w, p.x, p.y)) continue;
+      const b = biomeAtXY(p.x, p.y);
+      if (b !== Biome.MEADOW && b !== Biome.WASTE) continue;
+      if (avoidBiome !== undefined && b === avoidBiome) continue;
+      if (!siteAccept(p)) continue;
+      return p;
+    }
+    return null;
+  };
+  const first = pickSite();
+  if (first) sites.push(first);
+  const second = pickSite(first ? biomeAtXY(first.x, first.y) : undefined) ?? pickSite();
+  if (second) sites.push(second);
+  const third = pickSite();
+  if (third) sites.push(third);
+  // Фолбэк: добираем до 3 относительно далёких точек
   while (sites.length < 3) {
     const ang = rng() * Math.PI * 2 + sites.length * 2.1;
     const rad = 34 + rng() * 8;
@@ -206,6 +220,8 @@ export function generateOverworld(seed: number): WorldData {
     if (!near && !nearWater(p.x, p.y, 4)) sites.push(p);
     else sites.push(randRadial(R_RIDGE_OUT + 10, 42));
   }
+  /** Биом деревни (по её якорной точке) — носитель святилища у ворот */
+  const siteBiome = sites.map((s) => biomeAtXY(s.x, s.y));
 
   /* ================= Ф3. Граф связей ================= */
   const roadCost = (a: Vec, b: Vec): number => {
@@ -382,17 +398,83 @@ export function generateOverworld(seed: number): WorldData {
   }
   w.npcs = npcs;
 
-  // Святилища
-  const addShrine = (p: Vec | null) => {
-    if (!p) return;
+  // ---------- Святилища: ровно одно на биом, у деревень — у ворот ----------
+  const LAND_BIOMES: number[] = [
+    Biome.SNOW, Biome.RIDGE, Biome.FOREST, Biome.SWAMP, Biome.MEADOW, Biome.RUINS, Biome.WASTE,
+  ];
+  const shrineCovered = new Set<number>();
+  const addShrine = (p: Vec) => {
     clearAround(w, p.x, p.y, 1);
     w.shrines.push({ x: p.x, y: p.y });
     markOccupied(p.x, p.y);
+    shrineCovered.add(biomeAtXY(p.x, p.y));
   };
-  addShrine(placeFree(vA.x0 - 3, vA.y1 - 2, 4));
-  addShrine(placeFree(vB.x0 - 3, vB.y1, 4));
-  addShrine(placeInBiome(Biome.FOREST, R_RIDGE_OUT + 4, 46, 0.5, 3));
-  addShrine(placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 4, 46, 0.4, 3));
+  /** Клетка сразу внутри проёма (со стороны деревни) */
+  const gateInner = (g: GateDef): Vec => {
+    switch (g.edge) {
+      case Edge.North: return { x: g.x + 1, y: g.y + 1 };
+      case Edge.South: return { x: g.x + 1, y: g.y };
+      case Edge.West: return { x: g.x + 1, y: g.y + 1 };
+      case Edge.East:
+      default: return { x: g.x, y: g.y + 1 };
+    }
+  };
+  /** Святилище в священной роще у алтаря (биом SNOW защищён — ставим напрямую) */
+  const snowShrine = (): Vec | null => {
+    const offs: [number, number][] = [[6, 0], [-6, 0], [5, 4], [-5, 4], [4, -5], [-4, -5], [5, -4], [-5, -4]];
+    for (const [dx, dy] of offs) {
+      const x = cx + dx, y = cy + dy;
+      if (!inB(w, x, y)) continue;
+      const t = w.tiles[idx(w, x, y)];
+      if (isSolidTileId(t) || t === Tl.WATER || t === Tl.POOL || t === Tl.SHORE || t === Tl.PATH) continue;
+      if (biomeAtXY(x, y) !== Biome.SNOW) continue;
+      return { x, y };
+    }
+    return null;
+  };
+
+  // 1. Деревни: по одному святилищу у главных ворот (внутри деревни, off-road).
+  //    Ограниченный поиск (≤5 тайлов), чтобы святилище было именно у входа.
+  const placeShrineNearGate = (v: VillageResult, bi: number, inner: Vec): Vec | null => {
+    for (const relax of [false, true]) {
+      for (let rad = 0; rad <= 5; rad++) {
+        for (let dy = -rad; dy <= rad; dy++) {
+          for (let dx = -rad; dx <= rad; dx++) {
+            if (rad > 0 && Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+            const x = inner.x + dx, y = inner.y + dy;
+            if (!freeCell(x, y) || !offRoad(x, y)) continue;
+            if (biomeAtXY(x, y) !== bi) continue;
+            if (!relax && Math.hypot(x - v.plazaCenter.x, y - v.plazaCenter.y) < 3) continue;
+            return { x, y };
+          }
+        }
+      }
+    }
+    return null;
+  };
+  [ { v: vA, bi: siteBiome[0] }, { v: vB, bi: siteBiome[1] } ].forEach(({ v, bi }) => {
+    const p = placeShrineNearGate(v, bi, gateInner(v.gates[0]));
+    if (p) addShrine(p);
+  });
+
+  // 2. По одному святилищу в каждом ещё не покрытом биоме
+  const shrineForBiome = (b: number): Vec | null => {
+    switch (b) {
+      case Biome.SNOW: return snowShrine();
+      case Biome.RIDGE: return placeInBiome(Biome.RIDGE, 12, R_RIDGE_OUT + 2, 0.4, 3, offRoad);
+      case Biome.FOREST: return placeInBiome(Biome.FOREST, R_RIDGE_OUT + 4, 46, 0.5, 3, offRoad);
+      case Biome.SWAMP: return placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 4, 46, 0.4, 3, offRoad);
+      case Biome.RUINS: return placeFree(ruinC.x, ruinC.y, 9, (x, y) => biomeAtXY(x, y) === Biome.RUINS && offRoad(x, y));
+      case Biome.MEADOW: return placeInBiome(Biome.MEADOW, R_RIDGE_OUT + 6, 46, 0.5, 3, offRoad);
+      case Biome.WASTE: return placeInBiome(Biome.WASTE, 24, 46, 0.5, 3, offRoad);
+      default: return null;
+    }
+  };
+  for (const b of LAND_BIOMES) {
+    if (shrineCovered.has(b)) continue;
+    const p = shrineForBiome(b);
+    if (p) addShrine(p);
+  }
 
   // Сундуки
   const addChest = (p: Vec | null, item: "bow" | "sword" | "arrows" | "heartPiece" | "key") => {

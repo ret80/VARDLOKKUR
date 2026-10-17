@@ -59,6 +59,13 @@ export class VillageGenerator {
     const list: (Vec | undefined)[] = targets.slice(0, count);
     if (list.length === 0) list.push(undefined);
 
+    // Две двери — только на противоположных сторонах (не рядом у угла)
+    if (count >= 2 && list.length >= 2) {
+      const opposite: [Edge, Edge][] = [[Edge.North, Edge.South], [Edge.East, Edge.West]];
+      const pair = this.bestOppositePair(w, cx, cy, rw, rh, opposite, list[0], list[1]);
+      if (pair) return pair;
+    }
+
     for (const t of list) {
       let bestEdge: Edge | null = null;
       let bestScore = -Infinity;
@@ -91,6 +98,32 @@ export class VillageGenerator {
       chosen.push({ x: gx, y: gy, edge: Edge.East, target: list[0] });
     }
     return chosen;
+  }
+
+  /**
+   * Перебирает пары противоположных рёбер и обе развязки целей, возвращает
+   * валидную пару ворот с максимальной суммой edgeScore. null — если ни одна
+   * пара не дала двух валидных проёмов.
+   */
+  private bestOppositePair(
+    w: WorldData, cx: number, cy: number, rw: number, rh: number,
+    pairs: [Edge, Edge][], t0: Vec | undefined, t1: Vec | undefined,
+  ): GateDef[] | null {
+    let bestGates: GateDef[] | null = null;
+    let bestScore = -Infinity;
+    for (const [ea, eb] of pairs) {
+      for (const [a, b] of [[ea, eb], [eb, ea]] as [Edge, Edge][]) {
+        const score = this.edgeScore(w, cx, cy, rw, rh, a, t0)
+          + this.edgeScore(w, cx, cy, rw, rh, b, t1);
+        if (bestGates && score <= bestScore) continue;
+        const ga = this.gateOnEdge(w, cx, cy, rw, rh, a, t0);
+        const gb = this.gateOnEdge(w, cx, cy, rw, rh, b, t1);
+        if (!ga || !gb) continue;
+        bestScore = score;
+        bestGates = [{ ...ga, target: t0 }, { ...gb, target: t1 }];
+      }
+    }
+    return bestGates;
   }
 
   /** Скоринг ребра: направление на цель + проходимость полосы наружу */

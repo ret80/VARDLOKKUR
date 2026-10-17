@@ -2,7 +2,7 @@
    связность POI, входы подземелий. ~30 сидов. */
 import { describe, expect, it } from "vitest";
 import { generateOverworld } from "../generators/overworld";
-import { Biome, Tl, idx, isSolidTileId } from "../generators/types";
+import { Biome, Tl, idx, isSolidTileId, Edge } from "../generators/types";
 import { floodReach } from "../generators/utils";
 import { gateOpenRows, reachedNear } from "./_world-helpers";
 
@@ -95,6 +95,59 @@ describe("world structure: остров → биомы → деревни → PO
           || w.spawns.some((sp) => Math.floor(sp.x / 16) === e.x && Math.floor(sp.y / 16) === e.y);
         expect(occupied, `seed ${seed}: вход ${e.id} занят сущностью`).toBe(false);
       }
+    }
+  });
+
+  it("святилища: ровно одно на биом (7), у деревень — у ворот, не на дороге", { timeout: 90000 }, () => {
+    const LAND = [Biome.SNOW, Biome.RIDGE, Biome.FOREST, Biome.SWAMP, Biome.MEADOW, Biome.RUINS, Biome.WASTE];
+    for (const seed of SEEDS) {
+      const w = generateOverworld(seed);
+      expect(w.shrines.length, `seed ${seed}: число святилищ`).toBe(7);
+      const counts: Record<number, number> = {};
+      for (const s of w.shrines) {
+        expect(w.tiles[idx(w, s.x, s.y)], `seed ${seed}: святилище (${s.x},${s.y}) на дороге`).not.toBe(Tl.PATH);
+        const b = w.biomes![idx(w, s.x, s.y)];
+        counts[b] = (counts[b] ?? 0) + 1;
+      }
+      for (const b of LAND) {
+        expect(counts[b] ?? 0, `seed ${seed}: святилищ в биоме ${b}`).toBe(1);
+      }
+      // обе «жилые» деревни имеют святилище у главных ворот
+      for (const gi of [0, 1]) {
+        const g = w.villageGates![gi][0];
+        const near = w.shrines.some((s) => Math.hypot(s.x - g.x, s.y - g.y) <= 9);
+        expect(near, `seed ${seed}: у ворот (${g.x},${g.y}) нет святилища`).toBe(true);
+      }
+    }
+  });
+
+  it("ворота: у деревни с 2 входами они на противоположных сторонах", { timeout: 90000 }, () => {
+    for (const seed of SEEDS) {
+      const w = generateOverworld(seed);
+      for (const gates of w.villageGates!) {
+        if (gates.length < 2) continue;
+        const [a, b] = gates;
+        const opposite = (a.edge === Edge.North && b.edge === Edge.South) || (a.edge === Edge.South && b.edge === Edge.North)
+          || (a.edge === Edge.East && b.edge === Edge.West) || (a.edge === Edge.West && b.edge === Edge.East);
+        expect(opposite, `seed ${seed}: ворота на соседних сторонах (${a.edge},${b.edge})`).toBe(true);
+        expect(Math.hypot(a.x - b.x, a.y - b.y), `seed ${seed}: ворота слишком близко`).toBeGreaterThanOrEqual(8);
+      }
+    }
+  });
+
+  it("подземелья: в биомах (паук — болото), не рядом с алтарём", { timeout: 90000 }, () => {
+    const expectBiome: Record<number, number> = { 0: Biome.RUINS, 1: Biome.SWAMP, 2: Biome.RIDGE };
+    for (const seed of SEEDS) {
+      const w = generateOverworld(seed);
+      const seen = new Set<number>();
+      for (const e of w.dungeonEntries) {
+        seen.add(e.id);
+        const b = w.biomes![idx(w, e.x, e.y)];
+        expect(b, `seed ${seed}: вход ${e.id} не в биоме ${expectBiome[e.id]}`).toBe(expectBiome[e.id]);
+        const d = Math.hypot(e.x - w.treeAltar.x, e.y - w.treeAltar.y);
+        expect(d, `seed ${seed}: вход ${e.id} рядом с алтарём (${d.toFixed(1)})`).toBeGreaterThanOrEqual(13);
+      }
+      for (const id of [0, 1, 2]) expect(seen.has(id), `seed ${seed}: нет входа ${id}`).toBe(true);
     }
   });
 });
