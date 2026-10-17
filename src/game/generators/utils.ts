@@ -57,12 +57,10 @@ export function findWalkableNear(w: WorldData, fx: number, fy: number, r: number
 /** Ground-тайл биома (для расчистки солидов, чтобы не «сеять» снег вне центра) */
 export function groundTileFor(biome: number): number {
   switch (biome) {
-    case Biome.RIDGE: return Tl.MTN;
     case Biome.FOREST: return Tl.FOREST;
     case Biome.SWAMP: return Tl.SWAMP;
     case Biome.MEADOW: return Tl.MEADOW;
-    case Biome.RUINS: return Tl.RUINS;
-    case Biome.WASTE: return Tl.WASTE;
+    case Biome.SNOW:
     default: return Tl.SNOW;
   }
 }
@@ -142,12 +140,11 @@ export function zoneFor(w: WorldData, tx: number, ty: number): string {
   const t = tileAt(w, tx, ty);
   switch (t) {
     case Tl.VILLAGE: case Tl.PALISADE: case Tl.HOUSE: return "Поселение";
-    case Tl.MTN: case Tl.ROCK: return "Хребет Нидов";
-    case Tl.SWAMP: case Tl.POOL: return "Замерзшие Топи";
+    case Tl.SWAMP: case Tl.POOL: case Tl.DEADTREE: case Tl.FIR: return "Замерзшие Топи";
     case Tl.RUINS: case Tl.COLUMN: case Tl.STAIRS: return "Руины Времени";
     case Tl.FOREST: case Tl.TREE: return "Мёртвый Лес";
-    case Tl.MEADOW: return "Луга Хеймдалля";
-    case Tl.WASTE: return "Мёрзлая пустошь";
-    default: return "Мёрзлая пустошь";
+    case Tl.MEADOW: case Tl.GRASS: return "Луга Хеймдалля";
+    case Tl.SNOW: case Tl.SNOW2: case Tl.ALTAR: return "Священная Гряда";
+    default: return "Луга Хеймдалля";
   }
 }

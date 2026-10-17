@@ -7,7 +7,7 @@ import {
   WorldData, Vec, Tl, Biome, NpcDef, EnemyKind, Edge, isSolidTileId,
   VillageResult, GateDef, DungeonEntry, idx, inB,
 } from "./types";
-import { IslandGenerator, R_RIDGE_OUT } from "./island-generator";
+import { IslandGenerator, R_SNOW, ISLAND_RX, ISLAND_RY } from "./island-generator";
 import { VillageGenerator } from "./village-generator";
 import { GlobalRoadGenerator } from "./global-road-generator";
 import { NavBuilder } from "./nav-builder";
@@ -16,17 +16,13 @@ import { findWalkableNear, clearAround, floodReach, setTile, tileAt } from "./ut
 /* ---------- Таблица врагов по биомам (Ф8, план §9) ---------- */
 interface EnemyEntry { kinds: EnemyKind[]; rare?: EnemyKind; rareChance?: number }
 const ENEMY_TABLE: Record<number, EnemyEntry> = {
-  [Biome.RIDGE]: { kinds: ["frost", "varg", "draugr"], rare: "giant", rareChance: 0.05 },
   [Biome.FOREST]: { kinds: ["shroom", "raven", "draugr"], rare: "spider", rareChance: 0.07 },
   [Biome.SWAMP]: { kinds: ["crawler", "draugr"], rare: "ghost", rareChance: 0.05 },
-  [Biome.MEADOW]: { kinds: ["varg", "raven"] },
-  [Biome.RUINS]: { kinds: ["draugr", "frost", "crawler"], rare: "ghost", rareChance: 0.07 },
-  [Biome.WASTE]: { kinds: ["varg", "raven", "frost"] },
+  [Biome.MEADOW]: { kinds: ["varg", "raven"], rare: "frost", rareChance: 0.05 },
 };
 /** Целевое число спавнов по биомам (сумма ~84) */
 const ENEMY_QUOTA: Record<number, number> = {
-  [Biome.RIDGE]: 14, [Biome.FOREST]: 18, [Biome.SWAMP]: 16,
-  [Biome.RUINS]: 8, [Biome.MEADOW]: 10, [Biome.WASTE]: 18,
+  [Biome.FOREST]: 28, [Biome.SWAMP]: 24, [Biome.MEADOW]: 32,
 };
 
 export function generateOverworld(seed: number): WorldData {
@@ -37,7 +33,6 @@ export function generateOverworld(seed: number): WorldData {
   const island = new IslandGenerator(seed).generate();
   const w = island.w;
   const cx = island.cx, cy = island.cy;
-  const ruinC = island.ruinC;
 
   /* ---------- Занятость / защита ---------- */
   const occupied = new Set<string>();
@@ -54,7 +49,6 @@ export function generateOverworld(seed: number): WorldData {
   /* ---------- Базовые предикаты ---------- */
   const biomeAtXY = (x: number, y: number): number =>
     w.biomes && inB(w, x, y) ? w.biomes[idx(w, x, y)] : Biome.WASTE;
-  const isPlainsTile = (t: number) => t === Tl.SNOW || t === Tl.SNOW2 || t === Tl.MEADOW || t === Tl.WASTE;
   /** Клетка проходима для сущностей (без солидов, воды, болота и берега) */
   const tileOk = (t: number) => !isSolidTileId(t) && t !== Tl.WATER && t !== Tl.POOL && t !== Tl.SHORE;
   const cellOk = (x: number, y: number) => inB(w, x, y) && tileOk(w.tiles[idx(w, x, y)]);
@@ -72,15 +66,6 @@ export function generateOverworld(seed: number): WorldData {
       for (let dx = -r; dx <= r; dx++) {
         total++;
         if (cellOk(x + dx, y + dy)) ok++;
-      }
-    return ok / total;
-  };
-  const plainRatio = (x: number, y: number, r: number): number => {
-    let ok = 0, total = 0;
-    for (let dy = -r; dy <= r; dy++)
-      for (let dx = -r; dx <= r; dx++) {
-        total++;
-        if (inB(w, x + dx, y + dy) && isPlainsTile(w.tiles[idx(w, x + dx, y + dy)])) ok++;
       }
     return ok / total;
   };
@@ -135,8 +120,34 @@ export function generateOverworld(seed: number): WorldData {
     return null;
   };
 
+  /** Точка в прибрежном кольце (по нормализованному радиусу эллипса острова) */
+  const sampleCoast = (): Vec => {
+    const ang = rng() * Math.PI * 2;
+    const f = 0.58 + rng() * 0.27; // 0.58..0.85 полуоси → ближе к берегу
+    return {
+      x: Math.round(cx + Math.cos(ang) * ISLAND_RX * f),
+      y: Math.round(cy + Math.sin(ang) * ISLAND_RY * f),
+    };
+  };
+
+  /** Детерминированный скан биома (надёжный фолбэк к placeInBiome) */
+  const scanBiome = (b: number, rMin: number, rMax: number, pred?: (x: number, y: number) => boolean): Vec | null => {
+    const cands: Vec[] = [];
+    for (let y = 2; y < H - 2; y++) {
+      for (let x = 2; x < W - 2; x++) {
+        const d = Math.hypot(x - cx, y - cy);
+        if (d < rMin || d > rMax) continue;
+        if (biomeAtXY(x, y) !== b) continue;
+        if (!freeCell(x, y)) continue;
+        if (pred && !pred(x, y)) continue;
+        cands.push({ x, y });
+      }
+    }
+    return cands.length ? cands[Math.floor(rng() * cands.length)] : null;
+  };
+
   /* ================= Ф2. Якорные POI ================= */
-  // --- Алтарь в центре острова ---
+  // --- Алтарь в центре острова (в руинах) ---
   const treeAltar: Vec = { x: cx, y: cy };
   clearAround(w, treeAltar.x, treeAltar.y + 3, 6, Tl.SNOW2);
   setTile(w, treeAltar.x, treeAltar.y, Tl.ALTAR);
@@ -145,6 +156,24 @@ export function generateOverworld(seed: number): WorldData {
   w.snakeSpot = { x: treeAltar.x * 16 + 8, y: (treeAltar.y + 2) * 16 };
   markOccupied(treeAltar.x, treeAltar.y);
   markProtected(treeAltar.x, treeAltar.y, 9);
+
+  // Руины вокруг алтаря: обломки-столбы кольцом r≈9..14 с проходом на юге
+  // (там подходит дорога и стоит барьер). Столбы солидны — «просто так не подойти».
+  for (let i = 0; i < 26; i++) {
+    const ang = (i / 26) * Math.PI * 2 + (rng() - 0.5) * 0.18;
+    let d = Math.abs(ang - Math.PI / 2);
+    if (d > Math.PI) d = Math.PI * 2 - d;
+    if (d < 0.55) continue; // южный проход свободен
+    const rad = 9 + rng() * 4.5;
+    const x = Math.round(cx + Math.cos(ang) * rad);
+    const y = Math.round(cy + Math.sin(ang) * rad);
+    if (!inB(w, x, y)) continue;
+    const t = w.tiles[idx(w, x, y)];
+    if (t !== Tl.SNOW && t !== Tl.SNOW2) continue;
+    if (isCellOccupied(x, y)) continue;
+    setTile(w, x, y, rng() < 0.6 ? Tl.COLUMN : Tl.RUINS);
+    markOccupied(x, y);
+  }
 
   // --- Входы в подземелья (в биомах, не рядом с алтарём) ---
   const dungeonEntries: DungeonEntry[] = [];
@@ -158,67 +187,73 @@ export function generateOverworld(seed: number): WorldData {
     return spot;
   };
 
-  // Каменная Крепость (giant) → хребет, внешнее кольцо (дальше от алтаря)
+  // Каменная Крепость (giant) → луга (равнина)
   const fortressSpot =
-    placeInBiome(Biome.RIDGE, 14, R_RIDGE_OUT + 2, 0.4, 3, farFromAltar) ??
-    placeInBiome(Biome.RIDGE, 11, R_RIDGE_OUT + 2, 0.4, 3) ??
-    randRadial(R_RIDGE_OUT - 2, R_RIDGE_OUT + 5);
+    placeInBiome(Biome.MEADOW, 20, 46, 0.4, 3, farFromAltar) ??
+    scanBiome(Biome.MEADOW, 20, 46, farFromAltar) ??
+    randRadial(20, 46);
   mkEntry(fortressSpot, 2, "Каменная Крепость");
 
   // Корень Иггдрасиля (spider) → болото (по требованию)
   const rootSpot =
-    placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 4, 46, 0.4, 3, farFromAltar) ??
-    placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 1, 46, 0.4, 3) ??
-    randRadial(R_RIDGE_OUT + 6, 40);
+    placeInBiome(Biome.SWAMP, 20, 46, 0.4, 3, farFromAltar) ??
+    scanBiome(Biome.SWAMP, 20, 46, farFromAltar) ??
+    randRadial(20, 46);
   mkEntry(rootSpot, 1, "Корень Иггдрасиля");
 
-  // Склеп Хранителя (reaper) → карман руин
+  // Склеп Хранителя (reaper) → мёртвый лес
   const cryptSpot =
-    (freeCell(ruinC.x, ruinC.y) ? ruinC : placeFree(ruinC.x, ruinC.y, 7, (x, y) => biomeAtXY(x, y) === Biome.RUINS)) ?? ruinC;
+    placeInBiome(Biome.FOREST, 20, 46, 0.4, 3, farFromAltar) ??
+    scanBiome(Biome.FOREST, 20, 46, farFromAltar) ??
+    randRadial(20, 46);
   mkEntry(cryptSpot, 0, "Склеп Хранителя");
 
   w.dungeonEntries = dungeonEntries;
 
-  // --- Позиции деревень (валидация) ---
+  // --- Позиции деревень: у побережья, разбросаны, vA/vB в разных биомах ---
   const sites: Vec[] = [];
   const siteAccept = (p: Vec): boolean => {
-    if (Math.hypot(p.x - cx, p.y - cy) < R_RIDGE_OUT + 8) return false;
-    if (nearWater(p.x, p.y, 7)) return false;
-    if (plainRatio(p.x, p.y, 5) < 0.55) return false;
-    if (openRatio(p.x, p.y, 5) < 0.6) return false;
-    if (Math.hypot(p.x - ruinC.x, p.y - ruinC.y) < 16) return false;
+    if (!inB(w, p.x, p.y)) return false;
+    if (Math.hypot(p.x - cx, p.y - cy) < R_SNOW + 8) return false;
+    if (nearWater(p.x, p.y, 8)) return false;
+    if (openRatio(p.x, p.y, 5) < 0.55) return false;
     for (const e of dungeonEntries) if (Math.hypot(p.x - e.x, p.y - e.y) < 14) return false;
     for (const s of sites) if (Math.hypot(p.x - s.x, p.y - s.y) < 34) return false;
     return true;
   };
-  // Две «жилые» деревни (vA, vB) ставим в разные биомы (луга/пустошь),
-  // чтобы святилище каждой стояло у её ворот и каждый биом имел ровно одно.
-  const pickSite = (avoidBiome?: number): Vec | null => {
-    for (let i = 0; i < 3000; i++) {
-      const p = randRadial(R_RIDGE_OUT + 8, 46);
+  /** Прибрежная точка нужного биома (без biome — любой наземный сектор) */
+  const pickSite = (biome?: number, avoidBiome?: number): Vec | null => {
+    for (let i = 0; i < 4000; i++) {
+      const p = sampleCoast();
       if (!inB(w, p.x, p.y)) continue;
       const b = biomeAtXY(p.x, p.y);
-      if (b !== Biome.MEADOW && b !== Biome.WASTE) continue;
+      if (b !== Biome.MEADOW && b !== Biome.FOREST && b !== Biome.SWAMP) continue;
+      if (biome !== undefined && b !== biome) continue;
       if (avoidBiome !== undefined && b === avoidBiome) continue;
       if (!siteAccept(p)) continue;
       return p;
     }
     return null;
   };
-  const first = pickSite();
+  // Перемешиваем 3 наземных сектора: vA и vB — в разных (своё святилище у ворот),
+  // vR — в третьем.
+  const landOrder = [Biome.MEADOW, Biome.FOREST, Biome.SWAMP];
+  for (let i = landOrder.length - 1; i > 0; i--) {
+    const k = Math.floor(rng() * (i + 1));
+    [landOrder[i], landOrder[k]] = [landOrder[k], landOrder[i]];
+  }
+  const first = pickSite(landOrder[0]);
   if (first) sites.push(first);
-  const second = pickSite(first ? biomeAtXY(first.x, first.y) : undefined) ?? pickSite();
+  const second = pickSite(landOrder[1]) ?? pickSite(undefined, first ? biomeAtXY(first.x, first.y) : undefined);
   if (second) sites.push(second);
-  const third = pickSite();
+  const third = pickSite(landOrder[2]) ?? pickSite();
   if (third) sites.push(third);
-  // Фолбэк: добираем до 3 относительно далёких точек
+  // Фолбэк: добираем до 3 разбросанных прибрежных точек
   while (sites.length < 3) {
-    const ang = rng() * Math.PI * 2 + sites.length * 2.1;
-    const rad = 34 + rng() * 8;
-    const p = { x: Math.round(cx + Math.cos(ang) * rad), y: Math.round(cy + Math.sin(ang) * rad) };
+    const p = sampleCoast();
     const near = sites.some((s) => Math.hypot(s.x - p.x, s.y - p.y) < 30);
-    if (!near && !nearWater(p.x, p.y, 4)) sites.push(p);
-    else sites.push(randRadial(R_RIDGE_OUT + 10, 42));
+    if (inB(w, p.x, p.y) && !near && !nearWater(p.x, p.y, 4)) sites.push(p);
+    else sites.push(randRadial(30, 44));
   }
   /** Биом деревни (по её якорной точке) — носитель святилища у ворот */
   const siteBiome = sites.map((s) => biomeAtXY(s.x, s.y));
@@ -235,7 +270,7 @@ export function generateOverworld(seed: number): WorldData {
       if (tile === Tl.WATER) return 1e6; // вода фактически непроходима
       switch (tile) {
         case Tl.PATH: cost += 0.35; break;
-        case Tl.SNOW: case Tl.SNOW2: case Tl.MEADOW: cost += 1; break;
+        case Tl.SNOW: case Tl.SNOW2: case Tl.MEADOW: case Tl.GRASS: cost += 1; break;
         case Tl.WASTE: cost += 1.15; break;
         case Tl.SHORE: cost += 1.4; break;
         case Tl.RUINS: cost += 1.9; break;
@@ -375,7 +410,7 @@ export function generateOverworld(seed: number): WorldData {
   addNpc("refugee", "Беженка Гюнн", vR.x0 + Math.round((vR.x1 - vR.x0) / 2), vR.y0 + 2, 3);
   // Лесной шаман — только в лесном биоме
   {
-    const p = placeInBiome(Biome.FOREST, R_RIDGE_OUT + 6, 46, 0.5, 3) ?? { x: cx - 20, y: cy - 20 };
+    const p = placeInBiome(Biome.FOREST, R_SNOW + 6, 46, 0.5, 3) ?? scanBiome(Biome.FOREST, R_SNOW + 6, 46) ?? { x: cx - 20, y: cy - 20 };
     addNpc("shaman", "Шаман Ульв", p.x, p.y, 3);
   }
   // Торговец — на перекрёстке/середине дороги vA↔vB
@@ -386,8 +421,8 @@ export function generateOverworld(seed: number): WorldData {
   }
   // Дочь — рядом с алтарём
   addNpc("daughter", "Безымянная Дочь", treeAltar.x, treeAltar.y + 7, 4);
-  // Ворон — у руин
-  addNpc("raven", "Ворон-Говорун", ruinC.x, ruinC.y - 3, 6);
+  // Ворон — у руин центра
+  addNpc("raven", "Ворон-Говорун", cx - 12, cy - 9, 6);
   // Статисты в деревнях
   for (let i = 0; i < Math.min(3, vA.residentSpots.length); i++) {
     const s = vA.residentSpots[i];
@@ -400,9 +435,7 @@ export function generateOverworld(seed: number): WorldData {
   w.npcs = npcs;
 
   // ---------- Святилища: ровно одно на биом, у деревень — у ворот ----------
-  const LAND_BIOMES: number[] = [
-    Biome.SNOW, Biome.RIDGE, Biome.FOREST, Biome.SWAMP, Biome.MEADOW, Biome.RUINS, Biome.WASTE,
-  ];
+  const LAND_BIOMES: number[] = [Biome.SNOW, Biome.FOREST, Biome.SWAMP, Biome.MEADOW];
   const shrineCovered = new Set<number>();
   const addShrine = (p: Vec) => {
     clearAround(w, p.x, p.y, 1);
@@ -423,6 +456,7 @@ export function generateOverworld(seed: number): WorldData {
       if (!inB(w, x, y)) continue;
       const t = w.tiles[idx(w, x, y)];
       if (isSolidTileId(t) || t === Tl.WATER || t === Tl.POOL || t === Tl.SHORE || t === Tl.PATH) continue;
+      if (isCellOccupied(x, y)) continue;
       if (biomeAtXY(x, y) !== Biome.SNOW) continue;
       return { x, y };
     }
@@ -467,7 +501,7 @@ export function generateOverworld(seed: number): WorldData {
     }
     for (const g of v.gates) {
       const p = searchShrineAtGate(v, bi, g, false);
-      if (p) { addShrine(p); return p; }
+      if (p && !shrineCovered.has(biomeAtXY(p.x, p.y))) { addShrine(p); return p; }
     }
     return null;
   };
@@ -478,12 +512,9 @@ export function generateOverworld(seed: number): WorldData {
   const shrineForBiome = (b: number): Vec | null => {
     switch (b) {
       case Biome.SNOW: return snowShrine();
-      case Biome.RIDGE: return placeInBiome(Biome.RIDGE, 12, R_RIDGE_OUT + 2, 0.4, 3, offRoad);
-      case Biome.FOREST: return placeInBiome(Biome.FOREST, R_RIDGE_OUT + 4, 46, 0.5, 3, offRoad);
-      case Biome.SWAMP: return placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 4, 46, 0.4, 3, offRoad);
-      case Biome.RUINS: return placeFree(ruinC.x, ruinC.y, 9, (x, y) => biomeAtXY(x, y) === Biome.RUINS && offRoad(x, y));
-      case Biome.MEADOW: return placeInBiome(Biome.MEADOW, R_RIDGE_OUT + 6, 46, 0.5, 3, offRoad);
-      case Biome.WASTE: return placeInBiome(Biome.WASTE, 24, 46, 0.5, 3, offRoad);
+      case Biome.FOREST: return placeInBiome(Biome.FOREST, R_SNOW + 6, 46, 0.5, 3, offRoad) ?? scanBiome(Biome.FOREST, R_SNOW + 6, 46, offRoad);
+      case Biome.SWAMP: return placeInBiome(Biome.SWAMP, R_SNOW + 6, 46, 0.4, 3, offRoad) ?? scanBiome(Biome.SWAMP, R_SNOW + 6, 46, offRoad);
+      case Biome.MEADOW: return placeInBiome(Biome.MEADOW, R_SNOW + 6, 46, 0.5, 3, offRoad) ?? scanBiome(Biome.MEADOW, R_SNOW + 6, 46, offRoad);
       default: return null;
     }
   };
@@ -499,9 +530,9 @@ export function generateOverworld(seed: number): WorldData {
     w.chests.push({ x: p.x, y: p.y, item });
     markOccupied(p.x, p.y);
   };
-  addChest(placeInBiome(Biome.FOREST, R_RIDGE_OUT + 4, 46, 0.5, 3), "bow");
-  addChest(placeInBiome(Biome.RIDGE, 10, R_RIDGE_OUT + 6, 0.4, 3), "arrows");
-  addChest(placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 4, 46, 0.4, 3) ?? placeInBiome(Biome.WASTE, 24, 46, 0.5, 3), "heartPiece");
+  addChest(placeInBiome(Biome.FOREST, R_SNOW + 6, 46, 0.5, 3), "bow");
+  addChest(placeInBiome(Biome.MEADOW, R_SNOW + 6, 46, 0.5, 3) ?? scanBiome(Biome.MEADOW, R_SNOW + 6, 46), "arrows");
+  addChest(placeInBiome(Biome.SWAMP, R_SNOW + 6, 46, 0.4, 3) ?? placeInBiome(Biome.MEADOW, R_SNOW + 6, 46, 0.5, 3), "heartPiece");
 
   // Пьедесталы (стражи по биомам)
   const guardPool: EnemyKind[][] = [
@@ -509,11 +540,11 @@ export function generateOverworld(seed: number): WorldData {
     ["draugr", "raven"], ["varg", "varg"],
   ];
   const pedestalSpots = [
-    placeInBiome(Biome.RIDGE, 10, R_RIDGE_OUT + 6, 0.4, 3),
-    placeInBiome(Biome.FOREST, R_RIDGE_OUT + 4, 46, 0.45, 3),
-    placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 4, 46, 0.4, 3),
-    placeFree(ruinC.x + 5, ruinC.y + 3, 6, (x, y) => biomeAtXY(x, y) === Biome.RUINS),
-    placeInBiome(Biome.MEADOW, R_RIDGE_OUT + 6, 46, 0.5, 3),
+    placeInBiome(Biome.MEADOW, R_SNOW + 6, 46, 0.4, 3),
+    placeInBiome(Biome.FOREST, R_SNOW + 6, 46, 0.45, 3),
+    placeInBiome(Biome.SWAMP, R_SNOW + 6, 46, 0.4, 3),
+    placeInBiome(Biome.FOREST, R_SNOW + 6, 46, 0.4, 3),
+    placeInBiome(Biome.MEADOW, R_SNOW + 6, 46, 0.5, 3),
   ];
   pedestalSpots.forEach((p, i) => {
     if (!p) return;
@@ -524,20 +555,20 @@ export function generateOverworld(seed: number): WorldData {
 
   // Квестовые точки
   const spot = (p: Vec | null, fb: Vec): Vec => p ?? fb;
-  w.bearSpot = spot(placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 2, 46, 0.4, 3, offRoad), { x: cx + 20, y: cy + 20 });
+  w.bearSpot = spot(placeInBiome(Biome.SWAMP, R_SNOW + 6, 46, 0.4, 3, offRoad), { x: cx + 20, y: cy + 20 });
   paint(w.bearSpot.x, w.bearSpot.y, Tl.POOL);
   markOccupied(w.bearSpot.x, w.bearSpot.y);
-  w.hornSpot = spot(placeInBiome(Biome.RIDGE, 10, R_RIDGE_OUT + 6, 0.4, 3), { x: cx, y: cy - 12 });
+  w.hornSpot = spot(placeInBiome(Biome.MEADOW, R_SNOW + 6, 46, 0.4, 3), { x: cx, y: cy - 12 });
   markOccupied(w.hornSpot.x, w.hornSpot.y);
-  w.meadSpot = spot(placeInBiome(Biome.FOREST, R_RIDGE_OUT + 4, 46, 0.5, 3), { x: cx - 16, y: cy - 16 });
+  w.meadSpot = spot(placeInBiome(Biome.FOREST, R_SNOW + 6, 46, 0.5, 3), { x: cx - 16, y: cy - 16 });
   markOccupied(w.meadSpot.x, w.meadSpot.y);
-  w.oreSpot = spot(placeInBiome(Biome.RIDGE, 10, R_RIDGE_OUT + 6, 0.4, 3), { x: cx + 8, y: cy - 8 });
+  w.oreSpot = spot(placeInBiome(Biome.SWAMP, R_SNOW + 6, 46, 0.4, 3), { x: cx + 8, y: cy - 8 });
   markOccupied(w.oreSpot.x, w.oreSpot.y);
-  w.mossSpot = spot(placeInBiome(Biome.SWAMP, R_RIDGE_OUT + 4, 46, 0.4, 3), { x: cx + 18, y: cy + 4 });
+  w.mossSpot = spot(placeInBiome(Biome.SWAMP, R_SNOW + 6, 46, 0.4, 3), { x: cx + 18, y: cy + 4 });
   markOccupied(w.mossSpot.x, w.mossSpot.y);
-  w.amberSpot = spot(placeInBiome(Biome.RIDGE, 10, R_RIDGE_OUT + 6, 0.4, 3), { x: cx + 12, y: cy + 8 });
+  w.amberSpot = spot(placeInBiome(Biome.FOREST, R_SNOW + 6, 46, 0.4, 3), { x: cx + 12, y: cy + 8 });
   markOccupied(w.amberSpot.x, w.amberSpot.y);
-  w.flowerSpot = spot(placeFree(ruinC.x + 6, ruinC.y - 4, 7, (x, y) => biomeAtXY(x, y) === Biome.RUINS), { x: ruinC.x + 4, y: ruinC.y - 4 });
+  w.flowerSpot = spot(placeInBiome(Biome.MEADOW, R_SNOW + 6, 46, 0.4, 3), { x: cx + 14, y: cy - 6 });
   markOccupied(w.flowerSpot.x, w.flowerSpot.y);
   w.diarySpot = (() => {
     for (let i = 0; i < 300; i++) {
@@ -551,13 +582,13 @@ export function generateOverworld(seed: number): WorldData {
   })();
   paint(w.diarySpot.x, w.diarySpot.y, Tl.RUINS);
   markOccupied(w.diarySpot.x, w.diarySpot.y);
-  w.relicSpot = spot(placeInBiome(Biome.MEADOW, R_RIDGE_OUT + 6, 46, 0.5, 3) ?? placeInBiome(Biome.WASTE, 24, 46, 0.5, 3), { x: cx - 24, y: cy + 24 });
+  w.relicSpot = spot(placeInBiome(Biome.MEADOW, R_SNOW + 6, 46, 0.5, 3), { x: cx - 24, y: cy + 24 });
   markOccupied(w.relicSpot.x, w.relicSpot.y);
   w.oldAltar = spot(placeFree(w.relicSpot.x + 7, w.relicSpot.y + 3, 5, offRoad), { x: w.relicSpot.x + 5, y: w.relicSpot.y + 3 });
   paint(w.oldAltar.x, w.oldAltar.y, Tl.ALTAR);
   clearAround(w, w.oldAltar.x, w.oldAltar.y, 1);
   markOccupied(w.oldAltar.x, w.oldAltar.y);
-  w.stashSpot = spot(placeFree(ruinC.x - 4, ruinC.y + 5, 6), { x: ruinC.x - 3, y: ruinC.y + 5 });
+  w.stashSpot = spot(placeInBiome(Biome.SWAMP, R_SNOW + 6, 46, 0.4, 3), { x: cx - 14, y: cy + 10 });
   markOccupied(w.stashSpot.x, w.stashSpot.y);
 
   // Связка — на середине дороги vA↔vB
@@ -570,18 +601,12 @@ export function generateOverworld(seed: number): WorldData {
 
   // Души
   const soulSpots = [
-    spot(placeInBiome(Biome.WASTE, 24, 46, 0.5, 2), { x: cx + 24, y: cy - 8 }),
-    spot(placeInBiome(Biome.MEADOW, R_RIDGE_OUT + 6, 46, 0.5, 2), { x: cx - 20, y: cy + 16 }),
-    { x: ruinC.x - 8, y: ruinC.y - 6 },
+    spot(placeInBiome(Biome.MEADOW, R_SNOW + 6, 46, 0.5, 2), { x: cx + 24, y: cy - 8 }),
+    spot(placeInBiome(Biome.FOREST, R_SNOW + 6, 46, 0.5, 2), { x: cx - 20, y: cy + 16 }),
+    spot(placeInBiome(Biome.SWAMP, R_SNOW + 6, 46, 0.4, 2), { x: cx - 8, y: cy - 6 }),
   ];
   w.souls = soulSpots;
   for (const s of soulSpots) markOccupied(s.x, s.y);
-
-  // Колонны в руинах
-  for (let i = 0; i < 10; i++) {
-    const p = placeFree(ruinC.x, ruinC.y, 8, (x, y) => biomeAtXY(x, y) === Biome.RUINS && offRoad(x, y));
-    if (p) setTile(w, p.x, p.y, Tl.COLUMN);
-  }
 
   /* ============ Ф5b. Связность POI (до декора) ============ */
   const reachStart: Vec = { x: vA.gate.x, y: vA.gate.y };
@@ -620,6 +645,11 @@ export function generateOverworld(seed: number): WorldData {
 
   /* ================= Ф7. Декор ================= */
   const n3 = new NoiseGenerator((rng() * 100000) | 0);
+  /** Высокочастотный детерминированный хеш (для одиночных объектов, без кластеров) */
+  const hash = (x: number, y: number, s: number): number => {
+    const v = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
+    return v - Math.floor(v);
+  };
   const nearSpecial = (x: number, y: number): boolean => {
     for (let dy = -1; dy <= 1; dy++)
       for (let dx = -1; dx <= 1; dx++) {
@@ -638,14 +668,30 @@ export function generateOverworld(seed: number): WorldData {
           t === Tl.HOUSE || t === Tl.ALTAR || t === Tl.WATER || t === Tl.SHORE) continue;
       if (isProtected(x, y) || isCellOccupied(x, y) || nearSpecial(x, y)) continue;
       const v = n3.value(x * 0.16, y * 0.16);
-      if (t === Tl.FOREST) { if (v > 0.5) setTile(w, x, y, Tl.TREE); }
-      else if (t === Tl.MTN) { if (v > 0.56) setTile(w, x, y, Tl.ROCK); }
-      else if (t === Tl.SWAMP) { if (v > 0.66) setTile(w, x, y, Tl.POOL); }
+      if (t === Tl.FOREST) {
+        if (hash(x, y, 41) < 0.02) setTile(w, x, y, Tl.ROCK);
+        else if (v > 0.5) setTile(w, x, y, Tl.TREE);
+      }
+      else if (t === Tl.SWAMP) {
+        // Одиночные деревья: высокочастотный хеш даёт изолированные деревья,
+        // группы встречаются заметно реже. Топь-лужи — плавным шумом.
+        const h = hash(x, y, 53);
+        if (h > 0.98) setTile(w, x, y, Tl.FIR);
+        else if (h > 0.93) setTile(w, x, y, Tl.DEADTREE);
+        else if (hash(x, y, 41) < 0.02) setTile(w, x, y, Tl.ROCK);
+        else if (v < 0.3) setTile(w, x, y, Tl.POOL);
+      }
+      else if (t === Tl.MEADOW) {
+        if (hash(x, y, 41) < 0.02) setTile(w, x, y, Tl.ROCK);
+        else if (v > 0.5) setTile(w, x, y, Tl.GRASS);
+      }
       else if (t === Tl.RUINS) { if (v > 0.76) setTile(w, x, y, Tl.COLUMN); }
       else if (t === Tl.SNOW || t === Tl.SNOW2) {
-        if (v > 0.78) setTile(w, x, y, Tl.TREE);
+        // Зимний биом: камней больше, чем в остальных биомах
+        if (v > 0.84) setTile(w, x, y, Tl.TREE);
+        else if (hash(x, y, 41) < 0.07) setTile(w, x, y, Tl.ROCK);
         else if (v < 0.2) setTile(w, x, y, Tl.SNOW2);
-      } else if (t === Tl.WASTE) { if (v > 0.86) setTile(w, x, y, Tl.ROCK); }
+      }
     }
   }
 
@@ -773,8 +819,7 @@ export function generateOverworld(seed: number): WorldData {
     { x: vA.x0, y: vA.y0, w: vA.x1 - vA.x0, h: vA.y1 - vA.y0, name: "Поселение выживших" },
     { x: vB.x0, y: vB.y0, w: vB.x1 - vB.x0, h: vB.y1 - vB.y0, name: "Воронья Гавань" },
     { x: vR.x0, y: vR.y0, w: vR.x1 - vR.x0, h: vR.y1 - vR.y0, name: "Сожжённая Деревня" },
-    { x: ruinC.x - 13, y: ruinC.y - 11, w: 27, h: 23, name: "Руины Времени" },
-    { x: cx - 9, y: cy - 9, w: 19, h: 19, name: "Священная Гряда" },
+    { x: cx - 13, y: cy - 13, w: 27, h: 27, name: "Священная Гряда" },
   ];
 
   /* ================= Стартовый спавн у Эйрика ================= */

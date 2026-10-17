@@ -13,4 +13,5 @@ export const TILE_COLORS: Record<number, string> = {
   [Tl.DWALL]: "#10151c",   [Tl.ALTAR]: "#39424e",
   [Tl.MEADOW]: "#5f6b52",
   [Tl.WASTE]: "#544a3c",
+  [Tl.DEADTREE]: "#3a2c1c", [Tl.FIR]: "#1d2b22", [Tl.GRASS]: "#4c6217",
 };

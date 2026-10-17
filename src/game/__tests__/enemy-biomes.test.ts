@@ -8,12 +8,9 @@ const SEEDS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 /** Разрешённые виды врагов по биому (элита включена) */
 const ALLOWED: Record<number, Set<string>> = {
-  [Biome.RIDGE]: new Set(["frost", "varg", "draugr", "giant"]),
   [Biome.FOREST]: new Set(["shroom", "raven", "draugr", "spider"]),
   [Biome.SWAMP]: new Set(["crawler", "draugr", "ghost"]),
-  [Biome.MEADOW]: new Set(["varg", "raven"]),
-  [Biome.RUINS]: new Set(["draugr", "frost", "crawler", "ghost"]),
-  [Biome.WASTE]: new Set(["varg", "raven", "frost"]),
+  [Biome.MEADOW]: new Set(["varg", "raven", "frost"]),
 };
 
 const RUINED = "Сожжённая Деревня";

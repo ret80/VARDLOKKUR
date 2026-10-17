@@ -1,34 +1,18 @@
-/* Генерация острова с биомами, хребтом-кольцом с перевалами и руинами */
+/* Генерация острова: снежный центр-«гора» и 3 сектора-биома вокруг */
 import { mulberry, NoiseGenerator } from "../noise";
 import { WorldData, Tl, Vec, Biome, idx, inB } from "./types";
 
 /** Центр острова и биом-карты */
 export const ICX = 100, ICY = 70;
-/** Радиус центральной снежной гряды (алтарь в центре) */
-export const R_SNOW = 9;
-/** Внешний радиус хребта-кольца */
-export const R_RIDGE_OUT = 18;
-/** Начало прибрежной пустоши */
-export const R_WASTE = 46;
-/** Число перевалов в хребте */
-const PASS_COUNT = 4;
-/** Полуширина перевала (рад) */
-const PASS_HALF = 0.17;
+/** Радиус центрального снежного плато (алтарь в центре) */
+export const R_SNOW = 24;
+/** Полуоси эллипса острова (для сэмплинга прибрежных точек) */
+export const ISLAND_RX = 94, ISLAND_RY = 64;
 
 export interface IslandResult {
   w: WorldData;
   cx: number;
   cy: number;
-  /** Совместимость: внешний радиус хребта */
-  R1: number;
-  /** Совместимость: середина внешней зоны */
-  R2: number;
-  /** Совместимость: прибрежная полоса */
-  R3: number;
-  /** Центр карманных руин */
-  ruinC: Vec;
-  /** Углы перевалов хребта (рад) */
-  ridgePasses: number[];
 }
 
 export class IslandGenerator {
@@ -42,8 +26,6 @@ export class IslandGenerator {
   private noiseB: NoiseGenerator;
   private cx = ICX;
   private cy = ICY;
-  private ridgePasses: number[] = [];
-  private ruinC: Vec = { x: 0, y: 0 };
 
   constructor(seed: number) {
     this.rng = mulberry(seed);
@@ -57,26 +39,16 @@ export class IslandGenerator {
   public generate(): IslandResult {
     this.buildIsland();
     this.buildBiomes();
-    this.buildRuins();
     this.smoothBiomes();
     this.protectReserved();
     this.applyBiomesToTiles();
     const w = this.createWorldData();
-    return {
-      w,
-      cx: this.cx,
-      cy: this.cy,
-      R1: R_RIDGE_OUT,
-      R2: 34,
-      R3: R_WASTE,
-      ruinC: this.ruinC,
-      ridgePasses: this.ridgePasses,
-    };
+    return { w, cx: this.cx, cy: this.cy };
   }
 
   /* ---------- Ф1.1 Форма острова (эллипс + шум) ---------- */
   private buildIsland(): void {
-    const RX = 94, RY = 64;
+    const RX = ISLAND_RX, RY = ISLAND_RY;
     const normDist = (x: number, y: number) => Math.hypot((x - this.cx) / RX, (y - this.cy) / RY);
     for (let y = 0; y < this.H; y++) {
       for (let x = 0; x < this.W; x++) {
@@ -87,15 +59,8 @@ export class IslandGenerator {
     }
   }
 
-  /* ---------- Ф1.2 Карта биомов: центр-снег, кольцо-хребет с перевалами, сектора ---------- */
+  /* ---------- Ф1.2 Карта биомов: снег-центр + 3 сектора ---------- */
   private buildBiomes(): void {
-    // Перевалы в кольце хребта
-    const base = this.rng() * Math.PI * 2;
-    this.ridgePasses = [];
-    for (let i = 0; i < PASS_COUNT; i++) {
-      this.ridgePasses.push(base + i * (Math.PI * 2 / PASS_COUNT) + (this.rng() - 0.5) * 0.5);
-    }
-
     for (let y = 0; y < this.H; y++) {
       for (let x = 0; x < this.W; x++) {
         const i = idx(this, x, y);
@@ -114,70 +79,18 @@ export class IslandGenerator {
     const r = Math.hypot(dx, dy) + (this.noiseA.value(x * 0.07, y * 0.07) - 0.5) * 7;
     if (r < R_SNOW) return Biome.SNOW;
     const ang = Math.atan2(dy, dx) + (this.noiseB.value(x * 0.05, y * 0.05) - 0.5) * 0.7;
-    if (r < R_RIDGE_OUT && !this.nearPass(ang)) return Biome.RIDGE;
     return this.sectorBiome(ang);
   }
 
-  private nearPass(ang: number): boolean {
-    const TAU = Math.PI * 2;
-    for (const p of this.ridgePasses) {
-      let d = Math.abs(ang - p) % TAU;
-      if (d > Math.PI) d = TAU - d;
-      if (d < PASS_HALF) return true;
-    }
-    return false;
-  }
-
-  /** Сектора: лес — север, топи — запад, луга — юг, пустошь — восток и берег */
+  /** Сектора (по 120°): лес — север, топи — запад-юго-запад, луга — восток */
   private sectorBiome(ang: number): number {
     const TAU = Math.PI * 2;
+    const P = Math.PI;
     let a = ang % TAU;
     if (a < 0) a += TAU;
-    const P = Math.PI;
-    if (a >= P * 1.25 && a < P * 1.75) return Biome.FOREST; // 225°..315° (север)
-    if (a >= P * 0.75 && a < P * 1.25) return Biome.SWAMP;  // 135°..225° (запад)
-    if (a >= P * 0.25 && a < P * 0.75) return Biome.MEADOW; // 45°..135° (юг)
-    return Biome.WASTE;                                      // восток + берег
-  }
-
-  /* ---------- Ф1.3 Карман руин ---------- */
-  private buildRuins(): void {
-    // Ищем площадку на суше в среднем радиусе
-    for (let tries = 0; tries < 80; tries++) {
-      const ang = this.rng() * Math.PI * 2;
-      const dist = 32 + this.rng() * 12;
-      const x = Math.round(this.cx + Math.cos(ang) * dist);
-      const y = Math.round(this.cy + Math.sin(ang) * dist);
-      if (!inB(this, x, y)) continue;
-      const t = this.tiles[idx(this, x, y)];
-      if (t === Tl.WATER || t === Tl.SHORE) continue;
-      let land = 0;
-      for (let dy = -7; dy <= 7; dy++)
-        for (let dx = -7; dx <= 7; dx++) {
-          const tt = this.getTile(x + dx, y + dy);
-          if (tt !== Tl.WATER && tt !== Tl.SHORE) land++;
-        }
-      if (land < 170) continue;
-      this.ruinC = { x, y };
-      break;
-    }
-    if (this.ruinC.x === 0 && this.ruinC.y === 0) {
-      this.ruinC = { x: this.cx - 30, y: this.cy + 24 };
-    }
-    this.stampRuins();
-  }
-
-  private stampRuins(): void {
-    for (let y = this.ruinC.y - 11; y <= this.ruinC.y + 11; y++) {
-      for (let x = this.ruinC.x - 11; x <= this.ruinC.x + 11; x++) {
-        if (!inB(this, x, y)) continue;
-        const i = idx(this, x, y);
-        if (this.tiles[i] === Tl.WATER || this.tiles[i] === Tl.SHORE) continue;
-        const d = Math.hypot(x - this.ruinC.x, (y - this.ruinC.y) * 1.15)
-          + (this.noiseA.value(x * 0.2, y * 0.2) - 0.5) * 4;
-        if (d < 9) this.biomes[i] = Biome.RUINS;
-      }
-    }
+    if (a >= P * (7 / 6) && a < P * (11 / 6)) return Biome.FOREST; // 210°..330° (север)
+    if (a >= P * (1 / 2) && a < P * (7 / 6)) return Biome.SWAMP;   // 90°..210° (запад)
+    return Biome.MEADOW;                                           // 330°..90° (восток)
   }
 
   /* ---------- Сглаживание биомов ---------- */
@@ -205,7 +118,7 @@ export class IslandGenerator {
     }
   }
 
-  /** Возвращает зарезервированные области (центр-снег, карман руин) после сглаживания */
+  /** Возвращает зарезервированную снежную «шапку» центра после сглаживания */
   private protectReserved(): void {
     for (let y = this.cy - R_SNOW; y <= this.cy + R_SNOW; y++) {
       for (let x = this.cx - R_SNOW; x <= this.cx + R_SNOW; x++) {
@@ -215,7 +128,6 @@ export class IslandGenerator {
         }
       }
     }
-    this.stampRuins();
   }
 
   /* ---------- Ф1.4 Биом → тайлы ---------- */
@@ -226,14 +138,11 @@ export class IslandGenerator {
         const t = this.tiles[i];
         if (t === Tl.WATER || t === Tl.SHORE) continue;
         switch (this.biomes[i]) {
-          case Biome.RIDGE: this.tiles[i] = Tl.MTN; break;
           case Biome.FOREST: this.tiles[i] = Tl.FOREST; break;
           case Biome.SWAMP: this.tiles[i] = Tl.SWAMP; break;
           case Biome.MEADOW: this.tiles[i] = Tl.MEADOW; break;
-          case Biome.RUINS: this.tiles[i] = Tl.RUINS; break;
-          case Biome.SNOW: this.tiles[i] = Tl.SNOW; break;
-          // Пустошь — бесплодная земля (снег остаётся только в центре)
-          default: this.tiles[i] = Tl.WASTE;
+          case Biome.SNOW:
+          default: this.tiles[i] = Tl.SNOW; break;
         }
       }
     }
@@ -262,9 +171,6 @@ export class IslandGenerator {
 
   private setTile(x: number, y: number, t: number): void {
     if (this.inBounds(x, y)) this.tiles[idx(this, x, y)] = t;
-  }
-  private getTile(x: number, y: number): number {
-    return this.inBounds(x, y) ? this.tiles[idx(this, x, y)] : Tl.WATER;
   }
   private inBounds(x: number, y: number): boolean {
     return x >= 0 && y >= 0 && x < this.W && y < this.H;

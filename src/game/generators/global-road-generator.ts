@@ -17,6 +17,9 @@ export class GlobalRoadGenerator {
   public buildRoad(w: WorldData, from: Vec, to: Vec, opts?: RoadOpts): void {
     const { W, H } = w;
     const avoid = opts?.avoid;
+    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
+    const sx = clamp(from.x, 1, W - 2), sy = clamp(from.y, 1, H - 2);
+    const gx = clamp(to.x, 1, W - 2), gy = clamp(to.y, 1, H - 2);
     const cost = (x: number, y: number): number => {
       if (avoid && avoid(x, y)) return Infinity;
       const t = w.tiles[idx(w, x, y)];
@@ -24,7 +27,7 @@ export class GlobalRoadGenerator {
       switch (t) {
         case Tl.WATER: case Tl.PALISADE: case Tl.HOUSE: return Infinity;
         case Tl.PATH: return 0.35;
-        case Tl.SNOW: case Tl.SNOW2: case Tl.MEADOW: return 1;
+        case Tl.SNOW: case Tl.SNOW2: case Tl.MEADOW: case Tl.GRASS: return 1;
         case Tl.WASTE: return 1.15;
         case Tl.FOREST: return 2.4;
         case Tl.MTN: return 2.8;
@@ -33,14 +36,13 @@ export class GlobalRoadGenerator {
         case Tl.RUINS: return 1.9;
         case Tl.SHORE: return 1.4;
         case Tl.VILLAGE: return 50;
-        case Tl.STAIRS: case Tl.ALTAR: return 1;
+        // Вход в подземелье/алтарь не ретранслируем сквозь дорогу (иначе дыра:
+        // repaint такие тайлы не затирает). Позволяем только как цель.
+        case Tl.STAIRS: case Tl.ALTAR: return (x === gx && y === gy) ? 1 : Infinity;
         default: return 1.2;
       }
     };
 
-    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-    const sx = clamp(from.x, 1, W - 2), sy = clamp(from.y, 1, H - 2);
-    const gx = clamp(to.x, 1, W - 2), gy = clamp(to.y, 1, H - 2);
     const N = W * H;
     const g = new Float64Array(N).fill(Infinity);
     const came = new Int32Array(N).fill(-1);

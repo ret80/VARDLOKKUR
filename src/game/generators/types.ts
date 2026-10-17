@@ -7,6 +7,7 @@ export const Tl = {
   MTN: 8, SWAMP: 9, POOL: 10, VILLAGE: 11, PALISADE: 12, HOUSE: 13, RUINS: 14,
   COLUMN: 15, CAVE: 16, CAVEWALL: 17, STAIRS: 18, DFLOOR: 19, DWALL: 20, ALTAR: 21,
   MEADOW: 22, WASTE: 23,
+  DEADTREE: 24, FIR: 25, GRASS: 26,
 } as const;
 
 export const Biome = {
@@ -23,6 +24,7 @@ export type BiomeId = number;
 
 const SOLID = new Set<number>([
   Tl.WATER, Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.HOUSE, Tl.COLUMN, Tl.CAVEWALL, Tl.DWALL, Tl.ALTAR,
+  Tl.DEADTREE, Tl.FIR,
 ]);
 export const isSolidTileId = (id: number) => SOLID.has(id);
 

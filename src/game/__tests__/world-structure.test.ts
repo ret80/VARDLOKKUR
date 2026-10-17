@@ -27,18 +27,19 @@ describe("world structure: остров → биомы → деревни → PO
     }
   });
 
-  it("биомы: присутствуют лес, топи, луга, руины, хребет", { timeout: 90000 }, () => {
+  it("биомы: только снег-центр + 3 сектора (лес/топи/луга)", { timeout: 90000 }, () => {
     for (const seed of SEEDS) {
       const w = generateOverworld(seed);
       const counts: Record<number, number> = {};
       for (let i = 0; i < w.biomes!.length; i++) counts[w.biomes![i]] = (counts[w.biomes![i]] ?? 0) + 1;
-      expect(counts[Biome.FOREST] ?? 0, `seed ${seed}: лес`).toBeGreaterThan(900);
-      expect(counts[Biome.SWAMP] ?? 0, `seed ${seed}: топи`).toBeGreaterThan(1800);
-      expect(counts[Biome.MEADOW] ?? 0, `seed ${seed}: луга`).toBeGreaterThan(1000);
-      expect(counts[Biome.RUINS] ?? 0, `seed ${seed}: руины`).toBeGreaterThan(80);
-      expect(counts[Biome.RIDGE] ?? 0, `seed ${seed}: хребет`).toBeGreaterThan(200);
-      expect(counts[Biome.SNOW] ?? 0, `seed ${seed}: снег-центр`).toBeGreaterThan(100);
-      expect(counts[Biome.WASTE] ?? 0, `seed ${seed}: пустошь`).toBeGreaterThan(1000);
+      expect(counts[Biome.FOREST] ?? 0, `seed ${seed}: лес`).toBeGreaterThan(1500);
+      expect(counts[Biome.SWAMP] ?? 0, `seed ${seed}: топи`).toBeGreaterThan(1500);
+      expect(counts[Biome.MEADOW] ?? 0, `seed ${seed}: луга`).toBeGreaterThan(1500);
+      expect(counts[Biome.SNOW] ?? 0, `seed ${seed}: снег-центр`).toBeGreaterThan(400);
+      // хребет/руины/пустошь больше не генерируются
+      expect(counts[Biome.RIDGE] ?? 0, `seed ${seed}: хребет не должен появляться`).toBe(0);
+      expect(counts[Biome.RUINS] ?? 0, `seed ${seed}: руины-биом не должны появляться`).toBe(0);
+      expect(counts[Biome.WASTE] ?? 0, `seed ${seed}: пустошь не должна появляться`).toBe(0);
     }
   });
 
@@ -111,11 +112,11 @@ describe("world structure: остров → биомы → деревни → PO
     }
   });
 
-  it("святилища: ровно одно на биом (7), у деревень — у ворот, не на дороге", { timeout: 90000 }, () => {
-    const LAND = [Biome.SNOW, Biome.RIDGE, Biome.FOREST, Biome.SWAMP, Biome.MEADOW, Biome.RUINS, Biome.WASTE];
+  it("святилища: ровно одно на биом (4), у деревень — у ворот, не на дороге", { timeout: 90000 }, () => {
+    const LAND = [Biome.SNOW, Biome.FOREST, Biome.SWAMP, Biome.MEADOW];
     for (const seed of SEEDS) {
       const w = generateOverworld(seed);
-      expect(w.shrines.length, `seed ${seed}: число святилищ`).toBe(7);
+      expect(w.shrines.length, `seed ${seed}: число святилищ`).toBe(4);
       const counts: Record<number, number> = {};
       for (const s of w.shrines) {
         expect(w.tiles[idx(w, s.x, s.y)], `seed ${seed}: святилище (${s.x},${s.y}) на дороге`).not.toBe(Tl.PATH);
@@ -153,7 +154,7 @@ describe("world structure: остров → биомы → деревни → PO
   });
 
   it("подземелья: в биомах (паук — болото), не рядом с алтарём", { timeout: 90000 }, () => {
-    const expectBiome: Record<number, number> = { 0: Biome.RUINS, 1: Biome.SWAMP, 2: Biome.RIDGE };
+    const expectBiome: Record<number, number> = { 0: Biome.FOREST, 1: Biome.SWAMP, 2: Biome.MEADOW };
     for (const seed of SEEDS) {
       const w = generateOverworld(seed);
       const seen = new Set<number>();
@@ -165,6 +166,31 @@ describe("world structure: остров → биомы → деревни → PO
         expect(d, `seed ${seed}: вход ${e.id} рядом с алтарём (${d.toFixed(1)})`).toBeGreaterThanOrEqual(13);
       }
       for (const id of [0, 1, 2]) expect(seen.has(id), `seed ${seed}: нет входа ${id}`).toBe(true);
+    }
+  });
+
+  it("декор: трава на лугах, голые деревья и ели в топях", { timeout: 90000 }, () => {
+    for (const seed of SEEDS) {
+      const w = generateOverworld(seed);
+      let grass = 0, meadowTiles = 0, dead = 0, fir = 0, swampTiles = 0;
+      for (let i = 0; i < w.tiles.length; i++) {
+        const t = w.tiles[i];
+        const b = w.biomes![i];
+        if (t === Tl.GRASS) grass++;
+        if (t === Tl.MEADOW) meadowTiles++;
+        if (t === Tl.DEADTREE) dead++;
+        if (t === Tl.FIR) fir++;
+        if (t === Tl.SWAMP) swampTiles++;
+        if (t === Tl.DEADTREE || t === Tl.FIR) expect(b, `seed ${seed}: болотное дерево вне топей`).toBe(Biome.SWAMP);
+        if (t === Tl.GRASS) expect(b, `seed ${seed}: трава вне лугов`).toBe(Biome.MEADOW);
+      }
+      expect(grass, `seed ${seed}: нет травы на лугах`).toBeGreaterThan(0);
+      expect(dead, `seed ${seed}: нет голых деревьев в топях`).toBeGreaterThan(0);
+      expect(fir, `seed ${seed}: нет елей в топях`).toBeGreaterThan(0);
+      // «нечастые»: деревья покрывают заметно меньше, чем весь тайл-биом топей
+      expect(dead + fir, `seed ${seed}: деревьев в топях слишком много`).toBeLessThan(swampTiles);
+      // трава не должна закрывать луг целиком
+      expect(grass, `seed ${seed}: травы на лугах слишком много`).toBeLessThan(0.75 * (grass + meadowTiles));
     }
   });
 });

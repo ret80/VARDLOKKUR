@@ -81,6 +81,12 @@ export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number
     case Tl.COLUMN: dither(0x4e5a68, 0x424d5a, 0x5c6875); break;
     case Tl.MEADOW: dither(0x5f6b52, 0x55614a, 0x69755c); break;
     case Tl.WASTE: dither(0x544a3c, 0x484033, 0x605645); break;
+    // Грунт под травой — луг. Сама трава (объёмный пучок) рисуется
+    // отдельным 3D-спрайтом в слое стен (см. wall-geom / map-render-system).
+    case Tl.GRASS: dither(0x5f6b52, 0x55614a, 0x69755c); break;
+    // Ствол-тайлы болотных деревьев: грунт топей под 3D-спрайтом
+    case Tl.DEADTREE:
+    case Tl.FIR: dither(0x2c3a3e, 0x243034, 0x354347); break;
     default:
       renderer.drawRect(g, tileRect, rgb(0x10151c));
   }

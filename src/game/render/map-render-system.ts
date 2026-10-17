@@ -17,7 +17,7 @@ import { query, type World } from 'bitecs';
 import type { IRenderer, GraphicsHandle } from '../renderer/IRenderer';
 import { getRenderQueue, RENDER_LAYER, type Viewport } from './RenderQueue';
 import { MapState, MapTiles } from '../ecs/ecs-components';
-import { T, Tl, type WorldData } from '../world';
+import { T, Tl, Biome, type WorldData } from '../world';
 import { drawTileBatch } from '../geometry/tile-geom';
 import { drawDungeonFloorBatch, drawDungeonWallBatch } from '../geometry/dungeon-tile-geom';
 import { drawWallGeometry, FENCE_N, FENCE_E, FENCE_S, FENCE_W } from '../geometry/wall-geom';
@@ -233,7 +233,7 @@ export function createMapTileGraphics(
 
   // ===== 2. Стены: один Graphics на каждый тайл =====
   const WALL_TILES = new Set<number>([
-    Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.COLUMN, Tl.DWALL, Tl.CAVEWALL,
+    Tl.TREE, Tl.DEADTREE, Tl.FIR, Tl.GRASS, Tl.ROCK, Tl.PALISADE, Tl.COLUMN, Tl.DWALL, Tl.CAVEWALL,
   ]);
 
   // Сосед — тоже частокол? (для ориентации PALISADE по маске N/E/S/W)
@@ -249,6 +249,8 @@ export function createMapTileGraphics(
 
       const variant =
         t === Tl.TREE ? ((rnd(x, y, 13) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
+        : (t === Tl.DEADTREE || t === Tl.FIR) ? (rnd(x, y, 13) > 0.5 ? 2 : 0)
+        : t === Tl.GRASS ? (rnd(x, y, 13) > 0.5 ? 2 : 0)
         : t === Tl.ROCK ? (rnd(x, y, 11) > 0.5 ? 1 : 0)
         : t === Tl.COLUMN ? ((rnd(x, y, 11) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
         : t === Tl.PALISADE ? (
@@ -259,15 +261,30 @@ export function createMapTileGraphics(
           )
         : 0;
 
+      // Снег: деревья/камни в снежном биоме рисуются со снегом
+      const snow = !isDungeon && !!map.biomes && map.biomes[y * W + x] === Biome.SNOW;
+
+      // Пивот в основании: деревья/трава позиционируются точкой основания
+      // (низ ствола/пучка) в центре тайла + небольшой хаотичный офсет.
+      let px = x * T, py = y * T;
+      if (t === Tl.TREE || t === Tl.DEADTREE || t === Tl.FIR) {
+        px = x * T + T / 2 + (rnd(x, y, 31) - 0.5) * 6;
+        py = y * T + T / 2 + (rnd(x, y, 37) - 0.5) * 4;
+      } else if (t === Tl.GRASS) {
+        // основание пучка — у нижней кромки тайла (чтобы перекрывать ноги игрока)
+        px = x * T + T / 2 + (rnd(x, y, 31) - 0.5) * 4;
+        py = y * T + T - 2 + (rnd(x, y, 37) - 0.5) * 3;
+      }
+
       const g = renderer.createGraphics();
       renderer.setGraphicsPosition(g, { x: 0, y: 0 });
-      drawWallGeometry(renderer, g, t, variant, map.dungeonId ?? 0, 0, 0);
+      drawWallGeometry(renderer, g, t, variant, map.dungeonId ?? 0, 0, 0, snow);
 
       const key = "wall_" + x + "_" + y;
       MapTiles.set(key, {
         handle: g as GraphicsHandle,
-        x: x * T,
-        y: y * T,
+        x: px,
+        y: py,
         layer: RENDER_LAYER.DYNAMIC,
       });
 
