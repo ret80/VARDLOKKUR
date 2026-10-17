@@ -6,14 +6,75 @@
  */
 
 import type { IRenderer, GraphicsHandle } from '../renderer/IRenderer';
-import { T, Tl, type WorldData } from '../world';
+import { T, Tl, Biome, type WorldData } from '../world';
 import { rgb } from './geom-utils';
+
+/** Ground-тайл биома (для камня: он не должен менять грунт под собой) */
+function groundTileForBiome(b: number): number {
+  switch (b) {
+    case Biome.FOREST: return Tl.FOREST;
+    case Biome.SWAMP: return Tl.SWAMP;
+    case Biome.MEADOW: return Tl.MEADOW;
+    case Biome.SNOW: return Tl.SNOW;
+    default: return Tl.ROCK;
+  }
+}
 
 /** Детерминированный шум для dither-крапа */
 const rnd = (x: number, y: number, s: number) => {
   const v = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453;
   return v - Math.floor(v);
 };
+
+/** Ширина переходной полосы между биомами (в тайлах) */
+const BIOME_BAND = 4;
+
+/** «Чистый» грунт биома (его можно смешивать на стыке биомов) */
+function isPlainGround(t: number): boolean {
+  return t === Tl.SNOW || t === Tl.SNOW2 || t === Tl.FOREST
+    || t === Tl.SWAMP || t === Tl.MEADOW;
+}
+
+/**
+ * Предрасчёт мягких границ биомов: для каждой клетки — ближайший «другой»
+ * биом и расстояние до него (в пределах BIOME_BAND). Логика мира не меняется —
+ * это только визуальный переход между грунтами.
+ */
+function computeBiomeEdges(map: WorldData, W: number, H: number): { nearBiome: Int8Array; nearDist: Uint8Array } | null {
+  const biomes = map.biomes;
+  if (!biomes || biomes.length !== W * H) return null;
+  const N = W * H;
+  const BAND = BIOME_BAND;
+  const nearBiome = new Int8Array(N).fill(-1);
+  const nearDist = new Uint8Array(N).fill(BAND + 1);
+  const LAND = [Biome.SNOW, Biome.FOREST, Biome.SWAMP, Biome.MEADOW];
+  const NB: ReadonlyArray<readonly [number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+  for (const b of LAND) {
+    const dist = new Int16Array(N).fill(-1);
+    const q: number[] = [];
+    for (let i = 0; i < N; i++) if (biomes[i] === b) { dist[i] = 0; q.push(i); }
+    let head = 0;
+    while (head < q.length) {
+      const cur = q[head++];
+      const d = dist[cur];
+      if (d >= BAND) continue;
+      const x = cur % W, y = (cur / W) | 0;
+      for (const [dx, dy] of NB) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+        const ni = ny * W + nx;
+        if (dist[ni] !== -1 || biomes[ni] === Biome.WATER) continue;
+        dist[ni] = d + 1;
+        q.push(ni);
+      }
+    }
+    for (let i = 0; i < N; i++) {
+      const d = dist[i];
+      if (d > 0 && d < nearDist[i]) { nearDist[i] = d; nearBiome[i] = b; }
+    }
+  }
+  return { nearBiome, nearDist };
+}
 
 /**
  * Нарисовать один тайл типа t в заданных локальных координатах (0,0 для per-tile Graphics).
@@ -101,9 +162,26 @@ export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number
 export function drawTileBatch(renderer: IRenderer, g: GraphicsHandle, map: WorldData): void {
   if (!map?.tiles || !map.W || !map.H) return;
   const { W, H } = map;
+  const biomes = map.biomes;
+  const edges = computeBiomeEdges(map, W, H);
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      const t = map.tiles[y * W + x];
+      const i = y * W + x;
+      let t = map.tiles[i];
+      // Камень — это объект ПОВЕРХ грунта: под ним остаётся тайл биома
+      // (луг/лес/болото/снег), а не серый «каменный» грунт.
+      if (t === Tl.ROCK && biomes) t = groundTileForBiome(biomes[i]);
+      // Плавный переход между биомами: у стыка часть клеток «перетекает»
+      // в грунт соседнего биома (снег не упирается в луга жёсткой линией).
+      if (edges && isPlainGround(t)) {
+        const d = edges.nearDist[i];
+        if (d <= BIOME_BAND) {
+          const nb = edges.nearBiome[i];
+          if (nb >= 0 && rnd(x, y, 91) < 0.5 * (BIOME_BAND + 1 - d) / BIOME_BAND) {
+            t = groundTileForBiome(nb);
+          }
+        }
+      }
       // Рисуем в локальных координатах батча — позиция Graphics = (0,0)
       drawTileLocal(g, t, x * T, y * T, renderer);
     }

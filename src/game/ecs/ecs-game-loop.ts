@@ -119,6 +119,7 @@ import type { QuestSystem } from '../quests/quest-system';
 import type { DialogueSystem } from '../dialogue/dialogue-system';
 import { dist2 } from '../utils';
 import { T } from '../world';
+import { speedMulAt } from '../terrain-speed';
 import type { IRenderer } from '../renderer/IRenderer';
 import { getRenderer, isRendererInitialized } from '../renderer/RendererFactory';
 import type { SpriteFactory } from './ecs-map-loader';
@@ -602,6 +603,13 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     const inputResult = updatePlayerInput(world, peid, input, _stepT, _realT, onStepAudio, (eid) => {}, inputState);
     _stepT = inputResult.stepT;
     _realT = inputResult.realT;
+
+    // Скорость зависит от поверхности под игроком (снег/трава/болото замедляют)
+    if (peid >= 0 && config_map) {
+      const mul = speedMulAt(config_map, Position[peid].x, Position[peid].y);
+      Velocity[peid].x *= mul;
+      Velocity[peid].y *= mul;
+    }
     
     // ===== 3. Обработка действий =====
     processActions(input, bus, () => {
@@ -643,8 +651,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         if (!pos || !vel) continue; // AoS элемент может быть undefined при рассинхронизации masks/AoS
         const pb = PhysicsBody[eid];
         if (pb && pb.body > 0) continue;
-        pos.x += vel.x * dt;
-        pos.y += vel.y * dt;
+        // Существа замедляются поверхностью (снег/трава/болото), снаряды — нет
+        const mul = Enemy[eid] !== undefined ? speedMulAt(config_map, pos.x, pos.y) : 1;
+        pos.x += vel.x * dt * mul;
+        pos.y += vel.y * dt * mul;
       }
     }
 
