@@ -48,7 +48,9 @@ export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number
       renderer.drawRect(g, { x: x + 3, y: y + 4, width: 5, height: 1 }, rgb(0x2a4a55));
       renderer.drawRect(g, { x: x + 8, y: y + 10, width: 4, height: 1 }, rgb(0x2a4a55));
       break;
-    case Tl.VILLAGE: dither(0x635a4c, 0x575043, 0x6f6658); break;
+    case Tl.VILLAGE:
+    // PALISADE — стена поверх обычного деревенского грунта (не спец-тайл)
+    case Tl.PALISADE: dither(0x635a4c, 0x575043, 0x6f6658); break;
     case Tl.RUINS: dither(0x4e5a68, 0x424d5a, 0x5c6875); break;
     case Tl.CAVE: dither(0x2b3646, 0x222b38, 0x343f50); break;
     case Tl.CAVEWALL:
@@ -74,7 +76,6 @@ export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number
     case Tl.ALTAR: dither(0x1a222c, 0x141a22, 0x232c38); break;
     case Tl.TREE: dither(0x1c262e, 0x161f26, 0x232e37); break;
     case Tl.ROCK: dither(0x5f6b78, 0x525e6b, 0x6d7986); break;
-    case Tl.PALISADE: dither(0x3a3020, 0x2e2618, 0x46382a); break;
     case Tl.HOUSE: renderer.drawRect(g, tileRect, rgb(0x2c2620)); break;
     // COLUMN: ground-тайл под 3D-колонной (RUINS-стиль)
     case Tl.COLUMN: dither(0x4e5a68, 0x424d5a, 0x5c6875); break;
