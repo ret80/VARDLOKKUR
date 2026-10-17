@@ -1,6 +1,6 @@
 /* player-lifecycle.ts – Управление респавном и использованием сердца */
 
-import { T } from "../world";
+import { T, Tl, isSolidTileId } from "../world";
 import type { GameStore } from "../store";
 import { PlayerDomain } from "../store/player-domain";
 import type { EventBus } from "../event-bus";
@@ -25,11 +25,12 @@ export interface PlayerLifecycleCallbacks {
 /** Проверить, свободна ли клетка для спавна */
 function isSpawnFree(ow: any, tx: number, ty: number): boolean {
   if (!ow || !ow.tiles) return false;
+  // Клетка за пределами карты не может быть свободной
+  if (tx < 0 || ty < 0 || tx >= ow.W || ty >= ow.H) return false;
   const tile = ow.tiles[ty * ow.W + tx];
   // Считаем клетку свободной, если она не является твёрдой
   // и не занята святилищем, NPC, сундуком, педесталом или врагом
-  const isSolid = [0, 1, 6, 7, 12, 13, 15, 17, 20, 21].includes(tile); // WATER, TREE, ROCK, PALISADE, HOUSE, COLUMN, CAVEWALL, DWALL, ALTAR
-  if (isSolid) return false;
+  if (isSolidTileId(tile) || tile === Tl.POOL) return false;
 
   // Проверить, не занята ли клетка другой сущностью
   for (const s of ow.shrines || []) {
@@ -52,18 +53,26 @@ function isSpawnFree(ow: any, tx: number, ty: number): boolean {
 
 /** Найти случайную свободную соседнюю клетку вокруг позиции */
 function findFreeNeighbor(ow: any, cx: number, cy: number): { x: number; y: number } {
-  const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
-  // Перемешать направления для случайности
-  for (let i = dirs.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
-  }
+  // Перемешать направления в кольцах (сначала ближнее) для случайности
+  for (let radius = 1; radius <= 2; radius++) {
+    const dirs: [number, number][] = [];
+    for (let dy = -radius; dy <= radius; dy++) {
+      for (let dx = -radius; dx <= radius; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+        dirs.push([dx, dy]);
+      }
+    }
+    for (let i = dirs.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+    }
 
-  for (const [dx, dy] of dirs) {
-    const nx = cx + dx;
-    const ny = cy + dy;
-    if (isSpawnFree(ow, nx, ny)) {
-      return { x: nx * T + 8, y: ny * T + 8 };
+    for (const [dx, dy] of dirs) {
+      const nx = cx + dx;
+      const ny = cy + dy;
+      if (isSpawnFree(ow, nx, ny)) {
+        return { x: nx * T + 8, y: ny * T + 8 };
+      }
     }
   }
 
@@ -109,8 +118,13 @@ export class PlayerLifecycle {
       // Игрок появляется на случайной свободной соседней клетке со святилищем
       spawn = findFreeNeighbor(ow, s.x, s.y);
     } else if (ow) {
-      // Фолбэк — спавн в деревне (оверворлд)
+      // Фолбэк — спавн в деревне (оверворлд); если клетка занята — ищем свободную рядом
       spawn = ow.spawn ?? { x: 0, y: 0 };
+      const stx = Math.floor(spawn.x / T);
+      const sty = Math.floor(spawn.y / T);
+      if (!isSpawnFree(ow, stx, sty)) {
+        spawn = findFreeNeighbor(ow, stx, sty);
+      }
     } else {
       spawn = this.store.map?.spawn ?? { x: 0, y: 0 };
     }

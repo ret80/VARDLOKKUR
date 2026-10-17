@@ -352,12 +352,16 @@ export function generateOverworld(seed: number): WorldData {
     const d = Math.hypot((x - cx) * 0.92, y - cy);
     const kinds = kindsFor(t, d, R1);
     w.spawns.push({ kind: kinds[Math.floor(rng() * kinds.length)], x: x * 16 + 8, y: y * 16 + 8 });
+    markOccupied(x, y);
     placed++;
   }
   for (let i = 0; i < 3; i++) {
     const x = vR.x0 + 2 + Math.floor(rng() * (vR.x1 - vR.x0 - 4));
     const y = vR.y0 + 2 + Math.floor(rng() * (vR.y1 - vR.y0 - 4));
-    if (!isSolidTileId(tileAt(w, x, y))) w.spawns.push({ kind: i === 2 ? "crawler" : "draugr", x: x * 16 + 8, y: y * 16 + 8 });
+    if (!isSolidTileId(tileAt(w, x, y))) {
+      w.spawns.push({ kind: i === 2 ? "crawler" : "draugr", x: x * 16 + 8, y: y * 16 + 8 });
+      markOccupied(x, y);
+    }
   }
 
   // Связность
@@ -391,19 +395,43 @@ export function generateOverworld(seed: number): WorldData {
     { x: ruinsC.x - 14, y: ruinsC.y - 12, w: 28, h: 24, name: "Руины Времени" },
   ];
 
-  // Стартовая позиция
+  // Стартовая позиция — обязательно на свободной клетке рядом с Эйриком
   const eirikNpc = w.npcs.find((n) => n.id === "eirik");
-  if (eirikNpc) {
-    const spawnTileNearEirik: Vec = { x: eirikNpc.x, y: eirikNpc.y };
-    const spawnSpot = findWalkableNear(w, spawnTileNearEirik.x, spawnTileNearEirik.y, 2, rng);
-    if (spawnSpot.x === eirikNpc.x && spawnSpot.y === eirikNpc.y) {
-      spawnSpot.x = Math.round((vA.x0 + vA.x1) / 2);
-      spawnSpot.y = eirikNpc.y + 2;
-      const alt = findWalkableNear(w, spawnSpot.x, spawnSpot.y, 2, rng);
-      spawnSpot.x = alt.x;
-      spawnSpot.y = alt.y;
+
+  /** Клетка проходима и не занята объектом, NPC или врагом */
+  const isSpawnCellFree = (x: number, y: number): boolean => {
+    if (!inB(w, x, y)) return false;
+    const t = w.tiles[idx(w, x, y)];
+    if (isSolidTileId(t) || t === Tl.WATER || t === Tl.POOL) return false;
+    return !isCellOccupied(x, y);
+  };
+
+  /** Ближайшая свободная клетка вокруг (fx, fy): сначала PATH/VILLAGE, затем любая проходимая */
+  const findFreeSpawnNear = (fx: number, fy: number, maxR: number): Vec | null => {
+    for (const villageOnly of [true, false]) {
+      for (let r = 1; r <= maxR; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+            const x = fx + dx, y = fy + dy;
+            if (!isSpawnCellFree(x, y)) continue;
+            const t = w.tiles[idx(w, x, y)];
+            const road = t === Tl.VILLAGE || t === Tl.PATH;
+            if (!villageOnly || road) return { x, y };
+          }
+        }
+      }
     }
-    w.spawn = px(spawnSpot.x, spawnSpot.y);
+    return null;
+  };
+
+  if (eirikNpc) {
+    // Рядом с Эйриком, но никогда — на его клетке или другой занятой
+    const spot = findFreeSpawnNear(eirikNpc.x, eirikNpc.y, 4)
+      ?? findFreeSpawnNear(eirikNpc.x, eirikNpc.y, 12)
+      ?? findWalkableNear(w, eirikNpc.x, eirikNpc.y, 4, rng);
+    w.spawn = px(spot.x, spot.y);
+    markOccupied(spot.x, spot.y);
   } else {
     const spawnTile: Vec = { x: 0, y: 0 };
     switch (vA.gateEdge) {
@@ -412,7 +440,9 @@ export function generateOverworld(seed: number): WorldData {
       case Edge.West: spawnTile.x = gate.x + 2; spawnTile.y = gate.y + 1; break;
       case Edge.East: spawnTile.x = gate.x - 2; spawnTile.y = gate.y + 1; break;
     }
-    w.spawn = px(spawnTile.x, spawnTile.y);
+    const spot = findFreeSpawnNear(spawnTile.x, spawnTile.y, 4) ?? spawnTile;
+    w.spawn = px(spot.x, spot.y);
+    markOccupied(spot.x, spot.y);
   }
 
   const navBuilder = new NavBuilder();
