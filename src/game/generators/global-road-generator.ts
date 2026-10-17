@@ -2,6 +2,11 @@
 import { WorldData, Tl, Vec, idx, inB } from "./types";
 import { isSolidTileId } from "./types";
 
+export interface RoadOpts {
+  /** Клетки, через которые дорога не должна проходить (например, арена алтаря) */
+  avoid?: (x: number, y: number) => boolean;
+}
+
 export class GlobalRoadGenerator {
   private rng: () => number;
 
@@ -9,15 +14,17 @@ export class GlobalRoadGenerator {
     this.rng = rng;
   }
 
-  public buildRoad(w: WorldData, from: Vec, to: Vec): void {
+  public buildRoad(w: WorldData, from: Vec, to: Vec, opts?: RoadOpts): void {
     const { W, H } = w;
+    const avoid = opts?.avoid;
     const cost = (x: number, y: number): number => {
+      if (avoid && avoid(x, y)) return Infinity;
       const t = w.tiles[idx(w, x, y)];
       if (isSolidTileId(t) && t !== Tl.PALISADE) return Infinity;
       switch (t) {
         case Tl.WATER: case Tl.PALISADE: case Tl.HOUSE: return Infinity;
         case Tl.PATH: return 0.35;
-        case Tl.SNOW: case Tl.SNOW2: return 1;
+        case Tl.SNOW: case Tl.SNOW2: case Tl.MEADOW: return 1;
         case Tl.FOREST: return 2.4;
         case Tl.MTN: return 2.8;
         case Tl.SWAMP: return 3.4;
@@ -66,7 +73,7 @@ export class GlobalRoadGenerator {
     }
 
     if (!found) {
-      this.carvePath(w, sx, sy, gx, gy);
+      this.carvePath(w, sx, sy, gx, gy, avoid);
       return;
     }
 
@@ -82,14 +89,18 @@ export class GlobalRoadGenerator {
     }
   }
 
-  private carvePath(w: WorldData, x0: number, y0: number, x1: number, y1: number): void {
+  private carvePath(w: WorldData, x0: number, y0: number, x1: number, y1: number, avoid?: (x: number, y: number) => boolean): void {
     const put = (x: number, y: number) => {
       for (const [dx, dy] of [[0, 0], [1, 0], [0, 1]]) {
         const xx = x + dx, yy = y + dy;
         if (!inB(w, xx, yy)) continue;
+        if (avoid && avoid(xx, yy)) continue;
         const cur = w.tiles[idx(w, xx, yy)];
+        // Не рисуем дорогу сквозь солиды, воду, ворота и входы в подземелья
         if (cur === Tl.WATER || cur === Tl.PALISADE || cur === Tl.HOUSE || cur === Tl.VILLAGE) continue;
-        if (inB(w, xx, yy)) w.tiles[idx(w, xx, yy)] = Tl.PATH;
+        if (cur === Tl.STAIRS || cur === Tl.ALTAR) continue;
+        if (isSolidTileId(cur)) continue;
+        w.tiles[idx(w, xx, yy)] = Tl.PATH;
       }
     };
     const horizFirst = this.rng() < 0.5;

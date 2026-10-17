@@ -79,6 +79,7 @@ export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number
     case Tl.HOUSE: renderer.drawRect(g, tileRect, rgb(0x2c2620)); break;
     // COLUMN: ground-тайл под 3D-колонной (RUINS-стиль)
     case Tl.COLUMN: dither(0x4e5a68, 0x424d5a, 0x5c6875); break;
+    case Tl.MEADOW: dither(0x5f6b52, 0x55614a, 0x69755c); break;
     default:
       renderer.drawRect(g, tileRect, rgb(0x10151c));
   }

@@ -1,7 +1,13 @@
-/* Генерация поселений: заборы, дома, дороги, площади */
-import { WorldData, Tl, Vec, Edge, HouseDef, VillageResult, idx, inB } from "./types";
+/* Генерация поселений: заборы (1-2 проёма), дома, дороги, площади */
+import { WorldData, Tl, Vec, Edge, HouseDef, VillageResult, GateDef, isSolidTileId, idx, inB } from "./types";
 
-interface GateDef { x: number; y: number; edge: Edge }
+/** Внешняя нормаль ребра прямоугольника деревни */
+const EDGE_NORMAL: Record<Edge, Vec> = {
+  [Edge.North]: { x: 0, y: -1 },
+  [Edge.East]: { x: 1, y: 0 },
+  [Edge.South]: { x: 0, y: 1 },
+  [Edge.West]: { x: -1, y: 0 },
+};
 
 export class VillageGenerator {
   private rng: () => number;
@@ -16,61 +22,174 @@ export class VillageGenerator {
     this.rng = rng;
   }
 
-  public generate(w: WorldData, cx: number, cy: number, rw: number, rh: number): VillageResult {
-    const gate = this.placeGate(w, cx, cy, rw, rh);
-    this.buildFence(w, cx, cy, rw, rh, gate);
+  /**
+   * @param targets точки, к которым должны «смотреть» ворота (центры соседних деревень).
+   *                Число ворот = clamp(targets.length, 1, 2).
+   */
+  public generate(w: WorldData, cx: number, cy: number, rw: number, rh: number, targets: Vec[] = []): VillageResult {
+    const wanted = Math.max(1, Math.min(2, targets.length || 1));
+    const gates = this.placeGates(w, cx, cy, rw, rh, targets, wanted);
+    this.buildFence(w, cx, cy, rw, rh, gates);
     const plazaCenter = this.placePlaza(w, cx, cy, rw, rh);
     const houses = this.placeHouses(w, cx, cy, rw, rh);
-    this.buildPlazaGateRoad(w, plazaCenter, gate);
-    this.buildHouseRoads(w, houses, plazaCenter, gate);
-    this.paveGate(w, gate);
+    for (const g of gates) this.buildPlazaGateRoad(w, plazaCenter, g);
+    this.buildHouseRoads(w, houses, plazaCenter, gates);
+    for (const g of gates) this.paveGate(w, g);
 
     // Каменный столб на месте святилища (после дорог, чтобы carveRoad не затер)
     if (inB(w, plazaCenter.x, plazaCenter.y))
       w.tiles[idx(w, plazaCenter.x, plazaCenter.y)] = Tl.COLUMN;
 
     const residentSpots = this.collectResidentSpots(w, cx, cy, rw, rh);
+    const primary = gates[0];
     return {
       x0: cx, y0: cy, x1: cx + rw, y1: cy + rh,
-      gate: { x: gate.x + 1, y: gate.y + 1 }, gateEdge: gate.edge,
-      houses, residentSpots, plazaCenter,
+      gate: { x: primary.x + 1, y: primary.y + 1 }, gateEdge: primary.edge,
+      gates, houses, residentSpots, plazaCenter,
     };
   }
 
-  private placeGate(w: WorldData, cx: number, cy: number, rw: number, rh: number): GateDef {
+  /* ---------- Ворота ---------- */
+
+  private placeGates(w: WorldData, cx: number, cy: number, rw: number, rh: number, targets: Vec[], count: number): GateDef[] {
     const edges: Edge[] = [Edge.North, Edge.East, Edge.South, Edge.West];
-    const edge = edges[Math.floor(this.rng() * edges.length)];
-    const gs = 2;
-    const off = 2;
-    const spanH = Math.max(1, rw - gs - 2 * off + 2);
-    const spanV = Math.max(1, rh - gs - 2 * off + 2);
-    let gx: number, gy: number;
-    switch (edge) {
-      case Edge.North:
-        gx = cx + off + Math.floor(this.rng() * spanH); gy = cy; break;
-      case Edge.South:
-        gx = cx + off + Math.floor(this.rng() * spanH); gy = cy + rh - gs + 1; break;
-      case Edge.West:
-        gx = cx; gy = cy + off + Math.floor(this.rng() * spanV); break;
-      case Edge.East:
-      default:
-        gx = cx + rw - gs + 1; gy = cy + off + Math.floor(this.rng() * spanV); break;
+    const chosen: GateDef[] = [];
+    const used = new Set<Edge>();
+
+    const list: (Vec | undefined)[] = targets.slice(0, count);
+    if (list.length === 0) list.push(undefined);
+
+    for (const t of list) {
+      let bestEdge: Edge | null = null;
+      let bestScore = -Infinity;
+      for (const e of edges) {
+        if (used.has(e)) continue;
+        const s = this.edgeScore(w, cx, cy, rw, rh, e, t);
+        if (s > bestScore) { bestScore = s; bestEdge = e; }
+      }
+      if (bestEdge === null) break;
+      const g = this.gateOnEdge(w, cx, cy, rw, rh, bestEdge, t);
+      used.add(bestEdge);
+      if (g) chosen.push({ ...g, target: t });
     }
-    for (let dy = 0; dy < gs; dy++)
-      for (let dx = 0; dx < gs; dx++)
-        if (inB(w, gx + dx, gy + dy)) {
-          if (inB(w, gx + dx, gy + dy)) w.tiles[idx(w, gx + dx, gy + dy)] = Tl.VILLAGE;
-        }
+
+    // Гарантируем хотя бы одни ворота
+    if (chosen.length === 0) {
+      for (const e of edges) {
+        const g = this.gateOnEdge(w, cx, cy, rw, rh, e, list[0]);
+        if (g) { chosen.push({ ...g, target: list[0] }); break; }
+      }
+    }
+    // Аварийный вариант: если ни одно ребро не дало валидных ворот —
+    // ставим проём без проверки окружения, чтобы деревня не осталась без выхода.
+    if (chosen.length === 0) {
+      const gx = cx + rw - 1;
+      const gy = Math.max(cy + 2, Math.min(cy + rh - 3, cy + Math.floor(rh / 2)));
+      for (const [ox, oy] of [[gx, gy], [gx, gy + 1]] as [number, number][]) {
+        if (inB(w, ox, oy)) w.tiles[idx(w, ox, oy)] = Tl.PATH;
+      }
+      chosen.push({ x: gx, y: gy, edge: Edge.East, target: list[0] });
+    }
+    return chosen;
+  }
+
+  /** Скоринг ребра: направление на цель + проходимость полосы наружу */
+  private edgeScore(w: WorldData, cx: number, cy: number, rw: number, rh: number, edge: Edge, target?: Vec): number {
+    const n = EDGE_NORMAL[edge];
+    let score = 0;
+    if (target) {
+      const vx = target.x - (cx + rw / 2);
+      const vy = target.y - (cy + rh / 2);
+      const m = Math.hypot(vx, vy) || 1;
+      score += (n.x * (vx / m) + n.y * (vy / m)) * 3;
+    }
+    const ray = this.edgeRay(cx, cy, rw, rh, edge);
+    let open = 0;
+    for (let d = 1; d <= 4; d++) {
+      const x = ray.ox + ray.dx * d;
+      const y = ray.oy + ray.dy * d;
+      if (!inB(w, x, y)) break;
+      const t = w.tiles[idx(w, x, y)];
+      if (t === Tl.WATER || t === Tl.SHORE || t === Tl.ROCK || t === Tl.TREE ||
+          t === Tl.PALISADE || t === Tl.HOUSE || t === Tl.COLUMN) break;
+      open++;
+    }
+    score += open * 1.5;
+    if (open < 2) score -= 100;
+    score += this.rng() * 0.4;
+    return score;
+  }
+
+  private edgeRay(cx: number, cy: number, rw: number, rh: number, edge: Edge): { ox: number; oy: number; dx: number; dy: number } {
+    switch (edge) {
+      case Edge.North: return { ox: cx + Math.floor(rw / 2), oy: cy, dx: 0, dy: -1 };
+      case Edge.South: return { ox: cx + Math.floor(rw / 2), oy: cy + rh, dx: 0, dy: 1 };
+      case Edge.West: return { ox: cx, oy: cy + Math.floor(rh / 2), dx: -1, dy: 0 };
+      case Edge.East:
+      default: return { ox: cx + rw, oy: cy + Math.floor(rh / 2), dx: 1, dy: 0 };
+    }
+  }
+
+  /** Разместить 2×2 проём на ребре ближе к цели; null, если наружу нет ≥2 проходимых тайлов */
+  private gateOnEdge(w: WorldData, cx: number, cy: number, rw: number, rh: number, edge: Edge, target?: Vec): { x: number; y: number; edge: Edge } | null {
+    let gx: number, gy: number;
+    const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    if (edge === Edge.North || edge === Edge.South) {
+      const lo = cx + 2, hi = cx + rw - 3;
+      const along = target ? clampN(Math.round(target.x) - 1, lo, hi)
+        : clampN(cx + 2 + Math.floor(this.rng() * Math.max(1, rw - 4)), lo, hi);
+      gx = along;
+      gy = edge === Edge.North ? cy : cy + rh - 1;
+    } else {
+      const lo = cy + 2, hi = cy + rh - 3;
+      const along = target ? clampN(Math.round(target.y) - 1, lo, hi)
+        : clampN(cy + 2 + Math.floor(this.rng() * Math.max(1, rh - 4)), lo, hi);
+      gy = along;
+      gx = edge === Edge.West ? cx : cx + rw - 1;
+    }
+
+    // Проём не должен опираться на воду/берег
+    const opening: [number, number][] = edge === Edge.North || edge === Edge.South
+      ? [[gx, gy], [gx + 1, gy]]
+      : [[gx, gy], [gx, gy + 1]];
+    for (const [ox, oy] of opening) {
+      if (!inB(w, ox, oy)) return null;
+      const t = w.tiles[idx(w, ox, oy)];
+      if (t === Tl.WATER || t === Tl.SHORE) return null;
+    }
+
+    // Наружу — минимум 2 проходимых тайла в 2 полосы
+    const n = EDGE_NORMAL[edge];
+    const outCells: [number, number][] = edge === Edge.North
+      ? [[gx, gy - 1], [gx + 1, gy - 1]]
+      : edge === Edge.South
+        ? [[gx, gy + 1], [gx + 1, gy + 1]]
+        : edge === Edge.West
+          ? [[gx - 1, gy], [gx - 1, gy + 1]]
+          : [[gx + 1, gy], [gx + 1, gy + 1]];
+    for (let step = 0; step < 2; step++) {
+      for (const [bx, by] of outCells) {
+        const x = bx + n.x * step, y = by + n.y * step;
+        if (!inB(w, x, y)) return null;
+        const t = w.tiles[idx(w, x, y)];
+        if (t === Tl.WATER || t === Tl.SHORE || isSolidTileId(t)) return null;
+      }
+    }
+
+    // Проём внутренне делаем проходимым сразу (забор его пропустит)
+    for (const [ox, oy] of opening) w.tiles[idx(w, ox, oy)] = Tl.PATH;
     return { x: gx, y: gy, edge };
   }
 
-  private buildFence(w: WorldData, cx: number, cy: number, rw: number, rh: number, gate: GateDef): void {
+  private buildFence(w: WorldData, cx: number, cy: number, rw: number, rh: number, gates: GateDef[]): void {
+    const inGate = (x: number, y: number) =>
+      gates.some((g) => x >= g.x && x < g.x + 2 && y >= g.y && y < g.y + 2);
     for (let y = cy; y <= cy + rh; y++) {
       for (let x = cx; x <= cx + rw; x++) {
         if (!inB(w, x, y)) continue;
-        if (x >= gate.x && x < gate.x + 2 && y >= gate.y && y < gate.y + 2) continue;
+        if (inGate(x, y)) continue;
         const isBorder = (x === cx || x === cx + rw || y === cy || y === cy + rh);
-        if (inB(w, x, y)) w.tiles[idx(w, x, y)] = isBorder ? Tl.PALISADE : Tl.VILLAGE;
+        w.tiles[idx(w, x, y)] = isBorder ? Tl.PALISADE : Tl.VILLAGE;
       }
     }
   }
@@ -151,9 +270,9 @@ export class VillageGenerator {
     switch (gate.edge) {
       case Edge.North: return { x: gate.x + 1, y: gate.y + 1 };
       case Edge.South: return { x: gate.x + 1, y: gate.y };
-      case Edge.West:  return { x: gate.x + 1, y: gate.y + 1 };
+      case Edge.West: return { x: gate.x + 1, y: gate.y + 1 };
       case Edge.East:
-      default:         return { x: gate.x,     y: gate.y + 1 };
+      default: return { x: gate.x, y: gate.y + 1 };
     }
   }
 
@@ -169,19 +288,20 @@ export class VillageGenerator {
     return [
       { x: h.x + Math.floor(h.w / 2), y: h.y + h.h },
       { x: h.x + Math.floor(h.w / 2), y: h.y - 1 },
-      { x: h.x - 1,        y: h.y + Math.floor(h.h / 2) },
-      { x: h.x + h.w,      y: h.y + Math.floor(h.h / 2) },
+      { x: h.x - 1, y: h.y + Math.floor(h.h / 2) },
+      { x: h.x + h.w, y: h.y + Math.floor(h.h / 2) },
     ];
   }
 
-  private buildHouseRoads(w: WorldData, houses: HouseDef[], plazaCenter: Vec, gate: GateDef): void {
-    const gateInner = this.gateInnerCenter(gate);
+  private buildHouseRoads(w: WorldData, houses: HouseDef[], plazaCenter: Vec, gates: GateDef[]): void {
+    const goals = [plazaCenter, ...gates.map((g) => this.gateInnerCenter(g))];
     for (const h of houses) {
       const hcx = h.x + h.w / 2, hcy = h.y + h.h / 2;
-      const dPlaza = Math.hypot(plazaCenter.x - hcx, plazaCenter.y - hcy);
-      const dGate = Math.hypot(gateInner.x - hcx, gateInner.y - hcy);
-      const goal = dGate < dPlaza ? gateInner : plazaCenter;
-
+      let goal = plazaCenter, best = Infinity;
+      for (const g of goals) {
+        const d = Math.hypot(g.x - hcx, g.y - hcy);
+        if (d < best) { best = d; goal = g; }
+      }
       let door = this.houseDoor(h);
       if (!this.roadPassable(w, door.x, door.y)) {
         const side = this.allHouseSides(h).find((p) => this.roadPassable(w, p.x, p.y));
@@ -243,23 +363,38 @@ export class VillageGenerator {
       }
     }
   }
-  
+
   private carveL(w: WorldData, ax: number, ay: number, bx: number, by: number): void {
     let x = ax, y = ay;
     const put = (px: number, py: number) => {
       if (!inB(w, px, py)) return;
       const t = w.tiles[py * w.W + px];
       if (t === Tl.HOUSE || t === Tl.PALISADE || t === Tl.WATER) return;
-      if (inB(w, px, py)) w.tiles[idx(w, px, py)] = Tl.PATH;
+      if (isSolidTileId(t)) return;
+      w.tiles[idx(w, px, py)] = Tl.PATH;
     };
     while (x !== bx) { x += Math.sign(bx - x); put(x, y); }
     while (y !== by) { y += Math.sign(by - y); put(x, y); }
   }
 
   private paveGate(w: WorldData, gate: GateDef): void {
+    const n = EDGE_NORMAL[gate.edge];
+    const cells: [number, number][] = [];
     for (let dy = 0; dy < 2; dy++)
-      for (let dx = 0; dx < 2; dx++)
-        if (inB(w, gate.x + dx, gate.y + dy)) w.tiles[idx(w, gate.x + dx, gate.y + dy)] = Tl.PATH;
+      for (let dx = 0; dx < 2; dx++) cells.push([gate.x + dx, gate.y + dy]);
+    // Крыльцо наружу на 2 тайла
+    const opening: [number, number][] = gate.edge === Edge.North || gate.edge === Edge.South
+      ? [[gate.x, gate.y], [gate.x + 1, gate.y]]
+      : [[gate.x, gate.y], [gate.x, gate.y + 1]];
+    for (const [ox, oy] of opening)
+      for (let step = 1; step <= 2; step++)
+        cells.push([ox + n.x * step, oy + n.y * step]);
+    for (const [x, y] of cells) {
+      if (!inB(w, x, y)) continue;
+      const t = w.tiles[idx(w, x, y)];
+      if (t === Tl.WATER || t === Tl.SHORE || t === Tl.HOUSE || t === Tl.PALISADE) continue;
+      w.tiles[idx(w, x, y)] = Tl.PATH;
+    }
   }
 
   private collectResidentSpots(w: WorldData, cx: number, cy: number, rw: number, rh: number): Vec[] {

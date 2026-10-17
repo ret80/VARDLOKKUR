@@ -1,17 +1,19 @@
 /* Основной entry point генерации мира — переэкспорт из generators/ */
 export {
   T, Tl, isSolidTileId,
+  Biome,
+  type BiomeId,
   Edge,
   type Vec, type ChestItem, type EnemyKind, type BossReward,
   type DropKind, type ProjectileKind,
   type ChestDef, type PedestalDef, type NpcDef, type ShrineDef,
   type SpawnDef, type ZoneRect, type DungeonEntry, type AmbientDef,
-  type WorldData, type HouseDef, type VillageResult,
+  type WorldData, type HouseDef, type VillageResult, type GateDef,
   type DungeonCfg,
   idx, inB,
 } from "./generators/types";
 
-export { tileAt, solidTileAt, setTile, zoneFor } from "./generators/utils";
+export { tileAt, solidTileAt, setTile, zoneFor, biomeAt } from "./generators/utils";
 export { findWalkableNear, clearAround, findFree, floodReach } from "./generators/utils";
 
 export { IslandGenerator } from "./generators/island-generator";

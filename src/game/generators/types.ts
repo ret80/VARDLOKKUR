@@ -6,7 +6,20 @@ export const Tl = {
   WATER: 0, SHORE: 1, SNOW: 2, SNOW2: 3, PATH: 4, FOREST: 5, TREE: 6, ROCK: 7,
   MTN: 8, SWAMP: 9, POOL: 10, VILLAGE: 11, PALISADE: 12, HOUSE: 13, RUINS: 14,
   COLUMN: 15, CAVE: 16, CAVEWALL: 17, STAIRS: 18, DFLOOR: 19, DWALL: 20, ALTAR: 21,
+  MEADOW: 22,
 } as const;
+
+export const Biome = {
+  SNOW: 0,      // священная гряда (центр)
+  RIDGE: 1,     // хребет
+  FOREST: 2,    // лес
+  SWAMP: 3,     // топи
+  MEADOW: 4,    // луга
+  RUINS: 5,     // руины
+  WASTE: 6,     // пустошь
+  WATER: 7,     // вода/берег (для удобства)
+} as const;
+export type BiomeId = number;
 
 const SOLID = new Set<number>([
   Tl.WATER, Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.HOUSE, Tl.COLUMN, Tl.CAVEWALL, Tl.DWALL, Tl.ALTAR,
@@ -34,6 +47,7 @@ export interface SpawnDef { kind: EnemyKind; x: number; y: number }
 export interface ZoneRect { x: number; y: number; w: number; h: number; name: string }
 export interface DungeonEntry { x: number; y: number; id: number; name: string }
 export interface AmbientDef { kind: "shard" | "bones"; x: number; y: number }
+export interface GateDef extends Vec { edge: Edge; target?: Vec }
 
 export interface WorldData {
   W: number; H: number;
@@ -66,6 +80,14 @@ export interface WorldData {
   noBarrier?: boolean;
   /** Коды тайлов стен подземелья (DUNGEON_FLOOR / 0..53), заполняется генератором. */
   dungeonWall?: Uint8Array;
+  /** Карта биомов для оверворлда */
+  biomes?: Uint8Array;
+  /** Отладка: центры деревень (vA, vB, vR) */
+  villageSites?: Vec[];
+  /** Отладка: ворота каждой деревни */
+  villageGates?: GateDef[][];
+  /** Отладка: рёбра графа связей деревень */
+  villageGraph?: [number, number][];
 }
 
 export const idx = (w: { W: number }, x: number, y: number) => y * w.W + x;
@@ -77,6 +99,7 @@ export interface HouseDef { x: number; y: number; w: number; h: number }
 export interface VillageResult { 
   x0: number; y0: number; x1: number; y1: number; 
   gate: Vec; gateEdge: Edge; 
+  gates: GateDef[];
   houses: HouseDef[];
   residentSpots: Vec[];
   plazaCenter: Vec;

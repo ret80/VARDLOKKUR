@@ -1,10 +1,16 @@
 /* Утилиты для работы с тайлами мира */
-import { WorldData, Tl, isSolidTileId, idx, inB, Vec } from "./types";
+import { WorldData, Tl, Biome, isSolidTileId, idx, inB, Vec } from "./types";
 import { clamp } from "../utils";
 import { mulberry } from "../noise";
 
 export function tileAt(w: WorldData, x: number, y: number): number {
   return inB(w, x, y) ? w.tiles[idx(w, x, y)] : Tl.DWALL;
+}
+
+/** Биом клетки (пустошь, если карты биомов нет) */
+export function biomeAt(w: WorldData, x: number, y: number): number {
+  if (!w.biomes || !inB(w, x, y)) return Biome.WASTE;
+  return w.biomes[idx(w, x, y)];
 }
 
 export function solidTileAt(w: WorldData, x: number, y: number): boolean {
@@ -59,14 +65,22 @@ export function clearAround(w: WorldData, cx: number, cy: number, r: number, flo
   }
 }
 
-export function findFree(w: WorldData, fx: number, fy: number, r: number, pref: number | undefined, rng: () => number): Vec {
-  const landT = (t: number) => !isSolidTileId(t) && t !== Tl.WATER && t !== Tl.POOL && t !== Tl.PATH && t !== Tl.VILLAGE;
+export function findFree(w: WorldData, fx: number, fy: number, r: number, pref: number | undefined, rng: () => number, isFree?: (x: number, y: number) => boolean): Vec {
+  const landT = (t: number) => !isSolidTileId(t) && t !== Tl.WATER && t !== Tl.POOL && t !== Tl.PATH && t !== Tl.VILLAGE && t !== Tl.STAIRS;
+  const can = (x: number, y: number) => {
+    if (!inB(w, x, y)) return false;
+    const t = w.tiles[idx(w, x, y)];
+    if (!landT(t)) return false;
+    if (isFree && !isFree(x, y)) return false;
+    return true;
+  };
   for (let tries = 0; tries < 400; tries++) {
     const x = Math.round(fx + (rng() * 2 - 1) * r);
     const y = Math.round(fy + (rng() * 2 - 1) * r);
     if (!inB(w, x, y)) continue;
     const t = w.tiles[idx(w, x, y)];
     if (!landT(t)) continue;
+    if (isFree && !isFree(x, y)) continue;
     if (pref !== undefined && t !== pref && tries < 300) continue;
     return { x, y };
   }
@@ -75,9 +89,9 @@ export function findFree(w: WorldData, fx: number, fy: number, r: number, pref: 
       for (let dx = -rad; dx <= rad; dx++) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
         const x = Math.round(fx) + dx, y = Math.round(fy) + dy;
-        if (!inB(w, x, y)) continue;
+        if (!can(x, y)) continue;
         const t = w.tiles[idx(w, x, y)];
-        if (landT(t) && (pref === undefined || t === pref)) return { x, y };
+        if (pref === undefined || t === pref) return { x, y };
       }
     }
   }
@@ -104,6 +118,7 @@ export function floodReach(w: WorldData, sx: number, sy: number): Uint8Array {
 
 export function zoneFor(w: WorldData, tx: number, ty: number): string {
   if (w.isDungeon) return w.dungeonName;
+  // special: village zones
   for (const z of w.zones) {
     if (tx >= z.x && tx < z.x + z.w && ty >= z.y && ty < z.y + z.h) return z.name;
   }
@@ -114,6 +129,7 @@ export function zoneFor(w: WorldData, tx: number, ty: number): string {
     case Tl.SWAMP: case Tl.POOL: return "Замерзшие Топи";
     case Tl.RUINS: case Tl.COLUMN: case Tl.STAIRS: return "Руины Времени";
     case Tl.FOREST: case Tl.TREE: return "Мёртвый Лес";
+    case Tl.MEADOW: return "Луга Хеймдалля";
     default: return "Мёрзлая пустошь";
   }
 }
