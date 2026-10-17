@@ -9,11 +9,83 @@ import { Tl } from '../world';
 import { makePainter } from './geom-utils';
 
 /**
+ * Маска соединений PALISADE в битах variant (SVG/polisade.svg):
+ *   bit0=N, bit1=E, bit2=S, bit3=W — сосед тоже PALISADE.
+ */
+export const FENCE_N = 1;
+export const FENCE_E = 2;
+export const FENCE_S = 4;
+export const FENCE_W = 8;
+
+type RectFn = (x: number, y: number, w: number, h: number, c: number, a?: number) => void;
+
+/** Колышек горизонтального пролёта (SVG ph): 3px, остриё сверху, тело 13px. */
+function picketH(P: RectFn, x: number): void {
+  P(x + 1, 1, 1, 1, 0x6e5840); // остриё
+  P(x, 2, 3, 13, 0x4e3c28); // тело
+  P(x, 2, 1, 13, 0x63503a); // свет
+  P(x + 2, 2, 1, 13, 0x3a2c1c); // тень
+}
+
+/** Двойные горизонтальные перила [x0, x1) на высоте пояса. */
+function railH(P: RectFn, x0: number, x1: number): void {
+  const w = x1 - x0;
+  if (w <= 0) return;
+  P(x0, 6, w, 1, 0x5a4632);
+  P(x0, 7, w, 1, 0x463626);
+  P(x0, 10, w, 1, 0x5a4632);
+  P(x0, 11, w, 1, 0x463626);
+}
+
+/** Один вертикальный кол (SVG pv): остриё, воротник, тело 3px высотой bodyH. */
+function stakeV(P: RectFn, x: number, yCollar: number, bodyH: number): void {
+  P(x + 1, yCollar - 1, 1, 1, 0x6e5840); // остриё
+  P(x, yCollar, 3, 1, 0x5a4632); // воротник
+  P(x, yCollar + 1, 1, bodyH, 0x63503a); // свет
+  P(x + 1, yCollar + 1, 1, bodyH, 0x4e3c28); // тело
+  P(x + 2, yCollar + 1, 1, bodyH, 0x3a2c1c); // тень
+}
+
+/**
+ * Частокол по маске соединений: прямые H/V, углы и Т-стыки.
+ * Формы повторяют SVG/polisade.svg (ph, pv, ce, cw).
+ */
+function drawPalisade(P: RectFn, mask: number): void {
+  const n = (mask & FENCE_N) !== 0;
+  const e = (mask & FENCE_E) !== 0;
+  const s = (mask & FENCE_S) !== 0;
+  const w = (mask & FENCE_W) !== 0;
+  const vConn = n || s;
+  const hConn = e || w;
+
+  // Перила — только к подключённым горизонтальным сторонам.
+  if (e && w) railH(P, 0, 16);
+  else if (e) railH(P, 6, 16);
+  else if (w) railH(P, 0, 10);
+
+  // Колышки: прямой пролёт — 4 (ph), угол/торец — один столб у края.
+  if (e && w) {
+    for (let i = 0; i < 4; i++) picketH(P, 1 + i * 4);
+  } else if (e) {
+    picketH(P, 12);
+  } else if (w) {
+    picketH(P, 1);
+  }
+
+  // Колья (pv): при вертикальном соединении, а также у одиночного столба.
+  if (vConn || !hConn) {
+    stakeV(P, 6, 1, 10);
+    stakeV(P, 7, 9, 6);
+  }
+}
+
+/**
  * Нарисовать стену/объект типа t (TREE/ROCK/PALISADE/COLUMN/DWALL/CAVEWALL)
  * в локальных координатах Graphics (как в legacy: блок P(0..16, -13..16),
  * спрайт размещался со сдвигом (-8, -20) от тайла).
  *
- * @param variant   детерминированный вариант (биты 1,2: форма/зеркало)
+ * @param variant   детерминированный вариант (биты 1,2: форма/зеркало);
+ *                  для PALISADE — маска соединений N/E/S/W (FENCE_*)
  * @param dungeonId id подземелья (палитра DWALL)
  * @param ox,oy     смещение для батчинга (когда один Graphics на все стены)
  */
@@ -101,16 +173,8 @@ export function drawWallGeometry(
       if (v & 1) P2(4, 4, 2, 1, 0x8f9aa8);
       break;
     case Tl.PALISADE:
-      for (let i = 0; i < 4; i++) {
-        const px = 1 + i * 4;
-        P2(px, -4, 3, 19, 0x4e3c28);
-        P2(px, -4, 1, 19, 0x63503a);
-        P2(px + 2, -4, 1, 19, 0x3a2c1c);
-        P2(px, -6, 3, 2, 0x5a4632);
-        P2(px + 1, -8, 1, 2, 0x6e5840);
-      }
-      P2(0, 3, 16, 2, 0x463626);
-      P2(0, 3, 16, 1, 0x5a4632);
+      // variant = маска соединений (N/E/S/W), см. drawPalisade.
+      drawPalisade(P2, v);
       break;
     case Tl.COLUMN: {
       P2(5, -10, 7, 24, 0x515d6a);

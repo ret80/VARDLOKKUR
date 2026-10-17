@@ -20,7 +20,7 @@ import { MapState, MapTiles } from '../ecs/ecs-components';
 import { T, Tl, type WorldData } from '../world';
 import { drawTileBatch } from '../geometry/tile-geom';
 import { drawDungeonFloorBatch, drawDungeonWallBatch } from '../geometry/dungeon-tile-geom';
-import { drawWallGeometry } from '../geometry/wall-geom';
+import { drawWallGeometry, FENCE_N, FENCE_E, FENCE_S, FENCE_W } from '../geometry/wall-geom';
 import { drawHouseGeometry, houseMetrics } from '../geometry/house-geom';
 import { logger } from '../debug/logger';
 
@@ -236,6 +236,10 @@ export function createMapTileGraphics(
     Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.COLUMN, Tl.DWALL, Tl.CAVEWALL,
   ]);
 
+  // Сосед — тоже частокол? (для ориентации PALISADE по маске N/E/S/W)
+  const isFence = (x: number, y: number): boolean =>
+    x >= 0 && y >= 0 && x < W && y < H && map.tiles[y * W + x] === Tl.PALISADE;
+
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const t = map.tiles[y * W + x];
@@ -247,6 +251,12 @@ export function createMapTileGraphics(
         t === Tl.TREE ? ((rnd(x, y, 13) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
         : t === Tl.ROCK ? (rnd(x, y, 11) > 0.5 ? 1 : 0)
         : t === Tl.COLUMN ? ((rnd(x, y, 11) > 0.5 ? 1 : 0) | (rnd(x, y, 13) > 0.7 ? 2 : 0))
+        : t === Tl.PALISADE ? (
+            (isFence(x, y - 1) ? FENCE_N : 0) |
+            (isFence(x + 1, y) ? FENCE_E : 0) |
+            (isFence(x, y + 1) ? FENCE_S : 0) |
+            (isFence(x - 1, y) ? FENCE_W : 0)
+          )
         : 0;
 
       const g = renderer.createGraphics();
