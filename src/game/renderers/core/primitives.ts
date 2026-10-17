@@ -47,7 +47,18 @@ export function circ(r: IRenderer, g: GraphicsHandle, x: number, y: number, rdx:
   drawEllipse(r, g, x, y, rdx, rdx, hexToColor(c, a));
 }
 
-/** Обводка окружности (approximated через drawEllipse — ring не используется в текущих рендерерах активно) */
+/** Обводка окружности (кольцо) — приближение замкнутой ломаной из отрезков */
 export function ring(r: IRenderer, g: GraphicsHandle, x: number, y: number, radius: number, c: number, w = 1, a = 1): void {
-  drawEllipse(r, g, x, y, radius, radius, hexToColor(c, a));
+  const color = hexToColor(c, a);
+  const n = Math.max(16, Math.ceil(radius * 2));
+  for (let i = 0; i < n; i++) {
+    const t0 = (i / n) * Math.PI * 2;
+    const t1 = ((i + 1) / n) * Math.PI * 2;
+    r.drawLine(
+      g,
+      x + Math.cos(t0) * radius, y + Math.sin(t0) * radius,
+      x + Math.cos(t1) * radius, y + Math.sin(t1) * radius,
+      color, w
+    );
+  }
 }
