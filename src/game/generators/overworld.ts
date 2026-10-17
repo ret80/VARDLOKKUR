@@ -54,7 +54,7 @@ export function generateOverworld(seed: number): WorldData {
   /* ---------- Базовые предикаты ---------- */
   const biomeAtXY = (x: number, y: number): number =>
     w.biomes && inB(w, x, y) ? w.biomes[idx(w, x, y)] : Biome.WASTE;
-  const isPlainsTile = (t: number) => t === Tl.SNOW || t === Tl.SNOW2 || t === Tl.MEADOW;
+  const isPlainsTile = (t: number) => t === Tl.SNOW || t === Tl.SNOW2 || t === Tl.MEADOW || t === Tl.WASTE;
   /** Клетка проходима для сущностей (без солидов, воды, болота и берега) */
   const tileOk = (t: number) => !isSolidTileId(t) && t !== Tl.WATER && t !== Tl.POOL && t !== Tl.SHORE;
   const cellOk = (x: number, y: number) => inB(w, x, y) && tileOk(w.tiles[idx(w, x, y)]);
@@ -236,6 +236,7 @@ export function generateOverworld(seed: number): WorldData {
       switch (tile) {
         case Tl.PATH: cost += 0.35; break;
         case Tl.SNOW: case Tl.SNOW2: case Tl.MEADOW: cost += 1; break;
+        case Tl.WASTE: cost += 1.15; break;
         case Tl.SHORE: cost += 1.4; break;
         case Tl.RUINS: cost += 1.9; break;
         case Tl.FOREST: cost += 2.4; break;
@@ -409,15 +410,10 @@ export function generateOverworld(seed: number): WorldData {
     markOccupied(p.x, p.y);
     shrineCovered.add(biomeAtXY(p.x, p.y));
   };
-  /** Клетка сразу внутри проёма (со стороны деревни) */
-  const gateInner = (g: GateDef): Vec => {
-    switch (g.edge) {
-      case Edge.North: return { x: g.x + 1, y: g.y + 1 };
-      case Edge.South: return { x: g.x + 1, y: g.y };
-      case Edge.West: return { x: g.x + 1, y: g.y + 1 };
-      case Edge.East:
-      default: return { x: g.x, y: g.y + 1 };
-    }
+  /** Наружная нормаль ворот (куда «смотрит» вход) */
+  const EDGE_NORMAL: Record<number, Vec> = {
+    [Edge.North]: { x: 0, y: -1 }, [Edge.South]: { x: 0, y: 1 },
+    [Edge.West]: { x: -1, y: 0 }, [Edge.East]: { x: 1, y: 0 },
   };
   /** Святилище в священной роще у алтаря (биом SNOW защищён — ставим напрямую) */
   const snowShrine = (): Vec | null => {
@@ -433,29 +429,50 @@ export function generateOverworld(seed: number): WorldData {
     return null;
   };
 
-  // 1. Деревни: по одному святилищу у главных ворот (внутри деревни, off-road).
-  //    Ограниченный поиск (≤5 тайлов), чтобы святилище было именно у входа.
-  const placeShrineNearGate = (v: VillageResult, bi: number, inner: Vec): Vec | null => {
-    for (const relax of [false, true]) {
-      for (let rad = 0; rad <= 5; rad++) {
-        for (let dy = -rad; dy <= rad; dy++) {
-          for (let dx = -rad; dx <= rad; dx++) {
-            if (rad > 0 && Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
-            const x = inner.x + dx, y = inner.y + dy;
-            if (!freeCell(x, y) || !offRoad(x, y)) continue;
-            if (biomeAtXY(x, y) !== bi) continue;
-            if (!relax && Math.hypot(x - v.plazaCenter.x, y - v.plazaCenter.y) < 3) continue;
-            return { x, y };
-          }
+  // 1. Деревни: по одному святилищу СНАРУЖИ у главных ворот (не в деревне), off-road.
+  //    Ищем в узком кольце за воротами; перебираем ворота деревни и биом деревни.
+  const searchShrineAtGate = (v: VillageResult, bi: number, g: GateDef, strict: boolean): Vec | null => {
+    const n = EDGE_NORMAL[g.edge];
+    const baseX = Math.round(g.x + 0.5 + n.x * 3.5);
+    const baseY = Math.round(g.y + 0.5 + n.y * 3.5);
+    const radMax = strict ? 5 : 4;
+    for (let rad = 0; rad <= radMax; rad++) {
+      for (let dy = -rad; dy <= rad; dy++) {
+        for (let dx = -rad; dx <= rad; dx++) {
+          if (rad > 0 && Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+          const x = baseX + dx, y = baseY + dy;
+          if (!inB(w, x, y)) continue;
+          if (x >= v.x0 && x <= v.x1 && y >= v.y0 && y <= v.y1) continue; // не в деревне
+          const t = w.tiles[idx(w, x, y)];
+          if (isSolidTileId(t) || t === Tl.WATER || t === Tl.POOL || t === Tl.SHORE) continue;
+          if (t === Tl.PATH || t === Tl.VILLAGE || t === Tl.PALISADE || t === Tl.HOUSE) continue;
+          if (isCellOccupied(x, y)) continue;
+          if (strict && biomeAtXY(x, y) !== bi) continue;
+          return { x, y };
         }
       }
     }
     return null;
   };
-  [ { v: vA, bi: siteBiome[0] }, { v: vB, bi: siteBiome[1] } ].forEach(({ v, bi }) => {
-    const p = placeShrineNearGate(v, bi, gateInner(v.gates[0]));
-    if (p) addShrine(p);
-  });
+  // Сначала строго по биому деревни у любых её ворот; иначе — ближайшая клетка,
+  // пропуская биомы, уже занятые другим святилищем (чтобы осталось ровно 7).
+  const assignVillageShrine = (v: VillageResult, bi: number): Vec | null => {
+    for (const strict of [true, false]) {
+      for (const g of v.gates) {
+        const p = searchShrineAtGate(v, bi, g, strict);
+        if (!p || shrineCovered.has(biomeAtXY(p.x, p.y))) continue;
+        addShrine(p);
+        return p;
+      }
+    }
+    for (const g of v.gates) {
+      const p = searchShrineAtGate(v, bi, g, false);
+      if (p) { addShrine(p); return p; }
+    }
+    return null;
+  };
+  assignVillageShrine(vA, siteBiome[0]);
+  assignVillageShrine(vB, siteBiome[1]);
 
   // 2. По одному святилищу в каждом ещё не покрытом биоме
   const shrineForBiome = (b: number): Vec | null => {
@@ -628,7 +645,7 @@ export function generateOverworld(seed: number): WorldData {
       else if (t === Tl.SNOW || t === Tl.SNOW2) {
         if (v > 0.78) setTile(w, x, y, Tl.TREE);
         else if (v < 0.2) setTile(w, x, y, Tl.SNOW2);
-      } else if (t === Tl.MEADOW) { if (v < 0.22) setTile(w, x, y, Tl.SNOW2); }
+      } else if (t === Tl.WASTE) { if (v > 0.86) setTile(w, x, y, Tl.ROCK); }
     }
   }
 

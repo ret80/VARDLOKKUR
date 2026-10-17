@@ -232,11 +232,8 @@ export class IslandGenerator {
           case Biome.MEADOW: this.tiles[i] = Tl.MEADOW; break;
           case Biome.RUINS: this.tiles[i] = Tl.RUINS; break;
           case Biome.SNOW: this.tiles[i] = Tl.SNOW; break;
-          default: {
-            // Пустошь/прибрежье — снег с пятнами SNOW2
-            const v = this.noiseB.value(x * 0.13, y * 0.13);
-            this.tiles[i] = v < 0.42 ? Tl.SNOW2 : Tl.SNOW;
-          }
+          // Пустошь — бесплодная земля (снег остаётся только в центре)
+          default: this.tiles[i] = Tl.WASTE;
         }
       }
     }

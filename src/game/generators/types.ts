@@ -6,7 +6,7 @@ export const Tl = {
   WATER: 0, SHORE: 1, SNOW: 2, SNOW2: 3, PATH: 4, FOREST: 5, TREE: 6, ROCK: 7,
   MTN: 8, SWAMP: 9, POOL: 10, VILLAGE: 11, PALISADE: 12, HOUSE: 13, RUINS: 14,
   COLUMN: 15, CAVE: 16, CAVEWALL: 17, STAIRS: 18, DFLOOR: 19, DWALL: 20, ALTAR: 21,
-  MEADOW: 22,
+  MEADOW: 22, WASTE: 23,
 } as const;
 
 export const Biome = {

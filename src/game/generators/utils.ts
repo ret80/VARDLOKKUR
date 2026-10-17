@@ -54,13 +54,30 @@ export function findWalkableNear(w: WorldData, fx: number, fy: number, r: number
   return { x: clamp(Math.round(fx), 2, w.W - 3), y: clamp(Math.round(fy), 2, w.H - 3) };
 }
 
+/** Ground-тайл биома (для расчистки солидов, чтобы не «сеять» снег вне центра) */
+export function groundTileFor(biome: number): number {
+  switch (biome) {
+    case Biome.RIDGE: return Tl.MTN;
+    case Biome.FOREST: return Tl.FOREST;
+    case Biome.SWAMP: return Tl.SWAMP;
+    case Biome.MEADOW: return Tl.MEADOW;
+    case Biome.RUINS: return Tl.RUINS;
+    case Biome.WASTE: return Tl.WASTE;
+    default: return Tl.SNOW;
+  }
+}
+
 export function clearAround(w: WorldData, cx: number, cy: number, r: number, floor?: number): void {
   for (let y = cy - r; y <= cy + r; y++) {
     for (let x = cx - r; x <= cx + r; x++) {
       if (!inB(w, x, y)) continue;
-      const cur = w.tiles[idx(w, x, y)];
+      const i = idx(w, x, y);
+      const cur = w.tiles[i];
       if (cur === Tl.WATER || cur === Tl.PALISADE || cur === Tl.HOUSE) continue;
-      if (isSolidTileId(cur)) setTile(w, x, y, floor !== undefined ? floor : Tl.SNOW);
+      if (isSolidTileId(cur)) {
+        const fl = floor !== undefined ? floor : groundTileFor(w.biomes ? w.biomes[i] : Biome.SNOW);
+        setTile(w, x, y, fl);
+      }
     }
   }
 }
@@ -130,6 +147,7 @@ export function zoneFor(w: WorldData, tx: number, ty: number): string {
     case Tl.RUINS: case Tl.COLUMN: case Tl.STAIRS: return "Руины Времени";
     case Tl.FOREST: case Tl.TREE: return "Мёртвый Лес";
     case Tl.MEADOW: return "Луга Хеймдалля";
+    case Tl.WASTE: return "Мёрзлая пустошь";
     default: return "Мёрзлая пустошь";
   }
 }

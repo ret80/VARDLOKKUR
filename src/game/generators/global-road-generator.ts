@@ -25,6 +25,7 @@ export class GlobalRoadGenerator {
         case Tl.WATER: case Tl.PALISADE: case Tl.HOUSE: return Infinity;
         case Tl.PATH: return 0.35;
         case Tl.SNOW: case Tl.SNOW2: case Tl.MEADOW: return 1;
+        case Tl.WASTE: return 1.15;
         case Tl.FOREST: return 2.4;
         case Tl.MTN: return 2.8;
         case Tl.SWAMP: return 3.4;

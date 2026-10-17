@@ -38,6 +38,19 @@ describe("world structure: остров → биомы → деревни → PO
       expect(counts[Biome.RUINS] ?? 0, `seed ${seed}: руины`).toBeGreaterThan(80);
       expect(counts[Biome.RIDGE] ?? 0, `seed ${seed}: хребет`).toBeGreaterThan(200);
       expect(counts[Biome.SNOW] ?? 0, `seed ${seed}: снег-центр`).toBeGreaterThan(100);
+      expect(counts[Biome.WASTE] ?? 0, `seed ${seed}: пустошь`).toBeGreaterThan(1000);
+    }
+  });
+
+  it("снег: тайлы SNOW/SNOW2 — только в центре (биом SNOW)", { timeout: 90000 }, () => {
+    for (const seed of SEEDS) {
+      const w = generateOverworld(seed);
+      let bad = 0;
+      for (let i = 0; i < w.tiles.length; i++) {
+        const t = w.tiles[i];
+        if ((t === Tl.SNOW || t === Tl.SNOW2) && w.biomes![i] !== Biome.SNOW) bad++;
+      }
+      expect(bad, `seed ${seed}: снег вне центра`).toBe(0);
     }
   });
 
@@ -106,17 +119,21 @@ describe("world structure: остров → биомы → деревни → PO
       const counts: Record<number, number> = {};
       for (const s of w.shrines) {
         expect(w.tiles[idx(w, s.x, s.y)], `seed ${seed}: святилище (${s.x},${s.y}) на дороге`).not.toBe(Tl.PATH);
+        const st = w.tiles[idx(w, s.x, s.y)];
+        const inVillage = st === Tl.VILLAGE || st === Tl.HOUSE || st === Tl.PALISADE;
+        expect(inVillage, `seed ${seed}: святилище (${s.x},${s.y}) внутри деревни`).toBe(false);
         const b = w.biomes![idx(w, s.x, s.y)];
         counts[b] = (counts[b] ?? 0) + 1;
       }
       for (const b of LAND) {
         expect(counts[b] ?? 0, `seed ${seed}: святилищ в биоме ${b}`).toBe(1);
       }
-      // обе «жилые» деревни имеют святилище у главных ворот
+      // обе «жилые» деревни имеют святилище снаружи у одного из входов
       for (const gi of [0, 1]) {
-        const g = w.villageGates![gi][0];
-        const near = w.shrines.some((s) => Math.hypot(s.x - g.x, s.y - g.y) <= 9);
-        expect(near, `seed ${seed}: у ворот (${g.x},${g.y}) нет святилища`).toBe(true);
+        const near = w.villageGates![gi].some((g) =>
+          w.shrines.some((s) => Math.hypot(s.x - g.x, s.y - g.y) <= 10));
+        const g0 = w.villageGates![gi][0];
+        expect(near, `seed ${seed}: у входов деревни (${g0.x},${g0.y}) нет святилища`).toBe(true);
       }
     }
   });
