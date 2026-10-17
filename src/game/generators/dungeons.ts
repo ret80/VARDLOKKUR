@@ -2,7 +2,7 @@
 import { mulberry } from "../noise";
 import { px } from "../utils";
 import { WorldData, Vec, Tl, idx, inB, EnemyKind, DungeonCfg, isSolidTileId, type DoorDir, type DoorSpec } from "./types";
-import { tileAt, setTile } from "./utils";
+import { tileAt, setTile, floodReach } from "./utils";
 import { NavBuilder } from "./nav-builder";
 import { resolveDungeonTiles } from "../dungeon-tiles";
 import { logger } from "../debug/logger";
@@ -34,7 +34,7 @@ function baseDungeon(cfg: DungeonCfg, W: number, H: number, exitSpot: Vec): Worl
   };
 }
 
-function finalizeDungeon(w: WorldData, rng: () => number, cfg: DungeonCfg, pool: EnemyKind[]) {
+function finalizeDungeon(w: WorldData, rng: () => number, cfg: DungeonCfg, pool: EnemyKind[], maxSpawns = 24) {
   // Дверь босса: если генератор уже задал её (w.doors не пуст) — не трогаем.
   if (w.doors.length === 0) {
     const br = w.bossRoom;
@@ -63,7 +63,8 @@ function finalizeDungeon(w: WorldData, rng: () => number, cfg: DungeonCfg, pool:
   for (const c of w.chests) setTile(w, c.x, c.y, Tl.DFLOOR);
 
   // Подземелья стали крупнее (id 0 — 88×60), поэтому лимит спавнов выше.
-  if (w.spawns.length > 24) w.spawns.length = 24;
+  // Крупная пещера Корня Иггдрасиля передаёт свой лимит через maxSpawns.
+  if (w.spawns.length > maxSpawns) w.spawns.length = maxSpawns;
   for (const s of w.spawns) {
     if (!pool.includes(s.kind)) s.kind = pool[Math.floor(rng() * pool.length)];
   }
@@ -246,131 +247,272 @@ function fallbackCrypt(cfg: DungeonCfg, exitSpot: Vec): WorldData {
   return w;
 }
 
+// Корень Иггдрасиля — пещерный лабиринт (DFS-лабиринт, «растрёпанный» в пещеру)
+// с отдельной герметичной ареной босса.
+const ROOT_W = 60, ROOT_H = 45;
+/** Сторона клетки пещерного лабиринта (в тайлах). */
+const ROOT_CS = 5;
+/** Внутренний прямоугольник арены босса (в тайлах). */
+const ROOT_ARENA_AX = 22, ROOT_ARENA_AY = 3, ROOT_ARENA_W = 17, ROOT_ARENA_H = 12;
+/** Лимит врагов: лабиринт просторнее Склепа, поэтому спавнов больше. */
+const ROOT_MAX_SPAWNS = 30;
+
+/** Тайл входит в зарезервированный под арену босса блок (кольцо + зал). */
+function rootArenaReserved(x: number, y: number): boolean {
+  return x >= ROOT_ARENA_AX - 1 && x <= ROOT_ARENA_AX + ROOT_ARENA_W &&
+         y >= ROOT_ARENA_AY - 1 && y <= ROOT_ARENA_AY + ROOT_ARENA_H;
+}
+
+/**
+ * Пещерный лабиринт: DFS-лабиринт на грубой сетке (коридоры шириной 2 тайла),
+ * затем петли и «растрёпанные» края — получается извилистая пещера.
+ * Клетки, пересекающие блок арены босса, из лабиринта исключаются.
+ */
+function carveRootLabyrinth(w: WorldData, arng: () => number): void {
+  const W = w.W, H = w.H;
+  const MW = Math.floor((W - 2) / ROOT_CS), MH = Math.floor((H - 2) / ROOT_CS);
+  const x0 = (cx: number) => 1 + cx * ROOT_CS;
+  const y0 = (cy: number) => 1 + cy * ROOT_CS;
+  const dig = (x: number, y: number) => { if (x > 0 && y > 0 && x < W - 1 && y < H - 1) w.tiles[y * W + x] = Tl.DFLOOR; };
+  const cellFloor = (cx: number, cy: number) => {
+    const bx = x0(cx), by = y0(cy);
+    for (let y = by + 1; y <= by + 2; y++) for (let x = bx + 1; x <= bx + 2; x++) dig(x, y);
+  };
+  const passage = (cx: number, cy: number, nx: number, ny: number) => {
+    const bx = x0(cx), by = y0(cy);
+    if (nx === cx + 1) { const x = bx + 3; for (let y = by + 1; y <= by + 2; y++) { dig(x, y); dig(x + 1, y); } }
+    else if (nx === cx - 1) { const x = x0(nx) + 3; for (let y = by + 1; y <= by + 2; y++) { dig(x, y); dig(x + 1, y); } }
+    else if (ny === cy + 1) { const y = by + 3; for (let x = bx + 1; x <= bx + 2; x++) { dig(x, y); dig(x, y + 1); } }
+    else { const y = y0(ny) + 3; for (let x = bx + 1; x <= bx + 2; x++) { dig(x, y); dig(x, y + 1); } }
+  };
+  const blocked = (cx: number, cy: number) => {
+    const bx = x0(cx), by = y0(cy);
+    return rootArenaReserved(bx, by) || rootArenaReserved(bx + ROOT_CS, by) ||
+           rootArenaReserved(bx, by + ROOT_CS) || rootArenaReserved(bx + ROOT_CS, by + ROOT_CS) ||
+           rootArenaReserved(bx + 2, by + 2);
+  };
+  const isBlocked = new Uint8Array(MW * MH);
+  for (let cy = 0; cy < MH; cy++) for (let cx = 0; cx < MW; cx++) if (blocked(cx, cy)) isBlocked[cy * MW + cx] = 1;
+
+  // Стартовая клетка — первая свободная.
+  let sx = -1, sy = -1;
+  for (let cy = 0; cy < MH && sx < 0; cy++) for (let cx = 0; cx < MW; cx++) if (!isBlocked[cy * MW + cx]) { sx = cx; sy = cy; break; }
+  if (sx < 0) return;
+
+  const visited = new Uint8Array(MW * MH);
+  visited[sy * MW + sx] = 1; cellFloor(sx, sy);
+  const stack: [number, number][] = [[sx, sy]];
+  while (stack.length) {
+    const [cx, cy] = stack[stack.length - 1];
+    const dirs: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    for (let i = dirs.length - 1; i > 0; i--) { const j = Math.floor(arng() * (i + 1)); const t = dirs[i]; dirs[i] = dirs[j]; dirs[j] = t; }
+    let moved = false;
+    for (const [dx, dy] of dirs) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= MW || ny >= MH) continue;
+      const ni = ny * MW + nx;
+      if (visited[ni] || isBlocked[ni]) continue;
+      visited[ni] = 1; cellFloor(nx, ny); passage(cx, cy, nx, ny);
+      stack.push([nx, ny]); moved = true; break;
+    }
+    if (!moved) stack.pop();
+  }
+
+  // Петли: иногда убираем стену между соседними клетками — пещера не должна быть чистым деревом.
+  for (let cy = 0; cy < MH; cy++) for (let cx = 0; cx < MW; cx++) {
+    if (isBlocked[cy * MW + cx]) continue;
+    if (cx + 1 < MW && !isBlocked[cy * MW + cx + 1] && arng() < 0.22) passage(cx, cy, cx + 1, cy);
+    if (cy + 1 < MH && !isBlocked[(cy + 1) * MW + cx] && arng() < 0.22) passage(cx, cy, cx, cy + 1);
+  }
+
+  // «Растрёпанные» края + сглаживание: стены у пола с шансом становятся полом,
+  // а тонкие выступы срезаются. Обе операции только добавляют пол (не рвут связность).
+  const isFloor = (x: number, y: number) => w.tiles[y * W + x] === Tl.DFLOOR;
+  for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
+    const i = y * W + x;
+    if (w.tiles[i] === Tl.DFLOOR || rootArenaReserved(x, y)) continue;
+    const nf = (isFloor(x - 1, y) ? 1 : 0) + (isFloor(x + 1, y) ? 1 : 0) + (isFloor(x, y - 1) ? 1 : 0) + (isFloor(x, y + 1) ? 1 : 0);
+    if (nf > 0 && arng() < 0.42) w.tiles[i] = Tl.DFLOOR;
+  }
+  for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
+    const i = y * W + x;
+    if (w.tiles[i] === Tl.DFLOOR || rootArenaReserved(x, y)) continue;
+    const nf = (isFloor(x - 1, y) ? 1 : 0) + (isFloor(x + 1, y) ? 1 : 0) + (isFloor(x, y - 1) ? 1 : 0) + (isFloor(x, y + 1) ? 1 : 0);
+    if (nf >= 3) w.tiles[i] = Tl.DFLOOR;
+  }
+}
+
+/**
+ * Соединить весь недостижимый пол с достижимым: BFS сквозь породу от уже
+ * достижимых тайлов до ближайшего отрезанного, затем прорубить путь.
+ * Запретные тайлы (кольцо арены босса) не трогаем — обходим их.
+ */
+function connectRootFloor(w: WorldData, ex: number, ey: number, forbidden: (x: number, y: number) => boolean): void {
+  const W = w.W, H = w.H, N = W * H;
+  for (let guard = 0; guard < 64; guard++) {
+    const reach = floodReach(w, ex, ey);
+    let target = -1;
+    for (let i = 0; i < N; i++) if (w.tiles[i] === Tl.DFLOOR && !reach[i]) { target = i; break; }
+    if (target < 0) return;
+
+    const prev = new Int32Array(N).fill(-1);
+    const seen = new Uint8Array(N);
+    const q: number[] = [];
+    for (let i = 0; i < N; i++) if (reach[i]) { seen[i] = 1; q.push(i); }
+    let found = false;
+    for (let qi = 0; qi < q.length && !found; qi++) {
+      const c = q[qi];
+      const x = c % W, y = (c / W) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 1 || ny < 1 || nx >= W - 1 || ny >= H - 1) continue;
+        const ni = ny * W + nx;
+        if (seen[ni] || forbidden(nx, ny)) continue;
+        seen[ni] = 1; prev[ni] = c; q.push(ni);
+        if (ni === target) { found = true; break; }
+      }
+    }
+    if (!found) return; // принципиально недостижимо
+    for (let c = target; c >= 0; c = prev[c]) w.tiles[c] = Tl.DFLOOR;
+  }
+}
+
+/**
+ * Собрать Корень Иггдрасиля: лабиринт-пещера, вход снизу, герметичная арена
+ * босса наверху, сундуки и враги. true — уровень пригоден для игры.
+ */
+function buildRootDungeon(w: WorldData, arng: () => number, rng: () => number, cfg: DungeonCfg): boolean {
+  const W = w.W, H = w.H;
+  carveRootLabyrinth(w, arng);
+
+  // Вход снизу: площадка, лестница и прорубленный вверх подход до пола пещеры.
+  const ex = Math.floor(W / 2), ey = H - 4;
+  for (let y = ey - 2; y <= ey + 1; y++) for (let x = ex - 2; x <= ex + 2; x++) if (inB(w, x, y)) setTile(w, x, y, Tl.DFLOOR);
+  setTile(w, ex, ey, Tl.STAIRS);
+  w.entryStairs = px(ex, ey);
+  w.spawn = px(ex, ey - 1);
+  let ty = ey - 2;
+  while (ty > 2 && tileAt(w, ex, ty) !== Tl.DFLOOR) {
+    for (let t = -1; t <= 1; t++) if (inB(w, ex + t, ty)) setTile(w, ex + t, ty, Tl.DFLOOR);
+    ty--;
+  }
+
+  // Мелкие полости (уже прохода игрока) засыпаем — они остались от «растрёпанных» краёв.
+  const seen = new Uint8Array(W * H);
+  for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+    const i = y * W + x;
+    if (w.tiles[i] !== Tl.DFLOOR || seen[i]) continue;
+    const q = [i]; seen[i] = 1;
+    const cells: number[] = [];
+    while (q.length) {
+      const c = q.pop()!; cells.push(c);
+      const cx = c % W, cy = Math.floor(c / W);
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
+        const ni = (cy + dy) * W + cx + dx;
+        if (w.tiles[ni] === Tl.DFLOOR && !seen[ni]) { seen[ni] = 1; q.push(ni); }
+      }
+    }
+    if (cells.length < 14) for (const c of cells) w.tiles[c] = Tl.DWALL;
+  }
+
+  // Арена босса: зал, обнесённый кольцом стен, с единственным проходом вниз.
+  const dcx = ROOT_ARENA_AX + (ROOT_ARENA_W >> 1);
+  for (let y = ROOT_ARENA_AY; y < ROOT_ARENA_AY + ROOT_ARENA_H; y++)
+    for (let x = ROOT_ARENA_AX; x < ROOT_ARENA_AX + ROOT_ARENA_W; x++) setTile(w, x, y, Tl.DFLOOR);
+  for (let x = ROOT_ARENA_AX - 1; x <= ROOT_ARENA_AX + ROOT_ARENA_W; x++) {
+    setTile(w, x, ROOT_ARENA_AY - 1, Tl.DWALL);
+    setTile(w, x, ROOT_ARENA_AY + ROOT_ARENA_H, Tl.DWALL);
+  }
+  for (let y = ROOT_ARENA_AY; y < ROOT_ARENA_AY + ROOT_ARENA_H; y++) {
+    setTile(w, ROOT_ARENA_AX - 1, y, Tl.DWALL);
+    setTile(w, ROOT_ARENA_AX + ROOT_ARENA_W, y, Tl.DWALL);
+  }
+  setTile(w, dcx - 1, ROOT_ARENA_AY + ROOT_ARENA_H, Tl.DFLOOR);
+  setTile(w, dcx, ROOT_ARENA_AY + ROOT_ARENA_H, Tl.DFLOOR);
+  setTile(w, dcx - 1, ROOT_ARENA_AY + ROOT_ARENA_H, Tl.DFLOOR);
+  setTile(w, dcx, ROOT_ARENA_AY + ROOT_ARENA_H, Tl.DFLOOR);
+  // Проход вниз: первый шаг прорубаем всегда, дальше идём до первого пола лабиринта.
+  let dy = ROOT_ARENA_AY + ROOT_ARENA_H + 1;
+  setTile(w, dcx - 1, dy, Tl.DFLOOR);
+  setTile(w, dcx, dy, Tl.DFLOOR);
+  dy++;
+  while (dy < H - 1 && tileAt(w, dcx - 1, dy) !== Tl.DFLOOR && tileAt(w, dcx, dy) !== Tl.DFLOOR) {
+    setTile(w, dcx - 1, dy, Tl.DFLOOR);
+    setTile(w, dcx, dy, Tl.DFLOOR);
+    dy++;
+  }
+  w.bossRoom = { x: ROOT_ARENA_AX * 16, y: ROOT_ARENA_AY * 16, w: ROOT_ARENA_W * 16, h: ROOT_ARENA_H * 16 };
+  w.bossSpot = px(dcx, ROOT_ARENA_AY + (ROOT_ARENA_H >> 1));
+  w.doors.push({ x: dcx * 16, y: (ROOT_ARENA_AY + ROOT_ARENA_H) * 16 + 8, dir: "down" });
+  const inArena = (x: number, y: number) =>
+    x >= ROOT_ARENA_AX && x < ROOT_ARENA_AX + ROOT_ARENA_W && y >= ROOT_ARENA_AY && y < ROOT_ARENA_AY + ROOT_ARENA_H;
+
+  // Связность: прорубаем проходы сквозь породу ко всему отрезанному полу,
+  // обходя кольцо арены, — лабиринт должен быть единым.
+  connectRootFloor(w, ex, ey - 1, rootArenaReserved);
+
+  // Клетки пола вне арены — для сундуков и врагов.
+  const floorCells: Vec[] = [];
+  for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
+    if (tileAt(w, x, y) !== Tl.DFLOOR || inArena(x, y)) continue;
+    floorCells.push({ x, y });
+  }
+
+  if (floorCells.length >= 40) {
+    // Ключ — в самой дальней точке лабиринта, плюс пара сундуков вразброс.
+    floorCells.sort((a, b) => Math.hypot(b.x - ex, b.y - ey) - Math.hypot(a.x - ex, a.y - ey));
+    const used = new Set<number>();
+    const key = floorCells[0];
+    w.chests.push({ x: key.x, y: key.y, item: "key" });
+    used.add(key.y * W + key.x);
+    for (let i = 0, taken = 0; i < floorCells.length && taken < 3; i += 11) {
+      const c = floorCells[i], ci = c.y * W + c.x;
+      if (used.has(ci) || Math.hypot(c.x - ex, c.y - ey) < 9) continue;
+      used.add(ci);
+      w.chests.push({ x: c.x, y: c.y, item: rng() < 0.5 ? "arrows" : "heartPiece" });
+      taken++;
+    }
+
+    // Враги: плотность по площади лабиринта, с уклоном в грибы.
+    const target = Math.max(16, Math.min(ROOT_MAX_SPAWNS - 2, Math.round(floorCells.length / 42)));
+    let placed = 0;
+    for (let i = 0; i < floorCells.length && placed < target; i++) {
+      const c = floorCells[i], ci = c.y * W + c.x;
+      if (used.has(ci) || Math.hypot(c.x - ex, c.y - ey) < 6) continue;
+      if (rng() < 0.35) continue; // разрядить плотность
+      used.add(ci);
+      const roll = rng();
+      const kind: EnemyKind = roll < 0.62 ? "shroom" : roll < 0.86 ? "crawler" : "raven";
+      w.spawns.push({ kind, x: c.x * 16 + 8, y: c.y * 16 + 8 });
+      placed++;
+    }
+
+    // Стражи внутри арены.
+    for (let k = 0; k < 2; k++) {
+      const gx = ROOT_ARENA_AX + 2 + Math.floor(rng() * (ROOT_ARENA_W - 4));
+      const gy = ROOT_ARENA_AY + 2 + Math.floor(rng() * (ROOT_ARENA_H - 4));
+      w.spawns.push({ kind: k === 0 ? "shroom" : "crawler", x: gx * 16 + 8, y: gy * 16 + 8 });
+    }
+  }
+
+  const reach = floodReach(w, ex, ey - 1);
+  const bossReachable = reach[idx(w, dcx, ROOT_ARENA_AY + (ROOT_ARENA_H >> 1))] === 1;
+  finalizeDungeon(w, rng, cfg, cfg.pool, ROOT_MAX_SPAWNS);
+  return floorCells.length >= 40 && bossReachable;
+}
+
 // Корень Иггдрасиля
 function genRoot(seed: number, cfg: DungeonCfg, exitSpot: Vec): WorldData {
   const rng = mulberry((seed ^ 0x5eed) + cfg.id * 7919);
-  const W = 60, H = 45;
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const w = baseDungeon(cfg, W, H, exitSpot);
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const w = baseDungeon(cfg, ROOT_W, ROOT_H, exitSpot);
     const arng = mulberry(seed + attempt * 101 + cfg.id * 31);
-    let grid = new Uint8Array(W * H);
-    for (let i = 0; i < W * H; i++) grid[i] = arng() < 0.44 ? 1 : 0;
-    for (let y = 0; y < H; y++) { grid[y * W] = 1; grid[y * W + W - 1] = 1; }
-    for (let x = 0; x < W; x++) { grid[x] = 1; grid[(H - 1) * W + x] = 1; }
-    for (let iter = 0; iter < 5; iter++) {
-      const next = grid.slice();
-      for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-        let walls = 0;
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) walls += grid[(y + dy) * W + x + dx];
-        next[y * W + x] = walls >= 5 ? 1 : 0;
-      }
-      grid = next;
-    }
-    for (let i = 0; i < W * H; i++) if (!grid[i]) w.tiles[i] = Tl.DFLOOR;
-
-    const regions: { cells: number[]; cx: number; cy: number }[] = [];
-    const seen = new Uint8Array(W * H);
-    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-      const i = y * W + x;
-      if (grid[i] || seen[i]) continue;
-      const cells: number[] = [];
-      const q = [i]; seen[i] = 1;
-      let sx = 0, sy = 0;
-      while (q.length) {
-        const c = q.pop()!;
-        cells.push(c);
-        sx += c % W; sy += Math.floor(c / W);
-        const cx = c % W, cy = Math.floor(c / W);
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const ni = (cy + dy) * W + cx + dx;
-          if (!grid[ni] && !seen[ni]) { seen[ni] = 1; q.push(ni); }
-        }
-      }
-      if (cells.length >= 14) regions.push({ cells, cx: sx / cells.length, cy: sy / cells.length });
-      else for (const c of cells) w.tiles[c] = Tl.DWALL;
-    }
-    if (!regions.length) continue;
-    regions.sort((a, b) => b.cells.length - a.cells.length);
-    const big = regions[0];
-    if (big.cells.length < 100) continue;
-
-    for (let r = 1; r < regions.length; r++) {
-      const a = regions[r], b = big;
-      let ax = Math.round(a.cx), ay = Math.round(a.cy);
-      const bx = Math.round(b.cx), by = Math.round(b.cy);
-      while (ax !== bx) {
-        for (let t = -1; t <= 1; t++) if (inB(w, ax, ay + t)) setTile(w, ax, ay + t, Tl.DFLOOR);
-        ax += Math.sign(bx - ax);
-      }
-      while (ay !== by) {
-        for (let t = -1; t <= 1; t++) if (inB(w, ax + t, ay)) setTile(w, ax + t, ay, Tl.DFLOOR);
-        ay += Math.sign(by - ay);
-      }
-    }
-
-    const ex = Math.floor(W / 2), ey = H - 4;
-    for (let y = ey - 2; y <= ey + 1; y++) for (let x = ex - 2; x <= ex + 2; x++) if (inB(w, x, y)) setTile(w, x, y, Tl.DFLOOR);
-    setTile(w, ex, ey, Tl.STAIRS);
-    w.entryStairs = px(ex, ey);
-    w.spawn = px(ex, ey - 1);
-    let ty = ey - 2;
-    while (ty > 2 && tileAt(w, ex, ty) !== Tl.DFLOOR) {
-      for (let t = -1; t <= 1; t++) if (inB(w, ex + t, ty)) setTile(w, ex + t, ty, Tl.DFLOOR);
-      ty--;
-    }
-
-    let minx = W, maxx = 0, miny = H, maxy = 0;
-    for (const c of big.cells) {
-      const x = c % W, y = Math.floor(c / W);
-      minx = Math.min(minx, x); maxx = Math.max(maxx, x);
-      miny = Math.min(miny, y); maxy = Math.max(maxy, y);
-    }
-    w.bossRoom = { x: minx * 16, y: miny * 16, w: (maxx - minx + 1) * 16, h: (maxy - miny + 1) * 16 };
-    w.bossSpot = px(Math.round(big.cx), Math.round(big.cy));
-
-    let keyRegion = regions[regions.length - 1];
-    let bd = -1;
-    for (const r of regions) {
-      if (r === big) continue;
-      const d = Math.hypot(r.cx - ex, r.cy - ey);
-      if (d > bd) { bd = d; keyRegion = r; }
-    }
-    const clamp = (v: number, min: number, max: number) => Math.max(min, Math.min(max, v));
-    const kx = clamp(Math.round(keyRegion.cx), 2, W - 3), ky = clamp(Math.round(keyRegion.cy), 2, H - 3);
-    w.chests.push({ x: kx, y: ky, item: "key" });
-    w.spawns.push({ kind: "shroom", x: kx * 16 + 8, y: (ky - 2) * 16 + 8 });
-    w.spawns.push({ kind: "shroom", x: (kx + 2) * 16 + 8, y: ky * 16 + 8 });
-    for (let r = 1; r < Math.min(4, regions.length); r++) {
-      const reg = regions[r];
-      w.chests.push({ x: clamp(Math.round(reg.cx) + 1, 2, W - 3), y: clamp(Math.round(reg.cy), 2, H - 3), item: rng() < 0.5 ? "arrows" : "heartPiece" });
-    }
-
-    let sp = 0;
-    for (const r of regions) {
-      if (r === big || sp > 9) break;
-      const n = 1 + Math.floor(arng() * 2);
-      for (let k = 0; k < n; k++) {
-        const c = r.cells[Math.floor(arng() * r.cells.length)];
-        w.spawns.push({ kind: arng() < 0.6 ? "shroom" : "crawler", x: (c % W) * 16 + 8, y: Math.floor(c / W) * 16 + 8 });
-        sp++;
-      }
-    }
-    finalizeDungeon(w, rng, cfg, cfg.pool);
-    return w;
+    if (buildRootDungeon(w, arng, rng, cfg)) return w;
   }
-  const w = baseDungeon(cfg, W, H, exitSpot);
-  for (let y = 12; y < 32; y++) for (let x = 12; x < 46; x++) {
-    if (Math.hypot(x - 29, (y - 22) * 1.4) < 15) setTile(w, x, y, Tl.DFLOOR);
-  }
-  for (let y = 32; y < H - 3; y++) for (let x = 27; x <= 31; x++) setTile(w, x, y, Tl.DFLOOR);
-  setTile(w, 29, H - 4, Tl.STAIRS);
-  w.entryStairs = px(29, H - 4);
-  w.spawn = px(29, H - 5);
-  w.bossRoom = { x: 22 * 16, y: 16 * 16, w: 14 * 16, h: 11 * 16 };
-  w.bossSpot = px(29, 22);
-  w.chests.push({ x: 15, y: 14, item: "key" }, { x: 42, y: 26, item: "arrows" });
-  w.spawns.push({ kind: "shroom", x: 20 * 16 + 8, y: 26 * 16 + 8 }, { kind: "crawler", x: 38 * 16 + 8, y: 18 * 16 + 8 });
-  finalizeDungeon(w, rng, cfg, cfg.pool);
+  // Страховка: детерминированный seed (лабиринт всегда даёт пол).
+  const w = baseDungeon(cfg, ROOT_W, ROOT_H, exitSpot);
+  const arng = mulberry((cfg.id * 7919) ^ 0xbad);
+  buildRootDungeon(w, arng, rng, cfg);
   return w;
 }
 
