@@ -144,7 +144,7 @@ export function zoneFor(w: WorldData, tx: number, ty: number): string {
     case Tl.RUINS: case Tl.COLUMN: case Tl.STAIRS: return "Руины Времени";
     case Tl.FOREST: case Tl.TREE: return "Мёртвый Лес";
     case Tl.MEADOW: case Tl.GRASS: return "Луга Хеймдалля";
-    case Tl.SNOW: case Tl.SNOW2: case Tl.ALTAR: return "Священная Гряда";
+    case Tl.SNOW: case Tl.SNOW2: case Tl.ALTAR: case Tl.MTN: return "Священная Гряда";
     default: return "Луга Хеймдалля";
   }
 }

@@ -2,6 +2,7 @@
    связность POI, входы подземелий. ~30 сидов. */
 import { describe, expect, it } from "vitest";
 import { generateOverworld } from "../generators/overworld";
+import { ICX, ICY } from "../generators/island-generator";
 import { Biome, Tl, idx, isSolidTileId, Edge } from "../generators/types";
 import { floodReach } from "../generators/utils";
 import { gateOpenRows, reachedNear } from "./_world-helpers";
@@ -9,13 +10,17 @@ import { gateOpenRows, reachedNear } from "./_world-helpers";
 const SEEDS = Array.from({ length: 30 }, (_, i) => i + 1);
 
 describe("world structure: остров → биомы → деревни → POI", () => {
-  it("остров: снег в центре, ALTAR на центре, r=8 без солидов", { timeout: 90000 }, () => {
+  it("остров: священная гора в центре, главный алтарь в топях, r=8 без солидов", { timeout: 90000 }, () => {
     for (const seed of SEEDS) {
       const w = generateOverworld(seed);
       expect(w.biomes, `seed ${seed}: карта биомов отсутствует`).toBeDefined();
       expect(w.biomes!.length).toBe(w.W * w.H);
-      expect(w.biomes![idx(w, w.treeAltar.x, w.treeAltar.y)], `seed ${seed}: центр не снег`).toBe(Biome.SNOW);
-      expect(w.tiles[idx(w, w.treeAltar.x, w.treeAltar.y)], `seed ${seed}: на центре не ALTAR`).toBe(Tl.ALTAR);
+      // Центр острова — чистая снежная гора (алтаря там больше нет)
+      expect(w.biomes![idx(w, ICX, ICY)], `seed ${seed}: центр не снег`).toBe(Biome.SNOW);
+      expect(w.tiles[idx(w, ICX, ICY)], `seed ${seed}: на вершине не должно быть ALTAR`).not.toBe(Tl.ALTAR);
+      // Главный алтарь Древа живёт в топях
+      expect(w.biomes![idx(w, w.treeAltar.x, w.treeAltar.y)], `seed ${seed}: алтарь не в топях`).toBe(Biome.SWAMP);
+      expect(w.tiles[idx(w, w.treeAltar.x, w.treeAltar.y)], `seed ${seed}: на алтаре не ALTAR`).toBe(Tl.ALTAR);
       for (let dy = -8; dy <= 8; dy++) {
         for (let dx = -8; dx <= 8; dx++) {
           if (dx === 0 && dy === 0) continue;
