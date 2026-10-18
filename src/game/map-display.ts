@@ -118,7 +118,7 @@ export function drawBigMap(
       dot(en.x * T + 8, en.y * T + 8, 5, done ? "#3d5a66" : "#c9a24b");
     }
     dot(o.treeAltar.x * T + 8, o.treeAltar.y * T + 8, 5, "#63d8c8");
-    for (const p of o.pedestals) if (!p.taken) dot(p.x, p.y, 3, "#63d8c8");
+    for (const p of o.pedestals) if (!p.taken) dot(p.x * T + 8, p.y * T + 8, 3, "#63d8c8");
     if (o.secretKnown) dot(o.stashSpot.x * T + 8, o.stashSpot.y * T + 8, 4, "#c9a24b");
   } else if (!o.dungeonBossDead(o.dungeonId)) {
     dot(o.bossRoom.x + o.bossRoom.w / 2, o.bossRoom.y + o.bossRoom.h / 2, 5, "#e05050");
