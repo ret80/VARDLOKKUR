@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { generateOverworld } from "../generators/overworld";
-import { Biome, elevLevel } from "../generators/types";
+import { Biome, Tl, elevLevel } from "../generators/types";
 import { R_MOUNT, ICX, ICY } from "../generators/island-generator";
 
 /** Требования из tasks/world_gen_imp_3.md + правила поселений/алтаря. */
@@ -81,4 +81,49 @@ describe("world gen rules (task 3)", () => {
       expect(w.biomes![a.y * w.W + a.x], `seed ${seed}: алтарь не в болоте`).toBe(Biome.SWAMP);
     }
   });
+
+  it("кромки террас не выкладываются камнем: CLIFF/SCREE отсутствуют в мире", () => {
+    for (const seed of seeds) {
+      const w = generateOverworld(seed);
+      const bad: string[] = [];
+      for (let y = 0; y < w.H; y++) for (let x = 0; x < w.W; x++) {
+        const t = w.tiles[y * w.W + x];
+        if ((t === Tl.CLIFF || t === Tl.SCREE) && bad.length < 5) {
+          const b = w.biomes![y * w.W + x];
+          bad.push(`(${x},${y}) tile=${t} biome=${b} lv=${elevLevel(w.height![y * w.W + x])}`);
+        }
+      }
+      expect(bad, `seed ${seed}: каменные тайлы на кромках террас`).toEqual([]);
+    }
+  });
+
+  it("грунт клетки несёт цвет своего биома/уровня (снег не подменяется камнем)", () => {
+    const GROUND = new Set<number>([Tl.SNOW, Tl.SNOW2, Tl.MTN, Tl.FOREST, Tl.MEADOW, Tl.SWAMP]);
+    for (const seed of seeds) {
+      const w = generateOverworld(seed);
+      const bad: string[] = [];
+      for (let y = 1; y < w.H - 1; y++) for (let x = 1; x < w.W - 1; x++) {
+        const i = y * w.W + x;
+        const t = w.tiles[i];
+        // Проверяем только чистый грунт: декор (TREE/GRASS/...), дороги,
+        // поселения и спец-точки кладут свои тайлы законно.
+        if (!GROUND.has(t)) continue;
+        const lv = elevLevel(w.height![i]);
+        let want: number;
+        switch (w.biomes![i]) {
+          case Biome.SNOW: want = lv >= 5 ? Tl.SNOW : lv >= 3 ? Tl.SNOW2 : Tl.MTN; break;
+          case Biome.MEADOW: want = lv >= 1 ? Tl.FOREST : Tl.MEADOW; break;
+          case Biome.FOREST: want = Tl.FOREST; break;
+          case Biome.SWAMP: want = Tl.SWAMP; break;
+          default: continue;
+        }
+        // Снежное дазерение SNOW→SNOW2 — задуманная текстура, не подмена биома
+        if (w.biomes![i] === Biome.SNOW && t === Tl.SNOW2 && want === Tl.SNOW) continue;
+        if (t !== want && bad.length < 5) {
+          bad.push(`(${x},${y}) tile=${t} want=${want} biome=${w.biomes![i]} lv=${lv}`);
+        }
+      }
+      expect(bad, `seed ${seed}: грунт не соответствует биому/уровню`).toEqual([]);
+    }
+  }, 60000);
 });

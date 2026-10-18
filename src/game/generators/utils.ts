@@ -1,5 +1,5 @@
 /* Утилиты для работы с тайлами мира */
-import { WorldData, Tl, Biome, isSolidTileId, idx, inB, Vec } from "./types";
+import { WorldData, Tl, Biome, isSolidTileId, elevLevel, idx, inB, Vec } from "./types";
 import { clamp } from "../utils";
 import { mulberry } from "../noise";
 
@@ -54,14 +54,18 @@ export function findWalkableNear(w: WorldData, fx: number, fy: number, r: number
   return { x: clamp(Math.round(fx), 2, w.W - 3), y: clamp(Math.round(fy), 2, w.H - 3) };
 }
 
-/** Ground-тайл биома (для расчистки солидов, чтобы не «сеять» снег вне центра) */
-export function groundTileFor(biome: number): number {
+/**
+ * Ground-тайл биома (для расчистки солидов, чтобы не «сеять» снег вне центра).
+ * Уровень высоты обязателен для биомов с террасами: расчистка не должна
+ * понижать грунт кромки/плато до чужого тайла (SNOW2→SNOW, роща→луг).
+ */
+export function groundTileFor(biome: number, lv = 0): number {
   switch (biome) {
     case Biome.FOREST: return Tl.FOREST;
     case Biome.SWAMP: return Tl.SWAMP;
-    case Biome.MEADOW: return Tl.MEADOW;
+    case Biome.MEADOW: return lv >= 1 ? Tl.FOREST : Tl.MEADOW;
     case Biome.SNOW:
-    default: return Tl.SNOW;
+    default: return lv >= 5 ? Tl.SNOW : lv >= 3 ? Tl.SNOW2 : Tl.MTN;
   }
 }
 
@@ -73,7 +77,8 @@ export function clearAround(w: WorldData, cx: number, cy: number, r: number, flo
       const cur = w.tiles[i];
       if (cur === Tl.WATER || cur === Tl.PALISADE || cur === Tl.HOUSE) continue;
       if (isSolidTileId(cur)) {
-        const fl = floor !== undefined ? floor : groundTileFor(w.biomes ? w.biomes[i] : Biome.SNOW);
+        const lv = w.height ? elevLevel(w.height[i]) : 0;
+        const fl = floor !== undefined ? floor : groundTileFor(w.biomes ? w.biomes[i] : Biome.SNOW, lv);
         setTile(w, x, y, fl);
       }
     }

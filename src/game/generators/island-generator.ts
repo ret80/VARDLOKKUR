@@ -225,14 +225,17 @@ export class IslandGenerator {
     }
   }
 
-  /* ---------- Ф1.4 Биом → тайлы с учётом высот/склонов ---------- */
+  /* ---------- Ф1.4 Биом → тайлы с учётом высот ---------- */
   /**
-   * Раскладка тайлов по биому, высоте и крутизне склона.
+   * Раскладка тайлов по биому и уровню высоты.
    *
    * Высоты задают рельеф, но ВСЕ наземные тайлы здесь — проходимые
    * (никаких солидов), чтобы не рвать дороги и связность мира.
-   * Иллюзию «стен»/уступов даёт отдельная отрисовка обрывов в tile-geom
-   * (cliff-face по перепаду высот между соседями).
+   * Кромка террасы НЕ выкладывается камнем (CLIFF/SCREE): кромка несёт
+   * грунт собственного плато, а сам уступ рисует оверлей рельефа в
+   * tile-geom (drawRelief) гранью с палитрой биома — в снегу это светлый
+   * холодный камень со снежной кромкой, а не чужая серая плита.
+   * Физику уступа даёт маска стен по полю высот (terrain-walls), не тайлы.
    */
   private applyBiomesToTiles(): void {
     for (let y = 0; y < this.H; y++) {
@@ -240,26 +243,11 @@ export class IslandGenerator {
         const i = idx(this, x, y);
         const t = this.tiles[i];
         if (t === Tl.WATER || t === Tl.SHORE) continue;
-        const h = this.height[i];
-        const lv = elevLevel(h);
-        // Перепад уровней с соседями: 0 — ровная площадка, ≥1 — уступ/склон
-        let dLv = 0;
-        if (x > 0 && x < this.W - 1 && y > 0 && y < this.H - 1) {
-          dLv = Math.max(
-            Math.abs(elevLevel(this.height[idx(this, x + 1, y)]) - lv),
-            Math.abs(elevLevel(this.height[idx(this, x - 1, y)]) - lv),
-            Math.abs(elevLevel(this.height[idx(this, x, y + 1)]) - lv),
-            Math.abs(elevLevel(this.height[idx(this, x, y - 1)]) - lv),
-          );
-        }
-        const onStep = dLv >= 1;      // кромка террасы
-        const onBigStep = dLv >= 2;   // высокий уступ
+        const lv = elevLevel(this.height[i]);
         switch (this.biomes[i]) {
           case Biome.FOREST:
-            // Лес живёт на базовом уровне; кромки террас — каменистые осыпи
-            if (onBigStep) this.tiles[i] = Tl.CLIFF;
-            else if (onStep) this.tiles[i] = Tl.SCREE;
-            else this.tiles[i] = Tl.FOREST;
+            // Лес живёт на базовом уровне; границы — дело оверлея рельефа
+            this.tiles[i] = Tl.FOREST;
             break;
           case Biome.SWAMP:
             // Низина без террас; лужи — по шуму (высота тут постоянная)
@@ -267,20 +255,15 @@ export class IslandGenerator {
             else this.tiles[i] = Tl.SWAMP;
             break;
           case Biome.MEADOW:
-            // Возвышенности-пятна (9): кромка — осыпь, плоская вершина —
-            // тёмная роща (декор досеет деревья)
-            if (onBigStep) this.tiles[i] = Tl.CLIFF;
-            else if (onStep) this.tiles[i] = Tl.SCREE;
-            else if (lv >= 1) this.tiles[i] = Tl.FOREST;
-            else this.tiles[i] = Tl.MEADOW;
+            // Возвышенности-пятна (9): тёмная роща на всём пятне, включая
+            // кромку — пятно читается как тёмно-зелёное без серого обода
+            this.tiles[i] = lv >= 1 ? Tl.FOREST : Tl.MEADOW;
             break;
           case Biome.SNOW:
           default:
-            // Горные террасы: уступы — камень, плато — по уровням
+            // Горные террасы: плато и его кромка — тайл своего уровня
             // (предгорье тёмно-серое, высокогорье серое, вершина белая)
-            if (onBigStep) this.tiles[i] = Tl.CLIFF;
-            else if (onStep) this.tiles[i] = Tl.MTN;
-            else if (lv >= 5) this.tiles[i] = Tl.SNOW;
+            if (lv >= 5) this.tiles[i] = Tl.SNOW;
             else if (lv >= 3) this.tiles[i] = Tl.SNOW2;
             else this.tiles[i] = Tl.MTN;
             break;
