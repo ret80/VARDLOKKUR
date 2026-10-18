@@ -95,7 +95,7 @@ export class EntityFactory {
     Projectile[eid] = { kind: poolAdd(StringPool.projectileKinds, kind), dmg, life: lifetime, dist: 0, returning: 0, spin: 0, owner: -1 };
     Time[eid] = { value: 0 };
     RenderLayer[eid] = { value: 60 };
-    Radius[eid] = { value: kind === 'fire' ? 5 : 4 };
+    Radius[eid] = { value: kind === 'arrow' ? 2 : (kind === 'fire' ? 5 : 4) };
     Sprite[eid] = { ref: 0 };
 
     return eid;

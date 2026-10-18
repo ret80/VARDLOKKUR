@@ -10,7 +10,9 @@ import {
   PhysicsBody,
   PhysicsBodyRegistry,
   Projectile,
+  Enemy,
 } from '../ecs-components';
+import { StringPool, poolGet } from '../ecs-components';
 import { Cat } from '../../physics/planck-world';
 
 // ============================================================
@@ -58,7 +60,11 @@ export function syncPositionToBody(world: World): void {
 }
 
 /** Синхронизировать Velocity из ECS в Planck.js body */
-export function syncVelocityToBody(world: World, playerEid?: number): void {
+export function syncVelocityToBody(
+  world: World,
+  playerEid?: number,
+  speedMul?: (eid: number, x: number, y: number) => number,
+): void {
   for (const eid of query(world, [Velocity, PhysicsBody])) {
     // Снаряды управляются Planck.js напрямую — не перезаписывать velocity из Velocity[eid] (который = 0)
     if (hasComponent(world, eid, Projectile)) continue;
@@ -66,7 +72,12 @@ export function syncVelocityToBody(world: World, playerEid?: number): void {
     if (!vel) continue; // AoS элемент может быть undefined
     const body = getBody(eid);
     if (body) {
-      body.setLinearVelocity(Vec2(vel.x, vel.y));
+      const pos = Position[eid];
+      let mul = 1;
+      if (pos && speedMul) {
+        mul = speedMul(eid, pos.x, pos.y);
+      }
+      body.setLinearVelocity(Vec2(vel.x * mul, vel.y * mul));
     }
   }
 }

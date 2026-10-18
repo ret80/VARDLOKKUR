@@ -2,7 +2,8 @@
 
 import { type World, query, removeEntity, addEntity, addComponent, getAllEntities } from 'bitecs';
 import { Cat, getEnemyCategory, getEnemyMask } from '../physics/planck-world';
-import { T, WorldData, Vec, solidTileAt } from '../world';
+import { T, WorldData, Vec, solidTileAt, tileAt } from '../world';
+import { Tl } from '../generators/types';
 import { clamp } from '../utils';
 import type { PlanckWorld } from '../physics/planck-world';
 import type { DropKind } from '../generators/types';
@@ -228,13 +229,19 @@ export class EcsMapLoader {
   }
 
   private createTileBodies(map: WorldData, planckWorld: PlanckWorld): void {
-    const r = T / 2;
+    const rFull = T / 2;
     for (let ty = 0; ty < map.H; ty++) {
       for (let tx = 0; tx < map.W; tx++) {
+        const t = tileAt(map, tx, ty);
         if (!solidTileAt(map, tx, ty)) continue;
         const px = tx * T + T / 2;
         const py = ty * T + T / 2;
-        planckWorld.createTileBody(px, py, r);
+        // Для камня коллизия по высоте примерно 2/3 от камня (уменьшаем радиус)
+        if (t === Tl.ROCK) {
+          planckWorld.createTileBody(px, py, rFull * 0.67);
+        } else {
+          planckWorld.createTileBody(px, py, rFull);
+        }
       }
     }
   }

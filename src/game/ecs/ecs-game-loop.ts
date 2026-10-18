@@ -454,7 +454,9 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         const ownerEid = e.owner !== undefined ? e.owner : -1;
         const groupIndex = ownerEid >= 0 ? -(ownerEid + 1) : 0;
         const fromEnemy = ownerEid >= 0 && ownerEid !== peid;
-        createBodyForEntity(_planckWorld, world, eid, 4, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground, e.vx, e.vy, { fromEnemy }, groupIndex);
+        const projKind = e.kind as any;
+        const projRadius = projKind === 'arrow' ? 2 : 4;
+        createBodyForEntity(_planckWorld, world, eid, projRadius, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground, e.vx, e.vy, { fromEnemy }, groupIndex);
       }
     } catch (err) {
       logger.error('projectile:fire', `THREW ERROR: ${err}`);
@@ -605,11 +607,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     _realT = inputResult.realT;
 
     // Скорость зависит от поверхности под игроком (снег/трава/болото замедляют)
-    if (peid >= 0 && config_map) {
-      const mul = speedMulAt(config_map, Position[peid].x, Position[peid].y);
-      Velocity[peid].x *= mul;
-      Velocity[peid].y *= mul;
-    }
+    // Множитель применяется при синхронизации Velocity → PhysicsBody (и в fallback для сущностей без тела)
     
     // ===== 3. Обработка действий =====
     processActions(input, bus, () => {
@@ -634,7 +632,22 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     });
 
     // ===== 5. Sync Velocity → Physics Body =====
-    syncVelocityToBody(world, peid);
+    if (config_map) {
+      const isFlyingEnemy = (eid: number): boolean => {
+        if (Enemy[eid] === undefined) return false;
+        const kind = poolGet(StringPool.enemyKinds, Enemy[eid].kind);
+        return kind === 'raven' || kind === 'ghost';
+      };
+      syncVelocityToBody(world, peid, (eid: number, x: number, y: number) => {
+        const isEnemy = Enemy[eid] !== undefined;
+        const isPlayer = eid === peid;
+        if (!isEnemy && !isPlayer) return 1;
+        if (isEnemy && isFlyingEnemy(eid)) return 1;
+        return speedMulAt(config_map, x, y);
+      });
+    } else {
+      syncVelocityToBody(world, peid);
+    }
 
     // ===== 6. Физика Planck.js (шаг) =====
     _planckWorld.step(dt);
@@ -652,7 +665,17 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         const pb = PhysicsBody[eid];
         if (pb && pb.body > 0) continue;
         // Существа замедляются поверхностью (снег/трава/болото), снаряды — нет
-        const mul = Enemy[eid] !== undefined ? speedMulAt(config_map, pos.x, pos.y) : 1;
+        let mul = 1;
+        if (Enemy[eid] !== undefined) {
+          const kind = poolGet(StringPool.enemyKinds, Enemy[eid].kind);
+          if (kind === 'raven' || kind === 'ghost') {
+            mul = 1;
+          } else {
+            mul = speedMulAt(config_map, pos.x, pos.y);
+          }
+        } else {
+          mul = 1;
+        }
         pos.x += vel.x * dt * mul;
         pos.y += vel.y * dt * mul;
       }
