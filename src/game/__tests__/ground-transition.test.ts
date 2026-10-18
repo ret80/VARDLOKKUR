@@ -37,6 +37,7 @@ function render(w: Partial<WorldData>): MockRenderer {
 }
 
 const FOREST = 0x26333c, MEADOW = 0x5f6b52, SNOW = 0x8b98a6, SWAMP = 0x2c3a3e, ROCK_GREY = 0x5f6b78;
+const TREE_DARK = 0x1c262e, SNOW2 = 0x7e8b99;
 
 describe("грунт: камень не меняет тайл биома", () => {
   it("ROCK рисует грунт биома, а не серый камень", () => {
@@ -56,6 +57,32 @@ describe("грунт: камень не меняет тайл биома", () =>
       expect(eq(baseColorAt(r, cx, cy), color), `под камнем в биоме ${biome} — грунт биома`).toBe(true);
       expect(r.rects.some((c) => eq(c.color, ROCK_GREY)), "не должно быть серого каменного грунта").toBe(false);
     }
+  });
+});
+
+describe("грунт: дерево на заснеженной горе стоит в снегу", () => {
+  const W = 12, H = 12, cx = 6, cy = 6;
+
+  it("TREE в биоме SNOW рисует снег своей террасы, а не тёмный лесной ковёр", () => {
+    // Вершина (lv 5) и высокогорье (lv 3): под деревом — снег соответствующего тона
+    const cases: Array<[number, number]> = [[0.87, SNOW], [0.54, SNOW2]];
+    for (const [h, color] of cases) {
+      const tiles = new Uint8Array(W * H).fill(color === SNOW ? Tl.SNOW : Tl.SNOW2);
+      tiles[cy * W + cx] = Tl.TREE;
+      const biomes = new Uint8Array(W * H).fill(Biome.SNOW);
+      const height = new Float32Array(W * H).fill(h);
+      const r = render({ W, H, tiles, biomes, height });
+      expect(eq(baseColorAt(r, cx, cy), color), `под деревом на высоте ${h} — снег террасы`).toBe(true);
+      expect(r.rects.some((c) => eq(c.color, TREE_DARK)), "не должно быть тёмного лесного грунта под деревом").toBe(false);
+    }
+  });
+
+  it("TREE в лесу сохраняет тёмный лесной ковёр (роща не меняется)", () => {
+    const tiles = new Uint8Array(W * H).fill(Tl.FOREST);
+    tiles[cy * W + cx] = Tl.TREE;
+    const biomes = new Uint8Array(W * H).fill(Biome.FOREST);
+    const r = render({ W, H, tiles, biomes });
+    expect(eq(baseColorAt(r, cx, cy), TREE_DARK), "в лесу под деревом — тёмный лесной грунт").toBe(true);
   });
 });
 

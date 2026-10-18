@@ -188,6 +188,14 @@ export function drawTileBatch(renderer: IRenderer, g: GraphicsHandle, map: World
       // Камень — это объект ПОВЕРХ грунта: под ним остаётся тайл биома
       // (луг/лес/болото/снег), а не серый «каменный» грунт.
       if (t === Tl.ROCK && biomes) t = groundTileForBiome(biomes[i]);
+      // Дерево на заснеженной горе: под ним снег СВОЕЙ ТЕРРАСЫ (вершина —
+      // светлый, высокогорье — тёмный), а не тёмный «лесной» ковёр —
+      // деревья стоят в снегу. Спрайт со снегом рисуется слоем стен.
+      if (t === Tl.TREE && biomes && biomes[i] === Biome.SNOW) {
+        t = map.height && map.height.length === W * H && elevLevel(map.height[i]) < 5
+          ? Tl.SNOW2
+          : Tl.SNOW;
+      }
       // Плавный переход между биомами: у стыка часть клеток «перетекает»
       // в грунт соседнего биома (снег не упирается в луга жёсткой линией).
       if (edges && isPlainGround(t)) {
