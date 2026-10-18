@@ -11,7 +11,7 @@ import { IslandGenerator, R_SNOW, ISLAND_RX, ISLAND_RY } from "./island-generato
 import { VillageGenerator } from "./village-generator";
 import { GlobalRoadGenerator } from "./global-road-generator";
 import { NavBuilder } from "./nav-builder";
-import { buildTerrainWalls } from "./terrain-walls";
+import { buildTerrainWalls, flattenRampSurfaces } from "./terrain-walls";
 import { findWalkableNear, clearAround, floodReach, setTile, tileAt } from "./utils";
 
 /* ---------- Таблица врагов по биомам (Ф8, план §9) ---------- */
@@ -876,6 +876,8 @@ export function generateOverworld(seed: number): WorldData {
   /* ================= Уступы террас + пандусы ================= */
   // Высоты есть только у оверворлда: по ним строятся стены обрывов
   // (физика + отрисовка) и пробиваются пандусы — подъём только «где разрешено».
+  // Берег и озёра ровняем ещё раз: озёра-лужи появились уже на этапе декора.
+  flattenRampSurfaces(w);
   buildTerrainWalls(w, w.spawn);
 
   /* ================= Navmesh ================= */

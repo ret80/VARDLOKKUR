@@ -210,10 +210,16 @@ export function drawTileBatch(renderer: IRenderer, g: GraphicsHandle, map: World
   }
 }
 
-/** Тайлы, поверх которых не рисуем каменные уступы (дороги, полы, вода, берег) */
+/** Тайлы, на которых рельеф не рисуется вовсе: вода и постройки. */
 function isReliefExempt(t: number): boolean {
-  return t === Tl.WATER || t === Tl.SHORE || t === Tl.PATH || t === Tl.POOL
-    || t === Tl.VILLAGE || t === Tl.STAIRS || t === Tl.DFLOOR || t === Tl.HOUSE;
+  return t === Tl.WATER || t === Tl.HOUSE;
+}
+
+/** «Благоустроенные» тайлы: у них свой ровный тон — объёмную подсветку по
+ *  высоте на них не накладываем (дорога, площадь, лестница, берег, озеро). */
+function isReliefFlat(t: number): boolean {
+  return t === Tl.SHORE || t === Tl.POOL || t === Tl.PATH
+    || t === Tl.VILLAGE || t === Tl.STAIRS;
 }
 
 /** Высота грани уступа в пикселях на один уровень перепада */
@@ -288,16 +294,15 @@ const EDGES: ReadonlyArray<readonly [number, number, number]> = [
 ];
 
 /**
- * Стык годится для стены/пандуса: обе клетки — «обычный» рельеф.
+ * Стык-ступенька: открытый (без бита) стык двух ПРОХОДИМЫХ клеток.
  *
- * Точное правило из generators/terrain-walls (buildTerrainWalls): твёрдые
- * тайлы (скала, осыпь, деревья, дома) и exempt-тайлы (вода, дороги) стены не
- * получают. Поэтому «нет бита» ≠ «пробитый проход» — проходом это становится
- * только когда стык вообще был кандидатом в стену, а бит снял BFS связности.
+ * Правило зеркалит generators/terrain-walls (buildTerrainWalls): бита нет либо
+ * когда обе клетки — «пандусные» тайлы (дорога/площадь/лестница/берег/озеро),
+ * либо когда стык пробила BFS связности. Твёрдые тайлы (скала, деревья, дома)
+ * бита не получают — там стену заменяет сама коллизия тайла.
  */
-function isWallEdge(t: number, nt: number): boolean {
-  return !isSolidTileId(t) && !isSolidTileId(nt)
-    && !isReliefExempt(t) && !isReliefExempt(nt);
+function isStepEdge(t: number, nt: number, m: number, bit: number): boolean {
+  return (m & bit) === 0 && !isSolidTileId(t) && !isSolidTileId(nt);
 }
 
 /** Грань уступа на стыке клетки (x,y) со стороной (dx,dy). */
@@ -320,8 +325,9 @@ function edgeRamp(P: ReliefPainter, x0: number, y0: number, dx: number, dy: numb
  * Иллюзия 2.5D без реального Z, на террасах (см. ELEV_LEVELS):
  *  - если сосед ВЫШЕ — на самом стыке рисуется каменная «грань»
  *    (высотой N*CLIFF_STEP_PX), и там же стоит коллизия;
- *  - если уровни отличаются, а стены НЕТ — это разрешённый подъём (пандус),
- *    нарисованный светлой «лесенкой», чтобы его было видно;
+ *  - открытый стык двух проходимых клеток — это ступенька (дорога, площадь,
+ *    берег или пробитый связностью подъём): рисуется светлой «лесенкой»,
+ *    чтобы подъём всегда был виден;
  *  - высокие террасы чуть светлее, низкие — темнее (объём).
  *
  * Стена/пандус приходят из `map.walls` (см. generators/terrain-walls): бит стоит
@@ -344,8 +350,8 @@ function drawRelief(renderer: IRenderer, g: GraphicsHandle, map: WorldData, W: n
   /** Биом соседа (для тона камня); за картой или без данных — undefined */
   const biomeAt = (x: number, y: number): number | undefined =>
     inb(x, y) && biomes && biomes.length === W * H ? biomes[y * W + x] : undefined;
-  /** Перепад уровней к соседу (dx,dy): 0, если соседа нет, его тайл exempt
-   *  или его уровень не выше нашего. */
+  /** Перепад уровней к соседу (dx,dy): 0, если соседа нет, его тайл не «земля»
+   *  (вода/постройка) или его уровень не выше нашего. */
   const stepTo = (x: number, y: number, dx: number, dy: number): number => {
     const nx = x + dx, ny = y + dy;
     if (!inb(nx, ny) || isReliefExempt(map.tiles[ny * W + nx])) return 0;
@@ -369,12 +375,15 @@ function drawRelief(renderer: IRenderer, g: GraphicsHandle, map: WorldData, W: n
       const dN = stepTo(x, y, 0, -1);
 
       // --- Общий объём: высокие террасы чуть светлее, низкие темнее ---
-      // (тон рисуется до рельефа, чтобы грани оставались контрастными)
-      const tone = my / ELEV_LEVELS;
-      if (tone > 0.5) {
-        renderer.drawRect(g, { x: x0, y: y0, width: T, height: T }, rgb(0xdbe5ee, Math.min(0.13, (tone - 0.5) * 0.34)));
-      } else if (h < 0.28) {
-        renderer.drawRect(g, { x: x0, y: y0, width: T, height: T }, rgb(0x081018, Math.min(0.15, (0.28 - h) * 0.5)));
+      // (тон рисуется до рельефа, чтобы грани оставались контрастными;
+      //  на «благоустроенных» тайлах тон не трогаем — у них свой ровный цвет)
+      if (!isReliefFlat(t)) {
+        const tone = my / ELEV_LEVELS;
+        if (tone > 0.5) {
+          renderer.drawRect(g, { x: x0, y: y0, width: T, height: T }, rgb(0xdbe5ee, Math.min(0.13, (tone - 0.5) * 0.34)));
+        } else if (h < 0.28) {
+          renderer.drawRect(g, { x: x0, y: y0, width: T, height: T }, rgb(0x081018, Math.min(0.15, (0.28 - h) * 0.5)));
+        }
       }
 
       if (walls) {
@@ -384,10 +393,10 @@ function drawRelief(renderer: IRenderer, g: GraphicsHandle, map: WorldData, W: n
           if (d <= 0) continue;
           const nt = tileAt(x + dx, y + dy);
           const pal = reliefPalFor(nt, biomeAt(x + dx, y + dy));
-          // «Лесенка» только на пробитом проходе: стык был кандидатом в стену,
-          // но бит снял BFS связности. Всё остальное — каменная грань,
-          // в том числе к непроходимой скале (там коллизию даёт сам тайл).
-          if (isWallEdge(t, nt) && (m & bit) === 0) edgeRamp(P, x0, y0, dx, dy, pal.ramp);
+          // «Лесенка» на каждом открытом стыке проходимых клеток: ступенька
+          // дороги/площади или пробитый BFS подъём. Всё остальное — каменная
+          // грань, в том числе к непроходимой скале (коллизию даёт сам тайл).
+          if (isStepEdge(t, nt, m, bit)) edgeRamp(P, x0, y0, dx, dy, pal.ramp);
           else edgeFace(P, x0, y0, dx, dy, d, pal.rock);
         }
       } else if (dN > 0) {

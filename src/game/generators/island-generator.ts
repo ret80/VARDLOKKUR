@@ -1,6 +1,7 @@
 /* Генерация острова: снежный центр-«гора» с перепадами высот и 3 сектора-биома вокруг */
 import { mulberry, NoiseGenerator } from "../noise";
 import { WorldData, Tl, Vec, Biome, idx, inB, elevLevel, ELEV_LEVELS } from "./types";
+import { flattenRampSurfaces } from "./terrain-walls";
 
 /** Центр острова и биом-карты */
 export const ICX = 100, ICY = 70;
@@ -49,6 +50,10 @@ export class IslandGenerator {
     this.smoothBiomes();
     this.protectReserved();
     this.applyBiomesToTiles();
+    // Ровные берег и озёра (см. flattenRampSurfaces): внутри полосы берега
+    // иначе набираются невидимые микроперепады, по которым игрок поднимался
+    // сквозь уступ. Поздние озёра-лужи ровняются в overworld перед стенами.
+    flattenRampSurfaces({ tiles: this.tiles, height: this.height });
     const w = this.createWorldData();
     return { w, cx: this.cx, cy: this.cy };
   }
