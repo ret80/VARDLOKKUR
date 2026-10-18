@@ -17,7 +17,9 @@ import { findWalkableNear, clearAround, floodReach, setTile, tileAt } from "./ut
 interface EnemyEntry { kinds: EnemyKind[]; rare?: EnemyKind; rareChance?: number }
 const ENEMY_TABLE: Record<number, EnemyEntry> = {
   [Biome.FOREST]: { kinds: ["shroom", "raven", "draugr"], rare: "spider", rareChance: 0.07 },
-  [Biome.SWAMP]: { kinds: ["crawler", "draugr"], rare: "ghost", rareChance: 0.05 },
+  // Призрак — исключительно туманный враг (спавнится только системой тумана),
+  // статичный спавн давал «призрака-стояку» без поведения (state=idle вне автомата)
+  [Biome.SWAMP]: { kinds: ["crawler", "draugr"] },
   [Biome.MEADOW]: { kinds: ["varg", "raven"], rare: "frost", rareChance: 0.05 },
 };
 /** Целевое число спавнов по биомам (сумма ~84) */

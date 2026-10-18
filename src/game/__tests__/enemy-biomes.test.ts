@@ -9,7 +9,7 @@ const SEEDS = Array.from({ length: 20 }, (_, i) => i + 1);
 /** Разрешённые виды врагов по биому (элита включена) */
 const ALLOWED: Record<number, Set<string>> = {
   [Biome.FOREST]: new Set(["shroom", "raven", "draugr", "spider"]),
-  [Biome.SWAMP]: new Set(["crawler", "draugr", "ghost"]),
+  [Biome.SWAMP]: new Set(["crawler", "draugr"]),
   [Biome.MEADOW]: new Set(["varg", "raven", "frost"]),
 };
 
@@ -61,6 +61,14 @@ describe("enemies by biome", () => {
         expect(Math.hypot(tx - w.treeAltar.x, ty - w.treeAltar.y) < 13,
           `seed ${seed}: спавн у алтаря`).toBe(false);
       }
+    }
+  });
+
+  it("призраки не спавнятся статично (только в тумане)", { timeout: 60000 }, () => {
+    for (const seed of SEEDS) {
+      const w = generateOverworld(seed);
+      const ghosts = w.spawns.filter((s) => s.kind === "ghost");
+      expect(ghosts.length, `seed ${seed}: найдено статичных призраков: ${ghosts.length}`).toBe(0);
     }
   });
 
