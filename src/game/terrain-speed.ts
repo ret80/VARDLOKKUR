@@ -33,6 +33,14 @@ export function tileSpeedMul(t: number): number {
       return 0.6;
     case Tl.POOL:
       return 0.5;
+    case Tl.SCREE:
+      return 0.62;
+    case Tl.CLIFF:
+      return 0.55;
+    case Tl.MTN:
+      return 0.66;
+    case Tl.WASTE:
+      return 0.85;
     default:
       return 1;
   }

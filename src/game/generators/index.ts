@@ -22,6 +22,7 @@ export { IslandGenerator } from "./island-generator";
 export { VillageGenerator } from "./village-generator";
 export { GlobalRoadGenerator } from "./global-road-generator";
 export { NavBuilder } from "./nav-builder";
+export { WallBit, WALL_DIRS, WALL_COLLIDER_T, buildTerrainWalls, edgeOpen } from "./terrain-walls";
 
 // Main functions
 export { generateOverworld } from "./overworld";

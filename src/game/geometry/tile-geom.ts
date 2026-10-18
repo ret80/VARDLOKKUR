@@ -6,7 +6,8 @@
  */
 
 import type { IRenderer, GraphicsHandle } from '../renderer/IRenderer';
-import { T, Tl, Biome, type WorldData } from '../world';
+import { T, Tl, Biome, ELEV_LEVELS, elevLevel, isSolidTileId, type WorldData } from '../world';
+import { WallBit } from '../generators/terrain-walls';
 import { rgb } from './geom-utils';
 
 /** Ground-тайл биома (для камня: он не должен менять грунт под собой) */
@@ -137,6 +138,22 @@ export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number
     case Tl.ALTAR: dither(0x1a222c, 0x141a22, 0x232c38); break;
     case Tl.TREE: dither(0x1c262e, 0x161f26, 0x232e37); break;
     case Tl.ROCK: dither(0x5f6b78, 0x525e6b, 0x6d7986); break;
+    // Осыпь на склоне: прохладный серо-синий щебень с крапом
+    case Tl.SCREE:
+      dither(0x59636f, 0x4b5561, 0x6a7480);
+      for (let i = 0; i < 4; i++) {
+        const sx = x + Math.floor(rnd(x, y, i + 41) * (T - 3));
+        const sy = y + Math.floor(rnd(y, x, i + 53) * (T - 3));
+        renderer.drawRect(g, { x: sx, y: sy, width: 2, height: 2 }, rgb(i % 2 ? 0x424b57 : 0x77818d));
+      }
+      break;
+    // Уступ/обрыв: тёмный камень, горизонтальные слои
+    case Tl.CLIFF:
+      dither(0x424b57, 0x39424e, 0x4e5864);
+      renderer.drawRect(g, { x, y: y + 3, width: T, height: 1 }, rgb(0x2b333d));
+      renderer.drawRect(g, { x, y: y + 10, width: T, height: 1 }, rgb(0x2b333d));
+      renderer.drawRect(g, { x, y, width: T, height: 1 }, rgb(0x5b6673));
+      break;
     case Tl.HOUSE: renderer.drawRect(g, tileRect, rgb(0x2c2620)); break;
     // COLUMN: ground-тайл под 3D-колонной (RUINS-стиль)
     case Tl.COLUMN: dither(0x4e5a68, 0x424d5a, 0x5c6875); break;
@@ -186,4 +203,288 @@ export function drawTileBatch(renderer: IRenderer, g: GraphicsHandle, map: World
       drawTileLocal(g, t, x * T, y * T, renderer);
     }
   }
+
+  // Второй проход: иллюзия высоты по полю высот (обрывы, тени рельефа).
+  if (map.height && map.height.length === W * H) {
+    drawRelief(renderer, g, map, W, H);
+  }
+}
+
+/** Тайлы, поверх которых не рисуем каменные уступы (дороги, полы, вода, берег) */
+function isReliefExempt(t: number): boolean {
+  return t === Tl.WATER || t === Tl.SHORE || t === Tl.PATH || t === Tl.POOL
+    || t === Tl.VILLAGE || t === Tl.STAIRS || t === Tl.DFLOOR || t === Tl.HOUSE;
+}
+
+/** Высота грани уступа в пикселях на один уровень перепада */
+const CLIFF_STEP_PX = 6;
+
+/** Потолок высоты грани: не закрывает весь тайл — снизу остаётся место под тень */
+const FACE_CAP = T - 2;
+
+/** Ширина боковой (W/E) грани в пикселях */
+const SIDE_PX = 3;
+
+/** Ступеней на пандусе (ширина полосы — RAMP_STEPS*2) */
+const RAMP_STEPS = 3;
+
+/** Палитра камня уступа: тело / тень / светлая кромка («лип») / слои камня */
+interface RockPal { face: number; dark: number; lip: number; strata: number }
+
+/** Палитра пандуса: тело / линия ступени / светлая кромка */
+interface RampPal { body: number; step: number; lip: number }
+
+interface ReliefPal { rock: RockPal; ramp: RampPal }
+
+/* Палитры утверждены в SVG/relief.svg (генератор: scripts/gen-relief-svg.mjs).
+ * Грань наследует тон грунта своей террасы: в снегу — светлый холодный камень
+ * со снежной кромкой, в топях — самый тёмный, на осыпи — каменный тон. */
+const MEADOW_PAL: ReliefPal = {
+  rock: { face: 0x474f57, dark: 0x363e46, lip: 0x707b86, strata: 0x2c343d },
+  ramp: { body: 0x5a646e, step: 0x3b434c, lip: 0x7d8894 },
+};
+const FOREST_PAL: ReliefPal = {
+  rock: { face: 0x3a444d, dark: 0x2b343c, lip: 0x5c6874, strata: 0x222b33 },
+  ramp: { body: 0x454f59, step: 0x2d363e, lip: 0x66727e },
+};
+const SWAMP_PAL: ReliefPal = {
+  rock: { face: 0x384348, dark: 0x2a3337, lip: 0x5a666b, strata: 0x222b2e },
+  ramp: { body: 0x434e53, step: 0x2b3438, lip: 0x636f74 },
+};
+const SNOW_PAL: ReliefPal = {
+  rock: { face: 0x5d6a77, dark: 0x4a5763, lip: 0xc8d3dc, strata: 0x3e4a57 },
+  ramp: { body: 0x76838f, step: 0x525f6b, lip: 0xd6e0e8 },
+};
+const MTN_PAL: ReliefPal = {
+  rock: { face: 0x4c5662, dark: 0x3a434f, lip: 0x7d8997, strata: 0x303843 },
+  ramp: { body: 0x5f6a76, step: 0x3f4854, lip: 0x8b97a4 },
+};
+const SCREE_PAL: ReliefPal = {
+  rock: { face: 0x49535f, dark: 0x38414c, lip: 0x7a8490, strata: 0x2e3640 },
+  ramp: { body: 0x5b6570, step: 0x3c4550, lip: 0x87929d },
+};
+
+/** Примитив отрисовки рельефа: прямоугольник в мировых координатах батча. */
+type ReliefPainter = (x: number, y: number, w: number, h: number, c: number, a?: number) => void;
+
+/** Палитра рельефа: осыпь — каменный тон, остальное — по биому верхней террасы. */
+function reliefPalFor(t: number, b: number | undefined): ReliefPal {
+  if (t === Tl.SCREE) return SCREE_PAL;
+  switch (b) {
+    case Biome.SNOW: return SNOW_PAL;
+    case Biome.FOREST: return FOREST_PAL;
+    case Biome.SWAMP: return SWAMP_PAL;
+    case Biome.MEADOW: return MEADOW_PAL;
+    default: return MTN_PAL;
+  }
+}
+
+/** Стороны стыка: [dx, dy, бит] — тот же порядок, что в WALL_DIRS (terrain-walls). */
+const EDGES: ReadonlyArray<readonly [number, number, number]> = [
+  [0, -1, WallBit.N],
+  [1, 0, WallBit.E],
+  [0, 1, WallBit.S],
+  [-1, 0, WallBit.W],
+];
+
+/**
+ * Стык годится для стены/пандуса: обе клетки — «обычный» рельеф.
+ *
+ * Точное правило из generators/terrain-walls (buildTerrainWalls): твёрдые
+ * тайлы (скала, осыпь, деревья, дома) и exempt-тайлы (вода, дороги) стены не
+ * получают. Поэтому «нет бита» ≠ «пробитый проход» — проходом это становится
+ * только когда стык вообще был кандидатом в стену, а бит снял BFS связности.
+ */
+function isWallEdge(t: number, nt: number): boolean {
+  return !isSolidTileId(t) && !isSolidTileId(nt)
+    && !isReliefExempt(t) && !isReliefExempt(nt);
+}
+
+/** Грань уступа на стыке клетки (x,y) со стороной (dx,dy). */
+function edgeFace(P: ReliefPainter, x0: number, y0: number, dx: number, dy: number, d: number, rock: RockPal): void {
+  const faceH = Math.min(FACE_CAP, CLIFF_STEP_PX * d);
+  if (dy < 0) faceBand(P, x0, y0, faceH, rock, true);
+  else if (dy > 0) faceBand(P, x0, y0 + T - faceH, faceH, rock, false);
+  else sideFace(P, x0, y0, dx < 0, d, rock);
+}
+
+/** Пробитый проход (пандус) на стыке со стороной (dx,dy) — там, где стены нет. */
+function edgeRamp(P: ReliefPainter, x0: number, y0: number, dx: number, dy: number, ramp: RampPal): void {
+  if (dy !== 0) rampBandH(P, x0, dy < 0 ? y0 : y0 + T, ramp);
+  else rampBandV(P, x0, y0, dx < 0, ramp);
+}
+
+/**
+ * Второй проход отрисовки: перепады рельефа и видимые пандусы.
+ *
+ * Иллюзия 2.5D без реального Z, на террасах (см. ELEV_LEVELS):
+ *  - если сосед ВЫШЕ — на самом стыке рисуется каменная «грань»
+ *    (высотой N*CLIFF_STEP_PX), и там же стоит коллизия;
+ *  - если уровни отличаются, а стены НЕТ — это разрешённый подъём (пандус),
+ *    нарисованный светлой «лесенкой», чтобы его было видно;
+ *  - высокие террасы чуть светлее, низкие — темнее (объём).
+ *
+ * Стена/пандус приходят из `map.walls` (см. generators/terrain-walls): бит стоит
+ * на НИЖНЕМ тайле и указывает на более высокого соседа. Если маски нет —
+ * рисуем как раньше: только северные обрывы по полю высот, без пандусов.
+ *
+ * Цвета берутся из палитр, утверждённых в SVG/relief.svg, — по биому ВЕРХНЕЙ
+ * террасы (камень наследует тон грунта, который видно сверху).
+ */
+function drawRelief(renderer: IRenderer, g: GraphicsHandle, map: WorldData, W: number, H: number): void {
+  const height = map.height!;
+  const biomes = map.biomes;
+  const walls = map.walls && map.walls.length === W * H ? map.walls : null;
+  const lv = (x: number, y: number) => elevLevel(height[y * W + x]);
+  const inb = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < H;
+  const P: ReliefPainter = (x, y, w, h, c, a = 1) =>
+    renderer.drawRect(g, { x, y, width: w, height: h }, rgb(c, a));
+  /** Тайл соседа; за картой — 0 */
+  const tileAt = (x: number, y: number) => (inb(x, y) ? map.tiles[y * W + x] : 0);
+  /** Биом соседа (для тона камня); за картой или без данных — undefined */
+  const biomeAt = (x: number, y: number): number | undefined =>
+    inb(x, y) && biomes && biomes.length === W * H ? biomes[y * W + x] : undefined;
+  /** Перепад уровней к соседу (dx,dy): 0, если соседа нет, его тайл exempt
+   *  или его уровень не выше нашего. */
+  const stepTo = (x: number, y: number, dx: number, dy: number): number => {
+    const nx = x + dx, ny = y + dy;
+    if (!inb(nx, ny) || isReliefExempt(map.tiles[ny * W + nx])) return 0;
+    const d = lv(nx, ny) - lv(x, y);
+    return d > 0 ? d : 0;
+  };
+  /** Палитра рельефа соседа (x+dx, y+dy), чей уровень выше нашего */
+  const palTo = (x: number, y: number, dx: number, dy: number): ReliefPal =>
+    reliefPalFor(tileAt(x + dx, y + dy), biomeAt(x + dx, y + dy));
+
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      const t = map.tiles[i];
+      if (isReliefExempt(t)) continue;
+      const h = height[i];
+      const my = elevLevel(h);
+      const x0 = x * T, y0 = y * T;
+
+      // Сосед сверху выше по уровню (нужен только для ветки без маски стен).
+      const dN = stepTo(x, y, 0, -1);
+
+      // --- Общий объём: высокие террасы чуть светлее, низкие темнее ---
+      // (тон рисуется до рельефа, чтобы грани оставались контрастными)
+      const tone = my / ELEV_LEVELS;
+      if (tone > 0.5) {
+        renderer.drawRect(g, { x: x0, y: y0, width: T, height: T }, rgb(0xdbe5ee, Math.min(0.13, (tone - 0.5) * 0.34)));
+      } else if (h < 0.28) {
+        renderer.drawRect(g, { x: x0, y: y0, width: T, height: T }, rgb(0x081018, Math.min(0.15, (0.28 - h) * 0.5)));
+      }
+
+      if (walls) {
+        const m = walls[i];
+        for (const [dx, dy, bit] of EDGES) {
+          const d = stepTo(x, y, dx, dy);
+          if (d <= 0) continue;
+          const nt = tileAt(x + dx, y + dy);
+          const pal = reliefPalFor(nt, biomeAt(x + dx, y + dy));
+          // «Лесенка» только на пробитом проходе: стык был кандидатом в стену,
+          // но бит снял BFS связности. Всё остальное — каменная грань,
+          // в том числе к непроходимой скале (там коллизию даёт сам тайл).
+          if (isWallEdge(t, nt) && (m & bit) === 0) edgeRamp(P, x0, y0, dx, dy, pal.ramp);
+          else edgeFace(P, x0, y0, dx, dy, d, pal.rock);
+        }
+      } else if (dN > 0) {
+        // Маски стен нет (подземелья/тесты) — старое правило: только север.
+        edgeFace(P, x0, y0, 0, -1, dN, palTo(x, y, 0, -1).rock);
+      }
+    }
+  }
+}
+
+/**
+ * Каменная грань высотой faceH, занимающая полосу [top, top+faceH) на тайле.
+ *
+ * lipAtTop — северный уступ: светлая кромка (кап травы верхней террасы) сверху,
+ * подножие снизу. lipAtTop=false — южный уступ, зеркально: подножие сверху,
+ * кромка внизу, у самого стыка с верхним соседом.
+ */
+function faceBand(P: ReliefPainter, x0: number, top: number, faceH: number, rock: RockPal, lipAtTop: boolean): void {
+  const mid = faceH >> 1;
+  P(x0, top, T, faceH, rock.face);
+  if (lipAtTop) P(x0, top + mid, T, faceH - mid, rock.dark);
+  else P(x0, top, T, faceH - mid, rock.dark);
+
+  // горизонтальные слои камня
+  if (faceH >= 6) {
+    P(x0, top + Math.max(2, Math.round(faceH * 0.34)), T, 1, rock.strata);
+    P(x0, top + Math.round(faceH * 0.72), T, 1, rock.strata);
+  }
+
+  // светлая кромка у границы с верхней террасой и тень под капом
+  P(x0, lipAtTop ? top : top + faceH - 1, T, 1, rock.lip);
+  P(x0, lipAtTop ? top + 1 : top + faceH - 2, T, 1, rock.dark);
+
+  // подножие: тёмная кромка и мягкая тень, падающая на грунт перед гранью
+  const baseY = lipAtTop ? top + faceH : top - 1;
+  P(x0, baseY, T, 1, rock.strata);
+  P(x0, lipAtTop ? baseY + 1 : top - 2, T, 1, 0x10151c, 0.28);
+  P(x0, lipAtTop ? baseY + 2 : top - 3, T, 1, 0x10151c, 0.14);
+
+  // случайные сколы по кромке подножия
+  const nickY = lipAtTop ? top + faceH - 1 : top;
+  for (let n = 0; n < 4; n++) {
+    const nx = x0 + Math.floor(rnd(x0 / T, top / T, n + 71) * T);
+    const nw = 1 + Math.floor(rnd(top / T, x0 / T, n + 83) * 2);
+    P(nx, nickY, nw, 1, rock.strata);
+  }
+}
+
+/**
+ * Боковая (вертикальная) грань. Бит стены стоит на НИЖНЕМ тайле и указывает
+ * на более высокого соседа: westHigher=true — западный сосед выше.
+ */
+function sideFace(P: ReliefPainter, x0: number, y0: number, westHigher: boolean, dN: number, rock: RockPal): void {
+  const faceW = Math.min(5, SIDE_PX + dN - 1);
+  const sx = westHigher ? x0 : x0 + T - faceW;
+  const edgeHigh = westHigher ? sx : sx + faceW - 1; // кромка у границы с верхней террасой
+  const edgeLow = westHigher ? sx + faceW - 1 : sx;   // подножие, смотрящее на нижнюю террасу
+
+  P(sx, y0, faceW, T, rock.face);
+  P(edgeLow, y0, 1, T, rock.dark);
+  P(edgeHigh, y0, 1, T, rock.lip);
+  if (faceW >= 4) P(sx + (faceW >> 1), y0, 1, T, rock.strata);
+  // тень на нижнем грунте у подножия
+  P(westHigher ? sx + faceW : sx - 1, y0, 1, T, 0x10151c, 0.3);
+}
+
+/**
+ * Разрешённый подъём (пандус) поперёк горизонтального стыка на высоте yEdge:
+ * светлая «лесенка» из ступеней вместо тёмного обрыва — иначе непонятно,
+ * где можно подняться на террасу.
+ */
+function rampBandH(P: ReliefPainter, x0: number, yEdge: number, ramp: RampPal): void {
+  const band = RAMP_STEPS * 2;
+  const top = yEdge - (band >> 1);
+  P(x0, top, T, band, ramp.body);
+  for (let s = 0; s < RAMP_STEPS; s++) {
+    const sy = top + s * 2;
+    P(x0, sy, T, 1, s === 0 ? ramp.lip : ramp.body);
+    P(x0, sy + 1, T, 1, ramp.step);
+  }
+  P(x0, top + band, T, 1, 0x10151c, 0.22);
+  // бортики, чтобы пандус читался как законченный проход
+  P(x0, top, 1, band, ramp.step);
+  P(x0 + T - 1, top, 1, band, ramp.step);
+}
+
+/** То же для вертикального стыка: westHigher=true — западный сосед выше. */
+function rampBandV(P: ReliefPainter, x0: number, y0: number, westHigher: boolean, ramp: RampPal): void {
+  const band = RAMP_STEPS * 2;
+  const sx = westHigher ? x0 - (band >> 1) : x0 + T - (band >> 1);
+  P(sx, y0, band, T, ramp.body);
+  for (let s = 0; s < RAMP_STEPS; s++) {
+    const px = sx + s * 2;
+    P(px, y0, 1, T, s === 0 ? ramp.lip : ramp.body);
+    P(px + 1, y0, 1, T, ramp.step);
+  }
+  P(westHigher ? sx + band : sx - 1, y0, 1, T, 0x10151c, 0.22);
+  P(sx, y0, band, 1, ramp.step);
+  P(sx, y0 + T - 1, band, 1, ramp.step);
 }

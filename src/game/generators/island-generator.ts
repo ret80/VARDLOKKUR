@@ -1,6 +1,6 @@
-/* Генерация острова: снежный центр-«гора» и 3 сектора-биома вокруг */
+/* Генерация острова: снежный центр-«гора» с перепадами высот и 3 сектора-биома вокруг */
 import { mulberry, NoiseGenerator } from "../noise";
-import { WorldData, Tl, Vec, Biome, idx, inB } from "./types";
+import { WorldData, Tl, Vec, Biome, idx, inB, elevLevel, ELEV_LEVELS } from "./types";
 
 /** Центр острова и биом-карты */
 export const ICX = 100, ICY = 70;
@@ -20,10 +20,13 @@ export class IslandGenerator {
   readonly H = 140;
   private tiles: Uint8Array;
   private biomes: Uint8Array;
+  private height: Float32Array;
   private rng: () => number;
   private noiseIsland: NoiseGenerator;
   private noiseA: NoiseGenerator;
   private noiseB: NoiseGenerator;
+  private noiseHills: NoiseGenerator;
+  private noiseDetail: NoiseGenerator;
   private cx = ICX;
   private cy = ICY;
 
@@ -31,13 +34,17 @@ export class IslandGenerator {
     this.rng = mulberry(seed);
     this.tiles = new Uint8Array(this.W * this.H).fill(Tl.SNOW);
     this.biomes = new Uint8Array(this.W * this.H).fill(Biome.SNOW);
+    this.height = new Float32Array(this.W * this.H).fill(0);
     this.noiseIsland = new NoiseGenerator(seed ^ 0x5ea);
     this.noiseA = new NoiseGenerator((seed * 2654435761) | 0);
     this.noiseB = new NoiseGenerator((seed * 40503) | 0);
+    this.noiseHills = new NoiseGenerator(seed * 131542391);
+    this.noiseDetail = new NoiseGenerator(seed * 1009);
   }
 
   public generate(): IslandResult {
     this.buildIsland();
+    this.buildHeight();
     this.buildBiomes();
     this.smoothBiomes();
     this.protectReserved();
@@ -56,6 +63,41 @@ export class IslandGenerator {
         if (d > 1) this.setTile(x, y, Tl.WATER);
         else if (d > 0.93) this.setTile(x, y, Tl.SHORE);
       }
+    }
+  }
+
+  /* ---------- Ф1.1b Поле высот (рельеф: гора в центре + холмы/гряды) ---------- */
+  private buildHeight(): void {
+    const RX = ISLAND_RX, RY = ISLAND_RY;
+    let minH = 1, maxH = 0;
+    const raw = new Float32Array(this.W * this.H);
+    for (let y = 0; y < this.H; y++) {
+      for (let x = 0; x < this.W; x++) {
+        const d = Math.hypot((x - this.cx) / RX, (y - this.cy) / RY);
+        // Центральный массив (гора): широкий купол с плоской вершиной.
+        const dd = Math.min(1, d / 0.78);
+        let h = (1 - dd * dd) * 0.95;
+        // Крупные холмы (fbm-подобная сумма) — предгорья по всему острову
+        const hills =
+          (this.noiseHills.value(x * 0.045, y * 0.045) - 0.5) * 0.5 +
+          (this.noiseHills.value(x * 0.11, y * 0.11) - 0.5) * 0.2;
+        // Резкие каменистые гряды (ridged noise) — «позвоночник» рельефа
+        const rn = this.noiseDetail.value(x * 0.06, y * 0.06);
+        const ridge = (1 - Math.abs(rn - 0.5) * 2);
+        const detail = (this.noiseDetail.value(x * 0.19, y * 0.19) - 0.5) * 0.09;
+        h += hills + ridge * 0.16 + detail;
+        // Чем ниже к берегу, тем меньше влияет шум (береговая линия остаётся гладкой)
+        const shoreFade = Math.min(1, Math.max(0, 1 - Math.abs(d) * 0.6));
+        h *= 0.45 + 0.55 * shoreFade;
+        raw[y * this.W + x] = h;
+        if (h > maxH) maxH = h;
+        if (h < minH) minH = h;
+      }
+    }
+    // Нормализация высот в 0..1
+    const range = Math.max(0.0001, maxH - minH);
+    for (let i = 0; i < this.W * this.H; i++) {
+      this.height[i] = (raw[i] - minH) / range;
     }
   }
 
@@ -130,19 +172,60 @@ export class IslandGenerator {
     }
   }
 
-  /* ---------- Ф1.4 Биом → тайлы ---------- */
+  /* ---------- Ф1.4 Биом → тайлы с учётом высот/склонов ---------- */
+  /**
+   * Раскладка тайлов по биому, высоте и крутизне склона.
+   *
+   * Высоты задают рельеф, но ВСЕ наземные тайлы здесь — проходимые
+   * (никаких солидов), чтобы не рвать дороги и связность мира.
+   * Иллюзию «стен»/уступов даёт отдельная отрисовка обрывов в tile-geom
+   * (cliff-face по перепаду высот между соседями).
+   */
   private applyBiomesToTiles(): void {
     for (let y = 0; y < this.H; y++) {
       for (let x = 0; x < this.W; x++) {
         const i = idx(this, x, y);
         const t = this.tiles[i];
         if (t === Tl.WATER || t === Tl.SHORE) continue;
+        const h = this.height[i];
+        const lv = elevLevel(h);
+        // Перепад уровней с соседями: 0 — ровная площадка, ≥1 — уступ/склон
+        let dLv = 0;
+        if (x > 0 && x < this.W - 1 && y > 0 && y < this.H - 1) {
+          dLv = Math.max(
+            Math.abs(elevLevel(this.height[idx(this, x + 1, y)]) - lv),
+            Math.abs(elevLevel(this.height[idx(this, x - 1, y)]) - lv),
+            Math.abs(elevLevel(this.height[idx(this, x, y + 1)]) - lv),
+            Math.abs(elevLevel(this.height[idx(this, x, y - 1)]) - lv),
+          );
+        }
+        const onStep = dLv >= 1;      // кромка террасы
+        const onBigStep = dLv >= 2;   // высокий уступ
         switch (this.biomes[i]) {
-          case Biome.FOREST: this.tiles[i] = Tl.FOREST; break;
-          case Biome.SWAMP: this.tiles[i] = Tl.SWAMP; break;
-          case Biome.MEADOW: this.tiles[i] = Tl.MEADOW; break;
+          case Biome.FOREST:
+            // Предгорья: на кромках террас — каменистые осыпи
+            if (onBigStep) this.tiles[i] = Tl.CLIFF;
+            else if (onStep) this.tiles[i] = Tl.SCREE;
+            else this.tiles[i] = Tl.FOREST;
+            break;
+          case Biome.SWAMP:
+            // Низина: не поднимаем, только самые низкие — озерца
+            if (h < 0.18 && this.noiseA.value(x * 0.13, y * 0.13) > 0.62) this.tiles[i] = Tl.POOL;
+            else this.tiles[i] = Tl.SWAMP;
+            break;
+          case Biome.MEADOW:
+            if (onBigStep) this.tiles[i] = Tl.CLIFF;
+            else if (onStep) this.tiles[i] = Tl.SCREE;
+            else this.tiles[i] = Tl.MEADOW;
+            break;
           case Biome.SNOW:
-          default: this.tiles[i] = Tl.SNOW; break;
+          default:
+            // Высокогорье: каменные уступы и снежная шапка
+            if (onBigStep) this.tiles[i] = Tl.CLIFF;
+            else if (onStep) this.tiles[i] = Tl.MTN;
+            else if (lv >= ELEV_LEVELS - 2) this.tiles[i] = Tl.SNOW2;
+            else this.tiles[i] = Tl.SNOW;
+            break;
         }
       }
     }
@@ -165,6 +248,7 @@ export class IslandGenerator {
       bossRoom: { x: 0, y: 0, w: 0, h: 0 }, bossSpot: { x: 0, y: 0 }, entryStairs: { x: 0, y: 0 },
       ruinedHouses: [],
       biomes: this.biomes,
+      height: this.height,
     };
     return w;
   }

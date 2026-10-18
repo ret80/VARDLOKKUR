@@ -1,7 +1,7 @@
 /* Основной entry point генерации мира — переэкспорт из generators/ */
 export {
   T, Tl, isSolidTileId,
-  Biome,
+  Biome, ELEV_LEVELS, elevLevel,
   type BiomeId,
   Edge,
   type Vec, type ChestItem, type EnemyKind, type BossReward,
@@ -12,6 +12,8 @@ export {
   type DungeonCfg,
   idx, inB,
 } from "./generators/types";
+
+export { WallBit, WALL_DIRS, WALL_COLLIDER_T, buildTerrainWalls, edgeOpen } from "./generators/terrain-walls";
 
 export { tileAt, solidTileAt, setTile, zoneFor, biomeAt } from "./generators/utils";
 export { findWalkableNear, clearAround, findFree, floodReach } from "./generators/utils";

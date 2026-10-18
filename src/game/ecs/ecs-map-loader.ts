@@ -4,6 +4,7 @@ import { type World, query, removeEntity, addEntity, addComponent, getAllEntitie
 import { Cat, getEnemyCategory, getEnemyMask } from '../physics/planck-world';
 import { T, WorldData, Vec, solidTileAt, tileAt } from '../world';
 import { Tl } from '../generators/types';
+import { WallBit, WALL_COLLIDER_T } from '../generators/terrain-walls';
 import { clamp } from '../utils';
 import type { PlanckWorld } from '../physics/planck-world';
 import type { DropKind } from '../generators/types';
@@ -244,6 +245,36 @@ export class EcsMapLoader {
         }
       }
     }
+    this.createReliefWalls(map, planckWorld);
+  }
+
+  /**
+   * Коллизия перепадов высот: тонкие стены строго на кромке обрыва,
+   * а не на всей клетке — игрок не проходит сквозь возвышенность
+   * и не спускается с плато, кроме пандусов (ramps).
+   *
+   * `walls` строится только для оверворлда; в подземельях поля нет.
+   */
+  private createReliefWalls(map: WorldData, planckWorld: PlanckWorld): void {
+    const walls = map.walls;
+    if (!walls || walls.length !== map.W * map.H) return;
+
+    const half = WALL_COLLIDER_T / 2;
+    let count = 0;
+    for (let ty = 0; ty < map.H; ty++) {
+      for (let tx = 0; tx < map.W; tx++) {
+        const m = walls[ty * map.W + tx];
+        if (!m) continue;
+        const x0 = tx * T, y0 = ty * T;
+        const hw = T / 2;
+        // Стена центрирована по самому стыку клеток — обе стороны ограничены.
+        if (m & WallBit.N) { planckWorld.createWallBody(x0 + hw, y0, hw, half); count++; }
+        if (m & WallBit.S) { planckWorld.createWallBody(x0 + hw, y0 + T, hw, half); count++; }
+        if (m & WallBit.W) { planckWorld.createWallBody(x0, y0 + hw, half, hw); count++; }
+        if (m & WallBit.E) { planckWorld.createWallBody(x0 + T, y0 + hw, half, hw); count++; }
+      }
+    }
+    logger.debug('map-loader', `relief walls: ${count} colliders`);
   }
 
   private createPlayer(

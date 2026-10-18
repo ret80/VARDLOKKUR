@@ -31,6 +31,9 @@ export class GlobalRoadGenerator {
         case Tl.WASTE: return 1.15;
         case Tl.FOREST: return 2.4;
         case Tl.MTN: return 2.8;
+        // Каменистые склоны и уступы — дорогу туда не прокладываем (обход)
+        case Tl.SCREE: return 3.0;
+        case Tl.CLIFF: return 5.0;
         case Tl.SWAMP: return 3.4;
         case Tl.POOL: return 4;
         case Tl.RUINS: return 1.9;
