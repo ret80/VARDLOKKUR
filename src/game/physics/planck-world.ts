@@ -252,15 +252,14 @@ export class PlanckWorld {
   /**
    * Стена-уступ (тонкий прямоугольник на стыке клеток), а не тайл целиком.
    *
-   * Виден игроку как грани обрыва и учитывает только игрока/снаряды:
-   * враги в ECS ведут себя прямым стирингом без навмеша, коллизия с ними
-   * заставила бы их упираться в каждую террасу.
+   * Коллидирует с игроком, снарядами и врагами — все они не проходят
+   * сквозь борта террас.
    */
   createWallBody(cx: number, cy: number, halfW: number, halfH: number): Body {
     const body = this.world.createBody({ type: BodyConst.STATIC, position: Vec2(cx, cy) });
     const fixture = body.createFixture(PolygonShape(boxVertices(halfW, halfH)), 0);
     fixture.setFilterCategoryBits(Cat.Tile);
-    fixture.setFilterMaskBits(Cat.Player | Cat.Projectile);
+    fixture.setFilterMaskBits(Cat.Player | Cat.Projectile | Cat.Enemy);
     fixture.setFilterGroupIndex(0);
     body.setUserData({ category: Cat.Tile, solid: true, wall: true });
     this.tileBodies.push(body);
