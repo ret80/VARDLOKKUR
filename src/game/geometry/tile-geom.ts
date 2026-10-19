@@ -330,12 +330,23 @@ function edgeRamp(P: ReliefPainter, x0: number, y0: number, dx: number, dy: numb
 /**
  * Второй проход отрисовки: перепады рельефа и видимые пандусы.
  *
- * Иллюзия 2.5D без реального Z, на террасах (см. ELEV_LEVELS):
- *  - если сосед ВЫШЕ — на самом стыке рисуется каменная «грань»
- *    (высотой N*CLIFF_STEP_PX), и там же стоит коллизия;
+ * Иллюзия 2.5D без реального Z, на террасах (см. ELEV_LEVELS). Камера смотрит
+ * сверху с юга, поэтому из вертикальных граней видны только те, что смотрят
+ * на зрителя:
+ *  - если сосед ВЫШЕ с севера или сбоку — на самом стыке рисуется каменная
+ *    «грань» (высотой N*CLIFF_STEP_PX), и там же стоит коллизия;
+ *  - если сосед ВЫШЕ с юга (dy>0) — саму грань НЕ рисуем: её закрывает наша
+ *    верхняя терраса, но на её северной кромке (первая строка верхнего тайла)
+ *    остаётся светлая линия стыка, как у прочих граней;
+ *  - на углу, где боковая стена и южная грань сходятся по диагонали,
+ *    вырез докрашивается угловым блоком — стык смыкается буквой Г;
  *  - открытый стык двух проходимых клеток — это ступенька (дорога, площадь,
  *    берег или пробитый связностью подъём): рисуется светлой «лесенкой»,
  *    чтобы подъём всегда был виден;
+ *  - стык с водой (Tl.WATER): вода ниже суши на любой уровень, поэтому такую
+ *    кромку рисуем отдельно — скальный обрыв высотой max(1, перепад) на суше
+ *    у воды (южная грань и боковые стенки), камень по биому самой суши;
+ *    обрыв развёрнут подножием к воде, а светлая кромка-кап остаётся на суше;
  *  - высокие террасы чуть светлее, низкие — темнее (объём).
  *
  * Стена/пандус приходят из `map.walls` (см. generators/terrain-walls): бит стоит
@@ -343,7 +354,8 @@ function edgeRamp(P: ReliefPainter, x0: number, y0: number, dx: number, dy: numb
  * рисуем как раньше: только северные обрывы по полю высот, без пандусов.
  *
  * Цвета берутся из палитр, утверждённых в SVG/relief.svg, — по биому ВЕРХНЕЙ
- * террасы (камень наследует тон грунта, который видно сверху).
+ * террасы (камень наследует тон грунта, который видно сверху; у берега — по
+ * биому суши).
  */
 function drawRelief(renderer: IRenderer, g: GraphicsHandle, map: WorldData, W: number, H: number): void {
   const height = map.height!;
@@ -397,15 +409,64 @@ function drawRelief(renderer: IRenderer, g: GraphicsHandle, map: WorldData, W: n
       if (walls) {
         const m = walls[i];
         for (const [dx, dy, bit] of EDGES) {
+          const nx = x + dx, ny = y + dy;
+
+          // --- Берег: скальный обрыв вдоль воды ---
+          // Вода всегда ниже суши и помечена exempt, поэтому stepTo её не видит
+          // (а за картой tileAt = 0 = Tl.WATER — потому ограничиваемся inb).
+          // Южная грань (dy>0) и боковые стенки видны сверху; северную (dy<0)
+          // закрывает собственная суша — её не рисуем. Палитра камня — по биому
+          // САМОЙ суши: вода биома не имеет. Обрыв развёрнут подножием к воде:
+          // светлая кромка-кап остаётся на суше (как у террас, где кромка всегда
+          // у верхней террасы), к воде камень темнеет, а подножие в воду не
+          // заходит — иначе у самой воды светится серая кайма.
+          if (inb(nx, ny) && map.tiles[ny * W + nx] === Tl.WATER) {
+            const dw = Math.max(1, my - lv(nx, ny));
+            const rock = reliefPalFor(t, biomeAt(x, y)).rock;
+            if (dy > 0) {
+              const fh = Math.min(FACE_CAP, CLIFF_STEP_PX * dw);
+              faceBand(P, x0, y0 + T - fh, fh, rock, true, true);
+            } else if (dy === 0) {
+              sideFace(P, x0, y0, dx < 0, dw, rock, true);
+            }
+            continue;
+          }
+
           const d = stepTo(x, y, dx, dy);
           if (d <= 0) continue;
-          const nt = tileAt(x + dx, y + dy);
-          const pal = reliefPalFor(nt, biomeAt(x + dx, y + dy));
+          const nt = tileAt(nx, ny);
+          const pal = reliefPalFor(nt, biomeAt(nx, ny));
           // «Лесенка» на каждом открытом стыке проходимых клеток: ступенька
           // дороги/площади или пробитый BFS подъём. Всё остальное — каменная
           // грань, в том числе к непроходимой скале (коллизию даёт сам тайл).
           if (isStepEdge(t, nt, m, bit)) edgeRamp(P, x0, y0, dx, dy, pal.ramp);
-          else edgeFace(P, x0, y0, dx, dy, d, pal.rock);
+          else if (dy <= 0) edgeFace(P, x0, y0, dx, dy, d, pal.rock);
+          // Сосед выше ЮЖНЕЕ (dy>0): сам обрыв закрывает верхняя терраса, но на
+          // её северной кромке остаётся светлая линия стыка — как у всех прочих
+          // граней (цвет — по биому верхнего тайла). Строка — первая строка
+          // верхней террасы, там же, где начинается боковая стена у угла.
+          else P(x0, y0 + T, T, 1, pal.rock.lip);
+        }
+
+        // --- Угол террасы: смыкаем боковую стену с южной гранью ---
+        // Диагональный сосед (x+dx, y-1) выше, а оба ортогональных (сбоку и с
+        // севера) — не выше: тогда боковая стена верхней террасы (её рисует наш
+        // северный сосед) и южная грань (её рисует наш боковой сосед) сходятся
+        // по диагонали, оставляя Г-образный вырез на нашем углу. Докрашиваем
+        // вырез той же колонкой, что и боковая стена, — светлая кромка
+        // заворачивает за угол и стык смыкается.
+        for (const dxi of [-1, 1] as const) {
+          const nx = x + dxi, ny = y - 1;
+          if (!inb(nx, ny)) continue;
+          if (stepTo(x, y, dxi, -1) <= 0) continue;
+          if (stepTo(x, y, dxi, 0) > 0 || stepTo(x, y, 0, -1) > 0) continue;
+          // соседи рисуют именно камень, а не «лесенку»-пандус
+          if ((walls[(y - 1) * W + x] & (dxi > 0 ? WallBit.E : WallBit.W)) === 0) continue;
+          if ((walls[y * W + x + dxi] & WallBit.N) === 0) continue;
+          // размеры — как у соседних стен, чтобы блок сомкнулся с ними встык
+          const cw = Math.min(5, SIDE_PX + stepTo(x, y - 1, dxi, 0) - 1);
+          const ch = Math.min(FACE_CAP, CLIFF_STEP_PX * stepTo(x + dxi, y, 0, -1));
+          cornerBlock(P, x0, y0, dxi, cw, ch, reliefPalFor(tileAt(x + dxi, y - 1), biomeAt(x + dxi, y - 1)).rock);
         }
       } else if (dN > 0) {
         // Маски стен нет (подземелья/тесты) — старое правило: только север.
@@ -421,8 +482,10 @@ function drawRelief(renderer: IRenderer, g: GraphicsHandle, map: WorldData, W: n
  * lipAtTop — северный уступ: светлая кромка (кап травы верхней террасы) сверху,
  * подножие снизу. lipAtTop=false — южный уступ, зеркально: подножие сверху,
  * кромка внизу, у самого стыка с верхним соседом.
+ * noBase=true — не рисуем подножие и его тень (обрыв к воде: подножие ушло бы
+ * в воду, где линия только мешает).
  */
-function faceBand(P: ReliefPainter, x0: number, top: number, faceH: number, rock: RockPal, lipAtTop: boolean): void {
+function faceBand(P: ReliefPainter, x0: number, top: number, faceH: number, rock: RockPal, lipAtTop: boolean, noBase = false): void {
   const mid = faceH >> 1;
   P(x0, top, T, faceH, rock.face);
   if (lipAtTop) P(x0, top + mid, T, faceH - mid, rock.dark);
@@ -439,10 +502,12 @@ function faceBand(P: ReliefPainter, x0: number, top: number, faceH: number, rock
   P(x0, lipAtTop ? top + 1 : top + faceH - 2, T, 1, rock.dark);
 
   // подножие: тёмная кромка и мягкая тень, падающая на грунт перед гранью
-  const baseY = lipAtTop ? top + faceH : top - 1;
-  P(x0, baseY, T, 1, rock.strata);
-  P(x0, lipAtTop ? baseY + 1 : top - 2, T, 1, 0x10151c, 0.28);
-  P(x0, lipAtTop ? baseY + 2 : top - 3, T, 1, 0x10151c, 0.14);
+  if (!noBase) {
+    const baseY = lipAtTop ? top + faceH : top - 1;
+    P(x0, baseY, T, 1, rock.strata);
+    P(x0, lipAtTop ? baseY + 1 : top - 2, T, 1, 0x10151c, 0.28);
+    P(x0, lipAtTop ? baseY + 2 : top - 3, T, 1, 0x10151c, 0.14);
+  }
 
   // случайные сколы по кромке подножия
   const nickY = lipAtTop ? top + faceH - 1 : top;
@@ -456,12 +521,16 @@ function faceBand(P: ReliefPainter, x0: number, top: number, faceH: number, rock
 /**
  * Боковая (вертикальная) грань. Бит стены стоит на НИЖНЕМ тайле и указывает
  * на более высокого соседа: westHigher=true — западный сосед выше.
+ * flip=true — полоса остаётся на той же стороне тайла, но светлая кромка уходит
+ * на противоположный край: так рисуется обрыв к воде (вода ниже, а кромка-кап
+ * должна остаться на суше, а не у воды).
  */
-function sideFace(P: ReliefPainter, x0: number, y0: number, westHigher: boolean, dN: number, rock: RockPal): void {
+function sideFace(P: ReliefPainter, x0: number, y0: number, westHigher: boolean, dN: number, rock: RockPal, flip = false): void {
   const faceW = Math.min(5, SIDE_PX + dN - 1);
   const sx = westHigher ? x0 : x0 + T - faceW;
-  const edgeHigh = westHigher ? sx : sx + faceW - 1; // кромка у границы с верхней террасой
-  const edgeLow = westHigher ? sx + faceW - 1 : sx;   // подножие, смотрящее на нижнюю террасу
+  const capWest = westHigher !== flip;            // где светлая кромка (верх обрыва)
+  const edgeHigh = capWest ? sx : sx + faceW - 1; // кромка у границы с верхней террасой
+  const edgeLow = capWest ? sx + faceW - 1 : sx;  // подножие, смотрящее на нижнюю террасу
 
   P(sx, y0, faceW, T, rock.face);
   P(edgeLow, y0, 1, T, rock.dark);
@@ -469,6 +538,23 @@ function sideFace(P: ReliefPainter, x0: number, y0: number, westHigher: boolean,
   if (faceW >= 4) P(sx + (faceW >> 1), y0, 1, T, rock.strata);
   // тень на нижнем грунте у подножия
   P(westHigher ? sx + faceW : sx - 1, y0, 1, T, 0x10151c, 0.3);
+}
+
+/**
+ * Угловой блок террасы: вырез на стыке боковой стены и южной грани.
+ * Заливается той же колонкой, что и боковая стена (светлая кромка — со стороны
+ * верхней террасы), но только на высоту её южной грани.
+ */
+function cornerBlock(P: ReliefPainter, x0: number, y0: number, dx: number, faceW: number, faceH: number, rock: RockPal): void {
+  const capWest = dx < 0;                       // диагональ выше с запада — кромка на западе
+  const bx = capWest ? x0 : x0 + T - faceW;
+  const edgeHigh = capWest ? bx : bx + faceW - 1;
+  const edgeLow = capWest ? bx + faceW - 1 : bx;
+
+  P(bx, y0, faceW, faceH, rock.face);
+  P(edgeLow, y0, 1, faceH, rock.dark);
+  P(edgeHigh, y0, 1, faceH, rock.lip);
+  if (faceW >= 4) P(bx + (faceW >> 1), y0, 1, faceH, rock.strata);
 }
 
 /**
