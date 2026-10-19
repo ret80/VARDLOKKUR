@@ -5,8 +5,9 @@ import { mulberry, NoiseGenerator } from "../noise";
 import { clamp, px } from "../utils";
 import {
   WorldData, Vec, Tl, Biome, NpcDef, EnemyKind, Edge, isSolidTileId,
-  VillageResult, GateDef, DungeonEntry, idx, inB, elevLevel,
+  VillageResult, GateDef, DungeonEntry, idx, inB, elevLevel, T,
 } from "./types";
+import { ENEMY_STATS } from "../balance";
 import {
   IslandGenerator, R_MOUNT, LEVEL_HEIGHT, H_BASE, ISLAND_RX, ISLAND_RY,
 } from "./island-generator";
@@ -14,6 +15,7 @@ import { VillageGenerator } from "./village-generator";
 import { GlobalRoadGenerator } from "./global-road-generator";
 import { NavBuilder } from "./nav-builder";
 import { buildTerrainWalls, flattenRampSurfaces, WallBit } from "./terrain-walls";
+import { passageMask, forbiddenMask, isPassageTile, STATIC_BODY_R } from "./passages";
 import { findWalkableNear, clearAround, floodReach, setTile, tileAt } from "./utils";
 
 /* ---------- Таблица врагов по биомам (Ф8, план §9) ---------- */
@@ -60,6 +62,11 @@ export function generateOverworld(seed: number): WorldData {
   const freeCell = (x: number, y: number) => cellOk(x, y) && !isCellOccupied(x, y) && !isProtected(x, y);
   /** Клетка не является дорожным покрытием (дороги уже проложены в Ф5) */
   const offRoad = (x: number, y: number) => inB(w, x, y) && w.tiles[idx(w, x, y)] !== Tl.PATH;
+  /** Клетка вне проходов (дорога/площадь/лестница): интерактивные коллайдеры
+   *  (пьедестал, святилище) не должны вставать на сквозные маршруты — финальная
+   *  зачистка Ф9 перенесёт ошибочно placed тела, но здесь экономим перенос. */
+  const offPassage = (x: number, y: number): boolean =>
+    inB(w, x, y) && !isPassageTile(w.tiles[idx(w, x, y)]);
   /** Покрасить тайл, но никогда не затирать дорогу (иначе рвётся PATH-цепочка) */
   const paint = (x: number, y: number, t: number) => {
     if (inB(w, x, y) && w.tiles[idx(w, x, y)] !== Tl.PATH) w.tiles[idx(w, x, y)] = t;
@@ -609,9 +616,9 @@ export function generateOverworld(seed: number): WorldData {
   const shrineForBiome = (b: number): Vec | null => {
     switch (b) {
       case Biome.SNOW: return snowShrine();
-      case Biome.FOREST: return placeInBiome(Biome.FOREST, R_MOUNT, 56, 0.5, 3, offRoad) ?? scanBiome(Biome.FOREST, R_MOUNT, 56, offRoad);
-      case Biome.SWAMP: return placeInBiome(Biome.SWAMP, R_MOUNT, 56, 0.4, 3, offRoad) ?? scanBiome(Biome.SWAMP, R_MOUNT, 56, offRoad);
-      case Biome.MEADOW: return placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.5, 3, offRoad) ?? scanBiome(Biome.MEADOW, R_MOUNT, 56, offRoad);
+      case Biome.FOREST: return placeInBiome(Biome.FOREST, R_MOUNT, 56, 0.5, 3, offPassage) ?? scanBiome(Biome.FOREST, R_MOUNT, 56, offPassage);
+      case Biome.SWAMP: return placeInBiome(Biome.SWAMP, R_MOUNT, 56, 0.4, 3, offPassage) ?? scanBiome(Biome.SWAMP, R_MOUNT, 56, offPassage);
+      case Biome.MEADOW: return placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.5, 3, offPassage) ?? scanBiome(Biome.MEADOW, R_MOUNT, 56, offPassage);
       default: return null;
     }
   };
@@ -627,9 +634,9 @@ export function generateOverworld(seed: number): WorldData {
     w.chests.push({ x: p.x, y: p.y, item });
     markOccupied(p.x, p.y);
   };
-  addChest(placeInBiome(Biome.FOREST, R_MOUNT, 56, 0.5, 3), "bow");
-  addChest(placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.5, 3) ?? scanBiome(Biome.MEADOW, R_MOUNT, 56), "arrows");
-  addChest(placeInBiome(Biome.SWAMP, R_MOUNT, 56, 0.4, 3) ?? placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.5, 3), "heartPiece");
+  addChest(placeInBiome(Biome.FOREST, R_MOUNT, 56, 0.5, 3, offPassage) ?? scanBiome(Biome.FOREST, R_MOUNT, 56, offPassage), "bow");
+  addChest(placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.5, 3, offPassage) ?? scanBiome(Biome.MEADOW, R_MOUNT, 56, offPassage), "arrows");
+  addChest(placeInBiome(Biome.SWAMP, R_MOUNT, 56, 0.4, 3, offPassage) ?? placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.5, 3, offPassage), "heartPiece");
 
   // Пьедесталы (стражи по биомам)
   const guardPool: EnemyKind[][] = [
@@ -637,11 +644,11 @@ export function generateOverworld(seed: number): WorldData {
     ["draugr", "raven"], ["varg", "varg"],
   ];
   const pedestalSpots = [
-    placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.4, 3),
-    placeInBiome(Biome.FOREST, R_MOUNT, 56, 0.45, 3),
-    placeInBiome(Biome.SWAMP, R_MOUNT, 56, 0.4, 3),
-    placeInBiome(Biome.FOREST, R_MOUNT, 56, 0.4, 3),
-    placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.5, 3),
+    placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.4, 3, offPassage),
+    placeInBiome(Biome.FOREST, R_MOUNT, 56, 0.45, 3, offPassage),
+    placeInBiome(Biome.SWAMP, R_MOUNT, 56, 0.4, 3, offPassage),
+    placeInBiome(Biome.FOREST, R_MOUNT, 56, 0.4, 3, offPassage),
+    placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.5, 3, offPassage),
   ];
   pedestalSpots.forEach((p, i) => {
     if (!p) return;
@@ -999,6 +1006,112 @@ export function generateOverworld(seed: number): WorldData {
         }
       }
     }
+  }
+
+  /* ================= Ф9. Свободные проходы ================= */
+  // Ни одно коллайдер-тело не может стоять на проходе (дорога/площадь/лестница
+  // либо открытый стык террас — рампа): на 1-клеточном корidorе тело r ≥ 6 px
+  // оставляет зазор меньше диаметра игрока (10 px), и проход непроходим —
+  // в частности, терраса со ступенькой становится недоступной. Статику
+  // (пьедестал/святилище) и спавны врагов, попавшие на проход, переносим на
+  // ближайшую свободную клетку. Враг сохраняет условия своего спавна
+  // (биом-предикаты Ф8, удалённость от POI и деревень). Декор НЕ трогаем:
+  // солиды на клетках проходов невозможны по построению (Ф7 сеет только на
+  // проходимых клетках, Ф7b лишь заменяет солиды дорогой), а террасы
+  // сохраняют деревья и врагов — переносится только то, что загораживает проход.
+  {
+    const passages = passageMask(w);
+    const fbCache = new Map<number, Uint8Array>();
+    const forbidden = (r: number): Uint8Array => {
+      let m = fbCache.get(r);
+      if (!m) { m = forbiddenMask(w, passages, r); fbCache.set(r, m); }
+      return m;
+    };
+    /** Клетка перекрыта телом радиуса r (центр тела = центр клетки)? */
+    const blocks = (x: number, y: number, r: number): boolean =>
+      !inB(w, x, y) || forbidden(r)[idx(w, x, y)] === 1;
+    /** Ближайшая клетка, свободная для тела r и допускающая pred (спираль ≤16). */
+    const spotFor = (fx: number, fy: number, r: number, pred: (x: number, y: number) => boolean): Vec | null => {
+      const fb = forbidden(r);
+      for (let rad = 1; rad <= 16; rad++) {
+        let best: Vec | null = null, bestD = Infinity;
+        for (let dy = -rad; dy <= rad; dy++) {
+          for (let dx = -rad; dx <= rad; dx++) {
+            if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
+            const x = fx + dx, y = fy + dy;
+            if (!inB(w, x, y)) continue;
+            if (fb[idx(w, x, y)] || !cellOk(x, y) || isCellOccupied(x, y)) continue;
+            if (!pred(x, y)) continue;
+            const d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; best = { x, y }; }
+          }
+        }
+        if (best) return best;
+      }
+      return null;
+    };
+
+    // 1. Статические коллайдеры (r=6): пьедесталы и святилища.
+    const moveStatic = (p: Vec, strictPred: (x: number, y: number) => boolean): void => {
+      const s = spotFor(p.x, p.y, STATIC_BODY_R, strictPred) ?? spotFor(p.x, p.y, STATIC_BODY_R, () => true);
+      if (!s) return;
+      occupied.delete(K(p.x, p.y));
+      p.x = s.x; p.y = s.y;
+      markOccupied(s.x, s.y);
+    };
+    for (const p of w.pedestals) {
+      if (!blocks(p.x, p.y, STATIC_BODY_R)) continue;
+      moveStatic(p, (x, y) => openRatio(x, y, 1) >= 0.5);
+    }
+    for (const s of w.shrines) {
+      if (!blocks(s.x, s.y, STATIC_BODY_R)) continue;
+      const b = biomeAtXY(s.x, s.y);
+      moveStatic(s, (x, y) => biomeAtXY(x, y) === b && openRatio(x, y, 1) >= 0.5);
+    }
+
+    // 2. Спавны врагов: радиус индивидуален (ENEMY_STATS), место — с теми же
+    //    условиями Ф8. «Живые» POI пересобираются после переноса статики.
+    const livePois: Vec[] = [
+      ...allGates, treeAltar,
+      ...w.dungeonEntries.map((e) => ({ x: e.x, y: e.y })),
+      ...w.shrines, ...w.npcs.map((n) => ({ x: n.x, y: n.y })),
+      ...w.chests.map((c) => ({ x: c.x, y: c.y })),
+      ...w.pedestals.map((p) => ({ x: p.x, y: p.y })),
+      w.bearSpot, w.hornSpot, w.meadSpot, w.oreSpot, w.mossSpot, w.amberSpot,
+      w.flowerSpot, w.diarySpot, w.bundleSpot, w.relicSpot, w.oldAltar, w.stashSpot,
+      ...w.souls,
+    ];
+    const spawnOk = (x: number, y: number): boolean =>
+      !noSpawn(x, y) && !nearVillage(x, y) &&
+      livePois.every((p) => Math.hypot(p.x - x, p.y - y) >= 8);
+    const kept: typeof w.spawns = [];
+    for (const sp of w.spawns) {
+      const r = ENEMY_STATS[sp.kind].r;
+      const ex = Math.floor(sp.x / T), ey = Math.floor(sp.y / T);
+      if (!blocks(ex, ey, r)) { kept.push(sp); continue; }
+      // Перенос сохраняет «принадлежность» спавна: сожжённая деревня (свои
+      // правила) или биом+вид (таблица Ф8). Сначала строго то же место,
+      // затем — вид всё ещё допустим для биома; иначе спавн убираем.
+      const inVr = ex >= vR.x0 && ex <= vR.x1 && ey >= vR.y0 && ey <= vR.y1;
+      // Прямоугольник совпадает с зоной «Сожжённая Деревня» (zones: x < x1).
+      const vrRect = (x: number, y: number): boolean =>
+        x >= vR.x0 && x < vR.x1 && y >= vR.y0 && y < vR.y1;
+      const b0 = biomeAtXY(ex, ey);
+      const kindOk = (x: number, y: number): boolean => {
+        const t = ENEMY_TABLE[biomeAtXY(x, y)];
+        return !!t && (t.kinds.includes(sp.kind) || t.rare === sp.kind);
+      };
+      const s = inVr
+        ? spotFor(ex, ey, r, vrRect) ?? spotFor(ex, ey, r, kindOk)
+        : spotFor(ex, ey, r, (x, y) => biomeAtXY(x, y) === b0 && spawnOk(x, y))
+          ?? spotFor(ex, ey, r, (x, y) => kindOk(x, y) && spawnOk(x, y));
+      if (!s) continue; // безопасного места нет — спавн убираем, проход важнее
+      occupied.delete(K(ex, ey));
+      markOccupied(s.x, s.y);
+      sp.x = s.x * T + T / 2; sp.y = s.y * T + T / 2;
+      kept.push(sp);
+    }
+    w.spawns = kept;
   }
 
   /* ================= Navmesh ================= */
