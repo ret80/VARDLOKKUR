@@ -12,6 +12,9 @@ export type ScreenTransition =
   | { type: "audio-ui-click" };
 
 export class ScreenRouter {
+  /** Экран, с которого открыли настройки — чтобы вернуться туда же */
+  private settingsPrevScreen: Screen | null = null;
+
   constructor(
     private state: StateManager,
     private bus: EventBus,
@@ -56,7 +59,8 @@ export class ScreenRouter {
   /** Переключить настройки */
   handleSettings(): void {
     if (this.state.screen === "settings") {
-      this.setScreen("play");
+      this.setScreen(this.settingsPrevScreen ?? "play");
+      this.settingsPrevScreen = null;
     } else {
       this.setScreen("settings");
     }
@@ -98,6 +102,7 @@ export class ScreenRouter {
 
   /** Открыть настройки (из любого игрового экрана) */
   openSettings(): void {
+    if (this.state.screen !== "settings") this.settingsPrevScreen = this.state.screen;
     this.setScreen("settings");
   }
 

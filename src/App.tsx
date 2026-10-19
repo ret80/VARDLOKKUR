@@ -291,7 +291,7 @@ export default function App() {
 
       {/* ======================= титул ======================= */}
       {screen === "title" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#05080d] overflow-y-auto">
+        <div className="absolute inset-0 flex items-center justify-center bg-[#05080d] overflow-hidden">
           <div className="mist-band" />
           <div className="absolute inset-0" style={{ background: "radial-gradient(80% 60% at 50% 38%, rgba(30,58,74,0.35), transparent 70%)" }} />
           <div className="relative flex flex-col items-center text-center px-6 py-8">
@@ -307,11 +307,12 @@ export default function App() {
               <div className="mt-1 font-display text-[11px] tracking-[0.3em] text-[#8fd8e8] uppercase animate-pulse">🗺 TEST MAP</div>
             )}
             <div className="mt-2 font-display text-[clamp(13px,2.4vw,20px)] tracking-[0.4em] text-[#8fd8e8] uppercase anim-pulse-ice">Эхо Ветвей Иггдрасиля</div>
-            <div className="mt-8 flex flex-col sm:flex-row items-center gap-3.5">
+            <div className="mt-8 flex flex-col sm:flex-row flex-wrap items-center justify-center gap-3.5">
               <button className="btn-rune text-[17px]" onClick={startSaga} disabled={summoning}>
                 {summoning ? "… Ниды пробуждаются …" : "⟡ Начать сагу ⟡"}
               </button>
               <button className="btn-rune btn-ice text-[15px]" onClick={() => setShowHelp(true)}>Помощь</button>
+              <button className="btn-rune btn-ice text-[15px]" onClick={() => eng()?.openSettings()}>Настройки</button>
             </div>
             {bootErr && (
               <div className="mt-5 nord-panel border-[#a0323288] px-5 py-4 max-w-[520px] anim-fade-up">
