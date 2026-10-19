@@ -6,11 +6,12 @@ import { Biome, Tl, idx, isSolidTileId, type WorldData } from "../generators/typ
 
 const SEEDS = Array.from({ length: 20 }, (_, i) => i + 1);
 
-/** Разрешённые виды врагов по биому (элита включена) */
+/** Разрешённые виды врагов по биому (драугр — универсал во всех биомах) */
 const ALLOWED: Record<number, Set<string>> = {
-  [Biome.FOREST]: new Set(["shroom", "raven", "draugr", "spider"]),
+  [Biome.SNOW]: new Set(["frost", "varg", "draugr"]),
+  [Biome.FOREST]: new Set(["shroom", "raven", "varg", "draugr"]),
   [Biome.SWAMP]: new Set(["crawler", "draugr"]),
-  [Biome.MEADOW]: new Set(["varg", "raven", "frost"]),
+  [Biome.MEADOW]: new Set(["raven", "crawler", "draugr"]),
 };
 
 const RUINED = "Сожжённая Деревня";
@@ -84,8 +85,22 @@ describe("enemies by biome", () => {
       // Лес и топи — «высокая плотность», должны присутствовать
       expect(seen.has(Biome.FOREST), `seed ${seed}: нет врагов в лесу`).toBe(true);
       expect(seen.has(Biome.SWAMP), `seed ${seed}: нет врагов в топях`).toBe(true);
-      // В снежном центре врагов быть не должно
-      expect(seen.has(Biome.SNOW), `seed ${seed}: враги в снежном центре`).toBe(false);
+      // Зима (снег): frost/varg живут вне зоны священной гряды
+      expect(seen.has(Biome.SNOW), `seed ${seed}: нет врагов в снегу`).toBe(true);
+      // В зоне священной гряды врагов быть не должно
+      for (const s of w.spawns) {
+        const tx = Math.floor(s.x / 16), ty = Math.floor(s.y / 16);
+        expect(inZone(w, "Священная Гряда", tx, ty),
+          `seed ${seed}: спавн ${s.kind} в священной зоне @(${tx},${ty})`).toBe(false);
+      }
+    }
+  });
+
+  it("на поверхности нет пауков (босс подземелий)", { timeout: 60000 }, () => {
+    for (const seed of SEEDS) {
+      const w = generateOverworld(seed);
+      const spiders = w.spawns.filter((s) => s.kind === "spider");
+      expect(spiders.length, `seed ${seed}: статичных пауков: ${spiders.length}`).toBe(0);
     }
   });
 });

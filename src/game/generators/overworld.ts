@@ -18,18 +18,23 @@ import { buildTerrainWalls, flattenRampSurfaces, WallBit } from "./terrain-walls
 import { passageMask, forbiddenMask, isPassageTile, STATIC_BODY_R } from "./passages";
 import { findWalkableNear, clearAround, floodReach, setTile, tileAt } from "./utils";
 
-/* ---------- Таблица врагов по биомам (Ф8, план §9) ---------- */
+/* ---------- Таблица врагов по биомам (Ф8, план §9) ----------
+   Зима (снег): frost/varg; лес: птицы/грибы/волки; топи: слизни;
+   луга: птицы/слизни. Драугр — «универсал»: редко во всех биомах и
+   спец-спавны Сожжённой Деревни. Паук — босс подземелий, на поверхность
+   не выходит (см. ENEMY_TABLE без spider). */
 interface EnemyEntry { kinds: EnemyKind[]; rare?: EnemyKind; rareChance?: number }
 const ENEMY_TABLE: Record<number, EnemyEntry> = {
-  [Biome.FOREST]: { kinds: ["shroom", "raven", "draugr"], rare: "spider", rareChance: 0.07 },
+  [Biome.SNOW]: { kinds: ["frost", "varg"], rare: "draugr", rareChance: 0.15 },
+  [Biome.FOREST]: { kinds: ["shroom", "raven", "varg"], rare: "draugr", rareChance: 0.15 },
   // Призрак — исключительно туманный враг (спавнится только системой тумана),
   // статичный спавн давал «призрака-стояку» без поведения (state=idle вне автомата)
-  [Biome.SWAMP]: { kinds: ["crawler", "draugr"] },
-  [Biome.MEADOW]: { kinds: ["varg", "raven"], rare: "frost", rareChance: 0.05 },
+  [Biome.SWAMP]: { kinds: ["crawler"], rare: "draugr", rareChance: 0.15 },
+  [Biome.MEADOW]: { kinds: ["raven", "crawler"], rare: "draugr", rareChance: 0.15 },
 };
-/** Целевое число спавнов по биомам (сумма ~84) */
+/** Целевое число спавнов по биомам (сумма ~96) */
 const ENEMY_QUOTA: Record<number, number> = {
-  [Biome.FOREST]: 28, [Biome.SWAMP]: 24, [Biome.MEADOW]: 32,
+  [Biome.SNOW]: 12, [Biome.FOREST]: 28, [Biome.SWAMP]: 24, [Biome.MEADOW]: 32,
 };
 
 export function generateOverworld(seed: number): WorldData {
@@ -862,8 +867,10 @@ export function generateOverworld(seed: number): WorldData {
   const noSpawn = (x: number, y: number): boolean => {
     for (const v of [vA, vB, vR])
       if (x >= v.x0 - 8 && x <= v.x1 + 8 && y >= v.y0 - 8 && y <= v.y1 + 8) return true;
-    // Священная гора (центр) и главный алтарь в топях — без врагов
-    if (Math.hypot(x - cx, y - cy) < 13) return true;
+    // Священная гора (центр) и главный алтарь в топях — без врагов.
+    // Квадрат 27×27, как у зоны «Священная Гряда»: круг radius=13 оставлял
+    // углы зоны свободными для спавна.
+    if (Math.abs(x - cx) <= 13 && Math.abs(y - cy) <= 13) return true;
     if (Math.hypot(x - treeAltar.x, y - treeAltar.y) < 13) return true;
     return false;
   };
