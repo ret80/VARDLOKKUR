@@ -491,14 +491,14 @@ export class Engine {
           if (fs) return {
             fogActive: fs.fogActive,
             fogAmbient: fs.fogAmbient,
-            fogLeft: fs.fogLeft,
-            fogTimer: fs.fogTimer,
             fogRadius: fs.fogRadius,
-            fogSpawned: fs.fogSpawned,
-            fogWarned: fs.fogWarned,
+            fogAlpha: fs.fogAlpha,
+            fogAlphaTarget: fs.fogAlphaTarget,
+            altarRespawnT: fs.altarRespawnT,
+            wanderRespawnT: fs.wanderRespawnT,
           };
         }
-        return { fogActive: false, fogAmbient: false, fogLeft: 0, fogTimer: 60, fogRadius: 2600 };
+        return { fogActive: false, fogAmbient: false, fogRadius: 420, fogAlpha: 0, fogAlphaTarget: 0, altarRespawnT: 0, wanderRespawnT: 0 };
       },
       getFlags: () => {
         const raw = this.store.flags;

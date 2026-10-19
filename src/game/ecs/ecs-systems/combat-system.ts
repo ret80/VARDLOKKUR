@@ -52,7 +52,8 @@ export function swordAttackSystem(
   hasSword: boolean,
   swordUp: boolean,
   hasHammer: boolean,
-  hasGhostBane: boolean,
+  /** Шанс (0..1), что удар пробьёт призрака — по уровню закалки клинка Росой */
+  ghostBaneChance: number,
   onDamageEnemy: (enemyEid: number, dmg: number, fx: number, fy: number) => void,
   onFreezeEnemy: (enemyEid: number, duration: number) => void,
   onFloatText: (x: number, y: number, text: string, color: number) => void,
@@ -98,8 +99,8 @@ export function swordAttackSystem(
       continue;
     }
 
-    // Ghost immunity check
-    if (enemyKind === 'ghost' && !hasGhostBane) {
+    // Ghost immunity check — клинок пробивает призрака с шансом по уровню закалки
+    if (enemyKind === 'ghost' && Math.random() >= ghostBaneChance) {
       onFloatText(Position[enemyEid].x, Position[enemyEid].y, 'Не пробивает', 0x8fd8e8);
       onAudioClang();
       continue;
@@ -342,7 +343,8 @@ export function canProjectileHitEnemy(
   world: World,
   projKind: ProjectileKind,
   enemyEid: number,
-  hasGhostBane: boolean,
+  /** Шанс (0..1), что снаряд пробьёт призрака */
+  ghostBaneChance: number,
   onClang: () => void,
   onFloatText: (x: number, y: number, text: string, color: number) => void,
   fromX: number,
@@ -353,8 +355,8 @@ export function canProjectileHitEnemy(
   const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
   const enemyState = getEnemyStateName(Enemy[enemyEid].state);
 
-  // Ghost immunity
-  if (enemyKind === 'ghost' && !hasGhostBane) {
+  // Ghost immunity — снаряд пробивает призрака с шансом по уровню закалки
+  if (enemyKind === 'ghost' && Math.random() >= ghostBaneChance) {
     onFloatText(Position[enemyEid].x, Position[enemyEid].y, 'Не пробивает', 0x8fd8e8);
     onClang();
     return false;
@@ -477,7 +479,8 @@ export function hitEnemy(
   sx: number,
   sy: number,
   ignoreShield: boolean,
-  hasGhostBane: boolean,
+  /** Шанс (0..1), что удар пробьёт призрака */
+  ghostBaneChance: number,
   planckWorld: PlanckWorld,
   onFloat: (x: number, y: number, text: string, color: number) => void,
   onAudioClang: () => void,
@@ -491,8 +494,8 @@ export function hitEnemy(
 
   const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
 
-  // Ghost immunity check
-  if (enemyKind === 'ghost' && !hasGhostBane) {
+  // Ghost immunity check — удар пробивает призрака с шансом по уровню закалки
+  if (enemyKind === 'ghost' && Math.random() >= ghostBaneChance) {
     onFloat(Position[enemyEid].x, Position[enemyEid].y, 'Не пробивает', 0x8fd8e8);
     onAudioClang();
     return;
@@ -628,7 +631,8 @@ export function updateProjectilesEcs(
   world: World,
   dt: number,
   playerEid: number,
-  hasGhostBane: boolean,
+  /** Шанс (0..1), что снаряд пробьёт призрака */
+  ghostBaneChance: number,
   planckWorld: PlanckWorld,
   onProjectileRemove: (eid: number) => void,
   onFloat: (x: number, y: number, text: string, color: number) => void,
@@ -735,8 +739,8 @@ export function updateProjectilesEcs(
         const enemyKind = poolGet(StringPool.enemyKinds, Enemy[enemyEid].kind);
         const enemyState = getEnemyStateName(Enemy[enemyEid].state);
 
-        // Ghost immunity
-        if (enemyKind === 'ghost' && !hasGhostBane) {
+        // Ghost immunity — снаряд гасится призраком, если клинок не пробил
+        if (enemyKind === 'ghost' && Math.random() >= ghostBaneChance) {
           if (pKind === 'axe') {
             proj.returning = 1;
           } else {
@@ -789,10 +793,12 @@ export function updateProjectilesEcs(
             onAudioFreeze();
             onFloat(ePos.x, ePos.y, 'Заморожен', 0x9fe0ee);
             if (enemyKind === 'raven' || enemyKind === 'crawler') {
-              hitEnemy(world, enemyEid, proj.dmg, pos.x, pos.y, true, hasGhostBane, planckWorld, onFloat, onAudioClang, onAudioHit, onAudioFreeze, onEnemyHit, onEnemyKilled);
+              // ghostBaneChance=1: гейт призрака уже пройден на этапе коллизии выше
+              hitEnemy(world, enemyEid, proj.dmg, pos.x, pos.y, true, 1, planckWorld, onFloat, onAudioClang, onAudioHit, onAudioFreeze, onEnemyHit, onEnemyKilled);
             }
           } else {
-            hitEnemy(world, enemyEid, proj.dmg, pos.x, pos.y, true, hasGhostBane, planckWorld, onFloat, onAudioClang, onAudioHit, onAudioFreeze, onEnemyHit, onEnemyKilled);
+            // ghostBaneChance=1: гейт призрака уже пройден на этапе коллизии выше
+            hitEnemy(world, enemyEid, proj.dmg, pos.x, pos.y, true, 1, planckWorld, onFloat, onAudioClang, onAudioHit, onAudioFreeze, onEnemyHit, onEnemyKilled);
           }
           enemyHit = true;
           if (pKind !== 'axe') {

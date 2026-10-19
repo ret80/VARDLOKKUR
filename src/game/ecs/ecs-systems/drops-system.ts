@@ -18,6 +18,8 @@ import {
 import type { DropKind } from '../../generators/types';
 import { DropHandlerRegistry } from '../../drop-handlers';
 import type { EntityFactory } from '../entity-factory';
+import { swampTilesFor } from './fog-system';
+import { logger } from '../../debug/logger';
 
 // ============================================================
 // ECS Drop Runtime Component
@@ -121,11 +123,12 @@ export function dropsUpdateSystem(
         const dropKind = poolGet(StringPool.dropKinds, drop.kind) as DropKind;
         const handler = dropRegistry?.get(dropKind);
         if (handler) {
-        handler.handle({
+        const ok = handler.handle({
           player: { hp: playerDomain.hp, maxHp: playerDomain.maxHp },
           flags: store.flags,
           bus,
         });
+        if (ok) bus.emit("drop:collected", { kind: dropKind, x: pos.x, y: pos.y });
         }
         onDropRemove(eid);
         removeEntity(world, eid);
@@ -148,12 +151,9 @@ export function rollDropsForEnemy(
   onDropSpawn: (kind: DropKind, x: number, y: number, life?: number) => void
 ): void {
   if (enemyKind === 'ghost') {
-    // Призрак у змея (leash) — ничего не даёт
+    // Алтарный призрак (leash) — рун не роняет, росу не роняет
     if (isGhostLeash) return;
-    // Убийство: 90% шанс росы
-    if (Math.random() < 0.9) {
-      onDropSpawn('dew', x, y, 40);
-    }
+    // Бродячий призрак: роса НЕ дропается — она разбросана по топям заранее
     if (Math.random() < 0.35) {
       onDropSpawn(Math.random() < 0.5 ? 'shard' : 'heart', x, y);
     }
@@ -167,6 +167,73 @@ export function rollDropsForEnemy(
   } else {
     onDropSpawn(Math.random() < 0.5 ? 'heart' : 'arrows', x, y);
   }
+}
+
+// ============================================================
+// Туманная Роса: статичные улучшения клинка в топях
+// ============================================================
+
+/** Всего росы в мире — 3 (каждая = одно улучшение клинка) */
+export const DEW_TOTAL = 3;
+const DEW_MIN_SEP = 240;        // минимальная дистанция между росами (px)
+const DEW_ALTAR_KEEP_OUT = 180; // роса не лежит ближе этого к алтарю (px)
+
+/**
+ * Разбросать недостающую Туманную Росу по проходимым клеткам биома SWAMP.
+ *
+ * @param map          карта мира (нужен biomes/tiles/treeAltar)
+ * @param alreadyPlaced роса, уже лежащая на карте (живые дропы из savedDrops)
+ * @param alreadyTaken  уже собранная роса (flags.dew)
+ * @param onDropSpawn   колбэк спавна (kind, x, y, life)
+ */
+export function scatterMistDew(
+  map: any,
+  alreadyPlaced: number,
+  alreadyTaken: number,
+  onDropSpawn: (kind: DropKind, x: number, y: number, life?: number) => void
+): void {
+  if (!map || map.isDungeon || !map.treeAltar) return;
+  const missing = DEW_TOTAL - (alreadyPlaced + alreadyTaken);
+  if (missing <= 0) return;
+
+  const tiles = swampTilesFor(map);
+  if (tiles.length === 0) {
+    logger.warn('drop', 'scatterMistDew: в карте нет проходимых клеток болота');
+    return;
+  }
+
+  const T0 = 16;
+  const altarX = map.treeAltar.x * T0 + 8;
+  const altarY = map.treeAltar.y * T0 + 8;
+  const chosen: Array<{ x: number; y: number }> = [];
+
+  for (let n = 0; n < missing; n++) {
+    let pt: { x: number; y: number } | null = null;
+    for (let tries = 0; tries < 80; tries++) {
+      const i = tiles[Math.floor(Math.random() * tiles.length)];
+      const cand = {
+        x: (i % map.W) * T0 + 8,
+        y: Math.floor(i / map.W) * T0 + 8,
+      };
+      const dAltar = Math.hypot(cand.x - altarX, cand.y - altarY);
+      if (dAltar < DEW_ALTAR_KEEP_OUT) continue;
+      let tooClose = false;
+      for (const c of chosen) {
+        if (Math.hypot(cand.x - c.x, cand.y - c.y) < DEW_MIN_SEP) { tooClose = true; break; }
+      }
+      if (tooClose) continue;
+      pt = cand;
+      break;
+    }
+    // Запасной вариант: первая подходящая клетка без требований к «свежести»
+    if (!pt) {
+      const i = tiles[Math.floor(Math.random() * tiles.length)];
+      pt = { x: (i % map.W) * T0 + 8, y: Math.floor(i / map.W) * T0 + 8 };
+    }
+    chosen.push(pt);
+    onDropSpawn('dew', pt.x, pt.y);
+  }
+  logger.debug('drop', `scatterMistDew: разбросано ${missing} Туманной Росы`);
 }
 
 // ============================================================

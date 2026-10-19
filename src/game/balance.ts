@@ -18,6 +18,18 @@ export const ENEMY_STATS: Record<EnemyKind, { r: number; hp: number; speed: numb
   ghost:   { r: 6, hp: 5, speed: 100, dmg: 1 },
 };
 
+/**
+ * Шанс, что удар по призраку пробивает защиту.
+ * Каждая собранная капля Туманной Росы — одно улучшение клинка (0..3),
+ * на третьем уровне клинок бьёт призраков гарантированно.
+ */
+export const GHOST_BANE_CHANCES = [0, 0.35, 0.7, 1] as const;
+
+export function ghostBaneChance(dew: number | undefined): number {
+  const lvl = Math.max(0, Math.min(GHOST_BANE_CHANCES.length - 1, Math.floor(dew ?? 0)));
+  return GHOST_BANE_CHANCES[lvl];
+}
+
 /** Создать plain-object врага по типу */
 export function makeEnemy(kind: EnemyKind, x: number, y: number, idx: number): Enemy {
   const stats = ENEMY_STATS[kind];

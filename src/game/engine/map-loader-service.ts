@@ -125,6 +125,7 @@ export class MapLoaderService {
         secretKnown: this.store.flags.secretKnown,
         shrineIdx: this.store.flags.shrineIdx,
         runes: this.store.flags.runes,
+        dew: this.store.flags.dew,
         snakeStarted: this.store.flags.snakeStarted,
         hasKey: this.store.flags.hasKey,
         // Квестовые предметы

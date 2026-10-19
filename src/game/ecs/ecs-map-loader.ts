@@ -37,7 +37,7 @@ import { createDoorBody } from './ecs-systems/physics-system';
 import type { IRenderer, LayerHandle } from '../renderer/IRenderer';
 import { createMapTileGraphics, destroyAllMapTileGraphics } from '../render/map-render-system';
 import { getRenderer } from '../renderer/RendererFactory';
-import { spawnWorldDrops } from './ecs-systems/drops-system';
+import { spawnWorldDrops, scatterMistDew } from './ecs-systems/drops-system';
 
 // ============================================================
 // Конфигурация Map Loader
@@ -63,6 +63,8 @@ export interface EcsMapLoaderConfig {
     secretKnown: boolean;
     shrineIdx: number;
     runes: number;
+    /** Собранная Туманная Роса (0..3) — статичные улучшения клинка */
+    dew: number;
     snakeStarted: boolean;
     hasKey: boolean;
     // Квестовые предметы
@@ -425,6 +427,13 @@ export class EcsMapLoader {
         logger.debug('map-loader', `spawnQuestDrops: ${kind} at ${x},${y}`);
       }
     );
+
+    // Туманная Роса: ровно 3 штуки разбросаны по топям (улучшения клинка)
+    const dewPlaced = savedDrops.filter((d) => d.kind === 'dew').length;
+    scatterMistDew(map, dewPlaced, flags.dew ?? 0, (kind, x, y, life) => {
+      savedDrops.push({ kind, x, y, life });
+      logger.debug('map-loader', `spawnQuestDrops: dew at ${x},${y}`);
+    });
   }
 
   private spawnDrops(world: World, map: WorldData): void {

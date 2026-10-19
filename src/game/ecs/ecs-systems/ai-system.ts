@@ -445,9 +445,6 @@ function updateGhost(
     Velocity[eid].x = Math.sin(Enemy[eid].t * 1.3 + Enemy[eid].seed) * 12;
     Velocity[eid].y = -14;
     if (Enemy[eid].fade <= 0) {
-      if (!!Enemy[eid].dropDew) {
-        // bus.emit("drop:spawn", { kind: "dew", x: px[eid], y: py[eid], life: 40 });
-      }
       addComponent(world, eid, Dead);
     }
     return;
@@ -458,7 +455,7 @@ function updateGhost(
   const lmy = Enemy[eid].leashY;
   if (lmx !== 0 || lmy !== 0) {
     const leashDist = Math.sqrt((Position[eid].x - lmx) ** 2 + (Position[eid].y - lmy) ** 2);
-    if (leashDist > 260 * 260) {
+    if (leashDist > 260) {
       const ld = Math.sqrt((lmx - Position[eid].x) ** 2 + (lmy - Position[eid].y) ** 2) || 1;
       Velocity[eid].x = ((lmx - Position[eid].x) / ld) * Enemy[eid].speed;
       Velocity[eid].y = ((lmy - Position[eid].y) / ld) * Enemy[eid].speed;

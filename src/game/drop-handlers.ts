@@ -202,10 +202,25 @@ class FlowerHandler implements DropHandler {
 class DewHandler implements DropHandler {
   readonly kind = "dew" as const;
 
+  /** Улучшение клинка за каждую Росу: шанс пробить защиту призрака.
+   *  Роса сверх лимита не засчитывается (розеток в топях ровно 3). */
   handle(ctx: DropContext): boolean {
-    ctx.flags.dew = (ctx.flags.dew ?? 0) + 1;
+    const { flags, bus } = ctx;
+    const dew = flags.dew ?? 0;
+    if (dew >= 3) {
+      bus.emit("toast", { msg: "Клинок уже закалён Росой" });
+      return false;
+    }
+    flags.dew = dew + 1;
     audio.pickup();
-    ctx.bus.emit("toast", { msg: `Туманная Роса ${ctx.flags.dew}/3` });
+    bus.emit("toast", { msg: `Туманная Роса ${flags.dew}/3 — клинок крепчает` });
+
+    if (flags.dew >= 3) {
+      flags.ghostBane = true; // совместимость: 3/3 = 100% пробития
+      audio.chime();
+      bus.emit("toast", { msg: "Клинок закалён — сталь пробивает призраков" });
+      bus.emit("hud:dirty", {});
+    }
     return true;
   }
 }

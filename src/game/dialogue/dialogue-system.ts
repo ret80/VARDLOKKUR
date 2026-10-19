@@ -122,11 +122,7 @@ export class DialogueSystem {
       audio.rune(); this.bus.emit("toast", { msg: "Отвар Норн выпит. Руна Ярости: замах быстрее" });
       this.bus.emit("hud:dirty", {});
     }
-    if (f.dew! >= 3 && !f.ghostBane) {
-      f.dew = 0; f.ghostBane = true;
-      audio.rune(); this.bus.emit("toast", { msg: "Клинок освящён — сталь бьёт призраков" });
-      this.bus.emit("hud:dirty", {});
-    }
+    // Клинок закаляется Туманной Росой сам, без сдачи Шаману — эффекта нет
   }
 
   private effect_refugee(id: string) {

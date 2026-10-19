@@ -10,6 +10,8 @@ import {
   Dead,
   Position,
   Pedestal,
+  Drop,
+  Taken,
   poolGet,
   StringPool,
 } from "../ecs/ecs-components";
@@ -45,6 +47,19 @@ function getUntakenPedestalsEcs(ctx: TargetContext): Array<{ x: number; y: numbe
     if (!Pedestal[eid].taken) {
       result.push({ x: Position[eid].x, y: Position[eid].y });
     }
+  }
+  return result;
+}
+
+/** Получить все несобранные Туманной Росы из ECS */
+function getDewDropsEcs(ctx: TargetContext): Array<{ x: number; y: number }> {
+  const world = ctx.store.ecsWorld;
+  if (!world) return [];
+  const result: Array<{ x: number; y: number }> = [];
+  for (const eid of query(world, [Position, Drop])) {
+    if (hasComponent(world, eid, Taken)) continue;
+    if (poolGet(StringPool.dropKinds, Drop[eid].kind) !== "dew") continue;
+    result.push({ x: Position[eid].x, y: Position[eid].y });
   }
   return result;
 }
@@ -204,9 +219,10 @@ const RESOLVERS: Record<string, TargetResolver> = {
 
   s_ghost(ctx) {
     if (!ctx.map) return null;
-    if (ctx.map.isDungeon || ctx.flags.ghostBane) return null;
-    if (ctx.flags.getDew() >= 3) return npcSpot(ctx.ow, "shaman");
-    return null;
+    // Квест закрыт, когда Роса собрана (3/3) — цель больше не нужна
+    if (ctx.map.isDungeon || ctx.flags.getDew() >= 3) return null;
+    const drops = getDewDropsEcs(ctx);
+    return drops.length ? nearestOf(ctx.playerDomain, drops) : null;
   },
 };
 

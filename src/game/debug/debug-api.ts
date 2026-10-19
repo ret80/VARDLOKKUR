@@ -828,11 +828,11 @@ export function getFullGameState(
     fog: {
       fogActive: fogState?.fogActive ?? false,
       fogAmbient: fogState?.fogAmbient ?? false,
-      fogLeft: fogState?.fogLeft ?? 0,
-      fogTimer: fogState?.fogTimer ?? 60,
-      fogRadius: fogState?.fogRadius ?? 2600,
-      fogSpawned: fogState?.fogSpawned ?? false,
-      fogWarned: fogState?.fogWarned ?? false,
+      fogRadius: fogState?.fogRadius ?? 420,
+      fogAlpha: fogState?.fogAlpha ?? 0,
+      fogAlphaTarget: fogState?.fogAlphaTarget ?? 0,
+      altarRespawnT: fogState?.altarRespawnT ?? 0,
+      wanderRespawnT: fogState?.wanderRespawnT ?? 0,
     },
     flags,
     map: map ? {

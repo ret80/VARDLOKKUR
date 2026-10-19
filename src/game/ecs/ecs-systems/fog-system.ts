@@ -1,37 +1,26 @@
-/* fog-system.ts — система тумана на основе ECS */
+/* fog-system.ts — туман топов на основе ECS.
+ *
+ * Туман привязан к биому SWAMP: сильнее ближе к алтарю Древа, слабее на
+ * окраинах болота. При 5 Рунах (или после смерти Змея) туман и призраки
+ * рассеиваются совсем. Волны тумана удалены.
+ *
+ * Призраки две группы:
+ *  - алтарные (leashed к treeAltar): max(0, 5 - руны);
+ *  - бродячие по всему болоту: max(0, 5 - руны).
+ * Пока игрок в топях — группы поддерживаются по целевому числу, убитые
+ * воскресают с задержкой, лишние (при росте рун) уходят в dissipate.
+ */
 
-import { query, removeEntity, type World } from 'bitecs';
+import { query, type World } from 'bitecs';
 import {
   Position,
-  Velocity,
-  Health,
-  Radius,
-  Direction,
   Enemy,
   EnemyState,
-  Time,
-  RenderLayer,
-  Dead,
-  Moving,
-  Attacking,
-  Aiming,
-  Frozen,
-  Flashing,
-  Slowed,
-  Returning,
-  ShrineLit,
-  Hidden,
-  Taken,
-  Magnet,
-  Sprite,
-  PhysicsBody,
-  EnemyAI,
-  poolAdd,
   poolGet,
   StringPool,
 } from '../ecs-components';
-import { dist2 } from '../../utils';
 import { T } from '../../world';
+import { Biome, Tl, isSolidTileId } from '../../generators/types';
 import { audio } from '../../audio';
 import { logger } from '../../debug/logger';
 
@@ -39,75 +28,105 @@ import { logger } from '../../debug/logger';
 // Конфигурация тумана
 // ============================================================
 
-const FOG_WAVE_INTERVAL = 60; // seconds
-const FOG_GHOST_HP = 5;
-const FOG_GHOST_SPEED = 100;
+// --- Интенсивность тумана по расстоянию до алтаря ---
+const FOG_ALPHA_BASE = 0.30;          // туман вдали от алтаря (вошёл в топи)
+const FOG_ALPHA_ALTAR = 1.0;          // плотный туман у алтаря
+const FOG_DIST_FULL = 720;            // дистанция до алтаря, на которой туман максимальный (px)
 
-// --- Радиусы тумана ---
-const FOG_RADIUS_DEFAULT = 2600;     // радиус по умолчанию / вне волны
-const FOG_RADIUS_ALTAR = 350;        // радиус тумана у алтаря
-const FOG_RADIUS_WAVE = 900;         // радиус при начале волны
-const FOG_RADIUS_WAVE_ACTIVE = 140;  // радиус активной волны
-
-// --- Зоны безопасности ---
-const SAFE_ZONE_ALTAR = 240;         // радиус безопасности у алтаря
-
-// --- Параметры волны ---
-const FOG_WAVE_DURATION = 40;        // длительность волны в секундах
-const FOG_WARNING_TIME = 4;          // время предупреждения до волны (сек)
-const FOG_GHOST_SPAWN_DELAY = 38;    // время появления призраков после начала волны (40 - 2)
+// --- Круг ясности вокруг игрока ---
+const FOG_RADIUS_FAR = 420;           // радиус ясности вдали от алтаря
+const FOG_RADIUS_NEAR = 220;          // радиус ясности у алтаря
 
 // --- Скорости интерполяции ---
-const FOG_ALPHA_SPEED = 0.5;         // скорость изменения альфы (1 / 2.0s)
-const FOG_RADIUS_SPEED_DEFAULT = 0.8;// скорость интерполяции радиуса (default)
-const FOG_RADIUS_SPEED_AMBIENT = 0.6;// скорость интерполяции радиуса (ambient)
-const FOG_RADIUS_SPEED_WAVE = 0.35;  // скорость интерполяции радиуса (wave)
+const FOG_ALPHA_SPEED = 0.5;          // скорость изменения альфы
+const FOG_RADIUS_SPEED = 1.2;         // скорость интерполяции радиуса
 
 // --- Призраки ---
-const GHOST_COUNT_MIN = 2;           // минимальное количество призраков
-const GHOST_COUNT_MAX = 4;           // максимальное количество призраков
-const GHOST_SPAWN_MIN_DIST = 110;    // минимальная дистанция спавна призраков
-const GHOST_SPAWN_DIST_RAND = 60;    // разброс дистанции спавна призраков
-const GHOST_STATE_T_BASE = 1.5;      // базовое время состояния призрака
-const GHOST_STATE_T_RAND = 0.5;      // разброс времени состояния
-const GHOST_FOG_ONLY = 1;            // флаг: только для тумана
+const GHOST_COUNT_ALTAR = 5;          // базовое число призраков у алтаря
+const GHOST_COUNT_WANDER = 5;         // базовое число бродячих призраков
+const GHOST_COUNT_MAX = 5;            // жёсткий потолок на группу
+const GHOST_SPAWN_MIN_DIST = 110;     // минимальная дистанция спавна от игрока
+const GHOST_SPAWN_MAX_DIST = 520;     // максимальная дистанция спавна от игрока
+const GHOST_STATE_T_BASE = 1.5;       // базовое время appear
+const GHOST_STATE_T_RAND = 0.5;       // разброс времени appear
+const GHOST_FOG_ONLY = 1;             // флаг: только для тумана
+const GHOST_RESPAWN_ALTAR = 12;       // задержка воскрешения алтарного призрака (сек)
+const GHOST_RESPAWN_WANDER = 15;      // задержка воскрешения бродячего призрака (сек)
+const ALTAR_ORBIT_KEEP_OUT = 150;     // бродячие не спавнятся ближе этого к алтарю
 
-// --- Таймер волны (endWave) ---
-const FOG_TIMER_BASE = 80;           // базовый таймер волны
-const FOG_TIMER_RUNE_FACTOR = 4;     // множитель рун для таймера
-const FOG_TIMER_RANDOM_MAX = 30;     // макс. случайный разброс таймера
+export { GHOST_RESPAWN_ALTAR, GHOST_RESPAWN_WANDER };
 
 // ============================================================
 // Fog State Interface
 // ============================================================
 
 export interface FogState {
-  fogTimer: number;
+  /** Туман проявлен (игрок был/есть в зоне топов) */
   fogActive: boolean;
-  fogLeft: number;
-  fogRadius: number;
-  fogSpawned: boolean;
-  fogWarned: boolean;
+  /** Игрок сейчас в зоне тумана (топи) */
   fogAmbient: boolean;
-  ghostClangT: number;
-  // Плавная альфа тумана (0..1) — интерполируется за 2 секунды
+  fogRadius: number;
+  /** Плавная альфа тумана (0..1) — интерполируется к fogAlphaTarget */
   fogAlpha: number;
   fogAlphaTarget: number;
+  ghostClangT: number;
+  /** Таймер до воскрешения алтарного/бродячего призрака после убийства */
+  altarRespawnT: number;
+  wanderRespawnT: number;
+  /** Приветственный тост показан */
+  introShown: boolean;
 }
 
 export function createFogState(): FogState {
   return {
-    fogTimer: FOG_WAVE_INTERVAL,
     fogActive: false,
-    fogLeft: 0,
-    fogRadius: FOG_RADIUS_DEFAULT,
-    fogSpawned: false,
-    fogWarned: false,
     fogAmbient: false,
-    ghostClangT: 0,
+    fogRadius: FOG_RADIUS_FAR,
     fogAlpha: 0,
     fogAlphaTarget: 0,
+    ghostClangT: 0,
+    altarRespawnT: 0,
+    wanderRespawnT: 0,
+    introShown: false,
   };
+}
+
+// ============================================================
+// Топи: кэш проходимых клеток болота
+// ============================================================
+
+const swampTilesCache = new WeakMap<object, Int32Array>();
+
+/** Проходимые клетки биома SWAMP (индексы tiles/biomes). Кэшируется по map. */
+export function swampTilesFor(map: any): Int32Array {
+  const cached = swampTilesCache.get(map);
+  if (cached) return cached;
+  const list: number[] = [];
+  if (map && map.biomes && map.tiles && map.W && map.H && !map.isDungeon) {
+    for (let y = 0; y < map.H; y++) {
+      for (let x = 0; x < map.W; x++) {
+        const i = y * map.W + x;
+        if (map.biomes[i] !== Biome.SWAMP) continue;
+        const t = map.tiles[i];
+        if (isSolidTileId(t) || t === Tl.WATER || t === Tl.POOL) continue;
+        list.push(i);
+      }
+    }
+  }
+  const arr = Int32Array.from(list);
+  swampTilesCache.set(map, arr);
+  if (arr.length === 0) logger.warn('fog', 'swampTilesFor: в карте нет проходимых клеток болота');
+  return arr;
+}
+
+/** Случайная точка болота (мировые координаты). null — болото недоступно. */
+function randomSwampPoint(map: any): { x: number; y: number } | null {
+  const tiles = swampTilesFor(map);
+  if (tiles.length === 0) return null;
+  const i = tiles[Math.floor(Math.random() * tiles.length)];
+  const tx = i % map.W;
+  const ty = Math.floor(i / map.W);
+  return { x: tx * T + 8, y: ty * T + 8 };
 }
 
 // ============================================================
@@ -124,193 +143,178 @@ export function fogUpdateSystem(
   map: any,
   flags: any,
   bus: any,
-  spawnEnemyInEcs: (kind: string, x: number, y: number) => number,
-  getRunes: () => number
+  spawnEnemyInEcs: (kind: string, x: number, y: number) => number
 ): void {
   if (!map || playerEid < 0) return;
-  
+
   const f = flags;
   const px = Position[playerEid].x;
   const py = Position[playerEid].y;
-  
+
   fogState.ghostClangT = Math.max(0, fogState.ghostClangT - dt);
-  
-  // Плавная интерполяция альфы тумана за 2 секунды
+
+  // Плавная интерполяция альфы тумана
   fogState.fogAlpha += (fogState.fogAlphaTarget - fogState.fogAlpha) * Math.min(1, rdt * FOG_ALPHA_SPEED);
-  
-  // Disable fog in dungeon or after snake death
-  if (map.isDungeon || f.snakeDead) {
-    fogState.fogRadius += (FOG_RADIUS_DEFAULT - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_DEFAULT);
-    if (fogState.fogActive) {
+
+  const runes = f.runes || 0;
+
+  // === Туман рассеян: подземелье, смерть Змея, собраны все 5 Рун ===
+  if (map.isDungeon || f.snakeDead || runes >= 5) {
+    fogState.fogRadius += (FOG_RADIUS_FAR - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED);
+    if (fogState.fogAmbient || fogState.fogActive) {
+      fogState.fogAmbient = false;
+      fogState.fogActive = false;
       fogState.fogAlphaTarget = 0;
-      endWave(fogState, false, bus, getRunes, f);
+      audio.setFog(false);
+    }
+    // При 5 Рунах — рассеиваются и алтарные, и бродячие призраки
+    if (runes >= 5 || f.snakeDead) {
+      ensureGhosts(world, 0, true, map, px, py, spawnEnemyInEcs, false);
+      ensureGhosts(world, 0, false, map, px, py, spawnEnemyInEcs, false);
     }
     return;
   }
-  
-  // Check zone
-  const zn = zoneFor(map, Math.floor(px / T), Math.floor(py / T));
-  const inVillage = zn === "Поселение выживших" || zn === "Поселение" || zn === "Воронья Гавань";
-  
-  // Check altar proximity
-  const ax = map.treeAltar.x * T + 8;
-  const ay = map.treeAltar.y * T + 8;
-  const nearAltar = !f.snakeStarted && dist2(px, py, ax, ay) < SAFE_ZONE_ALTAR * SAFE_ZONE_ALTAR;
-  
-  // === Деревня — безопасная зона, туман выключен ===
-  if (inVillage) {
-    if (fogState.fogActive) endWave(fogState, true, bus, getRunes, f);
-    fogState.fogRadius += (FOG_RADIUS_DEFAULT - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_DEFAULT);
-    return;
-  }
-  
-  // === Алтарь — постоянный туман с призраками ===
-  if (nearAltar) {
-    if (!fogState.fogActive) {
-      fogState.fogActive = true;
+
+  // === Игрок в топях? ===
+  const tx = Math.floor(px / T);
+  const ty = Math.floor(py / T);
+  const inSwamp = !!(map.biomes && tx >= 0 && ty >= 0 && tx < map.W && ty < map.H)
+    && map.biomes[ty * map.W + tx] === Biome.SWAMP;
+
+  if (inSwamp) {
+    // Чем ближе к алтарю — тем сильнее туман
+    const ax = map.treeAltar.x * T + 8;
+    const ay = map.treeAltar.y * T + 8;
+    const d = Math.sqrt((px - ax) ** 2 + (py - ay) ** 2);
+    const s = Math.max(0, Math.min(1, 1 - d / FOG_DIST_FULL));
+
+    fogState.fogActive = true;
+    fogState.fogAlphaTarget = FOG_ALPHA_BASE + (FOG_ALPHA_ALTAR - FOG_ALPHA_BASE) * s;
+    const radiusTarget = FOG_RADIUS_FAR + (FOG_RADIUS_NEAR - FOG_RADIUS_FAR) * s;
+    fogState.fogRadius += (radiusTarget - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED);
+
+    if (!fogState.fogAmbient) {
       fogState.fogAmbient = true;
-      fogState.fogAlphaTarget = 1;
       audio.setFog(true);
-      bus.emit('toast', { msg: 'Саван Древа... оно не отпустит просто так' });
+      if (!fogState.introShown) {
+        fogState.introShown = true;
+        bus.emit('toast', { msg: 'Топи дышат туманом — Древо не отпустит просто так' });
+      }
     }
-    fogState.fogAmbient = true;
-    fogState.fogRadius += (FOG_RADIUS_ALTAR - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_AMBIENT);
-    ensureGhosts(world, GHOST_COUNT_MIN, true, map, px, py, spawnEnemyInEcs);
+
+    // Таймеры воскрешения
+    fogState.altarRespawnT = Math.max(0, fogState.altarRespawnT - dt);
+    fogState.wanderRespawnT = Math.max(0, fogState.wanderRespawnT - dt);
+
+    // Поддержка групп призраков: max(0, 5 - руны)
+    const altarTarget = Math.max(0, GHOST_COUNT_ALTAR - runes);
+    const wanderTarget = Math.max(0, GHOST_COUNT_WANDER - runes);
+    ensureGhosts(world, altarTarget, true, map, px, py, spawnEnemyInEcs, fogState.altarRespawnT <= 0);
+    ensureGhosts(world, wanderTarget, false, map, px, py, spawnEnemyInEcs, fogState.wanderRespawnT <= 0);
     return;
   }
-  
-  // === Игрок ушёл от алтаря — призраки исчезают ===
+
+  // === Игрок вне топов — туман стихает, призраки рассеиваются ===
+  fogState.fogRadius += (FOG_RADIUS_FAR - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED);
   if (fogState.fogAmbient) {
+    fogState.fogAmbient = false;
+    fogState.fogActive = false;
+    fogState.fogAlphaTarget = 0;
+    audio.setFog(false);
     bus.emit('fog:altarLeave', {});
-    endWave(fogState, true, bus, getRunes, f);
-  }
-  
-  // === Таймер волн / активная волна ===
-  if (!fogState.fogActive) {
-    // --- Фаза ожидания: fogTimer отсчитывает до волны ---
-    fogState.fogTimer -= dt;
-    fogState.fogRadius += (FOG_RADIUS_DEFAULT - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_DEFAULT);
-    
-    // Предупреждение за 4 секунды до волны
-    if (!fogState.fogWarned && fogState.fogTimer < FOG_WARNING_TIME && fogState.fogTimer > 0 && f.hasItem('sword')) {
-      fogState.fogWarned = true;
-      audio.setFog(true);
-      audio.horn();
-      bus.emit('toast', { msg: 'Ветер стихает... Туман близко' });
-    }
-    
-    // Волна началась!
-    if (fogState.fogTimer <= 0 && f.hasItem('sword')) {
-      fogState.fogActive = true;
-      fogState.fogLeft = FOG_WAVE_DURATION;       // волна длится 40 секунд
-      fogState.fogSpawned = false; // призраки ещё не появились
-      fogState.fogRadius = FOG_RADIUS_WAVE;    // радиус волны
-      fogState.fogAlphaTarget = 1;
-      audio.setFog(true);
-      bus.emit('toast', { msg: 'ВОЛНА ТУМАНА. Ниды шепчут...' });
-    }
-  } else {
-    // --- Активная волна: fogLeft отсчитывает до конца ---
-    fogState.fogLeft -= dt;
-    fogState.fogRadius += (FOG_RADIUS_WAVE_ACTIVE - fogState.fogRadius) * Math.min(1, rdt * FOG_RADIUS_SPEED_WAVE);
-    
-    // Через 2 секунды после начала волны — появляются призраки
-    if (!fogState.fogSpawned && fogState.fogLeft < FOG_GHOST_SPAWN_DELAY) {
-      fogState.fogSpawned = true;
-      ensureGhosts(world, 2 + Math.floor(getRunes() / 2), false, map, px, py, spawnEnemyInEcs);
-    }
-    
-    // Волна закончилась
-    if (fogState.fogLeft <= 0) {
-      endWave(fogState, true, bus, getRunes, f);
-    }
   }
 }
 
-function zoneFor(map: any, tx: number, ty: number): string {
-  if (!map.zones) return '';
-  for (const z of map.zones) {
-    if (tx >= z.x && tx < z.x + z.w && ty >= z.y && ty < z.y + z.h) {
-      return z.name;
-    }
-  }
-  return '';
-}
+// ============================================================
+// Поддержка групп призраков
+// ============================================================
 
-function endWave(state: FogState, dropDew: boolean, bus: any, getRunes: () => number, flags: any) {
-  state.fogActive = false;
-  state.fogWarned = false;
-  state.fogAmbient = false;
-  state.fogSpawned = false;
-  state.fogLeft = 0;
-  state.fogAlphaTarget = 0;
-  state.fogTimer = Math.max(FOG_WAVE_INTERVAL, FOG_TIMER_BASE - getRunes() * FOG_TIMER_RUNE_FACTOR + Math.random() * FOG_TIMER_RANDOM_MAX);
-  
-  if (flags) {
-    flags.fogWaves = (flags.fogWaves || 0) + 1;
-  }
-  
-  audio.setFog(false);
-  bus.emit('toast', { msg: 'Туман рассеялся' });
-  bus.emit('fog:waveEnd', { dropDew });
-  bus.emit('fog:ghostDissipate', {});
-}
-
+/**
+ * Поддержать целевое число призраков одной группы.
+ * - alive > target → лишние уходят в dissipate;
+ * - alive < target && canSpawn → спавнится один призрак.
+ *
+ * @param leashed true — группа алтарных (leashed к treeAltar), false — бродячие по болоту
+ */
 export function ensureGhosts(
   world: World,
-  n: number,
+  target: number,
   leashed: boolean,
   map: any,
-  cx: number,
-  cy: number,
-  spawnEnemyInEcs: (kind: string, x: number, y: number) => number
+  px: number,
+  py: number,
+  spawnEnemyInEcs: (kind: string, x: number, y: number) => number,
+  canSpawn: boolean = true
 ) {
-  const T = 16;
-  // Count alive ghosts
-  let alive = 0;
-  let totalEnemy = 0;
+  const T0 = 16;
+  const group: number[] = [];
+
   for (const eid of query(world, [Enemy])) {
-    totalEnemy++;
     const enemyData = Enemy[eid];
     if (!enemyData) {
       logger.warn('fog', `ensureGhosts: Enemy[${eid}] is undefined (Enemy.length=${Enemy.length})`);
       continue; // AoS элемент может быть undefined
     }
-    const kind = poolGet(StringPool.enemyKinds, enemyData.kind);
-    const state = enemyData.state;
-    if (kind === 'ghost') {
-      // logger.debug('fog', `ensureGhosts: ghost eid=${eid} state=${state} dissipate=${EnemyState.dissipate}`);
-      if (state !== EnemyState.dissipate) {
-        alive++;
-      }
-    }
+    if (poolGet(StringPool.enemyKinds, enemyData.kind) !== 'ghost') continue;
+    const isLeashed = enemyData.leashX !== 0 || enemyData.leashY !== 0;
+    if (isLeashed !== leashed) continue;
+    if (enemyData.state === EnemyState.dissipate) continue; // уже исчезает
+    group.push(eid);
   }
-  // logger.debug('fog', `ensureGhosts: n=${n} leashed=${leashed} alive=${alive} totalEnemy=${totalEnemy}`);
-  
-  const altarX = map.treeAltar.x * T + 8;
-  const altarY = map.treeAltar.y * T + 8;
-  const targetCx = leashed ? altarX : cx;
-  const targetCy = leashed ? altarY : cy;
-  // logger.debug('fog', `ensureGhosts: targetCx=${targetCx} targetCy=${targetCy} limit=${Math.min(4, n)}`);
-  
-  for (let i = alive; i < Math.min(GHOST_COUNT_MAX, n); i++) {
-    const a = Math.random() * Math.PI * 2;
-    const d = GHOST_SPAWN_MIN_DIST + Math.random() * GHOST_SPAWN_DIST_RAND;
-    const x = targetCx + Math.cos(a) * d;
-    const y = targetCy + Math.sin(a) * d;
-    
-    if (x < T || y < T || x > (map.W - 1) * T || y > (map.H - 1) * T) continue;
-    
-    const eid = spawnEnemyInEcs('ghost', x, y);
-    Enemy[eid].aggro = 1;
-    Enemy[eid].state = EnemyState.appear;
-    Enemy[eid].stateT = GHOST_STATE_T_BASE + Math.random() * GHOST_STATE_T_RAND;
-    Enemy[eid].fade = 0; // начать с полной прозрачности для плавного появления
-    Enemy[eid].fogOnly = GHOST_FOG_ONLY;
-    // Привязка к алтарю
-    if (leashed) {
-      Enemy[eid].leashX = altarX;
-      Enemy[eid].leashY = altarY;
+
+  // Лишние — рассеиваем
+  if (group.length > target) {
+    for (let i = target; i < group.length; i++) {
+      Enemy[group[i]].state = EnemyState.dissipate;
     }
+    return;
+  }
+
+  if (group.length >= target || !canSpawn) return;
+
+  // ── Определяем точку спавна ──
+  const altarX = map.treeAltar.x * T0 + 8;
+  const altarY = map.treeAltar.y * T0 + 8;
+  let x: number;
+  let y: number;
+
+  if (leashed) {
+    // Алтарные: кольцо вокруг алтаря
+    const a = Math.random() * Math.PI * 2;
+    const d = GHOST_SPAWN_MIN_DIST + Math.random() * 60;
+    x = altarX + Math.cos(a) * d;
+    y = altarY + Math.sin(a) * d;
+  } else {
+    // Бродячие: клетка болота вне орбиты алтаря и в допустимой дистанции от игрока
+    let pt: { x: number; y: number } | null = null;
+    for (let tries = 0; tries < 12; tries++) {
+      const cand = randomSwampPoint(map);
+      if (!cand) return;
+      const dAltar = Math.sqrt((cand.x - altarX) ** 2 + (cand.y - altarY) ** 2);
+      const dPlayer = Math.sqrt((cand.x - px) ** 2 + (cand.y - py) ** 2);
+      if (dAltar > ALTAR_ORBIT_KEEP_OUT && dPlayer >= GHOST_SPAWN_MIN_DIST && dPlayer <= GHOST_SPAWN_MAX_DIST) {
+        pt = cand;
+        break;
+      }
+      pt = cand; // запасной вариант, если ограничения не выполнены
+    }
+    if (!pt) return;
+    x = pt.x;
+    y = pt.y;
+  }
+
+  if (x < T0 || y < T0 || x > (map.W - 1) * T0 || y > (map.H - 1) * T0) return;
+
+  const eid = spawnEnemyInEcs('ghost', x, y);
+  if (eid < 0) return;
+  Enemy[eid].aggro = 1;
+  Enemy[eid].state = EnemyState.appear;
+  Enemy[eid].stateT = GHOST_STATE_T_BASE + Math.random() * GHOST_STATE_T_RAND;
+  Enemy[eid].fade = 0; // начать с полной прозрачности для плавного появления
+  Enemy[eid].fogOnly = GHOST_FOG_ONLY;
+  // Привязка к алтарю
+  if (leashed) {
+    Enemy[eid].leashX = altarX;
+    Enemy[eid].leashY = altarY;
   }
 }

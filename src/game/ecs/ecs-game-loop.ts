@@ -49,8 +49,11 @@ import {
   fogUpdateSystem,
   createFogState,
   ensureGhosts,
+  GHOST_RESPAWN_ALTAR,
+  GHOST_RESPAWN_WANDER,
   type FogState,
 } from './ecs-systems/fog-system';
+import { ghostBaneChance } from '../balance';
 import { CameraController } from '../engine/camera-controller';
 import { SceneManager } from '../engine/scene-manager';
 import { SceneLayers } from '../engine/scene-layers';
@@ -380,7 +383,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       store.flags.hasItem("sword"),
       store.flags.swordUp,
       store.flags.hasHammer,
-      store.flags.ghostBane,
+      ghostBaneChance(store.flags.dew),
       (enemyEid, dmg, fx, fy) => {
         // Нанести урон врагу через ECS Health
         Health[enemyEid].current -= dmg;
@@ -463,19 +466,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     }
   });
 
-  // ── Переход призраков в состояние dissipate при окончании волны тумана ──
-
-  bus.on("fog:ghostDissipate", () => {
-    for (const eid of query(world, [Enemy])) {
-      if (poolGet(StringPool.enemyKinds, Enemy[eid].kind) !== 'ghost') continue;
-      // Пропускаем привязанных призраков (у алтаря) — они не исчезают сами
-      if (Enemy[eid].leashX !== 0 || Enemy[eid].leashY !== 0) continue;
-      // Переходим в dissipate — призрак начнёт исчезать
-      Enemy[eid].state = EnemyState.dissipate;
-    }
-  });
-
-  // ── Переход ВСЕХ призраков в dissipate при уходе от алтаря ──
+  // ── Переход ВСЕХ призраков в dissipate при уходе из зоны тумана ──
 
   bus.on("fog:altarLeave", () => {
     for (const eid of query(world, [Enemy])) {
@@ -515,6 +506,10 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
   bus.on("player:respawned", () => {
     if (!config_map || _playerEid < 0 || !_fogState) return;
+    // Респавн в топях: туман и группы призраков подхватит fogUpdateSystem
+    // на следующем кадре (сброс таймеров, чтобы воскрешение пошло сразу).
+    _fogState.altarRespawnT = 0;
+    _fogState.wanderRespawnT = 0;
     const px = Position[_playerEid].x;
     const py = Position[_playerEid].y;
     const ax = config_map.treeAltar.x * T + 8;
@@ -524,8 +519,6 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       _fogState.fogActive = true;
       _fogState.fogAmbient = true;
       _fogState.fogAlphaTarget = 1;
-      _fogState.fogSpawned = false;
-      _fogState.fogLeft = 0;
       ensureGhosts(world, 2, true, config_map, px, py, spawnGhost);
     }
   });
@@ -541,6 +534,16 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     onEnemyKilledEcs(world, e.enemy, store, bus);
 
     const kind = e.kind as string;
+
+    // Призрак: перезапускаем таймер воскрешения своей группы
+    // (следующий кадр fogUpdateSystem вернёт недостающих при зоне тумана)
+    if (kind === 'ghost' && _fogState) {
+      const ed = Enemy[e.enemy];
+      const wasLeashed = !!ed && (ed.leashX !== 0 || ed.leashY !== 0);
+      if (wasLeashed) _fogState.altarRespawnT = GHOST_RESPAWN_ALTAR;
+      else _fogState.wanderRespawnT = GHOST_RESPAWN_WANDER;
+    }
+
     // Смерть боссов подземелий обрабатывается отдельно (boss:killed из AI);
     // здесь лишь подстраховка на случай убийства босса стрелой/снарядом.
     if (kind === 'reaper' || kind === 'spider' || kind === 'giant') {
@@ -712,7 +715,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       world,
       dt,
       peid,
-      config_flags.ghostBane,
+      ghostBaneChance(config_flags.dew),
       _planckWorld,
       (eid) => {
         // onProjectileRemove: уничтожить Graphics + Planck body снаряда
@@ -807,8 +810,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
           }
         }
         return eid;
-      },
-      () => config_flags.runes
+      }
     );
 
     // ===== 16. Двери, зоны, боссы =====

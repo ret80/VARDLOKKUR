@@ -29,10 +29,7 @@ type GameEvents = {
   "dialogue:end":     { id: string };
 
   // Туман
-  "fog:waveStart":    {};
-  "fog:waveEnd":      { dropDew: boolean };
   "fog:ghostSpawn":   { count: number; leashed: boolean };
-  "fog:ghostDissipate": {};
   "fog:altarLeave":   {};
 
   // Боссы

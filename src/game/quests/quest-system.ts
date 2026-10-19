@@ -25,7 +25,6 @@ export class QuestSystem implements IQuestProvider {
     bus.on("dialogue:end", (e) => this.onDialogueEnd(e));
     bus.on("pedestal:unsealed", (e) => this.onPedestalUnsealed(e));
     bus.on("boss:killed", (e) => this.onBossKilled(e));
-    bus.on("fog:waveEnd", (e) => this.onFogWaveEnd(e));
     bus.on("quest:reveal", (e) => this.revealQuest(e.id, e.silent));
   }
 
@@ -64,20 +63,16 @@ export class QuestSystem implements IQuestProvider {
   }
 
   private onDropCollected(e: { kind: string }) {
-    if (e.kind === "dew") {
-      this.flags.incrementFlag("dew", 1);
-      if (this.flags.getDew() >= 3) this.bus.emit("quest:reveal", { id: "s_ghost" });
+    // Первая Туманная Роса открывает квест «Туманное Лезвие».
+    // Счётчик dew ведёт DewHandler — здесь не инкрементируем.
+    if (e.kind === "dew" && this.flags.getDew() === 1) {
+      this.bus.emit("quest:reveal", { id: "s_ghost" });
     }
   }
 
   private onDialogueEnd(e: { id: string }) { this.checkQuestProgress(); }
   private onPedestalUnsealed(e: { pedestalIndex: number }) { this.checkQuestProgress(); }
   private onBossKilled(e: { id: number }) { this.checkQuestProgress(); }
-
-  private onFogWaveEnd(e: { dropDew: boolean }) {
-    this.flags.incrementFlag("fogWaves", 1);
-    if (this.flags.fogWaves === 1) this.bus.emit("quest:reveal", { id: "s_ghost" });
-  }
 
   /* ================= main quest progression ================= */
 
@@ -156,9 +151,8 @@ export class QuestSystem implements IQuestProvider {
         done: f.isQuestCompleted("hunt"),
       };
       case "s_ghost": {
-        if (f.ghostBane) return { desc: "Клинок освящён — сталь бьёт призраков", done: true };
-        if (f.getDew() >= 3) return { desc: "Отнеси Шаману 3 Туманной Росы", done: false };
-        return { desc: `Переживи волну и собери Росу (${f.getDew()}/3)`, done: false };
+        if (f.getDew() >= 3) return { desc: "Клинок закалён Туманной Росой — сталь бьёт призраков", done: true };
+        return { desc: `Собери Туманную Росу в топях (${f.getDew()}/3)`, done: false };
       }
       default: return { desc: "", done: false };
     }
@@ -177,8 +171,7 @@ export class QuestSystem implements IQuestProvider {
       case "harald": return f.oreDone ? "done" : f.ore ? "ret" : "q";
       case "shaman": {
         const got = [f.moss, f.amber, f.flower].filter(Boolean).length;
-        if (f.ghostBane) return "done";
-        if (f.dew >= 3) return "ret";
+        if (f.dew >= 3) return "done";
         return f.shamanDone ? "done" : got === 3 ? "ret" : "q" + got;
       }
       case "refugee": return f.refugeeDone ? "done" : f.diary ? "ret" : "q";
