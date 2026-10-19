@@ -117,9 +117,95 @@ export class Engine {
   private app!: Application;
   private ready: Promise<void>;
 
+  // Настройки сида генерации мира
+  private static SEED_KEY = "vardlokkur_seed";
+  private _seed: string = "";
+  private _autoSeed: boolean = false;
+
   // Голосовые объёмы (для UI)
   get musicVol() { return audio.musicVol; }
   get soundVol() { return audio.soundVol; }
+
+  // Сид генерации (строка) и флаг авто-генерации при старте саги
+  get seed() { return this._seed; }
+  get autoSeed() { return this._autoSeed; }
+
+  setSeed(v: string) {
+    this._seed = v;
+    Engine.persistSeed(this._seed, this._autoSeed);
+  }
+
+  setAutoSeed(enabled: boolean) {
+    this._autoSeed = enabled;
+    if (enabled) this._seed = Engine.randomSeed();
+    Engine.persistSeed(this._seed, this._autoSeed);
+    return this._seed;
+  }
+
+  /** Сгенерировать новый случайный сид и вернуть его */
+  generateSeed(): string {
+    return Engine.randomSeed();
+  }
+
+  private static randomSeed(): string {
+    try {
+      if (typeof crypto !== "undefined" && crypto.getRandomValues) {
+        const buf = new Uint32Array(1);
+        crypto.getRandomValues(buf);
+        return String(buf[0]);
+      }
+    } catch { /* crypto недоступен — фолбэк ниже */ }
+    return String((Date.now() ^ (Math.random() * 1e9)) >>> 0);
+  }
+
+  private static persistSeed(seed: string, autoSeed: boolean) {
+    try {
+      localStorage.setItem(Engine.SEED_KEY, JSON.stringify({ seed, autoSeed }));
+    } catch { /* quota — ignore */ }
+  }
+
+  private static readSavedSeed(): { seed: string; autoSeed: boolean } {
+    try {
+      const raw = localStorage.getItem(Engine.SEED_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          seed: typeof parsed.seed === "string" ? parsed.seed : "",
+          autoSeed: parsed.autoSeed === true,
+        };
+      }
+    } catch { /* corrupt — ignore */ }
+    return { seed: "", autoSeed: false };
+  }
+
+  /** Применить сид из настроек для следующей генерации мира */
+  private applySeedSettings(): string {
+    const saved = Engine.readSavedSeed();
+    // Значения из UI (если пользователь что-то вводил в этой сессии) имеют приоритет
+    this._seed = this._seed || saved.seed;
+    this._autoSeed = this._autoSeed || saved.autoSeed;
+
+    if (this._autoSeed || !this._seed) {
+      this._seed = this.generateSeed();
+    }
+    Engine.persistSeed(this._seed, this._autoSeed);
+    return this._seed;
+  }
+
+  /** Преобразовать строковый сид в 32-битное число */
+  private static hashSeed(raw: string): number {
+    const s = (raw ?? "").trim();
+    if (!s) return (Date.now() ^ (Math.random() * 1e9)) >>> 0;
+    // Чисто числовой сид — используем как есть
+    if (/^\d+$/.test(s)) return Number(s) >>> 0;
+    // Иначе — детерминированный FNV-1a хеш
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193);
+    }
+    return h >>> 0;
+  }
 
   // EventBus и GameStore
   private bus = new EventBus();
@@ -786,7 +872,9 @@ export class Engine {
         throw e;
       }
     } else {
-      const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
+      const seedStr = this.applySeedSettings();
+      const seed = Engine.hashSeed(seedStr);
+      logger.info('engine', `Генерация мира: seed="${seedStr}" (${seed})${this._autoSeed ? " [авто]" : ""}`);
       try {
         this.ow = generateOverworld(seed);
         this.dungeons = DUNGEONS.map((cfg) => {

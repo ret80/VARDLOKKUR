@@ -58,6 +58,8 @@ export function SettingsScreen({ onClose, eng }: SettingsScreenProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [musicVolume, setMusicVolume] = useState(0.7);
   const [soundVolume, setSoundVolume] = useState(0.8);
+  const [seed, setSeed] = useState("");
+  const [autoSeed, setAutoSeed] = useState(false);
 
   // При монтировании — считываем актуальные значения из engine
   const syncFromEngine = useCallback(() => {
@@ -65,6 +67,8 @@ export function SettingsScreen({ onClose, eng }: SettingsScreenProps) {
     if (e) {
       setMusicVolume(e.musicVol ?? 0.7);
       setSoundVolume(e.soundVol ?? 0.8);
+      setSeed(e.seed ?? "");
+      setAutoSeed(e.autoSeed ?? false);
     }
   }, [eng]);
 
@@ -87,6 +91,29 @@ export function SettingsScreen({ onClose, eng }: SettingsScreenProps) {
     eng()?.setSoundVolume(v);
   }, [eng]);
 
+  const handleSeedChange = useCallback((v: string) => {
+    setSeed(v);
+    eng()?.setSeed(v);
+  }, [eng]);
+
+  const handleGenerateSeed = useCallback(() => {
+    const next = eng()?.generateSeed?.();
+    if (next) {
+      setSeed(next);
+      eng()?.setSeed(next);
+    }
+  }, [eng]);
+
+  const handleAutoSeed = useCallback((enabled: boolean) => {
+    setAutoSeed(enabled);
+    const e = eng();
+    if (e) {
+      const next = e.setAutoSeed(enabled);
+      // При включении авто-сида сразу показываем новый сид
+      if (enabled && next) setSeed(next);
+    }
+  }, [eng]);
+
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#04060acc] anim-fade-in p-4">
       <div className="nord-panel nord-frame w-full max-w-[480px] flex flex-col max-h-[85vh]">
@@ -96,7 +123,7 @@ export function SettingsScreen({ onClose, eng }: SettingsScreenProps) {
             Настройки
           </div>
           <div className="mt-1 text-center text-[12px] tracking-widest text-[#6e7f8d]">
-            настройте звук саги
+            звук и сид саги
           </div>
         </div>
 
@@ -115,6 +142,45 @@ export function SettingsScreen({ onClose, eng }: SettingsScreenProps) {
             value={soundVolume}
             onChange={handleSoundVolume}
           />
+
+          {/* Сид генерации мира */}
+          <div className="flex flex-col gap-3 border-t border-[#2c3d4d] pt-5">
+            <label className="text-[13px] tracking-[0.15em] text-[#8fa0ae] uppercase">
+              ᛫ Сид генерации
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={seed}
+                onChange={(e) => handleSeedChange(e.target.value)}
+                placeholder="случайный"
+                spellCheck={false}
+                autoComplete="off"
+                className="flex-1 min-w-0 bg-[#0a1520] border border-[#2c3d4d] text-[#dfe8f0] text-[13px] px-3 py-2 font-mono tracking-wider outline-none focus:border-[#8fd8e8] transition-colors"
+              />
+              <button
+                type="button"
+                onClick={handleGenerateSeed}
+                className="btn-rune btn-ice text-[11px] !px-4 !py-0 whitespace-nowrap"
+              >
+                Новый
+              </button>
+            </div>
+            <label className="flex items-center gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={autoSeed}
+                onChange={(e) => handleAutoSeed(e.target.checked)}
+                className="w-4 h-4 accent-[#8fd8e8] cursor-pointer"
+              />
+              <span className="text-[12.5px] text-[#8fa0ae]">
+                Авто-сид при начале саги
+              </span>
+            </label>
+            <div className="text-[11px] leading-snug text-[#6e7f8d]">
+              Один и тот же сид порождает один и тот же мир. Пустое поле — случайный мир.
+            </div>
+          </div>
         </div>
 
         {/* Статичная кнопка «Назад» внизу */}
