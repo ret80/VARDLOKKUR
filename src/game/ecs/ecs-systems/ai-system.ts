@@ -26,6 +26,13 @@ import {
   Shrine,
 } from '../ecs-components';
 import { dist2 } from '../../utils';
+import {
+  beginPathTick,
+  chaseVelocity,
+  clearEnemyPath,
+  homeVelocity,
+  resetAllEnemyPaths,
+} from './enemy-path';
 
 import type { EnemyKind } from '../../generators/types';
 import { solidTileAt, T, zoneFor, type WorldData } from '../../world';
@@ -38,7 +45,8 @@ import type { EventBus } from '../../event-bus';
 
 const DETECTION_RANGE = 120;
 const AGGRO_RANGE = 100;
-const PATH_REPATH_TIME = 0.5;
+/** Дистанция отрыва: игрок убежал дальше — враг прекращает преследование. */
+const LEASH_RANGE = 240;
 const CONTACT_COOLDOWN = 0.5;
 const GHOST_SLOW_DURATION = 2.0; // призрак замедляет игрока на 2 секунды
 const SHRINE_PROTECT_RADIUS = 25; // радиус защиты святилища (в пикселях)
@@ -47,6 +55,9 @@ const SHRINE_PROTECT_RADIUS = 25; // радиус защиты святилищ�
 // Кэш для isPlayerNearLitShrine — вычисляется один раз за кадр
 // ============================================================
 let _cachedNearLitShrine: boolean | null = null;
+
+/** Карта, для которой были построены пути врагов (для сброса при смене карты). */
+let _lastMap: WorldData | null = null;
 
 /** Вычислить и закешировать результат isPlayerNearLitShrine на текущий кадр */
 function cachedIsPlayerNearLitShrine(world: World, playerX: number, playerY: number, radius: number): boolean {
@@ -74,6 +85,14 @@ export function aiUpdateSystem(
   bus?: EventBus | null
 ): void {
   if (playerEid < 0 || !map) return;
+
+  // Смена карты — все построенные ранее пути врагов недействительны
+  if (_lastMap !== map) {
+    resetAllEnemyPaths();
+    _lastMap = map;
+  }
+  // Бюджет поиска пути (A*) за кадр
+  beginPathTick();
 
   // Сброс кэша nearLitShrine — будет вычислен один раз за кадр
   _cachedNearLitShrine = null;
@@ -142,14 +161,22 @@ export function aiUpdateSystem(
     const px_e = Position[enemyEid].x;
     const py_e = Position[enemyEid].y;
     const d2p = (px_e - playerX) ** 2 + (py_e - playerY) ** 2;
-    const isFlyer = ek === 'raven' || ek === 'ghost';
     const aggroR = ek === 'raven' ? 150 : ek === 'crawler' ? 42 : ek === 'ghost' ? 160 : 100;
 
-    // Apply aggro rules (original logic)
-    if (inVillage && !!Enemy[enemyEid].aggro) { Enemy[enemyEid].aggro = 0; }
-    if (!!!Enemy[enemyEid].aggro && !inVillage && d2p < aggroR * aggroR) Enemy[enemyEid].aggro = 1;
-    if (!!Enemy[enemyEid].aggro && !isFlyer && d2p > 300 * 300) { Enemy[enemyEid].aggro = 0; }
-    if (!!Enemy[enemyEid].aggro && isFlyer && d2p > 300 * 300) Enemy[enemyEid].aggro = 0;
+    // Apply aggro rules (original logic) + отвязка (leash)
+    const aggroBefore = !!Enemy[enemyEid].aggro;
+    if (inVillage && aggroBefore) { Enemy[enemyEid].aggro = 0; }
+    if (!aggroBefore && !inVillage && d2p < aggroR * aggroR) Enemy[enemyEid].aggro = 1;
+    // Дистанция отрыва: игрок убежал достаточно далеко — погоня прекращается,
+    // путь сбрасывается, враг замирает/возвращается домой (см. enemy-path).
+    if (!!Enemy[enemyEid].aggro && d2p > LEASH_RANGE * LEASH_RANGE) Enemy[enemyEid].aggro = 0;
+    if (aggroBefore !== !!Enemy[enemyEid].aggro) {
+      clearEnemyPath(enemyEid);
+      if (!Enemy[enemyEid].aggro) {
+        Velocity[enemyEid].x = 0;
+        Velocity[enemyEid].y = 0;
+      }
+    }
 
     // Apply behavior based on kind
     switch (ek) {
@@ -194,7 +221,24 @@ export function aiUpdateSystem(
 // Поведения врагов
 // ============================================================
 
-/** Draugr — преследует, idle wander */
+/** Без агро: далеко от дома — возвращается по NavMesh-пути, иначе бродит. */
+function idleGround(
+  eid: number, map: WorldData, dt: number,
+  wander: () => void
+): void {
+  const home = homeVelocity(eid, map, Enemy[eid].speed * 0.55, dt);
+  if (home) {
+    Velocity[eid].x = home.x;
+    Velocity[eid].y = home.y;
+    const m = Math.hypot(home.x, home.y) || 1;
+    Direction[eid].x = home.x / m;
+    Direction[eid].y = home.y / m;
+    return;
+  }
+  wander();
+}
+
+/** Draugr — преследует по пути (NavMesh), idle wander */
 function updateDraugr(
   world: World, eid: number, playerEid: number,
   playerX: number, playerY: number, map: WorldData, dt: number, inVillage: boolean
@@ -205,12 +249,13 @@ function updateDraugr(
 
   if (!!Enemy[eid].aggro) {
     if (d > stopD + 1) {
-      // followPath not available in ECS — direct toward player
-      const dx = playerX - Position[eid].x;
-      const dy = playerY - Position[eid].y;
-      const dd = Math.sqrt(dx * dx + dy * dy) || 1;
-      Velocity[eid].x = (dx / dd) * Enemy[eid].speed;
-      Velocity[eid].y = (dy / dd) * Enemy[eid].speed;
+      // Путь через NavMesh — враги больше не упираются в уступы террас
+      const v = chaseVelocity(eid, map, playerX, playerY, Enemy[eid].speed, dt);
+      Velocity[eid].x = v.x;
+      Velocity[eid].y = v.y;
+    } else {
+      Velocity[eid].x = 0;
+      Velocity[eid].y = 0;
     }
     if (d > 1) {
       const dx = playerX - Position[eid].x;
@@ -219,11 +264,16 @@ function updateDraugr(
       Direction[eid].x = dx / dd;
       Direction[eid].y = dy / dd;
     }
-  } else if (Math.floor(Enemy[eid].t) % 4 === 0) {
-    Velocity[eid].x = Math.sin(Enemy[eid].t * 0.7 + Enemy[eid].seed) * Enemy[eid].speed * 0.3;
   } else {
-    Velocity[eid].x = 0;
-    Velocity[eid].y = 0;
+    idleGround(eid, map, dt, () => {
+      if (Math.floor(Enemy[eid].t) % 4 === 0) {
+        Velocity[eid].x = Math.sin(Enemy[eid].t * 0.7 + Enemy[eid].seed) * Enemy[eid].speed * 0.3;
+        Velocity[eid].y = 0;
+      } else {
+        Velocity[eid].x = 0;
+        Velocity[eid].y = 0;
+      }
+    });
   }
 }
 
@@ -253,21 +303,21 @@ function updateVarg(
       Enemy[eid].stateT = 0.35;
       // audio.swing();
     } else if (d > stopD + 1) {
-      // followPath not available in ECS — direct toward player
-      const dx = playerX - Position[eid].x;
-      const dy = playerY - Position[eid].y;
-      const dd = Math.sqrt(dx * dx + dy * dy) || 1;
-      Velocity[eid].x = (dx / dd) * Enemy[eid].speed;
-      Velocity[eid].y = (dy / dd) * Enemy[eid].speed;
+      // Путь через NavMesh — обходит уступы террас
+      const v = chaseVelocity(eid, map, playerX, playerY, Enemy[eid].speed, dt);
+      Velocity[eid].x = v.x;
+      Velocity[eid].y = v.y;
     }
   } else {
-    Velocity[eid].x = Math.sin(Enemy[eid].t * 0.9 + Enemy[eid].seed) * Enemy[eid].speed * 0.35;
-    Velocity[eid].y = Math.cos(Enemy[eid].t * 0.7 + Enemy[eid].seed) * Enemy[eid].speed * 0.35;
-    if (Velocity[eid].x !== 0 || Velocity[eid].y !== 0) {
-      const m2 = Math.sqrt(Velocity[eid].x * Velocity[eid].x + Velocity[eid].y * Velocity[eid].y);
-      Direction[eid].x = Velocity[eid].x / m2;
-      Direction[eid].y = Velocity[eid].y / m2;
-    }
+    idleGround(eid, map, dt, () => {
+      Velocity[eid].x = Math.sin(Enemy[eid].t * 0.9 + Enemy[eid].seed) * Enemy[eid].speed * 0.35;
+      Velocity[eid].y = Math.cos(Enemy[eid].t * 0.7 + Enemy[eid].seed) * Enemy[eid].speed * 0.35;
+      if (Velocity[eid].x !== 0 || Velocity[eid].y !== 0) {
+        const m2 = Math.sqrt(Velocity[eid].x * Velocity[eid].x + Velocity[eid].y * Velocity[eid].y);
+        Direction[eid].x = Velocity[eid].x / m2;
+        Direction[eid].y = Velocity[eid].y / m2;
+      }
+    });
   }
 }
 
@@ -369,7 +419,18 @@ function updateCrawler(
       Direction[eid].x = dx / dd;
       Direction[eid].y = dy / dd;
     }
-    if (d > stopD) { Velocity[eid].x = Direction[eid].x * Enemy[eid].speed; Velocity[eid].y = Direction[eid].y * Enemy[eid].speed; }
+    if (d > stopD) {
+      // Путь через NavMesh — обходит уступы террас
+      const v = chaseVelocity(eid, map, playerX, playerY, Enemy[eid].speed, dt);
+      Velocity[eid].x = v.x;
+      Velocity[eid].y = v.y;
+    }
+  } else if (!Enemy[eid].hidden) {
+    // Прячется, но если распуган далеко от дома — возвращается на место
+    idleGround(eid, map, dt, () => {
+      Velocity[eid].x = 0;
+      Velocity[eid].y = 0;
+    });
   }
 }
 
@@ -384,11 +445,13 @@ function updateFrost(
 
   if (!!Enemy[eid].aggro) {
     if (d > stopD + 1) {
-      const dx = playerX - Position[eid].x;
-      const dy = playerY - Position[eid].y;
-      const dd = Math.sqrt(dx * dx + dy * dy) || 1;
-      Velocity[eid].x = (dx / dd) * Enemy[eid].speed;
-      Velocity[eid].y = (dy / dd) * Enemy[eid].speed;
+      // Путь через NavMesh — враги больше не упираются в уступы террас
+      const v = chaseVelocity(eid, map, playerX, playerY, Enemy[eid].speed, dt);
+      Velocity[eid].x = v.x;
+      Velocity[eid].y = v.y;
+    } else {
+      Velocity[eid].x = 0;
+      Velocity[eid].y = 0;
     }
     if (d > 1) {
       const dx = playerX - Position[eid].x;
@@ -397,11 +460,16 @@ function updateFrost(
       Direction[eid].x = dx / dd;
       Direction[eid].y = dy / dd;
     }
-  } else if (Math.floor(Enemy[eid].t) % 4 === 0) {
-    Velocity[eid].x = Math.sin(Enemy[eid].t * 0.7 + Enemy[eid].seed) * Enemy[eid].speed * 0.3;
   } else {
-    Velocity[eid].x = 0;
-    Velocity[eid].y = 0;
+    idleGround(eid, map, dt, () => {
+      if (Math.floor(Enemy[eid].t) % 4 === 0) {
+        Velocity[eid].x = Math.sin(Enemy[eid].t * 0.7 + Enemy[eid].seed) * Enemy[eid].speed * 0.3;
+        Velocity[eid].y = 0;
+      } else {
+        Velocity[eid].x = 0;
+        Velocity[eid].y = 0;
+      }
+    });
   }
 }
 
@@ -656,8 +724,10 @@ function updateReaper(
       break;
     case EnemyState.chase:
       if (d > Enemy[eid].radius + 5 + 4) {
-        Velocity[eid].x = Direction[eid].x * spd;
-        Velocity[eid].y = Direction[eid].y * spd;
+        // Путь через NavMesh — обходит стены/колонны подземелья
+        const v = chaseVelocity(eid, map, playerX, playerY, spd, dt);
+        Velocity[eid].x = v.x;
+        Velocity[eid].y = v.y;
       } else {
         Velocity[eid].x = 0;
         Velocity[eid].y = 0;
@@ -812,8 +882,10 @@ function updateGiant(
       break;
     case EnemyState.chase:
       if (d > Enemy[eid].radius + 5 + 4) {
-        Velocity[eid].x = Direction[eid].x * spd;
-        Velocity[eid].y = Direction[eid].y * spd;
+        // Путь через NavMesh — обходит стены/колонны подземелья
+        const v = chaseVelocity(eid, map, playerX, playerY, spd, dt);
+        Velocity[eid].x = v.x;
+        Velocity[eid].y = v.y;
       } else {
         Velocity[eid].x = 0;
         Velocity[eid].y = 0;

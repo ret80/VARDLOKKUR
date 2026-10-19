@@ -23,6 +23,7 @@ import {
 import { logger } from '../../debug/logger';
 import { getRenderer } from '../../renderer/RendererFactory';
 import type { GraphicsHandle } from '../../renderer/IRenderer';
+import { forgetEnemyPath } from './enemy-path';
 
 // ============================================================
 // Система жизней
@@ -63,6 +64,8 @@ export function deathCleanupSystem(world: World): void {
     // Не удалять игрока — его Dead сбрасывается в respawn(), а спрайт удаляется в game loop
     if (hasComponent(world, eid, Player)) continue;
     // bus.emit('entity:dead', { eid });
+    // Забыть построенный путь врага (eid может быть переиспользован)
+    forgetEnemyPath(eid);
     // Очистить AoS-данные ПЕРЕД удалением — bitecs не чистит их при removeEntity
     cleanupEntityAos(eid);
     removeEntity(world, eid);
