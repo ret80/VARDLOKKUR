@@ -409,34 +409,45 @@ function drawRelief(renderer: IRenderer, g: GraphicsHandle, map: WorldData, W: n
 
       if (walls) {
         const m = walls[i];
+
+        // --- Берег: скальный обрыв вдоль воды ---
+        // Вода всегда ниже суши и помечена exempt, поэтому stepTo её не видит
+        // (а за картой tileAt = 0 = Tl.WATER — потому ограничиваемся inb).
+        // Южная грань и боковые стенки видны сверху; северную закрывает
+        // собственная суша — там грани нет, но, как и у террас, на первой
+        // строке суши остаётся светлая линия стыка.
+        // Палитра камня — по биому САМОЙ суши: вода биома не имеет. Обрыв
+        // развёрнут подножием к воде: светлая кромка-кап остаётся на суше
+        // (как у террас, где кромка всегда у верхней террасы), к воде камень
+        // темнеет, а подножие в воду не заходит — иначе у самой воды светится
+        // серая кайма.
+        // Порядок важен: южную грань рисуем ПЕРВОЙ, боковые стенки — поверх
+        // её краёв. Иначе у правого края южная кромка вылезает за вертикальную
+        // и уголок не смыкается.
+        const isWater = (wx: number, wy: number): boolean =>
+          inb(wx, wy) && map.tiles[wy * W + wx] === Tl.WATER;
+        const wS = isWater(x, y + 1), wN = isWater(x, y - 1);
+        const wE = isWater(x + 1, y), wW = isWater(x - 1, y);
+        if (wS || wN || wE || wW) {
+          const rock = reliefPalFor(t, biomeAt(x, y)).rock;
+          // вода севернее: стену закрывает суша, но кромка стыка видна
+          if (wN) P(x0, y0, T, 1, rock.lip);
+          // боковые стенки — до южной грани, чтобы их кромки стали её краями
+          const fwE = wE ? sideFace(P, x0, y0, false, Math.max(1, my - lv(x + 1, y)), rock, true) : 0;
+          const fwW = wW ? sideFace(P, x0, y0, true, Math.max(1, my - lv(x - 1, y)), rock, true) : 0;
+          if (wS) {
+            const fh = Math.min(FACE_CAP, CLIFF_STEP_PX * Math.max(1, my - lv(x, y + 1)));
+            // подрезаем по кромкам боковых стенок: иначе у правого края южная
+            // кромка вылезает за вертикальную и уголок не смыкается
+            const xa = wW ? x0 + fwW - 1 : x0;
+            const xb = wE ? x0 + T - fwE + 1 : x0 + T;
+            faceBand(P, x0, y0 + T - fh, fh, rock, true, true, xa, xb);
+          }
+        }
+
         for (const [dx, dy, bit] of EDGES) {
           const nx = x + dx, ny = y + dy;
-
-          // --- Берег: скальный обрыв вдоль воды ---
-          // Вода всегда ниже суши и помечена exempt, поэтому stepTo её не видит
-          // (а за картой tileAt = 0 = Tl.WATER — потому ограничиваемся inb).
-          // Южная грань (dy>0) и боковые стенки видны сверху; северную (dy<0)
-          // закрывает собственная суша — там грани нет, но, как и у террас,
-          // на первой строке суши остаётся светлая линия стыка.
-          // Палитра камня — по биому САМОЙ суши: вода биома не имеет. Обрыв
-          // развёрнут подножием к воде: светлая кромка-кап остаётся на суше
-          // (как у террас, где кромка всегда у верхней террасы), к воде камень
-          // темнеет, а подножие в воду не заходит — иначе у самой воды светится
-          // серая кайма.
-          if (inb(nx, ny) && map.tiles[ny * W + nx] === Tl.WATER) {
-            const dw = Math.max(1, my - lv(nx, ny));
-            const rock = reliefPalFor(t, biomeAt(x, y)).rock;
-            if (dy > 0) {
-              const fh = Math.min(FACE_CAP, CLIFF_STEP_PX * dw);
-              faceBand(P, x0, y0 + T - fh, fh, rock, true, true);
-            } else if (dy === 0) {
-              sideFace(P, x0, y0, dx < 0, dw, rock, true);
-            } else {
-              // вода севернее: стену закрывает суша, но кромка стыка видна
-              P(x0, y0, T, 1, rock.lip);
-            }
-            continue;
-          }
+          if (isWater(nx, ny)) continue; // берег уже нарисован выше
 
           const d = stepTo(x, y, dx, dy);
           if (d <= 0) continue;
@@ -491,36 +502,38 @@ function drawRelief(renderer: IRenderer, g: GraphicsHandle, map: WorldData, W: n
  * noBase=true — не рисуем подножие и его тень (обрыв к воде: подножие ушло бы
  * в воду, где линия только мешает).
  */
-function faceBand(P: ReliefPainter, x0: number, top: number, faceH: number, rock: RockPal, lipAtTop: boolean, noBase = false): void {
+function faceBand(P: ReliefPainter, x0: number, top: number, faceH: number, rock: RockPal, lipAtTop: boolean, noBase = false, xa = x0, xb = x0 + T): void {
+  const w = xb - xa;
+  if (w <= 0) return;
   const mid = faceH >> 1;
-  P(x0, top, T, faceH, rock.face);
-  if (lipAtTop) P(x0, top + mid, T, faceH - mid, rock.dark);
-  else P(x0, top, T, faceH - mid, rock.dark);
+  P(xa, top, w, faceH, rock.face);
+  if (lipAtTop) P(xa, top + mid, w, faceH - mid, rock.dark);
+  else P(xa, top, w, faceH - mid, rock.dark);
 
   // горизонтальные слои камня
   if (faceH >= 6) {
-    P(x0, top + Math.max(2, Math.round(faceH * 0.34)), T, 1, rock.strata);
-    P(x0, top + Math.round(faceH * 0.72), T, 1, rock.strata);
+    P(xa, top + Math.max(2, Math.round(faceH * 0.34)), w, 1, rock.strata);
+    P(xa, top + Math.round(faceH * 0.72), w, 1, rock.strata);
   }
 
   // светлая кромка у границы с верхней террасой и тень под капом
-  P(x0, lipAtTop ? top : top + faceH - 1, T, 1, rock.lip);
-  P(x0, lipAtTop ? top + 1 : top + faceH - 2, T, 1, rock.dark);
+  P(xa, lipAtTop ? top : top + faceH - 1, w, 1, rock.lip);
+  P(xa, lipAtTop ? top + 1 : top + faceH - 2, w, 1, rock.dark);
 
   // подножие: тёмная кромка и мягкая тень, падающая на грунт перед гранью
   if (!noBase) {
     const baseY = lipAtTop ? top + faceH : top - 1;
-    P(x0, baseY, T, 1, rock.strata);
-    P(x0, lipAtTop ? baseY + 1 : top - 2, T, 1, 0x10151c, 0.28);
-    P(x0, lipAtTop ? baseY + 2 : top - 3, T, 1, 0x10151c, 0.14);
+    P(xa, baseY, w, 1, rock.strata);
+    P(xa, lipAtTop ? baseY + 1 : top - 2, w, 1, 0x10151c, 0.28);
+    P(xa, lipAtTop ? baseY + 2 : top - 3, w, 1, 0x10151c, 0.14);
   }
 
   // случайные сколы по кромке подножия
   const nickY = lipAtTop ? top + faceH - 1 : top;
   for (let n = 0; n < 4; n++) {
-    const nx = x0 + Math.floor(rnd(x0 / T, top / T, n + 71) * T);
-    const nw = 1 + Math.floor(rnd(top / T, x0 / T, n + 83) * 2);
-    P(nx, nickY, nw, 1, rock.strata);
+    const nx = xa + Math.floor(rnd(x0 / T, top / T, n + 71) * w);
+    const nw = Math.min(1 + Math.floor(rnd(top / T, x0 / T, n + 83) * 2), xb - nx);
+    if (nw > 0) P(nx, nickY, nw, 1, rock.strata);
   }
 }
 
@@ -531,7 +544,8 @@ function faceBand(P: ReliefPainter, x0: number, top: number, faceH: number, rock
  * на противоположный край: так рисуется обрыв к воде (вода ниже, а кромка-кап
  * должна остаться на суше, а не у воды).
  */
-function sideFace(P: ReliefPainter, x0: number, y0: number, westHigher: boolean, dN: number, rock: RockPal, flip = false): void {
+/** Возвращает ширину полосы — по ней южная грань подрезается, чтобы кромки сошлись. */
+function sideFace(P: ReliefPainter, x0: number, y0: number, westHigher: boolean, dN: number, rock: RockPal, flip = false): number {
   const faceW = Math.min(5, SIDE_PX + dN - 1);
   const sx = westHigher ? x0 : x0 + T - faceW;
   const capWest = westHigher !== flip;            // где светлая кромка (верх обрыва)
@@ -544,6 +558,7 @@ function sideFace(P: ReliefPainter, x0: number, y0: number, westHigher: boolean,
   if (faceW >= 4) P(sx + (faceW >> 1), y0, 1, T, rock.strata);
   // тень на нижнем грунте у подножия
   P(westHigher ? sx + faceW : sx - 1, y0, 1, T, 0x10151c, 0.3);
+  return faceW;
 }
 
 /**
