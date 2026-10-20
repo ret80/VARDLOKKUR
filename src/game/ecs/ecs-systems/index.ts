@@ -48,7 +48,15 @@ export {
 
 export {
   aiUpdateSystem,
-} from './ai-system';
+  type AiUpdateArgs,
+} from './ai';
+
+export {
+  EnemyBrain,
+  BrainRegistry,
+  type AiContext,
+  type BrainFactory,
+} from './ai';
 
 export {
   spawnDrop,

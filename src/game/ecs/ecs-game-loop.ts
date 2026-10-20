@@ -37,7 +37,7 @@ import {
 } from './ecs-systems/combat-system';
 import {
   aiUpdateSystem,
-} from './ecs-systems/ai-system';
+} from './ecs-systems/ai';
 import {
   dropsUpdateSystem,
   rollDropsForEnemy,
@@ -693,20 +693,21 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
 
     // ===== 12. AI врагов =====
     if (config_map && peid >= 0) {
-      aiUpdateSystem(
-        world, peid, config_map, dt,
-        () => {}, () => {},
-        (dmg, sx, sy) => {
+      aiUpdateSystem({
+        world,
+        playerEid: peid,
+        map: config_map,
+        dt,
+        onPlayerDamaged: (dmg, sx, sy) => {
           playerDomain?.takeDamage(dmg, sx, sy);
           Player[peid].moving = 0;
           bus.emit("hud:dirty", {});
         },
-        (duration: number) => {
+        onPlayerSlowed: (duration: number) => {
           Player[peid].slowT = duration;
         },
-        undefined, // fogActive
-        bus       // bus для boss:killed event
-      );
+        bus, // bus для boss:killed event
+      });
     }
 
     // ===== 13. Направление из скорости (ПОСЛЕ AI, чтобы Direction от AI не перезаписался) =====
