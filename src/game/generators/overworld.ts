@@ -20,17 +20,18 @@ import { findWalkableNear, clearAround, floodReach, setTile, tileAt } from "./ut
 
 /* ---------- Таблица врагов по биомам (Ф8, план §9) ----------
    Зима (снег): frost/varg; лес: птицы/грибы/волки; топи: слизни;
-   луга: птицы/слизни. Драугр — «универсал»: редко во всех биомах и
-   спец-спавны Сожжённой Деревни. Паук — босс подземелий, на поверхность
-   не выходит (см. ENEMY_TABLE без spider). */
+   луга: птицы/слизни. Драугр — «опасный» враг: на поверхности острова не
+   спавнится вообще, встречается только в спец-спавнах Сожжённой Деревни и
+   в подземелии гиганта (Каменная Крепость, см. DUNGEONS). Паук — босс
+   подземелий, на поверхность не выходит (см. ENEMY_TABLE без spider). */
 interface EnemyEntry { kinds: EnemyKind[]; rare?: EnemyKind; rareChance?: number }
 const ENEMY_TABLE: Record<number, EnemyEntry> = {
-  [Biome.SNOW]: { kinds: ["frost", "varg"], rare: "draugr", rareChance: 0.15 },
-  [Biome.FOREST]: { kinds: ["shroom", "raven", "varg"], rare: "draugr", rareChance: 0.15 },
+  [Biome.SNOW]: { kinds: ["frost", "varg"] },
+  [Biome.FOREST]: { kinds: ["shroom", "raven", "varg"] },
   // Призрак — исключительно туманный враг (спавнится только системой тумана),
   // статичный спавн давал «призрака-стояку» без поведения (state=idle вне автомата)
-  [Biome.SWAMP]: { kinds: ["crawler"], rare: "draugr", rareChance: 0.15 },
-  [Biome.MEADOW]: { kinds: ["raven", "crawler"], rare: "draugr", rareChance: 0.15 },
+  [Biome.SWAMP]: { kinds: ["crawler"] },
+  [Biome.MEADOW]: { kinds: ["raven", "crawler"] },
 };
 /** Целевое число спавнов по биомам (сумма ~96) */
 const ENEMY_QUOTA: Record<number, number> = {
@@ -645,8 +646,8 @@ export function generateOverworld(seed: number): WorldData {
 
   // Пьедесталы (стражи по биомам)
   const guardPool: EnemyKind[][] = [
-    ["frost", "varg"], ["draugr", "shroom"], ["crawler", "draugr"],
-    ["draugr", "raven"], ["varg", "varg"],
+    ["frost", "varg"], ["varg", "shroom"], ["crawler", "crawler"],
+    ["raven", "raven"], ["varg", "varg"],
   ];
   const pedestalSpots = [
     placeInBiome(Biome.MEADOW, R_MOUNT, 56, 0.4, 3, offPassage),

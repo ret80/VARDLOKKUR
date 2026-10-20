@@ -62,7 +62,7 @@ export function createTestMap(
       { x: 12, y: 10, item: "sword" },
     ],
     pedestals: [
-      { x: 6, y: 10, guards: ["crawler", "draugr"] },
+      { x: 6, y: 10, guards: ["crawler", "varg"] },
     ],
     spawns: [
       { x: 8, y: 8, kind: "crawler" },

@@ -579,7 +579,7 @@ export function generateDungeon(seed: number, cfg: DungeonCfg, exitSpot: Vec): W
 }
 
 export const DUNGEONS: DungeonCfg[] = [
-  { id: 0, name: "Склеп Хранителя", boss: "reaper", bossReward: "axe", pool: ["draugr", "crawler", "raven"] },
+  { id: 0, name: "Склеп Хранителя", boss: "reaper", bossReward: "axe", pool: ["crawler", "raven"] },
   { id: 1, name: "Корень Иггдрасиля", boss: "spider", bossReward: "bow", pool: ["shroom", "crawler", "raven"] },
   { id: 2, name: "Каменная Крепость", boss: "giant", bossReward: "hammer", pool: ["draugr", "frost", "varg"] },
 ];
