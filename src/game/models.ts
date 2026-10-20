@@ -13,7 +13,21 @@ import type { Graphics } from "pixi.js";
 
 // ── Экраны ──────────────────────────────────────────────────────────────
 
+export enum ScreenEnum {
+  Title = "title",
+  Play = "play",
+  Pause = "pause",
+  Death = "death",
+  Victory = "victory",
+  Quests = "quests",
+  Inventory = "inventory",
+  Map = "map",
+  Settings = "settings",
+}
+
 export type Screen = "title" | "play" | "pause" | "death" | "victory" | "quests" | "inventory" | "map" | "settings";
+export const Screen = ScreenEnum;
+
 
 // ── HUD ─────────────────────────────────────────────────────────────────
 

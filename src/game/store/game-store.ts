@@ -11,7 +11,7 @@
  * Игровая логика (Player, Enemy, Position, Health) — в ECS World.
  */
 
-import type { Screen, EngineCallbacks, EngineServices, GameActions } from "../models";
+import { Screen, type EngineCallbacks, type EngineServices, type GameActions } from "../models";
 import type { Player } from "../entities";
 import type { World } from "bitecs";
 import type { WorldStore } from "./world-store";
@@ -79,7 +79,7 @@ export class GameStore {
 
     this._state = {
       player,
-      screen: "title",
+      screen: Screen.Title,
       realT: 0,
       playTime: 0,
       zone: "",

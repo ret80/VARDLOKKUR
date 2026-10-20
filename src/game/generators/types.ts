@@ -2,17 +2,19 @@
 
 export const T = 16;
 
-export const Tl = {
-  WATER: 0, SHORE: 1, SNOW: 2, SNOW2: 3, PATH: 4, FOREST: 5, TREE: 6, ROCK: 7,
-  MTN: 8, SWAMP: 9, POOL: 10, VILLAGE: 11, PALISADE: 12, HOUSE: 13, RUINS: 14,
-  COLUMN: 15, CAVE: 16, CAVEWALL: 17, STAIRS: 18, DFLOOR: 19, DWALL: 20, ALTAR: 21,
-  MEADOW: 22, WASTE: 23,
-  DEADTREE: 24, FIR: 25, GRASS: 26,
+export enum Tile {
+  WATER = 0, SHORE = 1, SNOW = 2, SNOW2 = 3, PATH = 4, FOREST = 5, TREE = 6, ROCK = 7,
+  MTN = 8, SWAMP = 9, POOL = 10, VILLAGE = 11, PALISADE = 12, HOUSE = 13, RUINS = 14,
+  COLUMN = 15, CAVE = 16, CAVEWALL = 17, STAIRS = 18, DFLOOR = 19, DWALL = 20, ALTAR = 21,
+  MEADOW = 22, WASTE = 23,
+  DEADTREE = 24, FIR = 25, GRASS = 26,
   /** Каменистая осыпь на склоне (проходимая) */
-  SCREE: 27,
+  SCREE = 27,
   /** Скальный уступ/обрыв (проходимый, иллюзия высоты) */
-  CLIFF: 28,
-} as const;
+  CLIFF = 28,
+}
+
+export const Tl = Tile;
 
 /**
  * Число уровней высоты (террас) для оверворлда. Высота квантуется по уровням:
@@ -25,16 +27,16 @@ export const ELEV_LEVELS = 6;
 export const elevLevel = (h: number): number =>
   Math.max(0, Math.min(ELEV_LEVELS, Math.floor(h * ELEV_LEVELS + 0.0001)));
 
-export const Biome = {
-  SNOW: 0,      // священная гряда (центр)
-  RIDGE: 1,     // хребет
-  FOREST: 2,    // лес
-  SWAMP: 3,     // топи
-  MEADOW: 4,    // луга
-  RUINS: 5,     // руины
-  WASTE: 6,     // пустошь
-  WATER: 7,     // вода/берег (для удобства)
-} as const;
+export enum Biome {
+  SNOW = 0,      // священная гряда (центр)
+  RIDGE = 1,     // хребет
+  FOREST = 2,    // лес
+  SWAMP = 3,     // топи
+  MEADOW = 4,    // луга
+  RUINS = 5,     // руины
+  WASTE = 6,     // пустошь
+  WATER = 7,     // вода/берег (для удобства)
+}
 export type BiomeId = number;
 
 const SOLID = new Set<number>([

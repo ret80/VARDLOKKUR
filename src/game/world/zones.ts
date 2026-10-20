@@ -4,10 +4,12 @@ import type { WorldData } from '../generators/types';
 import { T } from '../generators/types';
 import { zoneFor } from '../generators/utils';
 
-export const VILLAGE_ZONE_NAMES = new Set<string>([
-  'Поселение выживших',
-  'Воронья Гавань',
-]);
+export enum VillageZone {
+  SurvivorsSettlement = 'Поселение выживших',
+  RavensHaven = 'Воронья Гавань',
+}
+
+export const VILLAGE_ZONE_NAMES = new Set<string>(Object.values(VillageZone));
 
 export function isVillageZoneName(name: string | null | undefined): boolean {
   if (!name) return false;

@@ -40,11 +40,18 @@ export interface DropHandler {
 
 /* ── Базовый хелпер для общих действий ── */
 
+enum DropAudioMethod {
+  Pickup = "pickup",
+  Rune = "rune",
+}
+
+type DropAudioMethodType = "pickup" | "rune";
+
 function playAndToast(
   bus: EventBus,
   audioFn: () => void,
   msg: string,
-  audioMethod?: "pickup" | "rune"
+  audioMethod?: DropAudioMethodType
 ): void {
   if (audioMethod === "rune") {
     audio.rune();
