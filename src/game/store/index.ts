@@ -15,9 +15,7 @@ export type {
   QuestFlags,
   KillFlags,
   WorldFlags,
-  FlagDomainMap,
 } from "./flag-domains";
-export { getFlagDomain } from "./flag-domains";
 
 // Player domain
 export { PlayerDomain, type PlayerEvents, type IPlayerDomain, type IPlayerMutations } from "./player-domain";

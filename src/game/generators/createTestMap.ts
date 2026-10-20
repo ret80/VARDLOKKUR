@@ -19,8 +19,6 @@ export function createTestMap(
     tiles[i] = Tl.SNOW;
   }
 
-  // Педестал: 4 клетки влево от игрока (grid 6, 10)
-
   // Алтарь: центр по X (10), вверху карты ниже леса (y=2)
   tiles[idx({ W: size }, 10, 2)] = Tl.ALTAR;
 

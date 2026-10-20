@@ -85,39 +85,6 @@ export function clearAround(w: WorldData, cx: number, cy: number, r: number, flo
   }
 }
 
-export function findFree(w: WorldData, fx: number, fy: number, r: number, pref: number | undefined, rng: () => number, isFree?: (x: number, y: number) => boolean): Vec {
-  const landT = (t: number) => !isSolidTileId(t) && t !== Tl.WATER && t !== Tl.POOL && t !== Tl.PATH && t !== Tl.VILLAGE && t !== Tl.STAIRS;
-  const can = (x: number, y: number) => {
-    if (!inB(w, x, y)) return false;
-    const t = w.tiles[idx(w, x, y)];
-    if (!landT(t)) return false;
-    if (isFree && !isFree(x, y)) return false;
-    return true;
-  };
-  for (let tries = 0; tries < 400; tries++) {
-    const x = Math.round(fx + (rng() * 2 - 1) * r);
-    const y = Math.round(fy + (rng() * 2 - 1) * r);
-    if (!inB(w, x, y)) continue;
-    const t = w.tiles[idx(w, x, y)];
-    if (!landT(t)) continue;
-    if (isFree && !isFree(x, y)) continue;
-    if (pref !== undefined && t !== pref && tries < 300) continue;
-    return { x, y };
-  }
-  for (let rad = 1; rad < 90; rad++) {
-    for (let dy = -rad; dy <= rad; dy++) {
-      for (let dx = -rad; dx <= rad; dx++) {
-        if (Math.max(Math.abs(dx), Math.abs(dy)) !== rad) continue;
-        const x = Math.round(fx) + dx, y = Math.round(fy) + dy;
-        if (!can(x, y)) continue;
-        const t = w.tiles[idx(w, x, y)];
-        if (pref === undefined || t === pref) return { x, y };
-      }
-    }
-  }
-  return { x: clamp(Math.round(fx), 2, w.W - 3), y: clamp(Math.round(fy), 2, w.H - 3) };
-}
-
 export function floodReach(w: WorldData, sx: number, sy: number): Uint8Array {
   const reach = new Uint8Array(w.W * w.H);
   const q: number[] = [sy * w.W + sx];

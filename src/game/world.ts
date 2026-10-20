@@ -16,7 +16,7 @@ export {
 export { WallBit, WALL_DIRS, WALL_COLLIDER_T, buildTerrainWalls, edgeOpen } from "./generators/terrain-walls";
 
 export { tileAt, solidTileAt, setTile, zoneFor, biomeAt } from "./generators/utils";
-export { findWalkableNear, clearAround, findFree, floodReach } from "./generators/utils";
+export { findWalkableNear, clearAround, floodReach } from "./generators/utils";
 
 export { IslandGenerator } from "./generators/island-generator";
 export { VillageGenerator } from "./generators/village-generator";
