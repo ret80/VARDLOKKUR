@@ -441,12 +441,14 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         entityFactory, e.kind as any, e.x, e.y, e.vx, e.vy, e.dmg,
         lifetime,
         (eid: number) => {
+          // Владелец проставляется ВСЕГДА, независимо от успеха создания спрайта:
+          // иначе owner остаётся -1 и стрела может задеть стрелка (guard пропускает владельца).
+          if (e.owner !== undefined) {
+            Projectile[eid].owner = e.owner;
+          }
           try {
             const g = spriteFactory.create(e.x, e.y);
             Sprite[eid] = { ref: g };
-            if (e.owner !== undefined) {
-              Projectile[eid].owner = e.owner;
-            }
           } catch (err) {
             logger.error('projectile:fire', `spriteFactory.create FAILED: ${err}`);
           }
