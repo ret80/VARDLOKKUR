@@ -727,7 +727,7 @@ export function updateProjectilesEcs(
 
     // Collision check with enemies (для player и enemy снарядов)
     let enemyHit = false;
-    if (pKind === 'arrow' || pKind === 'axe' || pKind === 'spore' || pKind === 'fire') {
+    if (pKind === 'arrow' || pKind === 'axe' || pKind === 'spore' || pKind === 'fire' || pKind === 'bone_arrow') {
       const projOwner = proj.owner;
       for (const enemyEid of query(world, [Enemy, Position, Health, Radius])) {
         if (hasComponent(world, enemyEid, Dead)) continue;
@@ -815,7 +815,7 @@ export function updateProjectilesEcs(
     }
 
     // Если снаряд не попал во врага — проверить попадание в игрока (для enemy снарядов)
-    if (!enemyHit && (pKind === 'spore' || pKind === 'fire')) {
+    if (!enemyHit && (pKind === 'spore' || pKind === 'fire' || pKind === 'bone_arrow')) {
       const pPos = Position[playerEid];
       if (!pPos) continue;
       const pr = pPos.x;

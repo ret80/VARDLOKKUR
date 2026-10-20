@@ -119,6 +119,7 @@ export function createBodyForEntity(
   const body = planckWorld.createEntityBody(pos.x, pos.y, radius, category, { eid, ...extraUserData }, groupIndex);
   if (vx !== undefined && vy !== undefined) {
     body.setLinearVelocity({ x: vx, y: vy });
+    try { body.setAwake(true); } catch { /* не критично */ }
   }
   PhysicsBody[eid].body = PhysicsBodyRegistry.length + 1;
   PhysicsBodyRegistry.push(body);

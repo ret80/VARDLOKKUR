@@ -118,6 +118,19 @@ describe("enemies by biome", () => {
     }
   });
 
+  it("скелеты есть только в Склепе Хранителя (подземелье 1)", () => {
+    for (const cfg of DUNGEONS) {
+      const skeletons = cfg.pool.filter((k) => k === "skeleton" || k === "skeleton_archer");
+      if (cfg.id === 0) {
+        expect(skeletons.length, `${cfg.name}: скелеты в пуле`).toBeGreaterThan(0);
+        expect(cfg.pool.includes("skeleton"), `${cfg.name}: мечник`).toBe(true);
+        expect(cfg.pool.includes("skeleton_archer"), `${cfg.name}: лучник`).toBe(true);
+      } else {
+        expect(skeletons.length, `${cfg.name}: скелетов быть не должно`).toBe(0);
+      }
+    }
+  });
+
   it("на поверхности нет пауков (босс подземелий)", { timeout: 60000 }, () => {
     for (const seed of SEEDS) {
       const w = generateOverworld(seed);

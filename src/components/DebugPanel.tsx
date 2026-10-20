@@ -258,7 +258,7 @@ function useDebugWebSocket() {
 // UI Components
 // ============================================================
 
-const ENEMY_KINDS = ['draugr', 'varg', 'raven', 'shroom', 'crawler', 'frost', 'reaper', 'spider', 'giant', 'snake', 'ghost'];
+const ENEMY_KINDS = ['draugr', 'varg', 'raven', 'shroom', 'crawler', 'frost', 'reaper', 'spider', 'giant', 'snake', 'ghost', 'skeleton', 'skeleton_archer'];
 
 function TabButton({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
   return (

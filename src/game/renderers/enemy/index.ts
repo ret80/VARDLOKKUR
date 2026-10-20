@@ -13,6 +13,8 @@ import { SpiderRenderer } from "./SpiderRenderer";
 import { GiantRenderer } from "./GiantRenderer";
 import { SnakeRenderer } from "./SnakeRenderer";
 import { GhostRenderer } from "./GhostRenderer";
+import { SkeletonRenderer } from "./SkeletonRenderer";
+import { SkeletonArcherRenderer } from "./SkeletonArcherRenderer";
 
 export const enemyRegistry = new RendererRegistry<string, IEnemyData>()
   .register("draugr", new DraugrRenderer())
@@ -25,4 +27,6 @@ export const enemyRegistry = new RendererRegistry<string, IEnemyData>()
   .register("spider", new SpiderRenderer())
   .register("giant", new GiantRenderer())
   .register("snake", new SnakeRenderer())
-  .register("ghost", new GhostRenderer());
+  .register("ghost", new GhostRenderer())
+  .register("skeleton", new SkeletonRenderer())
+  .register("skeleton_archer", new SkeletonArcherRenderer());

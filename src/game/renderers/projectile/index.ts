@@ -6,9 +6,11 @@ import { ArrowProjectileRenderer } from "./ArrowProjectileRenderer";
 import { AxeProjectileRenderer } from "./AxeProjectileRenderer";
 import { SporeProjectileRenderer } from "./SporeProjectileRenderer";
 import { FireProjectileRenderer } from "./FireProjectileRenderer";
+import { BoneArrowProjectileRenderer } from "./BoneArrowProjectileRenderer";
 
 export const projectileRegistry = new RendererRegistry<string, IProjectileData>()
   .register("arrow", new ArrowProjectileRenderer())
   .register("axe", new AxeProjectileRenderer())
   .register("spore", new SporeProjectileRenderer())
-  .register("fire", new FireProjectileRenderer());
+  .register("fire", new FireProjectileRenderer())
+  .register("bone_arrow", new BoneArrowProjectileRenderer());

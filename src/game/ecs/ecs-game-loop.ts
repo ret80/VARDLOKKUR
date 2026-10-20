@@ -435,7 +435,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       logger.error('projectile:fire', `spriteFactory is NOT SET!`);
       return;
     }
-    const lifetime = e.kind === 'arrow' ? 2.2 : 3;
+    const lifetime = e.kind === 'arrow' ? 2.2 : e.kind === 'bone_arrow' ? 2.6 : 3;
     try {
       const eid = fireProjectileEcs(
         entityFactory, e.kind as any, e.x, e.y, e.vx, e.vy, e.dmg,
@@ -458,7 +458,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
         const groupIndex = ownerEid >= 0 ? -(ownerEid + 1) : 0;
         const fromEnemy = ownerEid >= 0 && ownerEid !== peid;
         const projKind = e.kind as any;
-        const projRadius = projKind === 'arrow' ? 2 : 4;
+        const projRadius = projKind === 'arrow' || projKind === 'bone_arrow' ? 2 : 4;
         createBodyForEntity(_planckWorld, world, eid, projRadius, Cat.Projectile, Cat.Enemy | Cat.Player | Cat.Ground, e.vx, e.vy, { fromEnemy }, groupIndex);
       }
     } catch (err) {

@@ -50,6 +50,11 @@ const LEASH_RANGE = 240;
 const CONTACT_COOLDOWN = 0.5;
 const GHOST_SLOW_DURATION = 2.0; // призрак замедляет игрока на 2 секунды
 const SHRINE_PROTECT_RADIUS = 25; // радиус защиты святилища (в пикселях)
+/** Лучник-скелет: дальность стрельбы, натяжение тетивы и перезарядка. */
+const BOW_RANGE = 96;
+const BOW_DRAW_TIME = 0.5;
+const BOW_COOLDOWN = 1.5;
+const BONE_ARROW_SPEED = 150;
 
 // ============================================================
 // Кэш для isPlayerNearLitShrine — вычисляется один раз за кадр
@@ -183,6 +188,12 @@ export function aiUpdateSystem(
       case 'draugr':
         updateDraugr(world, enemyEid, playerEid, playerX, playerY, map, dt, inVillage);
         break;
+      case 'skeleton':
+        updateSkeletonMelee(world, enemyEid, playerEid, playerX, playerY, map, dt, inVillage);
+        break;
+      case 'skeleton_archer':
+        updateSkeletonArcher(world, enemyEid, playerEid, playerX, playerY, map, dt, inVillage, bus);
+        break;
       case 'varg':
         updateVarg(world, enemyEid, playerEid, playerX, playerY, map, dt, inVillage);
         break;
@@ -274,6 +285,111 @@ function updateDraugr(
         Velocity[eid].y = 0;
       }
     });
+  }
+}
+
+/** Skeleton — преследует по пути (NavMesh) и бьёт мечом в ближнем бою */
+function updateSkeletonMelee(
+  world: World, eid: number, playerEid: number,
+  playerX: number, playerY: number, map: WorldData, dt: number, inVillage: boolean
+): void {
+
+  const d = Math.sqrt((Position[eid].x - playerX) ** 2 + (Position[eid].y - playerY) ** 2);
+  const stopD = Enemy[eid].radius + 5 + 2;
+
+  if (!!Enemy[eid].aggro) {
+    if (d > stopD + 1) {
+      const v = chaseVelocity(eid, map, playerX, playerY, Enemy[eid].speed, dt);
+      Velocity[eid].x = v.x;
+      Velocity[eid].y = v.y;
+    } else {
+      Velocity[eid].x = 0;
+      Velocity[eid].y = 0;
+    }
+    if (d > 1) {
+      const dx = playerX - Position[eid].x;
+      const dy = playerY - Position[eid].y;
+      const dd = Math.sqrt(dx * dx + dy * dy) || 1;
+      Direction[eid].x = dx / dd;
+      Direction[eid].y = dy / dd;
+    }
+  } else {
+    idleGround(eid, map, dt, () => {
+      if (Math.floor(Enemy[eid].t) % 4 === 0) {
+        Velocity[eid].x = Math.sin(Enemy[eid].t * 0.7 + Enemy[eid].seed) * Enemy[eid].speed * 0.3;
+        Velocity[eid].y = 0;
+      } else {
+        Velocity[eid].x = 0;
+        Velocity[eid].y = 0;
+      }
+    });
+  }
+}
+
+/** Skeleton bowman — держит дистанцию и стреляет костяными стрелами */
+function updateSkeletonArcher(
+  world: World, eid: number, playerEid: number,
+  playerX: number, playerY: number, map: WorldData, dt: number, inVillage: boolean, bus?: EventBus | null
+): void {
+
+  const dx = playerX - Position[eid].x;
+  const dy = playerY - Position[eid].y;
+  const d = Math.sqrt(dx * dx + dy * dy) || 1;
+
+  if (d > 1) {
+    Direction[eid].x = dx / d;
+    Direction[eid].y = dy / d;
+  }
+
+  if (!Enemy[eid].aggro) {
+    idleGround(eid, map, dt, () => {
+      Velocity[eid].x = 0;
+      Velocity[eid].y = 0;
+    });
+    return;
+  }
+
+  // Держит дистанцию: подходит на выстрел, отходит если игрок слишком близко
+  let moveX = 0, moveY = 0;
+  if (d > BOW_RANGE * 0.75) {
+    const v = chaseVelocity(eid, map, playerX, playerY, Enemy[eid].speed, dt);
+    moveX = v.x;
+    moveY = v.y;
+  } else if (d < BOW_RANGE * 0.45) {
+    const v = chaseVelocity(eid, map, playerX - dx * 2, playerY - dy * 2, Enemy[eid].speed * 0.8, dt);
+    moveX = -v.x;
+    moveY = -v.y;
+  }
+  Velocity[eid].x = moveX;
+  Velocity[eid].y = moveY;
+
+  // Натягивает тетиву → выстрел → перезарядка
+  Enemy[eid].stateT -= dt;
+  if (Enemy[eid].state === EnemyState.aim) {
+    if (Enemy[eid].stateT <= 0) {
+      Enemy[eid].state = EnemyState.cool;
+      Enemy[eid].stateT = BOW_COOLDOWN;
+      if (bus && d < BOW_RANGE * 1.2) {
+        const speed = BONE_ARROW_SPEED;
+        bus.emit("projectile:fire", {
+          kind: "bone_arrow",
+          x: Position[eid].x,
+          y: Position[eid].y - 4,
+          vx: (dx / d) * speed,
+          vy: (dy / d) * speed,
+          dmg: Enemy[eid].dmg,
+          owner: eid,
+        });
+      }
+    }
+  } else if (Enemy[eid].state === EnemyState.cool) {
+    if (Enemy[eid].stateT <= 0) {
+      Enemy[eid].state = EnemyState.aim;
+      Enemy[eid].stateT = BOW_DRAW_TIME;
+    }
+  } else {
+    Enemy[eid].state = EnemyState.aim;
+    Enemy[eid].stateT = BOW_DRAW_TIME;
   }
 }
 

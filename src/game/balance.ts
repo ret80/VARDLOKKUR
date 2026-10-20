@@ -16,6 +16,10 @@ export const ENEMY_STATS: Record<EnemyKind, { r: number; hp: number; speed: numb
   giant:   { r: 13, hp: 20, speed: 44, dmg: 4 },
   snake:   { r: 16, hp: 14, speed: 0,  dmg: 3 },
   ghost:   { r: 6, hp: 5, speed: 100, dmg: 1 },
+  // Скелеты подземелья: слабые (2 hp), средняя скорость. Мечник — ближний бой,
+  // лучник — стреляет костяными стрелами с дистанции.
+  skeleton:        { r: 5, hp: 2, speed: 50, dmg: 1 },
+  skeleton_archer: { r: 5, hp: 2, speed: 50, dmg: 1 },
 };
 
 /**
