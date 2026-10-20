@@ -59,8 +59,7 @@ function runProjectileFrame(world: World, pw: PlanckWorld, dt: number): void {
   updateProjectilesEcs(
     world, dt, -1, 0, pw,
     () => {}, () => {}, () => {}, () => {}, () => {}, () => {},
-    () => {}, () => {}, () => {}, () => {},
-    null as any
+    () => {}, () => {}, () => {}, () => {}
   );
 }
 
