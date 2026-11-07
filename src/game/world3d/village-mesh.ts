@@ -13,7 +13,6 @@
  */
 
 import { T, Tl, Biome, type WorldData } from '../world';
-import { isSolidTileId } from '../generators/types';
 import type { MeshData } from './terrain-mesh';
 
 /* ============================================================
@@ -372,7 +371,15 @@ export function makeFenceTexture(): HTMLCanvasElement {
   return cv;
 }
 
-/** Частокол по внешнему периметру: вертикальные плоскости на стыках. */
+/**
+ * Частокол: одно полотно по ЦЕНТРАМ тайлов PALISADE.
+ *
+ * Раньше плоскость ставилась на каждый стык тайла с не-частоколом. У кольца
+ * толщиной в один тайл это давало ДВА ряда кольев — внешний и внутренний
+ * (соседом изнутри идёт VILLAGE, он не солид). Теперь каждое звено идёт от
+ * центра тайла к центру соседнего по цепочке тайла: получается ровно один
+ * непрерывный забор, а на углах звенья встречаются в центре углового тайла.
+ */
 export function buildFence3D(
   map: WorldData,
   heightAtTile: (tx: number, ty: number) => number,
@@ -402,25 +409,23 @@ export function buildFence3D(
     for (let x = 0; x < W; x++) {
       if (tiles[y * W + x] !== Tl.PALISADE) continue;
       const baseY = heightAtTile(x, y);
-      const X0 = x, X1 = x + 1, Z0 = y, Z1 = y + 1;
+      const cx = x + 0.5, cz = y + 0.5;
 
-      // Каждая сторона, где сосед — не частокол (и не солид), получает полотно.
-      if (!pal(x, y - 1) && !solid(map, x, y - 1)) face(X0, Z0, X1, Z0, baseY, 0, 1);
-      if (!pal(x, y + 1) && !solid(map, x, y + 1)) face(X1, Z1, X0, Z1, baseY, 0, 1);
-      if (!pal(x + 1, y) && !solid(map, x + 1, y)) face(X1, Z0, X1, Z1, baseY, 0, 1);
-      if (!pal(x - 1, y) && !solid(map, x - 1, y)) face(X0, Z1, X0, Z0, baseY, 0, 1);
+      // Только «+x» и «+y»: каждое звено между центрами соседей рисуется один раз.
+      const right = pal(x + 1, y);
+      const down = pal(x, y + 1);
+      if (right) face(cx, cz, cx + 1, cz, baseY, 0, 1);
+      if (down) face(cx, cz, cx, cz + 1, baseY, 0, 1);
+
+      // Одиночный тайл без соседей (обрывок кольца) — кол в центре тайла.
+      if (!right && !down && !pal(x - 1, y) && !pal(x, y - 1)) {
+        face(x, cz, x + 1, cz, baseY, 0, 1);
+      }
     }
   }
 
   if (quads === 0) return null;
   return b.toMesh();
-}
-
-/** Солид ли тайл (частокол не должен смотреть в скалу/дом). */
-function solid(map: WorldData, x: number, y: number): boolean {
-  if (x < 0 || y < 0 || x >= map.W || y >= map.H) return true;
-  const t = map.tiles[y * map.W + x];
-  return isSolidTileId(t) && t !== Tl.PALISADE;
 }
 
 /** Пиксели в мировые юниты (для внешних проверок). */
