@@ -13,7 +13,7 @@ import { dist2 } from '../../utils';
 import { zoneFor, T, Tl } from '../../world';
 import type { GameStore } from '../../store';
 import type { EventBus } from '../../event-bus';
-import type { PlanckWorld } from '../../physics/planck-world';
+import type { IPhysicsWorld } from '../../physics/types';
 import { destroyBodyForEntity, createDoorBody } from './physics-system';
 
 // ============================================================
@@ -24,7 +24,7 @@ import { destroyBodyForEntity, createDoorBody } from './physics-system';
 export function updateDoors(
   world: World,
   playerEid: number,
-  planckWorld: PlanckWorld,
+  planckWorld: IPhysicsWorld,
   store: GameStore,
   flags: { hasKey: boolean },
   toast: (msg: string) => void,

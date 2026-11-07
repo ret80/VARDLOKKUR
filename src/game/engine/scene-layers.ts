@@ -33,8 +33,12 @@ export class SceneLayers {
   fxScreen!: any;
   fadeG!: any;
 
-  /** Инициализация слоёв через IRenderer */
-  init(renderer: IRenderer, app: { stage: { addChild(child: any): void } }): void {
+  /**
+   * Инициализация слоёв через IRenderer.
+   * `app` — PixiJS Application: нужен только для screen-space FX-графики в 2D.
+   * В 3D (three.js) экранные эффекты идут через IRenderer, app не передаётся.
+   */
+  init(renderer: IRenderer, app?: { stage: { addChild(child: any): void } }): void {
     this._renderer = renderer;
 
     // Создаём слои через IRenderer
@@ -44,15 +48,15 @@ export class SceneLayers {
     (this.fxWorldHandle as any) = renderer.createLayer('fx', 60);
     (this.floatLayerHandle as any) = renderer.createLayer('float', 90);
 
-    // FX screen-space элементы — PixiJS Graphics для app.stage
-    this.fxScreen = new Graphics();
-    this.fadeG = new Graphics();
+    // FX screen-space элементы — только для 2D-пути (PixiJS Graphics)
+    if (app) {
+      this.fxScreen = new Graphics();
+      this.fadeG = new Graphics();
+      app.stage.addChild(this.fxScreen);
+      app.stage.addChild(this.fadeG);
+    }
 
-    // Добавляем FX-графику в stage
-    app.stage.addChild(this.fxScreen);
-    app.stage.addChild(this.fadeG);
-
-    logger.info('scene-layers', `SceneLayers initialized: 5 ECS layers + 2 FX graphics`);
+    logger.info('scene-layers', `SceneLayers initialized: 5 ECS layers${app ? ' + 2 FX graphics' : ' (3D)'}`);
   }
 
   /** Получить рендерер */
@@ -62,9 +66,9 @@ export class SceneLayers {
 
   /** Уничтожить все слои */
   destroy(): void {
-    // Уничтожить FX-графику (реальные PixiJS Graphics)
-    this.fxScreen.destroy({ texture: true });
-    this.fadeG.destroy({ texture: true });
+    // Уничтожить FX-графику (только 2D-путь)
+    this.fxScreen?.destroy({ texture: true });
+    this.fadeG?.destroy({ texture: true });
 
     logger.info('scene-layers', 'SceneLayers destroyed');
   }

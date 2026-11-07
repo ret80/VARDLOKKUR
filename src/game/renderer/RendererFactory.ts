@@ -1,6 +1,7 @@
 /* RendererFactory.ts — фабрика рендереров и глобальный DI-контейнер */
 
 import { PixiJSRenderer } from './PixiJSRenderer';
+import { ThreeJSRenderer } from './ThreeJSRenderer';
 import type { IRenderer } from './IRenderer';
 import { logger } from '../debug/logger';
 
@@ -8,7 +9,7 @@ import { logger } from '../debug/logger';
 // Типы рендереров
 // ============================================================
 
-export type RendererType = 'pixi' | 'canvas' | 'headless';
+export type RendererType = 'pixi' | 'three' | 'canvas' | 'headless';
 
 // ============================================================
 // Фабрика
@@ -25,6 +26,10 @@ export class RendererFactory {
       case 'pixi':
         logger.info('renderer', 'Creating PixiJSRenderer');
         return new PixiJSRenderer();
+
+      case 'three':
+        logger.info('renderer', 'Creating ThreeJSRenderer');
+        return new ThreeJSRenderer();
 
       // TODO: реализовать CanvasRenderer
       // case 'canvas':

@@ -8,7 +8,7 @@
  *   - «дом»: запоминается позиция первого спавна, после отвязки от игрока
  *     враг возвращается домой по пути, а не бредёт по прямой в стену.
  */
-import type { NavMesh } from "navmesh";
+import type { INavMesh } from "../../navigation/nav-mesh";
 import { Position, Enemy } from "../ecs-components";
 import { T, idx, inB, isSolidTileId, type WorldData } from "../../generators/types";
 
@@ -116,7 +116,7 @@ function repath(st: PathState, eid: number, map: WorldData, targetX: number, tar
   _repathBudget--;
 
   const pos = Position[eid];
-  const nav = map.nav as NavMesh | null;
+  const nav = map.nav as INavMesh | null;
   let pts: { x: number; y: number }[] = [];
   if (nav && typeof nav.findPath === "function") {
     // Точки пути привязываются к центрам клеток: центр всегда лежит внутри

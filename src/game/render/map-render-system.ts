@@ -31,6 +31,27 @@ let _groundGraphics: GraphicsHandle | null = null;
 let _dungeonWallGraphics: GraphicsHandle | null = null;
 
 /**
+ * 2D-билборды домов и частокола. В 3D они замещаются настоящей геометрией
+ * (см. world3d/village-mesh.ts), поэтому рендерер их скрывает.
+ */
+let _villageGraphics: GraphicsHandle[] = [];
+
+/** Handle батча земли — нужен 3D-рендереру для текстуры рельефа. */
+export function getGroundGraphicsHandle(): GraphicsHandle | null {
+  return _groundGraphics;
+}
+
+/** Handle батча стен подземелья (в 3D заменяется боксами). */
+export function getDungeonWallBatchHandle(): GraphicsHandle | null {
+  return _dungeonWallGraphics;
+}
+
+/** Handles 2D-билбордов домов и частокола (скрываются в 3D). */
+export function getVillageTileHandles(): GraphicsHandle[] {
+  return _villageGraphics;
+}
+
+/**
  * Опции mapRenderSystem (передаются из ecs-game-loop при каждом кадре).
  */
 export interface MapRenderSystemOptions {
@@ -207,6 +228,7 @@ export function createMapTileGraphics(
   const roofSnow = opts.roofSnow ?? false;
   const isDungeon = !!map.isDungeon;
   _dungeonWallGraphics = null; // пересоздаётся только для подземелий (ниже)
+  _villageGraphics = [];
   let count = 0;
 
   // Детерминированный шум вариантов
@@ -287,6 +309,7 @@ export function createMapTileGraphics(
         y: py,
         layer: RENDER_LAYER.DYNAMIC,
       });
+      if (t === Tl.PALISADE) _villageGraphics.push(g as GraphicsHandle);
 
       count++;
     }
@@ -341,6 +364,7 @@ export function createMapTileGraphics(
         y: y * T,
         layer: RENDER_LAYER.DYNAMIC,
       });
+      _villageGraphics.push(g as GraphicsHandle);
 
       count++;
     }
@@ -355,6 +379,7 @@ export function createMapTileGraphics(
 export function destroyAllMapTileGraphics(
   renderer: IRenderer,
 ): void {
+  _villageGraphics = [];
   // Ground — уничтожаем единый Graphics
   if (_groundGraphics) {
     try {

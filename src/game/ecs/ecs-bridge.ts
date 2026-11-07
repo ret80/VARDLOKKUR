@@ -12,7 +12,7 @@ import {
 } from './ecs-components';
 import { type EntityFactory } from './entity-factory';
 import type { EnemyKind, DropKind, ProjectileKind, DoorDir } from '../generators/types';
-import type { PlanckWorld } from '../physics/planck-world';
+import type { IPhysicsWorld } from '../physics/types';
 import type { Cat } from '../physics/planck-world';
 import type { GraphicsHandle } from '../renderer/IRenderer';
 import { createBodyForEntity } from './ecs-systems';
@@ -28,12 +28,12 @@ import { getRenderer } from '../renderer/RendererFactory';
  * Вызывается ПЕРЕД clearWorld() — чтобы компоненты ещё были валидными.
  *
  * @param world    — ECS мир, сущности которого нужно очистить
- * @param pw       — PlanckWorld для уничтожения физических тел
+ * @param pw       — IPhysicsWorld для уничтожения физических тел
  * @param preservePlayerG — спрайт игрока, который НЕ нужно уничтожать (GraphicsHandle)
  */
 export function teardownWorld(
   world: World,
-  pw: PlanckWorld,
+  pw: IPhysicsWorld,
   preservePlayerG?: number
 ): void {
   const renderer = getRenderer();
@@ -69,7 +69,7 @@ export function teardownWorld(
     Sprite[eid] = { ref: 0 };
   }
 
-  // 3. Очистить PlanckWorld (tile bodies)
+  // 3. Очистить IPhysicsWorld (tile bodies)
   try { pw.clear(); } catch {}
 }
 
@@ -84,7 +84,7 @@ export function createPlayerInEcs(
   x: number,
   y: number,
   spriteRef: number,
-  planckWorld: PlanckWorld,
+  planckWorld: IPhysicsWorld,
   category: number,
   mask: number
 ): number {
@@ -104,7 +104,7 @@ export function createEnemyInEcs(
   x: number,
   y: number,
   spriteRef: number,
-  planckWorld: PlanckWorld,
+  planckWorld: IPhysicsWorld,
   category: number,
   mask: number
 ): number {

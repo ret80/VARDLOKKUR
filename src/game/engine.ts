@@ -108,14 +108,33 @@ import {
 // Импорты IRenderer
 import { RendererFactory, setGlobalRenderer, getRenderer } from './renderer';
 import { PixiJSRenderer } from './renderer/PixiJSRenderer';
-import type { GraphicsHandle } from './renderer/IRenderer';
+import type { GraphicsHandle, IRenderer } from './renderer/IRenderer';
 import { RenderQueue, setGlobalRenderQueue } from './render/RenderQueue';
+import { preparePhysics, type PhysicsBackend } from './physics/backend';
+
+/**
+ * Выбор рендерера: 3D (three.js) по умолчанию.
+ * `?render=2d` (или `?render=pixi`) возвращает старый PixiJS-путь —
+ * он остаётся рабочим фолбэком на время миграции.
+ */
+function is3DRenderEnabled(): boolean {
+  if (typeof window === "undefined") return false;
+  const mode = new URLSearchParams(window.location.search).get("render");
+  return mode !== "2d" && mode !== "pixi";
+}
 
 export class Engine {
   private cbs: EngineCallbacks;
   private container: HTMLElement;
-  private app!: Application;
+  private app: Application | null = null;
   private ready: Promise<void>;
+  /** Выбран ли 3D-рендерер (three.js) вместо PixiJS. */
+  private use3D = false;
+  /** Активный физический движок. */
+  private physicsBackend: PhysicsBackend = 'planck';
+  /** Игровой цикл запущен. */
+  private started = false;
+  private rafId = 0;
 
   // Настройки сида генерации мира
   private static SEED_KEY = "vardlokkur_seed";
@@ -307,18 +326,37 @@ export class Engine {
   /* ================= инициализация ================= */
 
   private async init(container: HTMLElement) {
-    const app = new Application();
     this.viewport = new ViewportController(container, null, { x: 0, y: 0 });
     this.viewport.applyViewSize();
-    await app.init({
-      background: 0x05080d, antialias: false, resolution: window.devicePixelRatio,
-      width: this.viewport.viewW, height: this.viewport.viewH,
-    });
-    this.app = app;
+
+    // ── Выбор рендерера: 3D (three.js) по умолчанию, ?render=2d — PixiJS ──
+    this.use3D = is3DRenderEnabled();
+    let app: Application | null = null;
+    let renderer: IRenderer;
+
+    if (this.use3D) {
+      renderer = RendererFactory.create('three');
+      try {
+        await renderer.init(container, this.viewport.viewW, this.viewport.viewH);
+      } catch (err) {
+        logger.error('engine', `3D renderer init failed, falling back to PixiJS: ${String(err)}`);
+        this.use3D = false;
+      }
+    }
+
+    if (!this.use3D) {
+      app = new Application();
+      await app.init({
+        background: 0x05080d, antialias: false, resolution: window.devicePixelRatio,
+        width: this.viewport.viewW, height: this.viewport.viewH,
+      });
+      this.app = app;
+      renderer = RendererFactory.create('pixi');
+      await renderer.init(container, this.viewport.viewW, this.viewport.viewH, app);
+    }
 
     // Этап 6: создаём и устанавливаем глобальный IRenderer
-    const renderer = RendererFactory.create('pixi');
-    await renderer.init(container, this.viewport.viewW, this.viewport.viewH, app);
+    renderer = renderer!;
     setGlobalRenderer(renderer);
 
     // Создаём playerG через IRenderer (GraphicsHandle)
@@ -327,17 +365,19 @@ export class Engine {
 
     this.viewport = new ViewportController(container, renderer, { x: 0, y: 0 });
     this.scene = new SceneLayers();
-    // Этап 8: инициализация SceneLayers через IRenderer
-    this.scene.init(renderer, app);
+    // Этап 8: инициализация SceneLayers через IRenderer (app — только для 2D)
+    this.scene.init(renderer, app ?? undefined);
     this.floatTextLayer = new FloatTextLayer();
-    // Canvas добавлен в контейнер через PixiJSRenderer.init(existingApp)
-    const cv = app.canvas as HTMLCanvasElement;
-    cv.classList.add("pixi");
-    cv.style.position = "absolute";
-    cv.style.inset = "0";
-    cv.style.width = "100%";
-    cv.style.height = "100%";
-    this.canvasEl = cv;
+    if (app) {
+      // Canvas добавлен в контейнер через PixiJSRenderer.init(existingApp)
+      const cv = app.canvas as HTMLCanvasElement;
+      cv.classList.add("pixi");
+      cv.style.position = "absolute";
+      cv.style.inset = "0";
+      cv.style.width = "100%";
+      cv.style.height = "100%";
+      this.canvasEl = cv;
+    }
     this.viewport.apply(renderer);
 
     // Инициализация FX-менеджера
@@ -351,11 +391,11 @@ export class Engine {
     this.particleSys.init(renderer);
 
     // Вигнетки и фейд размещаем в исходном порядке (fadeG поверх вигнеток)
-    app.stage.removeChild(this.scene.fadeG as any);
+    if (app) app.stage.removeChild(this.scene.fadeG as any);
     this.fx.buildVignette();
     // vignette теперь создаётся через IRenderer.createScreenSprite() — автоматически добавляется в stage
 
-    app.stage.addChild(this.scene.fadeG as any);
+    if (app) app.stage.addChild(this.scene.fadeG as any);
     this.fx.initSnow();
 
     // Регистрируем ввод
@@ -375,9 +415,28 @@ export class Engine {
 
     this.viewport.apply();
 
+    // Физика: Rapier3D (WASM) по умолчанию; ?physics=planck — старый 2D-движок.
+    // Инициализация асинхронная, поэтому до первого loadMap.
+    this.physicsBackend = await preparePhysics();
+
     // Игровой цикл
-    app.ticker.maxFPS = 60;
-    app.ticker.add((tk) => this.tick(Math.min(tk.deltaMS / 1000, 0.05)));
+    if (app) {
+      app.ticker.maxFPS = 60;
+      app.ticker.add((tk) => this.tick(Math.min(tk.deltaMS / 1000, 0.05)));
+      this.started = true;
+    } else {
+      // 3D: свой RAF-цикл (Pixi ticker недоступен)
+      this.started = true;
+      let last = performance.now();
+      const loop = (now: number) => {
+        if (!this.started) return;
+        const dt = Math.min((now - last) / 1000, 0.05);
+        last = now;
+        this.tick(dt);
+        this.rafId = requestAnimationFrame(loop);
+      };
+      this.rafId = requestAnimationFrame(loop);
+    }
 
     // Создаём GameStore и системы
     this.store = this.buildGameStore();
@@ -1020,7 +1079,7 @@ export class Engine {
 
   /* ================= главный цикл ================= */
   private tick(rdt: number) {
-    if (!this.app) return;
+    if (!this.started) return;
     
     // Обновление StateManager и обработка состояний
     this.state.update(rdt);
@@ -1181,9 +1240,15 @@ export class Engine {
   /* ===== Уничтожение ===== */
 
   destroy() {
+    this.started = false;
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.rafId = 0;
     this.input.unregister();
     this.debugServer?.stop();
     if (this.app) this.app.destroy(true);
+    if (this.use3D) {
+      try { getRenderer().destroy(); } catch { /* рендерер мог быть уже уничтожен */ }
+    }
     this.fx.destroy();
     this.bus.clear();
   }

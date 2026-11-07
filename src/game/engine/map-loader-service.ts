@@ -1,6 +1,7 @@
 /* map-loader-service.ts — Загрузка карт: тайлы, ECS-сущности, миникарта */
 
-import { PlanckWorld } from "../physics/planck-world";
+import { createPhysicsWorld } from "../physics/backend";
+import type { IPhysicsWorld } from "../physics/types";
 import type { WorldData, Vec } from "../world";
 import type { GameStore } from "../store";
 import type { World } from "bitecs";
@@ -31,8 +32,8 @@ export interface LoadMapResult {
 export class MapLoaderService {
   ecsMapLoader: EcsMapLoader | null = null;
   private _mmBase: ImageData | null = null;
-  /** Предыдущий PlanckWorld — уничтожается при загрузке новой карты */
-  private _prevPlanckWorld: PlanckWorld | null = null;
+  /** Предыдущий физический мир — уничтожается при загрузке новой карты */
+  private _prevPlanckWorld: IPhysicsWorld | null = null;
   /** Фабрика чистых ECS-сущностей (без графики/физики) */
   entityFactory: EntityFactory;
   /** Фабрика графических объектов (создаёт через IRenderer, не через legacy containers) */
@@ -110,7 +111,7 @@ export class MapLoaderService {
     // ECS-рефакторинг рендеринга: loader сам создаёт синглтон-сущность карты
     // с компонентом MapState (батчи генерируются ОДИН раз); регистрация
     // батчей в RenderQueue и их выгрузка — задача mapRenderSystem (каждый кадр).
-    const newPlanckWorld = new PlanckWorld();
+    const newPlanckWorld = createPhysicsWorld();
     this.ecsMapLoader = new EcsMapLoader({
       world: this.ecsWorld,
       planckWorld: newPlanckWorld,

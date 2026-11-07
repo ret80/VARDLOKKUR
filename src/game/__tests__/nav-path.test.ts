@@ -123,6 +123,8 @@ describe("NavBuilder path", () => {
   });
 
   it("greedy merge keeps cells: every walkable cell center is inside some polygon", () => {
+    // Тест проверяет внутреннее устройство 2D-fallback navmesh (жaдное слияние
+    // прямоугольников), поэтому строим именно его, а не 3D-navmesh.
     const w = emptyWorld(30, 24);
     // Смешанный ландшафт: стены уступов + солиды.
     w.walls = new Uint8Array(w.W * w.H);
@@ -130,7 +132,7 @@ describe("NavBuilder path", () => {
       for (let x = 2; x < 25; x += 3) w.walls[idx(w, x, y)] |= WallBit.E;
     }
     for (let y = 8; y <= 12; y++) w.tiles[idx(w, 17, y)] = Tl.ROCK;
-    build(w);
+    w.nav = new NavBuilder().build2D(w);
     const mesh = w.nav as unknown as {
       navPolygons: Array<{ contains(p: { x: number; y: number }): boolean }>
     };

@@ -25,7 +25,7 @@ import {
 import { type EntityFactory } from '../entity-factory';
 import { dist2 } from '../../utils';
 import type { EnemyKind, ProjectileKind } from '../../generators/types';
-import type { PlanckWorld } from '../../physics/planck-world';
+import type { IPhysicsWorld } from '../../physics/types';
 import { Vec2 } from 'planck-js';
 
 // ============================================================
@@ -59,7 +59,7 @@ export function swordAttackSystem(
   onFloatText: (x: number, y: number, text: string, color: number) => void,
   onAudioHit: () => void,
   onAudioClang: () => void,
-  planckWorld: PlanckWorld
+  planckWorld: IPhysicsWorld
 ): void {
   if (playerEid < 0 || !hasSword) return;
 
@@ -319,7 +319,7 @@ export function damagePlayer(
 
 /** Apply knockback impulse to enemy body */
 export function applyKnockback(
-  planckWorld: PlanckWorld,
+  planckWorld: IPhysicsWorld,
   enemyEid: number,
   fromX: number,
   fromY: number,
@@ -481,7 +481,7 @@ export function hitEnemy(
   ignoreShield: boolean,
   /** Шанс (0..1), что удар пробьёт призрака */
   ghostBaneChance: number,
-  planckWorld: PlanckWorld,
+  planckWorld: IPhysicsWorld,
   onFloat: (x: number, y: number, text: string, color: number) => void,
   onAudioClang: () => void,
   onAudioHit: () => void,
@@ -633,7 +633,7 @@ export function updateProjectilesEcs(
   playerEid: number,
   /** Шанс (0..1), что снаряд пробьёт призрака */
   ghostBaneChance: number,
-  planckWorld: PlanckWorld,
+  planckWorld: IPhysicsWorld,
   onProjectileRemove: (eid: number) => void,
   onFloat: (x: number, y: number, text: string, color: number) => void,
   onAudioClang: () => void,

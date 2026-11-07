@@ -106,7 +106,8 @@ import type { InputSystem } from '../input/input-system';
 import type { EventBus } from '../event-bus';
 import type { GameStore } from '../store';
 import { createEnemyInEcs } from './ecs-bridge';
-import { PlanckWorld, Cat } from '../physics/planck-world';
+import { Cat } from '../physics/planck-world';
+import type { IPhysicsWorld } from '../physics/types';
 import { ENEMY_STATS } from '../entities';
 
 import type { FxManager } from '../fx';
@@ -146,7 +147,7 @@ export interface EcsGameLoop {
   getPlayerEid: () => number;
   isDungeonBossDead: (id: number) => boolean;
   getDropsForTransition: () => Array<{ kind: string; x: number; y: number; life: number; ambientIdx?: number }>;
-  setPlanckWorld: (pw: PlanckWorld) => void;
+  setPlanckWorld: (pw: IPhysicsWorld) => void;
   updateConfig: (config: Partial<EcsGameLoopConfig>) => void;
 }
 
@@ -154,7 +155,7 @@ export interface EcsGameLoopConfig {
   world: World;
   bus: EventBus;
   store: GameStore;
-  planckWorld: PlanckWorld;
+  planckWorld: IPhysicsWorld;
   floatLayer: FloatTextLayer;
   gameWorld: any;
   sceneManager: SceneManager;
@@ -983,7 +984,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
       }
       return drops;
     },
-    setPlanckWorld: (pw: PlanckWorld) => { _planckWorld = pw; },
+    setPlanckWorld: (pw: IPhysicsWorld) => { _planckWorld = pw; },
     getFogState: () => _fogState,
     updateConfig: (cfg: Partial<EcsGameLoopConfig>) => {
       if (cfg.planckWorld !== undefined) _planckWorld = cfg.planckWorld;

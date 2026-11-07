@@ -6,7 +6,7 @@ import { T, WorldData, Vec, solidTileAt, tileAt } from '../world';
 import { Tl } from '../generators/types';
 import { WallBit, WALL_COLLIDER_T } from '../generators/terrain-walls';
 import { clamp } from '../utils';
-import type { PlanckWorld } from '../physics/planck-world';
+import type { IPhysicsWorld } from '../physics/types';
 import type { DropKind } from '../generators/types';
 import {
   createEnemyInEcs,
@@ -35,7 +35,13 @@ import {
 } from './ecs-components';
 import { createDoorBody } from './ecs-systems/physics-system';
 import type { IRenderer, LayerHandle } from '../renderer/IRenderer';
-import { createMapTileGraphics, destroyAllMapTileGraphics } from '../render/map-render-system';
+import {
+  createMapTileGraphics,
+  destroyAllMapTileGraphics,
+  getGroundGraphicsHandle,
+  getDungeonWallBatchHandle,
+  getVillageTileHandles,
+} from '../render/map-render-system';
 import { getRenderer } from '../renderer/RendererFactory';
 import { spawnWorldDrops, scatterMistDew } from './ecs-systems/drops-system';
 
@@ -54,7 +60,7 @@ export interface SpriteFactory {
 
 export interface EcsMapLoaderConfig {
   world: World;
-  planckWorld: PlanckWorld;
+  planckWorld: IPhysicsWorld;
   openedChests: Set<string>;
   takenPedestals: Set<string>;
   visitedShrines: Set<number>;
@@ -118,7 +124,7 @@ export class EcsMapLoader {
     this.config = config;
   }
 
-  get planckWorld(): PlanckWorld { return this.config.planckWorld; }
+  get planckWorld(): IPhysicsWorld { return this.config.planckWorld; }
   get entityFactory(): EntityFactory { return this.config.entityFactory; }
   get playerEidValue(): number { return this.playerEid; }
 
@@ -209,6 +215,25 @@ export class EcsMapLoader {
       roofSnow: this.config.roofSnow ?? false,
     });
 
+    // 3D: построить рельеф из тайлов/высот/стен и натянуть на него атлас земли.
+    // Метод есть только у ThreeJSRenderer — в 2D-режиме вызов пропускается.
+    const terrain3D = renderer as unknown as {
+      setTerrain3D?: (
+        m: WorldData,
+        ground: number | null,
+        walls: number | null,
+        villageBillboards: number[] | null,
+      ) => void;
+    };
+    if (typeof terrain3D.setTerrain3D === 'function') {
+      terrain3D.setTerrain3D(
+        map,
+        getGroundGraphicsHandle(),
+        getDungeonWallBatchHandle(),
+        getVillageTileHandles(),
+      );
+    }
+
     // Синглтон-сущность с компонентом MapState
     const eid = addEntity(world);
     addComponent(world, eid, MapState);
@@ -231,7 +256,7 @@ export class EcsMapLoader {
     PhysicsBodyRegistry.length = 0;
   }
 
-  private createTileBodies(map: WorldData, planckWorld: PlanckWorld): void {
+  private createTileBodies(map: WorldData, planckWorld: IPhysicsWorld): void {
     const rFull = T / 2;
     for (let ty = 0; ty < map.H; ty++) {
       for (let tx = 0; tx < map.W; tx++) {
@@ -257,7 +282,7 @@ export class EcsMapLoader {
    *
    * `walls` строится только для оверворлда; в подземельях поля нет.
    */
-  private createReliefWalls(map: WorldData, planckWorld: PlanckWorld): void {
+  private createReliefWalls(map: WorldData, planckWorld: IPhysicsWorld): void {
     const walls = map.walls;
     if (!walls || walls.length !== map.W * map.H) return;
 
@@ -280,7 +305,7 @@ export class EcsMapLoader {
   }
 
   private createPlayer(
-    world: World, spawn: Vec, playerG: number, planckWorld: PlanckWorld
+    world: World, spawn: Vec, playerG: number, planckWorld: IPhysicsWorld
   ): number {
     const factory = this.config.entityFactory;
     // Создаём ECS сущность игрока (playerG — GraphicsHandle)
@@ -289,7 +314,7 @@ export class EcsMapLoader {
     return eid;
   }
 
-  private spawnEnemies(world: World, map: WorldData, planckWorld: PlanckWorld): void {
+  private spawnEnemies(world: World, map: WorldData, planckWorld: IPhysicsWorld): void {
     const factory = this.config.entityFactory;
     const sf = this.config.spriteFactory;
     for (const s of map.spawns) {
@@ -379,7 +404,7 @@ export class EcsMapLoader {
     }
   }
 
-  private spawnDungeonDoors(world: World, map: WorldData, planckWorld: PlanckWorld): void {
+  private spawnDungeonDoors(world: World, map: WorldData, planckWorld: IPhysicsWorld): void {
     const factory = this.config.entityFactory;
     const sf = this.config.spriteFactory;
     for (const d of map.doors) {
@@ -390,7 +415,7 @@ export class EcsMapLoader {
     }
   }
 
-  private spawnOverworldObjects(world: World, map: WorldData, planckWorld: PlanckWorld): void {
+  private spawnOverworldObjects(world: World, map: WorldData, planckWorld: IPhysicsWorld): void {
     const factory = this.config.entityFactory;
     const sf = this.config.spriteFactory;
     const { flags } = this.config;

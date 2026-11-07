@@ -166,6 +166,23 @@ export class IslandGenerator {
     return true;
   }
 
+  /**
+   * Уровень рельефа дикой суши: широкие террасы от низкого шума.
+   *
+   * Раньше вся суша, кроме горы, лежала на одном уровне (H_BASE), поэтому
+   * в 3D остров выглядел плоской плитой. Теперь луг и лес поднимаются
+   * широкими «столами» до 3 уровня, а перепады проходят по тем же правилам
+   * уступов/пандусов (generators/terrain-walls), что и гора. Топь остаётся
+   * ровной низиной — это болото.
+   */
+  private reliefTier(x: number, y: number): number {
+    const n = this.noiseHills.value(x * 0.03 + 11.3, y * 0.03 + 7.9);
+    if (n > 0.86) return 3;
+    if (n > 0.74) return 2;
+    if (n > 0.62) return 1;
+    return 0;
+  }
+
   /** Поле высот: ровные «столы» террас по биомам (финальная раскладка) */
   private assignHeights(): void {
     for (let y = 0; y < this.H; y++) {
@@ -175,7 +192,7 @@ export class IslandGenerator {
         if (b === Biome.WATER) { this.height[i] = H_WATER; continue; }
         if (b === Biome.SNOW) { this.height[i] = LEVEL_HEIGHT[this.mountainTier(x, y)]; continue; }
         if (b === Biome.SWAMP) { this.height[i] = H_BASE; continue; } // топь — всегда база
-        this.height[i] = b === Biome.MEADOW && this.isHillSpot(x, y) ? H_SPOT : H_BASE;
+        this.height[i] = LEVEL_HEIGHT[this.reliefTier(x, y)];
       }
     }
   }
@@ -256,8 +273,10 @@ export class IslandGenerator {
             break;
           case Biome.MEADOW:
             // Возвышенности-пятна (9): тёмная роща на всём пятне, включая
-            // кромку — пятно читается как тёмно-зелёное без серого обода
-            this.tiles[i] = lv >= 1 ? Tl.FOREST : Tl.MEADOW;
+            // кромку — пятно читается как тёмно-зелёное без серого обода.
+            // Тайл больше НЕ зависит от уровня: рельеф луга — это высота,
+            // а не смена травы на лес.
+            this.tiles[i] = this.isHillSpot(x, y) ? Tl.FOREST : Tl.MEADOW;
             break;
           case Biome.SNOW:
           default:
@@ -275,7 +294,7 @@ export class IslandGenerator {
   /* ---------- WorldData ---------- */
   private createWorldData(): WorldData {
     const w: WorldData = {
-      W: this.W, H: this.H, tiles: this.tiles, nav: null as unknown as import("navmesh").NavMesh,
+      W: this.W, H: this.H, tiles: this.tiles, nav: null as unknown as import("../navigation/nav-mesh").INavMesh,
       isDungeon: false, dungeonId: -1, dungeonName: "", bossReward: null,
       spawn: { x: 0, y: 0 }, zones: [], shrines: [], npcs: [], chests: [],
       pedestals: [], spawns: [], doors: [], souls: [], ambient: [], dungeonEntries: [],

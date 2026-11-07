@@ -369,12 +369,19 @@ export function generateOverworld(seed: number): WorldData {
       }
     return bad;
   };
-  /** Аварийное выравнивание: rect ровно в базу, топь/вода — биомом деревни */
+  /**
+   * Аварийное выравнивание: rect ровно в базу, топь/вода — биомом деревни.
+   * Захватывает ещё 2 клетки вокруг — иначе подступы к воротам остаются
+   * на соседней террасе и проём упирается в уступ.
+   */
   const flattenVillageRect = (vx: number, vy: number, rw: number, rh: number, biome: number): void => {
-    for (let y = vy; y <= vy + rh; y++)
-      for (let x = vx; x <= vx + rw; x++) {
+    const M = 2;
+    for (let y = vy - M; y <= vy + rh + M; y++)
+      for (let x = vx - M; x <= vx + rw + M; x++) {
         if (!inB(w, x, y)) continue;
         const i = idx(w, x, y);
+        const t = w.tiles[i];
+        if (t === Tl.WATER || t === Tl.SHORE) continue;
         w.height![i] = H_BASE;
         const b = w.biomes![i];
         if (b === Biome.SWAMP || b === Biome.WATER) w.biomes![i] = biome;

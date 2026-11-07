@@ -71,7 +71,8 @@ export interface GateDef extends Vec { edge: Edge; target?: Vec }
 export interface WorldData {
   W: number; H: number;
   tiles: Uint8Array;
-  nav: import("navmesh").NavMesh;
+  /** Навигационная сетка (3D-navmesh; 2D — fallback). */
+  nav: import("../navigation/nav-mesh").INavMesh;
   isDungeon: boolean;
   dungeonId: number;
   dungeonName: string;

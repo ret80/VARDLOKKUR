@@ -18,7 +18,7 @@ import {
 
 function baseDungeon(cfg: DungeonCfg, W: number, H: number, exitSpot: Vec): WorldData {
   return {
-    W, H, tiles: new Uint8Array(W * H).fill(Tl.DWALL), nav: null as unknown as import("navmesh").NavMesh,
+    W, H, tiles: new Uint8Array(W * H).fill(Tl.DWALL), nav: null as unknown as import("../navigation/nav-mesh").INavMesh,
     dungeonWall: new Uint8Array(W * H),
     isDungeon: true, dungeonId: cfg.id, dungeonName: cfg.name, bossReward: cfg.bossReward,
     spawn: { x: 0, y: 0 }, zones: [], shrines: [], npcs: [], chests: [],

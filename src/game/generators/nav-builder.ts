@@ -17,6 +17,8 @@
 import { NavMesh } from "navmesh";
 import { WorldData, T, idx, inB, isSolidTileId } from "./types";
 import { WallBit, edgeOpen } from "./terrain-walls";
+import { NavMesh3D } from "../navigation/navmesh3d";
+import type { INavMesh, NavPathPoint } from "../navigation/nav-mesh";
 
 /** Горизонтальный прогон непроходимых клеток в строке. */
 interface Run { x: number; len: number; id: number }
@@ -24,7 +26,22 @@ interface Run { x: number; len: number; id: number }
 interface Rect { x0: number; x1: number; y0: number; y1: number }
 
 export class NavBuilder {
-  public build(w: WorldData): NavMesh {
+  /**
+   * Построить навигацию мира.
+   *
+   * Основной путь — 3D-navmesh (navcat) из треугольной поверхности рельефа:
+   * он учитывает высоты террас, пандусы и утёсы. Если генерация невозможна
+   * (пустая/крошечная карта, ошибка генератора) — откат на прежний 2D-navmesh,
+   * чтобы игра не осталась без поиска пути.
+   */
+  public build(w: WorldData): INavMesh {
+    const nav3d = NavMesh3D.build(w);
+    if (nav3d) return nav3d;
+    return this.build2D(w);
+  }
+
+  /** Прежний 2D-полигональный navmesh (fallback). */
+  public build2D(w: WorldData): INavMesh {
     const { W, H, walls } = w;
 
     const solid = (x: number, y: number): boolean =>
@@ -110,7 +127,23 @@ export class NavBuilder {
 
     const mesh = new NavMesh(polys, 0);
     validatePortals(mesh, w);
-    return mesh;
+    return new LegacyNavMesh2D(mesh);
+  }
+}
+
+/** Адаптер старого 2D-navmesh к общему контракту INavMesh. */
+class LegacyNavMesh2D implements INavMesh {
+  constructor(private readonly mesh: NavMesh) {}
+
+  /** Полигоны 2D-меша (используется тестами на жадное слияние клеток). */
+  get navPolygons(): unknown {
+    return (this.mesh as unknown as { navPolygons?: unknown }).navPolygons;
+  }
+
+  findPath(from: { x: number; y: number }, to: { x: number; y: number }): NavPathPoint[] | null {
+    const found = this.mesh.findPath(from, to);
+    if (!found || found.length === 0) return null;
+    return found.map((p) => ({ x: p.x, y: p.y }));
   }
 }
 
