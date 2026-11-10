@@ -38,6 +38,51 @@ const ENEMY_QUOTA: Record<number, number> = {
   [Biome.SNOW]: 12, [Biome.FOREST]: 28, [Biome.SWAMP]: 24, [Biome.MEADOW]: 32,
 };
 
+/**
+ * Мост через ручей — восстановление после всей раскладки.
+ *
+ * Настил ставится ещё при генерации острова (там известно русло), но декор,
+ * дороги и зачистка вокруг POI могли его затереть. Функция ищет клетку
+ * шириной в одну воду, у которой с двух сторон суша того же уровня, и
+ * превращает её в BRIDGE. Центр озерца не попадает: у клеток его кромки
+ * суша с трёх сторон.
+ */
+function ensureStreamBridge(w: WorldData): void {
+  const { W, H, tiles, height } = w;
+  if (!height) return;
+  for (let i = 0; i < W * H; i++) if (tiles[i] === Tl.BRIDGE) return; // уже есть
+
+  const at = (x: number, y: number): number => y * W + x;
+  const inb = (x: number, y: number): boolean => x >= 0 && y >= 0 && x < W && y < H;
+  const lvAt = (x: number, y: number): number => elevLevel(height[at(x, y)]);
+  const water = (x: number, y: number): boolean =>
+    inb(x, y) && (tiles[at(x, y)] === Tl.WATER || tiles[at(x, y)] === Tl.POOL || tiles[at(x, y)] === Tl.STREAM);
+  const land = (x: number, y: number): boolean => {
+    if (!inb(x, y)) return false;
+    const t = tiles[at(x, y)];
+    if (t === Tl.WATER || t === Tl.POOL || t === Tl.STREAM || t === Tl.BRIDGE) return false;
+    return !isSolidTileId(t);
+  };
+
+  for (const sameLevel of [true, false]) {
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        if (!water(x, y)) continue;
+        const lvlOk = (bx: number, by: number): boolean => !sameLevel || lvAt(bx, by) === lvAt(x, y);
+        const acrossWE = land(x, y - 1) && land(x, y + 1)
+          && water(x - 1, y) && water(x + 1, y)
+          && lvlOk(x, y - 1) && lvlOk(x, y + 1);
+        const acrossNS = land(x - 1, y) && land(x + 1, y)
+          && water(x, y - 1) && water(x, y + 1)
+          && lvlOk(x - 1, y) && lvlOk(x + 1, y);
+        if (!acrossWE && !acrossNS) continue;
+        tiles[at(x, y)] = Tl.BRIDGE;
+        return;
+      }
+    }
+  }
+}
+
 export function generateOverworld(seed: number): WorldData {
   const rng = mulberry(seed);
   const W = 200, H = 140;
@@ -992,6 +1037,9 @@ export function generateOverworld(seed: number): WorldData {
   /* ================= Уступы террас + пандусы ================= */
   // Высоты есть только у оверворлда: по ним строятся стены обрывов
   // (физика + отрисовка) и пробиваются пандусы — подъём только «где разрешено».
+  // Мост через ручей ставится после всей раскладки: декор и дороги могли
+  // затереть настил, поставленный ещё при генерации острова.
+  ensureStreamBridge(w);
   // Берег и озёра ровняем ещё раз: озёра-лужи появились уже на этапе декора.
   flattenRampSurfaces(w);
   buildTerrainWalls(w, w.spawn);

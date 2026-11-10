@@ -93,9 +93,26 @@ export function buildTerrainWalls(w: WorldData, from?: Vec): Uint8Array | null {
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const i = idx(w, x, y);
-      if (!walkable(w, i)) continue;
       const ti = tiles[i];
       const li = lv(i);
+
+      // Вода над водой: перепад ручья. Такой бит ставится и на непроходимой
+      // воде (WATER в SOLID), по нему 3D-меш рисует грань водопада — иначе
+      // вода нижней террасы висела бы в воздухе без видимого слива.
+      // POOL проверяется тоже, но с него проход НЕ прерывается: лужа
+      // проходима и её стены к верхним соседям ставит обычный проход ниже.
+      if (ti === Tl.WATER || ti === Tl.POOL || ti === Tl.STREAM) {
+        for (const [dx, dy, bit] of WALL_DIRS) {
+          const nx = x + dx, ny = y + dy;
+          if (!inB(w, nx, ny)) continue;
+          const ni = ny * W + nx;
+          const nt = tiles[ni];
+          if (nt !== Tl.WATER && nt !== Tl.POOL && nt !== Tl.STREAM) continue;
+          if (lv(ni) > li) walls[i] |= bit;
+        }
+      }
+
+      if (!walkable(w, i)) continue;
       for (const [dx, dy, bit] of WALL_DIRS) {
         const nx = x + dx, ny = y + dy;
         if (!inB(w, nx, ny)) continue;

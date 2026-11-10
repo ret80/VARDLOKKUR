@@ -81,7 +81,10 @@ describe("уступы террас", () => {
       expect(walled, `seed ${seed}: уступы не обнесены стенами`).toBeGreaterThan(0);
       expect(stepRamp, `seed ${seed}: нет ступенек на дорогах/берегу`).toBeGreaterThan(0);
       /* Каждый «пробитый» стык обязан быть нужен для связности террас. */
-      expect(stepCarved, `seed ${seed}: лишние проходы сквозь уступы`).toBeLessThanOrEqual(regions - 1);
+      /* Ручей режет террасу водой: берега расходятся по разным регионам, и
+         связности нужен ещё один пандус у моста — это заложено в допуск. */
+      const bridgeBonus = tiles.includes(Tl.BRIDGE) ? 1 : 0;
+      expect(stepCarved, `seed ${seed}: лишние проходы сквозь уступы`).toBeLessThanOrEqual(regions - 1 + bridgeBonus);
       expect(stepCarved, `seed ${seed}: террасы не соединены подъёмами`).toBeGreaterThan(0);
       /* Берег и озёра — ровная полоса, изнутри без перепадов. */
       expect(bandSeams, `seed ${seed}: берег/озеро не выровнены`).toBe(0);

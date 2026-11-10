@@ -12,6 +12,10 @@ export enum Tile {
   SCREE = 27,
   /** Скальный уступ/обрыв (проходимый, иллюзия высоты) */
   CLIFF = 28,
+  /** Мост через ручей: деревянный настил поверх воды, проходимый */
+  BRIDGE = 29,
+  /** Ручей в лугах: проточная вода (солид, как море) */
+  STREAM = 30,
 }
 
 export const Tl = Tile;
@@ -40,7 +44,7 @@ export enum Biome {
 export type BiomeId = number;
 
 const SOLID = new Set<number>([
-  Tl.WATER, Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.HOUSE, Tl.COLUMN, Tl.CAVEWALL, Tl.DWALL, Tl.ALTAR,
+  Tl.WATER, Tl.STREAM, Tl.TREE, Tl.ROCK, Tl.PALISADE, Tl.HOUSE, Tl.COLUMN, Tl.CAVEWALL, Tl.DWALL, Tl.ALTAR,
   Tl.DEADTREE, Tl.FIR,
 ]);
 export const isSolidTileId = (id: number) => SOLID.has(id);

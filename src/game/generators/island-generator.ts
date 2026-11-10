@@ -1,7 +1,7 @@
 /* Генерация острова: снежная гора из 3 вложенных террас в центре и
    3 сектора-биома вокруг (лес/топи/луга), см. tasks/world_gen_imp_3.md */
 import { mulberry, NoiseGenerator } from "../noise";
-import { WorldData, Tl, Vec, Biome, idx, inB, elevLevel } from "./types";
+import { WorldData, Tl, Vec, Biome, idx, inB, elevLevel, isSolidTileId } from "./types";
 import { flattenRampSurfaces } from "./terrain-walls";
 
 /** Центр острова и биом-карты */
@@ -78,6 +78,8 @@ export class IslandGenerator {
     // снег — только террасы горы, пятна-возвышенности — только на лугах.
     this.assignHeights();
     this.applyBiomesToTiles();
+    // Логовое озерцо на возвышенности + ручей до моря + мост (Ф1.5)
+    this.carveHillPondStream();
     // Ровные берег и озёра (см. flattenRampSurfaces): внутри полосы берега
     // иначе набираются невидимые микроперепады, по которым игрок поднимался
     // сквозь уступ. Поздние озёра-лужи ровняются в overworld перед стенами.
@@ -289,6 +291,313 @@ export class IslandGenerator {
         }
       }
     }
+  }
+
+  /* ---------- Ф1.5. Луговое озерцо с ручьём и мостом ---------- */
+  /**
+   * Озерцо на луговой возвышенности и ручей, стекающий в море.
+   *
+   * Раньше луг был просто террасами без воды: ни озёр, ни ручьёв. Теперь на
+   * ровном луговом плато (уровень ≥ 2) выкапывается небольшое озерцо, а от
+   * него по земле вниз идёт русло — оно тянется по террасам до моря и на
+   * каждом перепаде даёт водопад (грань «вода над водой» в 3D-меше).
+   *
+   * Русло прорезается только по проходимому грунту: деревья и камни дороже
+   * (прорубаем в крайнем случае), постройки и скалы — непроходимы для выбора.
+   * Где-то посередине ручья ставится мост (тайл BRIDGE) — единственный
+   * переход через водную преграду.
+   */
+  /**
+   * Озерцо на луговой возвышенности, ручей до моря и мост через него.
+   *
+   * Раньше луг был просто террасами без воды. Теперь на ровном луговом плато
+   * (уровень >= 2, подальше от берега) выкапывается небольшое озерцо, а от
+   * него вниз по земле тянется русло до самого моря: оно идёт по террасам,
+   * и на каждом перепаде в 3D-меше появляется грань водопада. Где-то
+   * посередине ручья ставится мост (тайл BRIDGE) — единственный переход.
+   *
+   * Кандидаты перебираются по очереди: если от площадки не находится
+   * достаточно длинного русла, берётся следующая.
+   */
+  private carveHillPondStream(): void {
+    const W = this.W, H = this.H, N = W * H;
+    const at = (x: number, y: number): number => y * W + x;
+    const inb = (x: number, y: number): boolean => this.inBounds(x, y);
+    const lvAt = (x: number, y: number): number => elevLevel(this.height[at(x, y)]);
+    const tileAt = (x: number, y: number): number => this.tiles[at(x, y)];
+    const DIRS: ReadonlyArray<readonly [number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+    const sea = new Uint8Array(N);
+    for (let i = 0; i < N; i++) if (this.tiles[i] === Tl.WATER) sea[i] = 1;
+
+    // Расстояние до моря в клетках: озерцо не должно стоять у самого берега,
+    // иначе ручей вырождается в две клетки.
+    const seaDist = new Int32Array(N).fill(-1);
+    {
+      const q: number[] = [];
+      for (let i = 0; i < N; i++) if (sea[i]) { seaDist[i] = 0; q.push(i); }
+      for (let h = 0; h < q.length; h++) {
+        const cur = q[h];
+        const cx2 = cur % W, cy2 = (cur / W) | 0;
+        for (const [dx, dy] of DIRS) {
+          const nx = cx2 + dx, ny = cy2 + dy;
+          if (!inb(nx, ny)) continue;
+          const ni = at(nx, ny);
+          if (seaDist[ni] !== -1) continue;
+          seaDist[ni] = seaDist[cur] + 1;
+          q.push(ni);
+        }
+      }
+    }
+
+    const soft = (t: number): boolean =>
+      t === Tl.MEADOW || t === Tl.GRASS || t === Tl.FOREST || t === Tl.SWAMP;
+    const rough = (t: number): boolean =>
+      t === Tl.TREE || t === Tl.ROCK || t === Tl.FIR || t === Tl.DEADTREE || t === Tl.COLUMN;
+
+    /* --- 1. Площадки: ровный луг на возвышенности --- */
+    /** Скан площадок: луг, ровно по уровню, с запасом свободного грунта. */
+    const collect = (minLevel: number, r: number, seaMin = 26): Vec[] => {
+      const out: Vec[] = [];
+      for (let y = 8; y < H - 8; y++) {
+        for (let x = 8; x < W - 8; x++) {
+          const i = at(x, y);
+          if (this.biomes[i] !== Biome.MEADOW) continue;
+          if (!soft(this.tiles[i])) continue;
+          const lvl = lvAt(x, y);
+          if (lvl < minLevel) continue;
+          const d = Math.hypot(x - this.cx, y - this.cy);
+          if (d < 20 || d > 88) continue;
+          if (seaDist[i] < seaMin) continue;
+          let ok = true;
+          for (let dy = -r; dy <= r && ok; dy++) {
+            for (let dx = -r; dx <= r; dx++) {
+              const nx = x + dx, ny = y + dy;
+              if (!inb(nx, ny)) { ok = false; break; }
+              const ni = at(nx, ny);
+              if (this.biomes[ni] !== Biome.MEADOW) { ok = false; break; }
+              if (lvAt(nx, ny) !== lvl) { ok = false; break; }
+              if (!soft(this.tiles[ni])) { ok = false; break; }
+            }
+          }
+          if (ok) out.push({ x, y });
+        }
+      }
+      return out;
+    };
+
+    // Сначала высокие плато, потом пониже: если на сиде нет высокого ровного
+    // луга, озерцо встанет на малую возвышенность, но всё равно будет.
+    const tiers = [collect(2, 3), collect(1, 2), collect(1, 2, 14)];
+    const cands: Vec[] = [];
+    for (const list of tiers) {
+      // Детерминированно перемешиваем: на разных сидах озерцо в разных лугах.
+      for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(this.rng() * (i + 1));
+        const tmp = list[i]; list[i] = list[j]; list[j] = tmp;
+      }
+      for (const c of list) if (!cands.some((p) => p.x === c.x && p.y === c.y)) cands.push(c);
+    }
+    if (cands.length === 0) return;
+    // Чем дальше от моря — тем длиннее получится ручей.
+    cands.sort((a, b) => seaDist[at(b.x, b.y)] - seaDist[at(a.x, a.y)]);
+
+    const TRIES = Math.min(cands.length, 24);
+    let best: { pond: Vec[]; path: number[] } | null = null;
+    for (let attempt = 0; attempt < TRIES; attempt++) {
+      const c = cands[attempt];
+
+      /* --- 2. Озерцо: круг радиусом ~2 клетки --- */
+      const pond: Vec[] = [];
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          if (dx * dx + dy * dy > 4) continue;
+          const x = c.x + dx, y = c.y + dy;
+          if (!inb(x, y)) continue;
+          pond.push({ x, y });
+        }
+      }
+      const pondSet = new Set<number>(pond.map((p) => at(p.x, p.y)));
+
+      /* --- 3. Русло: самый дешёвый спуск к морю (Дейкстра) --- */
+      const dist = new Int32Array(N).fill(-1);
+      const prev = new Int32Array(N).fill(-1);
+      const heap: number[] = [];
+      const swap = (a: number, b: number): void => {
+        const tmp = heap[a]; heap[a] = heap[b]; heap[b] = tmp;
+      };
+      const push = (i: number): void => {
+        heap.push(i);
+        let k = heap.length - 1;
+        while (k > 0) {
+          const p = (k - 1) >> 1;
+          if (dist[heap[p]] <= dist[heap[k]]) break;
+          swap(p, k);
+          k = p;
+        }
+      };
+      const pop = (): number => {
+        const top = heap[0];
+        const last = heap.pop() as number;
+        if (heap.length) {
+          heap[0] = last;
+          let k = 0;
+          for (;;) {
+            const l = k * 2 + 1, r = l + 1;
+            let m = k;
+            if (l < heap.length && dist[heap[l]] < dist[heap[m]]) m = l;
+            if (r < heap.length && dist[heap[r]] < dist[heap[m]]) m = r;
+            if (m === k) break;
+            swap(m, k);
+            k = m;
+          }
+        }
+        return top;
+      };
+
+      // Старт — проходимая земля вокруг озерца.
+      for (const p of pond) {
+        for (const [dx, dy] of DIRS) {
+          const nx = p.x + dx, ny = p.y + dy;
+          if (!inb(nx, ny)) continue;
+          const ni = at(nx, ny);
+          if (pondSet.has(ni) || dist[ni] === 0) continue;
+          const t = this.tiles[ni];
+          if (!soft(t) && !rough(t)) continue;
+          dist[ni] = 0;
+          push(ni);
+        }
+      }
+
+      // Дейкстра только по СУШЕ: берег и воду русло не трогает, иначе ручей
+      // побежит вдоль пляжа и у моста не окажется берегов.
+      for (let iter = 0; iter < 40000 && heap.length; iter++) {
+        const cur = pop();
+        const cx2 = cur % W, cy2 = (cur / W) | 0;
+        for (const [dx, dy] of DIRS) {
+          const nx = cx2 + dx, ny = cy2 + dy;
+          if (!inb(nx, ny)) continue;
+          const ni = at(nx, ny);
+          if (pondSet.has(ni)) continue;
+          const t = this.tiles[ni];
+          let cost: number;
+          if (soft(t)) cost = 10;
+          else if (rough(t)) cost = 90;      // прорубаем только в крайнем случае
+          else continue;                     // вода, берег, постройки, скалы
+          const dl = lvAt(nx, ny) - lvAt(cx2, cy2);
+          if (dl > 0) cost += 30 * dl;       // подъём невыгоден
+          else if (dl === 0) cost += 2;      // ровный участок почти как спуск
+          const nd = dist[cur] + cost;
+          if (dist[ni] !== -1 && dist[ni] <= nd) continue;
+          dist[ni] = nd;
+          prev[ni] = cur;
+          push(ni);
+        }
+      }
+
+      // Устье — самая дешёвая достижимая клетка у самого берега.
+      let goal = -1, goalCost = Infinity;
+      for (let i = 0; i < N; i++) {
+        if (dist[i] < 0 || dist[i] >= goalCost) continue;
+        const gx = i % W, gy = (i / W) | 0;
+        let nearShore = false;
+        for (const [dx, dy] of DIRS) {
+          const nx = gx + dx, ny = gy + dy;
+          if (!inb(nx, ny)) continue;
+          if (this.tiles[at(nx, ny)] === Tl.SHORE || sea[at(nx, ny)]) { nearShore = true; break; }
+        }
+        if (!nearShore) continue;
+        goal = i;
+        goalCost = dist[i];
+      }
+      if (goal < 0) continue;
+
+      // Восстановление пути: от устья вверх, к озерцу.
+      const path: number[] = [];
+      let cur = goal;
+      for (let guard = 0; cur !== -1 && guard < 400; guard++) {
+        path.push(cur);
+        cur = prev[cur];
+      }
+      path.reverse();
+      if (path.length < 4 || path.length > 90) continue;
+      if (!best || path.length > best.path.length) best = { pond, path };
+      if (best.path.length >= 12) break;   // достаточно длинное русло — хватит
+    }
+    if (!best) return;
+
+    /* --- 4. Прорезаем воду --- */
+    for (const p of best.pond) this.tiles[at(p.x, p.y)] = Tl.STREAM;
+    for (const i of best.path) {
+      if (this.tiles[i] !== Tl.SHORE) this.tiles[i] = Tl.STREAM;
+    }
+    this.placeStreamBridge(best.path);
+  }
+
+  /**
+   * Мост через ручей: клетка русла, у которой берега с двух сторон.
+   *
+   * Доски должны опираться на сушу того же уровня — иначе мост висит над
+   * обрывом. Из подходящих клеток берётся ближайшая к середине ручья.
+   */
+  private placeStreamBridge(path: number[]): void {
+    const W = this.W;
+    const at = (x: number, y: number): number => y * W + x;
+    const lvAt = (x: number, y: number): number => elevLevel(this.height[at(x, y)]);
+    const land = (x: number, y: number): boolean => {
+      if (!this.inBounds(x, y)) return false;
+      const t = this.tiles[at(x, y)];
+      if (t === Tl.WATER || t === Tl.POOL || t === Tl.STREAM || t === Tl.BRIDGE) return false;
+      return !isSolidTileId(t);
+    };
+    const water = (x: number, y: number): boolean => {
+      if (!this.inBounds(x, y)) return false;
+      const t = this.tiles[at(x, y)];
+      return t === Tl.WATER || t === Tl.POOL || t === Tl.STREAM;
+    };
+
+    const midIdx = path[Math.floor(path.length * 0.55)];
+    const mx = midIdx % W, my = (midIdx / W) | 0;
+
+    /** Лучшая клетка русла под мост: нужен проход поперёк воды. */
+    const pick = (sameLevelOnly: boolean, loose = false): number => {
+      let best = -1, bestD = Infinity;
+      let looseBest = -1, looseScore = -Infinity;
+      for (const i of path) {
+        if (this.tiles[i] !== Tl.STREAM && this.tiles[i] !== Tl.WATER) continue;
+        const x = i % W, y = (i / W) | 0;
+        const lvl = lvAt(x, y);
+        const lvlOk = (bx: number, by: number): boolean =>
+          !sameLevelOnly || (this.inBounds(bx, by) && lvAt(bx, by) === lvl);
+        if (loose) {
+          // Ручей идёт наискось: «поперёк» проверять не на чем — берём
+          // клетку с наибольшим числом берегов рядом и поближе к середине.
+          const banks = (land(x - 1, y) ? 1 : 0) + (land(x + 1, y) ? 1 : 0)
+            + (land(x, y - 1) ? 1 : 0) + (land(x, y + 1) ? 1 : 0);
+          const score = banks * 10 - Math.hypot(x - mx, y - my);
+          if (score > looseScore) { looseScore = score; looseBest = i; }
+          continue;
+        }
+        // Ручей течёт север-юг — мост поперёк, берега запад/восток (и наоборот).
+        const acrossWE = land(x, y - 1) && land(x, y + 1)
+          && water(x - 1, y) && water(x + 1, y)
+          && lvlOk(x, y - 1) && lvlOk(x, y + 1);
+        const acrossNS = land(x - 1, y) && land(x + 1, y)
+          && water(x, y - 1) && water(x, y + 1)
+          && lvlOk(x - 1, y) && lvlOk(x + 1, y);
+        if (!acrossWE && !acrossNS) continue;
+        const d = Math.hypot(x - mx, y - my);
+        if (d < bestD) { bestD = d; best = i; }
+      }
+      return loose ? looseBest : best;
+    };
+
+    // Сначала ровные берега на уровне настила, затем просто два берега,
+    // и в крайнем случае — клетка, где берегов рядом больше всего.
+    let best = pick(true);
+    if (best < 0) best = pick(false);
+    if (best < 0) best = pick(false, true);
+    if (best >= 0) this.tiles[best] = Tl.BRIDGE;
   }
 
   /* ---------- WorldData ---------- */

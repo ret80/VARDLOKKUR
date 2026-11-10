@@ -34,6 +34,7 @@ import {
   type TerrainMap,
   type TerrainMesh,
 } from '../world3d/terrain-mesh';
+import { createCliffFaceCanvas } from '../world3d/cliff-texture';
 import {
   buildFence3D,
   buildHouses3D,
@@ -393,17 +394,47 @@ export class ThreeJSRenderer implements IRenderer {
 
     if (mesh.cliffs.indices.length > 0) {
       const geo = buildBufferGeometry(mesh.cliffs);
-      // Цвет белый: грани уступов и подступенки лестниц берут готовую
-      // палитру камня из текстуры земли (2D-арт edgeFace/sideFace).
-      // Серый тинт 0x6f7a88 раньше умножал её и грани становились чёрными.
+      // Грань утёса — собственная тайловая текстура блоков породы (раньше
+      // сюда шла растянутая полоса земли и стены разъезжались в муть).
+      const cliffTex = new THREE.CanvasTexture(createCliffFaceCanvas());
+      cliffTex.colorSpace = THREE.SRGBColorSpace;
+      cliffTex.magFilter = THREE.NearestFilter;
+      cliffTex.minFilter = THREE.NearestMipmapLinearFilter;
+      cliffTex.generateMipmaps = true;
+      cliffTex.wrapS = THREE.RepeatWrapping;
+      cliffTex.wrapT = THREE.RepeatWrapping;
+      cliffTex.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
+
       const mat = new THREE.MeshBasicMaterial({
-        map: tex,
+        map: cliffTex,
         color: 0xffffff,
+        vertexColors: !!mesh.cliffs.colors,
         side: THREE.DoubleSide,
       });
       const m = new THREE.Mesh(geo, mat);
       m.frustumCulled = false;
       m.renderOrder = -9;
+      group.add(m);
+    }
+
+    // Травяной козырёк по верхней кромке утёсов — тем же атласом земли,
+    // поэтому цвет дёрна точно совпадает с плато.
+    if (mesh.lips.indices.length > 0) {
+      const geo = buildBufferGeometry(mesh.lips);
+      const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+      const m = new THREE.Mesh(geo, mat);
+      m.frustumCulled = false;
+      m.renderOrder = -8.5;
+      group.add(m);
+    }
+
+    // Водопады ручья на перепадах «вода над водой».
+    if (mesh.waterfalls.indices.length > 0) {
+      const geo = buildBufferGeometry(mesh.waterfalls);
+      const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+      const m = new THREE.Mesh(geo, mat);
+      m.frustumCulled = false;
+      m.renderOrder = -8.4;
       group.add(m);
     }
 
@@ -1627,6 +1658,19 @@ function buildBufferGeometry(data: MeshLike): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(data.positions, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(data.uvs, 2));
+  if (data.colors) {
+    // Тон задаётся в sRGB (палитры биомов), а атрибут цвета three ждёт в
+    // линейном пространстве — иначе грани утёсов выйдут заметно светлее.
+    const linear = new Float32Array(data.colors.length);
+    const c = new THREE.Color();
+    for (let i = 0; i + 2 < data.colors.length; i += 3) {
+      c.setRGB(data.colors[i], data.colors[i + 1], data.colors[i + 2], THREE.SRGBColorSpace);
+      linear[i] = c.r;
+      linear[i + 1] = c.g;
+      linear[i + 2] = c.b;
+    }
+    geo.setAttribute('color', new THREE.BufferAttribute(linear, 3));
+  }
   geo.setIndex(new THREE.BufferAttribute(data.indices, 1));
   geo.computeBoundingSphere();
   return geo;
@@ -1636,6 +1680,7 @@ interface MeshLike {
   positions: Float32Array;
   uvs: Float32Array;
   indices: Uint32Array;
+  colors?: Float32Array;
 }
 
 function computeBounds(cmds: Command[], pad: number): { minX: number; minY: number; maxX: number; maxY: number } {

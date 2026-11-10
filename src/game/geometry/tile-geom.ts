@@ -110,6 +110,22 @@ export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number
       renderer.drawRect(g, { x: x + 3, y: y + 4, width: 5, height: 1 }, rgb(0x2a4a55));
       renderer.drawRect(g, { x: x + 8, y: y + 10, width: 4, height: 1 }, rgb(0x2a4a55));
       break;
+    // Ручей: светлее моря, чтобы читался как проточная вода в лугах
+    case Tl.STREAM:
+      dither(0x2a4a5e, 0x1d3648, 0x3a6480);
+      renderer.drawRect(g, { x: x + 2, y: y + 5, width: 6, height: 1 }, rgb(0x4d7f9c));
+      renderer.drawRect(g, { x: x + 9, y: y + 11, width: 5, height: 1 }, rgb(0x4d7f9c));
+      break;
+    // Мост через ручей: доски настила поперёк воды, по краям — тёмные лаги.
+    case Tl.BRIDGE:
+      renderer.drawRect(g, tileRect, rgb(0x243038));
+      renderer.drawRect(g, { x: x + 1, y, width: T - 2, height: T }, rgb(0x6b5334));
+      for (let i = 1; i < T - 1; i += 3) {
+        renderer.drawRect(g, { x: x + 1, y: y + i, width: T - 2, height: 1 }, rgb(0x59452b));
+      }
+      renderer.drawRect(g, { x: x + 1, y, width: 1, height: T }, rgb(0x8a6b45));
+      renderer.drawRect(g, { x: x + T - 2, y, width: 1, height: T }, rgb(0x8a6b45));
+      break;
     case Tl.VILLAGE:
     // PALISADE — стена поверх обычного деревенского грунта (не спец-тайл)
     case Tl.PALISADE: dither(0x635a4c, 0x575043, 0x6f6658); break;
@@ -213,7 +229,11 @@ export function drawTileBatch(renderer: IRenderer, g: GraphicsHandle, map: World
   }
 
   // Второй проход: иллюзия высоты по полю высот (обрывы, тени рельефа).
-  if (map.height && map.height.length === W * H) {
+  // В 3D-режиме он НЕ нужен: уступы там строятся настоящими гранями, а
+  // запечённые в атлас полосы камня ложились плоскими плитами на площадки
+  // и читались как случайные серые пятна.
+  const is3D = (renderer as unknown as { supports3DTerrain?: boolean }).supports3DTerrain === true;
+  if (!is3D && map.height && map.height.length === W * H) {
     drawRelief(renderer, g, map, W, H);
   }
 }
