@@ -8,6 +8,15 @@ import type { InteractableHit } from '../ecs/ecs-systems/interaction-system';
 import { getRenderQueue, RENDER_LAYER } from '../render/RenderQueue';
 
 /**
+ * Высота подсказки над землёй (мировые единицы, 1 = тайл).
+ *
+ * В 2D подсказка поднимается смещением по экрану (y - 20), а в 3D это
+ * смещение уводит её вглубь по земле — без подъёма буква «E» висела на
+ * уровне лица персонажа. 1.5 юнита ≈ 24 px: над головой (рост ~1.1 юнита).
+ */
+const HINT_ELEVATION = 1.5;
+
+/**
  * OverlayLayer — слой оверлеев (screen-space UI).
  *
  * Отвечает за:
@@ -27,6 +36,7 @@ export class OverlayLayer implements IRenderLayer {
     this.renderer = renderer;
     // Подсказка — Graphics без привязки к слою (рендерится через RenderQueue)
     this.hintG = renderer.createGraphics();
+    renderer.setGraphicsElevation(this.hintG, HINT_ELEVATION);
   }
 
   update(_ctx: RenderLayerContext): void {

@@ -28,6 +28,23 @@ export const TERRACE_HEIGHT = 0.6;
  */
 const RAMP_DEPTH_PX = T * 0.9;
 
+/**
+ * Ступеней в марше лестницы. Совпадает с RAMP_STEPS в 2D-арте пандуса
+ * (geometry/tile-geom.ts): три проступи на один марш.
+ */
+const RAMP_STEPS = 3;
+
+/**
+ * Высота каменной грани уступа в пикселях текстуры на уровень перепада.
+ * Повторяет CLIFF_STEP_PX из 2D-арта (geometry/tile-geom.ts) — по нему
+ * нарисована полоса камня в текстуре земли.
+ */
+const FACE_STEP_PX = 6;
+/** Потолок высоты каменной грани в пикселях (FACE_CAP там же). */
+const FACE_CAP_PX = T - 2;
+/** Ширина боковой (запад/восток) каменной грани в пикселях (SIDE_PX там же). */
+const SIDE_PX = 3;
+
 /** Биты маски стен (см. generators/terrain-walls WallBit). */
 const WB_N = 1, WB_E = 2, WB_S = 4, WB_W = 8;
 
@@ -283,7 +300,7 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
         }
 
         if (nl <= lvl) continue; // подъём рисует только низкая клетка
-        addRamp(ground, nav, x, y, side.bit, yTop, yAtLevel(nl), u, v, map);
+        addRamp(ground, cliffs, nav, x, y, side.bit, yTop, yAtLevel(nl), u, v);
       }
     }
   }
@@ -308,6 +325,31 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
   };
 }
 
+/**
+ * Пиксельные границы полосы камня в текстуре земли — та же геометрия, что
+ * рисует 2D-арт (edgeFace/sideFace в geometry/tile-geom.ts).
+ *
+ * Северный/южный уступ в арте — горизонтальная полоса во всю ширину тайла
+ * у его края; западный/восточный — узкая колонка во всю высоту тайла.
+ * Раньше грань растягивала 4×16 px столбик на всю стену и читалась серой
+ * мутью, а не камнем с кромкой.
+ */
+function faceBandRows(py0: number, py1: number, north: boolean, levels: number): [number, number] {
+  const h = Math.min(FACE_CAP_PX, FACE_STEP_PX * Math.max(1, levels));
+  return north ? [py0, py0 + h] : [py1 - h, py1];
+}
+
+/** Колонка боковой грани (запад/восток) в пикселях тайла. */
+function sideFaceCols(px0: number, px1: number, west: boolean, levels: number): [number, number] {
+  const w = Math.min(5, SIDE_PX + Math.max(1, levels) - 1);
+  return west ? [px0, px0 + w] : [px1 - w, px1];
+}
+
+/** Сколько уровней террас между нижней и верхней кромками грани. */
+function levelsBetween(yLow: number, yHigh: number): number {
+  return Math.max(1, Math.round((yHigh - yLow) / TERRACE_HEIGHT));
+}
+
 /** Вертикальная грань утёса на стыке клеток. */
 function addCliff(
   b: MeshBuilder,
@@ -318,72 +360,78 @@ function addCliff(
   v: (py: number) => number,
 ): void {
   const x0 = x * T, x1 = x * T + T, y0 = y * T, y1 = y * T + T;
-  // UV: узкая полоса нижней клетки у стыка — «каменная» грань.
-  const us0 = bit === WB_W ? x0 : x1 - 4;
-  const us1 = bit === WB_W ? x0 + 4 : x1;
+  const levels = levelsBetween(yLow, yHigh);
   const va = v(y0), vb = v(y1);
 
   switch (bit) {
-    case WB_N:
+    case WB_N: {
+      const [ra, rb] = faceBandRows(y0, y1, true, levels);
       b.quad(
         x0 / T, yLow, y0 / T,
         x1 / T, yLow, y0 / T,
         x1 / T, yHigh, y0 / T,
         x0 / T, yHigh, y0 / T,
-        u(us0), va, u(us1), va, u(us1), vb, u(us0), vb,
+        u(x0), v(rb), u(x1), v(rb), u(x1), v(ra), u(x0), v(ra),
       );
       break;
-    case WB_S:
+    }
+    case WB_S: {
+      const [ra, rb] = faceBandRows(y0, y1, false, levels);
       b.quad(
         x1 / T, yLow, y1 / T,
         x0 / T, yLow, y1 / T,
         x0 / T, yHigh, y1 / T,
         x1 / T, yHigh, y1 / T,
-        u(us0), va, u(us1), va, u(us1), vb, u(us0), vb,
+        u(x1), v(rb), u(x0), v(rb), u(x0), v(ra), u(x1), v(ra),
       );
       break;
-    case WB_W:
+    }
+    case WB_W: {
+      const [ca, cb] = sideFaceCols(x0, x1, true, levels);
       b.quad(
         x0 / T, yLow, y1 / T,
         x0 / T, yLow, y0 / T,
         x0 / T, yHigh, y0 / T,
         x0 / T, yHigh, y1 / T,
-        u(us0), vb, u(us1), vb, u(us1), va, u(us0), va,
+        u(ca), vb, u(cb), vb, u(cb), va, u(ca), va,
       );
       break;
-    default: // WB_E
+    }
+    default: { // WB_E
+      const [ca, cb] = sideFaceCols(x0, x1, false, levels);
       b.quad(
         x1 / T, yLow, y0 / T,
         x1 / T, yLow, y1 / T,
         x1 / T, yHigh, y1 / T,
         x1 / T, yHigh, y0 / T,
-        u(us0), va, u(us1), va, u(us1), vb, u(us0), vb,
+        u(ca), va, u(cb), va, u(cb), vb, u(ca), vb,
       );
       break;
+    }
   }
 }
 
 /**
- * Пандус на открытом перепаде высот: заходит внутрь низкой клетки и поднимается
- * до уровня соседа. Идёт и в визуальный меш, и в навигационную геометрию —
- * поэтому террасы соединяются именно там, где нет стены-уступа.
+ * Лестница на открытом перепаде высот: заходит внутрь низкой клетки и
+ * поднимается до уровня соседа.
+ *
+ * Навигация остаётся ровным пандусом (recast не соединяет ступеньки мельче
+ * walkableClimb), а визуально строится настоящий марш: RAMP_STEPS проступей
+ * из текстуры земли и столько же подступенков из полосы камня. Раньше марш
+ * был одним наклонным квадом — с камеры 58° он читался как тонкая плита.
  */
 function addRamp(
   g: MeshBuilder,
+  cliffs: MeshBuilder,
   nav: NavBuilderData,
   x: number, y: number,
   bit: number,
   yLow: number, yHigh: number,
   u: (px: number) => number,
   v: (py: number) => number,
-  map: TerrainMap,
 ): void {
   const x0 = x * T, x1 = x * T + T, y0 = y * T, y1 = y * T + T;
   const d = Math.min(RAMP_DEPTH_PX, T);
-
-  // Текстура: полоса земли низкой клетки у стыка.
-  const stripA = bit === WB_N || bit === WB_S ? u(y0) : u(x0);
-  const stripB = bit === WB_N || bit === WB_S ? u(y1) : u(x1);
 
   switch (bit) {
     case WB_N: {
@@ -457,8 +505,59 @@ function addRamp(
     }
   }
 
-  // Полоса рампы не должна попадать на непроходимые клетки (вода/деревья).
-  void stripA; void stripB; void map;
+  // ── Визуал: настоящий марш из ступеней ──
+  const alongZ = bit === WB_N || bit === WB_S;
+  // Край марша (у верхней террасы) и направление спуска — внутрь клетки.
+  const edge = bit === WB_N ? y0 : bit === WB_S ? y1 : bit === WB_W ? x0 : x1;
+  const dir = bit === WB_N || bit === WB_W ? 1 : -1;
+  const c0 = alongZ ? x0 : y0;
+  const c1 = alongZ ? x1 : y1;
+  const stepD = d / RAMP_STEPS;
+  const stepH = (yHigh - yLow) / RAMP_STEPS;
+  const levels = levelsBetween(yLow, yHigh);
+  // Полоса камня в текстуре для подступенков: марш вдоль z берёт грань у
+  // края тайла, марш вдоль x — колонку боковой грани.
+  const [bandA, bandB] = faceBandRows(y0, y1, bit === WB_N, levels);
+  const [colA, colB] = sideFaceCols(x0, x1, bit === WB_W, levels);
+
+  /** Точка марша в пикселях: s — вдоль марша от края, c — поперёк. */
+  const at = (s: number, c: number): [number, number] =>
+    alongZ ? [c, edge + dir * s] : [edge + dir * s, c];
+
+  for (let i = 0; i < RAMP_STEPS; i++) {
+    const sA = i * stepD;
+    const sB = (i + 1) * stepD;
+    const yTop = yHigh - i * stepH;
+
+    // Проступь — по текстуре земли, чтобы цвет совпадал с поверхностью.
+    const [ax, az] = at(sA, c0);
+    const [bx, bz] = at(sA, c1);
+    const [cx, cz] = at(sB, c1);
+    const [dx, dz] = at(sB, c0);
+    g.quad(
+      ax / T, yTop, az / T,
+      bx / T, yTop, bz / T,
+      cx / T, yTop, cz / T,
+      dx / T, yTop, dz / T,
+      u(ax), v(az), u(bx), v(bz), u(cx), v(cz), u(dx), v(dz),
+    );
+
+    // Подступенок под задней кромкой проступи — по полосе камня.
+    const yBot = yTop - stepH;
+    const [rx1, rz1] = at(sB, c0);
+    const [rx2, rz2] = at(sB, c1);
+    const uA = alongZ ? u(c0) : u(colA);
+    const uB = alongZ ? u(c1) : u(colB);
+    const vTop = alongZ ? v(bandA) : v(y0);
+    const vBot = alongZ ? v(bandB) : v(y1);
+    cliffs.quad(
+      rx1 / T, yBot, rz1 / T,
+      rx2 / T, yBot, rz2 / T,
+      rx2 / T, yTop, rz2 / T,
+      rx1 / T, yTop, rz1 / T,
+      uA, vBot, uB, vBot, uB, vTop, uA, vTop,
+    );
+  }
 }
 
 /**

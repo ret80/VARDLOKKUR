@@ -142,6 +142,11 @@ export interface IRenderer {
   setGraphicsAlpha(handle: GraphicsHandle, alpha: number): void;
   /** Установить z-index Graphics (для сортировки по глубине) */
   setGraphicsZIndex(handle: GraphicsHandle, zIndex: number): void;
+  /**
+   * Поднять Graphics над землёй в мировых единицах (1 единица = тайл).
+   * В 2D проекции не нужно (там высота — это смещение по экрану) — no-op.
+   */
+  setGraphicsElevation(handle: GraphicsHandle, worldUnits: number): void;
   /** Получить внутренний PixiJS Graphics по handle (для батч-переиспользования) */
   getGraphicsPixi(handle: GraphicsHandle): any;
 

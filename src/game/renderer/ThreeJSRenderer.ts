@@ -3,9 +3,10 @@
  * Идея миграции: весь существующий арт рисуется процедурно примитивами
  * (drawRect/drawEllipse/drawPoly/drawLine) в локальных координатах Graphics.
  * Здесь эти примитивы собираются в Canvas2D-дисплей-лист, запекаются в
- * CanvasTexture и показываются в 3D как билборды (THREE.Sprite). Поэтому
- * 27 реестров рендереров (игрок, враги, боссы, NPC, дропы, снаряды, деревья,
- * дома) работают без единой правки — меняется только «холст».
+ * CanvasTexture и показываются в 3D как Y-билборды (вертикальная плоскость,
+ * повёрнутая к камере вокруг оси Y; см. класс YBillboard). Поэтому 27 реестров
+ * рендереров (игрок, враги, боссы, NPC, дропы, снаряды, деревья, дома)
+ * работают без единой правки — меняется только «холст».
  *
  * Мир: 16 px = 1 юнит three.js, игровые (x, y) → (x, ·, y/16), Y — вверх.
  * Рельеф строится из тайлов/высот/стен (world3d/terrain-mesh.ts) и получает
@@ -45,8 +46,15 @@ import type { WorldData } from '../world';
 // Константы камеры
 // ============================================================
 
-/** Наклон камеры (градусы от горизонта). */
-const CAM_PITCH_DEG = 58;
+/**
+ * Наклон камеры (градусы от горизонта).
+ *
+ * Билборды — плоские вертикальные карточки, поэтому их высота на экране
+ * сжимается на cos(наклона): при 58° персонажи «ложились» и читались
+ * плоскими. 46° близко к референсу: фигуры стоят, а вертикальные грани
+ * уступов и подступенки видны достаточно, чтобы читаться камнем.
+ */
+const CAM_PITCH_DEG = 46;
 /** Дистанция камеры до цели (мировые единицы). */
 const CAM_DISTANCE = 24;
 /** Высота точки взгляда над землёй. */
@@ -74,12 +82,16 @@ interface InternalGraphics {
   dirty: boolean;
   /** Padding канваса (для земли — 0, чтобы UV совпадали). */
   pad: number;
+  /** Позиция задана снаружи (RenderQueue/движок) — можно ставить на землю. */
+  posSet: boolean;
+  /** Подъём над землёй в мировых единицах (подсказки, маркеры). */
+  elevation: number;
   minX: number;
   minY: number;
   maxX: number;
   maxY: number;
   hasContent: boolean;
-  sprite: THREE.Sprite | null;
+  sprite: YBillboard | null;
   texture: THREE.CanvasTexture | null;
   pos: Vec2;
   visible: boolean;
@@ -93,8 +105,11 @@ interface InternalGraphics {
 }
 
 interface InternalSprite {
-  sprite: THREE.Sprite;
+  /** Мировые спрайты — Y-билборды, экранные (overlay) — обычный THREE.Sprite. */
+  sprite: YBillboard | THREE.Sprite;
   layer: LayerHandle | -1;
+  /** Screen-space спрайт: живёт в overlayScene и масштабируется по экрану. */
+  screen: boolean;
 }
 
 interface InternalLayer {
@@ -104,7 +119,7 @@ interface InternalLayer {
 }
 
 interface InternalText {
-  sprite: THREE.Sprite;
+  sprite: YBillboard;
   canvas: HTMLCanvasElement;
   text: string;
   fontSize: number;
@@ -143,6 +158,8 @@ export class ThreeJSRenderer implements IRenderer {
   private layers = new Map<number, InternalLayer>();
   private graphics = new Map<number, InternalGraphics>();
   private sprites = new Map<number, InternalSprite>();
+  /** Все Y-билборды сцены: им каждый кадр обновляется поворот к камере. */
+  private billboards = new Set<YBillboard>();
   private textures = new Map<number, InternalTexture>();
   private texts = new Map<number, InternalText>();
   private fullscreenQuads = new Map<number, { visible: boolean }>();
@@ -227,10 +244,11 @@ export class ThreeJSRenderer implements IRenderer {
     for (const g of this.graphics.values()) this.disposeGraphics(g);
     this.graphics.clear();
     for (const s of this.sprites.values()) {
-      this.overlayScene.remove(s.sprite);
+      s.sprite.parent?.remove(s.sprite);
       s.sprite.material.dispose();
     }
     this.sprites.clear();
+    this.billboards.clear();
     for (const t of this.textures.values()) t.texture.dispose();
     this.textures.clear();
     for (const t of this.texts.values()) this.disposeText(t);
@@ -260,6 +278,7 @@ export class ThreeJSRenderer implements IRenderer {
     if (!this.renderer) return;
     this.updateCamera();
     this.rebuildDirtyGraphics();
+    this.updateBillboardFacing();
 
     this.renderer.autoClear = true;
     this.renderer.render(this.scene, this.camera);
@@ -366,9 +385,12 @@ export class ThreeJSRenderer implements IRenderer {
 
     if (mesh.cliffs.indices.length > 0) {
       const geo = buildBufferGeometry(mesh.cliffs);
+      // Цвет белый: грани уступов и подступенки лестниц берут готовую
+      // палитру камня из текстуры земли (2D-арт edgeFace/sideFace).
+      // Серый тинт 0x6f7a88 раньше умножал её и грани становились чёрными.
       const mat = new THREE.MeshBasicMaterial({
         map: tex,
-        color: 0x6f7a88,
+        color: 0xffffff,
         side: THREE.DoubleSide,
       });
       const m = new THREE.Mesh(geo, mat);
@@ -577,18 +599,21 @@ export class ThreeJSRenderer implements IRenderer {
   createSprite(options: SpriteCreateOptions): SpriteHandle {
     const id = this.nextId++;
     const tex = this.resolveTexture(options.texture);
-    const material = new THREE.SpriteMaterial({
+    const material = new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
       alphaTest: 0.35,
       depthWrite: true,
+      side: THREE.DoubleSide,
     });
     if (options.tint !== undefined) material.color.setHex(options.tint >>> 0);
-    const sprite = new THREE.Sprite(material);
+    const sprite = this.makeBillboard(material);
     const scale = options.scale ?? { x: 1, y: 1 };
     const { width: w, height: h } = textureSize(tex, 16, 16);
     sprite.scale.set((w / PX_PER_UNIT) * scale.x, (h / PX_PER_UNIT) * scale.y, 1);
-    if (options.anchor) sprite.center.set(0.5 + (options.anchor.x - 0.5), 0.5 + (options.anchor.y - 0.5));
+    if (options.anchor) {
+      sprite.center.set(clamp01(options.anchor.x), clamp01(options.anchor.y));
+    }
     sprite.visible = options.visible ?? true;
     if (options.alpha !== undefined) {
       material.opacity = options.alpha;
@@ -603,14 +628,19 @@ export class ThreeJSRenderer implements IRenderer {
     const layerId = options.layer as number | undefined;
     const parent = layerId !== undefined ? this.layers.get(layerId)?.group : undefined;
     (parent ?? this.scene).add(sprite);
-    this.sprites.set(id, { sprite, layer: (layerId as LayerHandle) ?? -1 });
+    this.sprites.set(id, { sprite, layer: (layerId as LayerHandle) ?? -1, screen: false });
     return id as SpriteHandle;
   }
 
   createSpriteInContainer(texture: TextureHandle | string, x: number, y: number, _container: any): any {
     const tex = this.resolveTexture(texture);
-    const sprite = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: tex, transparent: true, alphaTest: 0.35 }),
+    const sprite = this.makeBillboard(
+      new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        alphaTest: 0.35,
+        side: THREE.DoubleSide,
+      }),
     );
     const { width: w, height: h } = textureSize(tex, 16, 16);
     sprite.scale.set(w / PX_PER_UNIT, h / PX_PER_UNIT, 1);
@@ -624,6 +654,7 @@ export class ThreeJSRenderer implements IRenderer {
     if (!s) return;
     s.sprite.parent?.remove(s.sprite);
     s.sprite.material.dispose();
+    this.releaseBillboard(s.sprite);
     this.sprites.delete(handle as number);
   }
 
@@ -690,7 +721,7 @@ export class ThreeJSRenderer implements IRenderer {
     if (options.alpha !== undefined) material.opacity = options.alpha;
     sprite.visible = options.visible ?? true;
     this.overlayScene.add(sprite);
-    this.sprites.set(id, { sprite, layer: -1 });
+    this.sprites.set(id, { sprite, layer: -1, screen: true });
     return id as SpriteHandle;
   }
 
@@ -712,6 +743,8 @@ export class ThreeJSRenderer implements IRenderer {
       cmds: [],
       dirty: true,
       pad: 2,
+      posSet: false,
+      elevation: 0,
       bounds: { minX: 0, minY: 0, width: 1, height: 1 },
       minX: 0,
       minY: 0,
@@ -781,6 +814,19 @@ export class ThreeJSRenderer implements IRenderer {
     const g = this.graphics.get(handle as number);
     if (!g) return;
     g.pos = { x: pos.x, y: pos.y };
+    g.posSet = true;
+  }
+
+  /**
+   * Поднять Graphics над землёй на worldUnits (1 единица = 16 px).
+   * В 3D нужно подсказкам и маркерам: без этого они висят на уровне пола.
+   */
+  setGraphicsElevation(handle: GraphicsHandle, worldUnits: number): void {
+    const g = this.graphics.get(handle as number);
+    if (!g) return;
+    if (g.elevation === worldUnits) return;
+    g.elevation = worldUnits;
+    g.dirty = true;
   }
 
   setGraphicsAlpha(handle: GraphicsHandle, alpha: number): void {
@@ -894,13 +940,14 @@ export class ThreeJSRenderer implements IRenderer {
     const tex = new THREE.CanvasTexture(canvas);
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.magFilter = THREE.LinearFilter;
-    const material = new THREE.SpriteMaterial({
+    const material = new THREE.MeshBasicMaterial({
       map: tex,
       transparent: true,
       depthTest: false,
       depthWrite: false,
+      side: THREE.DoubleSide,
     });
-    const sprite = new THREE.Sprite(material);
+    const sprite = this.makeBillboard(material);
     const worldW = (canvas.width / renderSize) * (fontSize / PX_PER_UNIT);
     const worldH = (canvas.height / renderSize) * (fontSize / PX_PER_UNIT);
     sprite.scale.set(worldW, worldH, 1);
@@ -1090,7 +1137,7 @@ export class ThreeJSRenderer implements IRenderer {
     const sx = w / Math.max(1, this.viewW);
     const sy = h / Math.max(1, this.viewH);
     for (const s of this.sprites.values()) {
-      if (s.layer === -1) {
+      if (s.screen) {
         const img = s.sprite.material.map?.image as { width?: number; height?: number } | undefined;
         s.sprite.scale.set((img?.width ?? this.viewW) * sx, (img?.height ?? this.viewH) * sy, 1);
       }
@@ -1118,6 +1165,33 @@ export class ThreeJSRenderer implements IRenderer {
 
   private groundHeight(xPx: number, yPx: number): number {
     return this.terrain ? this.terrain.heightAt(xPx, yPx) : 0;
+  }
+
+  /** Создать Y-билборд и поставить его в очередь поворота к камере. */
+  private makeBillboard(material: THREE.MeshBasicMaterial): YBillboard {
+    const billboard = new YBillboard(material);
+    this.billboards.add(billboard);
+    return billboard;
+  }
+
+  /** Убрать билборд из очереди поворота (при удалении объекта). */
+  private releaseBillboard(obj: THREE.Object3D): void {
+    if (obj instanceof YBillboard) this.billboards.delete(obj);
+  }
+
+  /**
+   * Повернуть все билборды к камере ТОЛЬКО вокруг вертикали.
+   *
+   * THREE.Sprite разворачивает плоскость целиком к камере: при наклоне 58°
+   * спрайт заваливается назад и персонажи «лежат». Здесь плоскость остаётся
+   * вертикальной (как штык), поворот считается по горизонтальному направлению
+   * на камеру.
+   */
+  private updateBillboardFacing(): void {
+    const cam = this.camera.position;
+    for (const b of this.billboards) {
+      b.rotation.y = Math.atan2(cam.x - b.position.x, cam.z - b.position.z);
+    }
   }
 
   private resolveTexture(source: TextureHandle | string): THREE.Texture {
@@ -1165,33 +1239,40 @@ export class ThreeJSRenderer implements IRenderer {
     }
 
     if (!g.sprite) {
-      const material = new THREE.SpriteMaterial({
-        map: g.texture,
-        transparent: true,
-        alphaTest: 0.35,
-        depthWrite: true,
-      });
-      g.sprite = new THREE.Sprite(material);
+      g.sprite = this.makeBillboard(
+        new THREE.MeshBasicMaterial({
+          map: g.texture,
+          transparent: true,
+          alphaTest: 0.35,
+          depthWrite: true,
+          side: THREE.DoubleSide,
+        }),
+      );
       g.sprite.renderOrder = 10;
       const layerId = g.layer as number | undefined;
       const parent = layerId !== undefined ? this.layers.get(layerId)?.group : undefined;
       (parent ?? this.scene).add(g.sprite);
     }
 
-    const mat = g.sprite.material as THREE.SpriteMaterial;
+    const mat = g.sprite.material;
     mat.map = g.texture;
     mat.opacity = g.alpha;
     mat.transparent = g.alpha < 1;
     mat.depthWrite = g.alpha >= 0.98;
 
     g.sprite.visible = g.visible && !g.skip3D && g.cmds.length > 0;
+    // Низ рисунка (без padding канваса) — это линия земли спрайта: арт
+    // нарисован так, что тень/подошва лежит на его нижней границе. Ставим
+    // именно её на поверхность рельефа, иначе низ спрайта уходит под землю.
+    const groundPx = g.posSet ? maxY - g.pad : 0;
     g.sprite.position.set(
       g.pos.x / PX_PER_UNIT,
-      this.groundHeight(g.pos.x, g.pos.y),
+      this.groundHeight(g.pos.x, g.pos.y) + groundPx / PX_PER_UNIT + g.elevation,
       g.pos.y / PX_PER_UNIT,
     );
     g.sprite.scale.set(w / PX_PER_UNIT, h / PX_PER_UNIT, 1);
-    // Точка (0,0) локальной системы Graphics — «ноги» объекта на земле.
+    // Точка (0,0) локальной системы Graphics — центр «ног»; билборд ставит
+    // изображение так же, как это делал THREE.Sprite.
     g.sprite.center.set(
       clamp01((0 - minX) / w),
       clamp01(1 - (0 - minY) / h),
@@ -1204,6 +1285,7 @@ export class ThreeJSRenderer implements IRenderer {
     if (g.sprite) {
       g.sprite.parent?.remove(g.sprite);
       g.sprite.material.dispose();
+      this.releaseBillboard(g.sprite);
       g.sprite = null;
     }
     g.texture?.dispose();
@@ -1235,6 +1317,7 @@ export class ThreeJSRenderer implements IRenderer {
     t.sprite.parent?.remove(t.sprite);
     t.sprite.material.map?.dispose();
     t.sprite.material.dispose();
+    this.releaseBillboard(t.sprite);
   }
 
   // ── Туман: упрощённый экранный оверлей ──────────────────────
@@ -1313,6 +1396,62 @@ export class ThreeJSRenderer implements IRenderer {
     // Плоскость тумана растягиваем на весь экран (в координатах оверлея).
     this.fogMesh.position.set(this.screenW / 2, -this.screenH / 2, 0);
     this.fogMesh.scale.set(this.screenW, this.screenH, 1);
+  }
+}
+
+// ============================================================
+// Y-билборд
+// ============================================================
+
+interface BillboardCenter {
+  x: number;
+  y: number;
+  set(x: number, y: number): void;
+}
+
+/**
+ * Y-билборд — вертикальная плоскость, которая поворачивается к камере только
+ * вокруг оси Y.
+ *
+ * Заменяет THREE.Sprite для всего мира: спрайт всегда разворачивается к
+ * камере всей плоскостью, поэтому при камере с наклоном 58° картинка
+ * заваливается назад и персонажи выглядят лежащими. Плоскость же остаётся
+ * строго вертикальной и «смотрит» на камеру по горизонтали — как щит на шесте.
+ *
+ * `center` повторяет семантику Sprite.center: (0,0) — низ-лево изображения,
+ * (0.5,0) — низ-центр (точка привязки на земле).
+ */
+class YBillboard extends THREE.Mesh<THREE.PlaneGeometry, THREE.MeshBasicMaterial> {
+  readonly center: BillboardCenter;
+
+  constructor(material: THREE.MeshBasicMaterial) {
+    super(new THREE.PlaneGeometry(1, 1), material);
+    this.center = {
+      x: 0.5,
+      y: 0.5,
+      set: (x: number, y: number): void => {
+        // buildGraphics зовёт center.set() каждый кадр для анимированных
+        // сущностей — пересобираем плоскость только при реальном сдвиге.
+        if (this.center.x === x && this.center.y === y) return;
+        this.center.x = x;
+        this.center.y = y;
+        this.applyCenter();
+      },
+    };
+    this.frustumCulled = false;
+    this.renderOrder = 10;
+  }
+
+  /**
+   * Пересобрать плоскость со сдвигом так, чтобы точка привязки попала в
+   * начало координат меша. Сдвиг задаётся на единичной плоскости — масштаб
+   * меша (ширина/высота в юнитах) растягивает его вместе с картинкой.
+   */
+  private applyCenter(): void {
+    const next = new THREE.PlaneGeometry(1, 1);
+    next.translate(0.5 - this.center.x, 0.5 - this.center.y, 0);
+    this.geometry.dispose();
+    this.geometry = next;
   }
 }
 

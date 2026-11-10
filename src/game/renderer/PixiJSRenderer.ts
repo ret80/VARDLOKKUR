@@ -494,6 +494,14 @@ export class PixiJSRenderer implements IRenderer {
     if (g) g.pixiGraphics.zIndex = zIndex;
   }
 
+  /**
+   * Высота над землёй нужна только 3D-рендереру: в 2D-проекции подсказки
+   * уже смещены по экрану, поэтому здесь это no-op.
+   */
+  setGraphicsElevation(_handle: GraphicsHandle, _worldUnits: number): void {
+    /* не используется в 2D */
+  }
+
   // === Textures ===
   //
   // Примечание: Texture.from(url/canvas) кэшируется внутренним AssetManager
