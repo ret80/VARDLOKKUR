@@ -45,6 +45,8 @@ interface InternalSprite {
 interface InternalGraphics {
   pixiGraphics: Graphics;
   layer: LayerHandle | undefined;
+  /** Подъём над землёй (в 2D эмулируется смещением по экрану). */
+  elevation: number;
 }
 
 interface InternalFullscreenQuad {
@@ -392,7 +394,7 @@ export class PixiJSRenderer implements IRenderer {
     } else {
       this.worldContainer.addChild(g);
     }
-    this.graphics.set(id, { pixiGraphics: g, layer });
+    this.graphics.set(id, { pixiGraphics: g, layer, elevation: 0 });
     return id as GraphicsHandle;
   }
 
@@ -480,7 +482,7 @@ export class PixiJSRenderer implements IRenderer {
     const g = this.graphics.get(handle as number);
     if (g) {
       g.pixiGraphics.x = pos.x;
-      g.pixiGraphics.y = pos.y;
+      g.pixiGraphics.y = pos.y - g.elevation * 16;
     }
   }
 
@@ -498,8 +500,19 @@ export class PixiJSRenderer implements IRenderer {
    * Высота над землёй нужна только 3D-рендереру: в 2D-проекции подсказки
    * уже смещены по экрану, поэтому здесь это no-op.
    */
-  setGraphicsElevation(_handle: GraphicsHandle, _worldUnits: number): void {
-    /* не используется в 2D */
+  setGraphicsElevation(handle: GraphicsHandle, worldUnits: number): void {
+    // В 2D высоты нет — эмулируем подъём смещением по экрану, чтобы общая
+    // логика маркеров работала одинаково в обоих рендерерах.
+    const g = this.graphics.get(handle as number);
+    if (g) g.elevation = worldUnits;
+  }
+
+  setGraphicsOverlay(_handle: GraphicsHandle, _overlay: boolean): void {
+    /* в 2D порядок задаётся слоями RenderQueue — оверлей уже поверх */
+  }
+
+  setGraphicsXRay(_handle: GraphicsHandle, _enabled: boolean): void {
+    /* в 2D перекрытий по глубине нет — просвечивать нечего */
   }
 
   // === Textures ===

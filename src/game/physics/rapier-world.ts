@@ -201,8 +201,10 @@ export class RapierWorld {
 
   /** Призрак: проходит сквозь всё (сенсор без коллизий), урон считается в ECS. */
   createGhostBody(x: number, y: number, radius: number): RapierBody {
+    // Скоростное кинематическое тело: AI задаёт ему setLinearVelocity, а
+    // position-based кинематика скорость игнорирует — призраки стояли на месте.
     const rb = this.world.createRigidBody(
-      RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, 0, y),
+      RAPIER.RigidBodyDesc.kinematicVelocityBased().setTranslation(x, 0, y),
     );
     const cd = RAPIER.ColliderDesc.ball(radius)
       .setSensor(true)

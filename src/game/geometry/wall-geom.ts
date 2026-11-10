@@ -202,13 +202,20 @@ export function drawWallGeometry(
       P2(GX(1, 1), -7, 1, 7, 0x6a7647);
       break;
     }
-    case Tl.ROCK:
-      P2(2, 5, 12, 10, 0x4e5a68);
-      P2(3, 4, 10, 4, 0x5c6875);
-      P2(2, 12, 12, 3, 0x39424e);
-      if (v & 1) P2(4, 4, 2, 1, 0x8f9aa8);
-      if (snow) { P2(3, 4, 10, 2, 0xdbe5ee); P2(5, 3, 6, 1, 0xeef4f9); }
+    case Tl.ROCK: {
+      // Пивот в центре тайла (как у деревьев): иначе в 3D основание камня
+      // попадало на северную кромку клетки, и валун вставал на клетку
+      // позади своей. Абсолютные пиксели в 2D не меняются — позиция тайла
+      // сдвинута на те же -8,-8 (см. map-render-system).
+      const RX = (x: number) => x - 8;
+      const RY = (y: number) => y - 8;
+      P2(RX(2), RY(5), 12, 10, 0x4e5a68);
+      P2(RX(3), RY(4), 10, 4, 0x5c6875);
+      P2(RX(2), RY(12), 12, 3, 0x39424e);
+      if (v & 1) P2(RX(4), RY(4), 2, 1, 0x8f9aa8);
+      if (snow) { P2(RX(3), RY(4), 10, 2, 0xdbe5ee); P2(RX(5), RY(3), 6, 1, 0xeef4f9); }
       break;
+    }
     case Tl.PALISADE:
       // variant = маска соединений (N/E/S/W), см. drawPalisade.
       drawPalisade(P2, v);

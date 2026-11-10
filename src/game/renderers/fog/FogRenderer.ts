@@ -281,6 +281,12 @@ export class FogRenderer {
       uTime: 0,
       uPlayerPosX: 0.5,
       uPlayerPosY: 0.5,
+      // Мировые координаты игрока и радиус ясности в пикселях: 3D-оверлей
+      // тумана считает экранную проекцию сам, а UV виртуального вьюпорта
+      // (480×270) к реальному экрану не относятся.
+      uPlayerWorldX: 0,
+      uPlayerWorldY: 0,
+      uFogRadiusPx: 300,
       // Смещение камеры для скроллинга тумана вместе с миром
       uCamOffsetX: 0,
       uCamOffsetY: 0,
@@ -292,6 +298,8 @@ export class FogRenderer {
     };
     for (let i = 0; i < this.SHRINE_COUNT_MAX; i++) {
       shaderUniforms[`uShrineUV${i}`] = [0, 0];
+      shaderUniforms[`uShrineWorldX${i}`] = 0;
+      shaderUniforms[`uShrineWorldY${i}`] = 0;
     }
 
     this._shader = renderer.createShader(FOG_VERTEX, FOG_FRAGMENT, shaderUniforms);
@@ -420,8 +428,14 @@ export class FogRenderer {
     r.setShaderUniform(this._shader, 'uCamOffsetY', this.scrollOffset(camPos.y, 1 / viewH));
     r.setShaderUniform(this._shader, 'uFogAlpha', this._fogAlpha);
     r.setShaderUniform(this._shader, 'uFogRadius', normalizedRadius);
+    r.setShaderUniform(this._shader, 'uPlayerWorldX', playerPos.x);
+    r.setShaderUniform(this._shader, 'uPlayerWorldY', playerPos.y);
+    r.setShaderUniform(this._shader, 'uFogRadiusPx', this._fogRadius);
     for (let i = 0; i < 10; i++) {
       r.setShaderUniform(this._shader, `uShrineUV${i}`, [shrines[i].x, shrines[i].y]);
+      const shrine = this._shrines[i];
+      r.setShaderUniform(this._shader, `uShrineWorldX${i}`, shrine ? shrine.x : 0);
+      r.setShaderUniform(this._shader, `uShrineWorldY${i}`, shrine ? shrine.y : 0);
     }
     r.setShaderUniform(this._shader, 'uShrineCount', this._shrineCount);
     r.setShaderUniform(this._shader, 'uShrineTransitionUV', transitionUV);

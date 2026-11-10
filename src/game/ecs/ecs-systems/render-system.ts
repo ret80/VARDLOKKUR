@@ -429,6 +429,8 @@ export class RenderSystem {
       logger.warn('render', `renderPlayerEcs: playerEid=${playerEid} sprite ref=${sprite}, skipping`);
       return;
     }
+    // Игрок за домом просвечивает силуэтом — иначе он просто исчезает.
+    this.getR().setGraphicsXRay(sprite, true);
 
     const pos = Position[playerEid];
 

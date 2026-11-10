@@ -100,6 +100,12 @@ interface InternalGraphics {
   layer: LayerHandle | undefined;
   /** Батч карты, отрисованный отдельным мешем (земля/стены подземелья). */
   skip3D: boolean;
+  /** Рисовать поверх всей сцены (без теста глубины): подсказки и маркеры. */
+  overlay: boolean;
+  /** Просвечивать силуэт сквозь геометрию (игрок за домом). */
+  xray: boolean;
+  /** Вторая плоскость-силуэт для просвечивания (создаётся по требованию). */
+  xraySprite: YBillboard | null;
   /** Границы последней отрисовки на канвасе (пиксели команд). */
   bounds: { minX: number; minY: number; width: number; height: number };
 }
@@ -575,6 +581,7 @@ export class ThreeJSRenderer implements IRenderer {
     if (!g) return;
     g.visible = visible;
     if (g.sprite) g.sprite.visible = visible && !g.skip3D;
+    if (g.xraySprite) g.xraySprite.visible = visible && !g.skip3D && g.xray;
   }
 
   getScreenSize(): { w: number; h: number } {
@@ -761,6 +768,9 @@ export class ThreeJSRenderer implements IRenderer {
       zIndex: 0,
       layer,
       skip3D: false,
+      overlay: false,
+      xray: false,
+      xraySprite: null,
     };
     this.graphics.set(id, g);
     return id as GraphicsHandle;
@@ -817,6 +827,11 @@ export class ThreeJSRenderer implements IRenderer {
     if (!g) return;
     g.pos = { x: pos.x, y: pos.y };
     g.posSet = true;
+    // Позиция меняется каждый кадр, а канвас — нет, поэтому плоскость двигаем
+    // сразу. Иначе собранный один раз арт (тайлы карты: деревья, камни, трава)
+    // застревает в точке первой сборки — в начале координат, и лес становится
+    // невидимым, хотя коллизия на его клетках остаётся.
+    this.placeSprite(g);
   }
 
   /**
@@ -828,6 +843,34 @@ export class ThreeJSRenderer implements IRenderer {
     if (!g) return;
     if (g.elevation === worldUnits) return;
     g.elevation = worldUnits;
+    this.placeSprite(g);
+  }
+
+  /**
+   * Рисовать Graphics поверх всей сцены (без теста глубины).
+   *
+   * Подсказка «E» стоит над объектом, но в 3D дом или дерево перед ней
+   * честно перекрывают её по глубине. Такой маркер должен читаться всегда.
+   */
+  setGraphicsOverlay(handle: GraphicsHandle, overlay: boolean): void {
+    const g = this.graphics.get(handle as number);
+    if (!g || g.overlay === overlay) return;
+    g.overlay = overlay;
+    g.dirty = true;
+  }
+
+  /**
+   * Просвечивать силуэт Graphics сквозь геометрию.
+   *
+   * Вторая плоскость рисуется только там, где объект перекрыт другой
+   * геометрией (`GreaterDepth`): игрок за домом виден как полупрозрачный
+   * силуэт, а на открытом месте второй копии нет.
+   */
+  setGraphicsXRay(handle: GraphicsHandle, enabled: boolean): void {
+    const g = this.graphics.get(handle as number);
+    if (!g || g.xray === enabled) return;
+    g.xray = enabled;
+    if (!enabled && g.xraySprite) g.xraySprite.visible = false;
     g.dirty = true;
   }
 
@@ -838,7 +881,10 @@ export class ThreeJSRenderer implements IRenderer {
 
   setGraphicsZIndex(handle: GraphicsHandle, zIndex: number): void {
     const g = this.graphics.get(handle as number);
-    if (g) g.zIndex = zIndex;
+    if (!g) return;
+    g.zIndex = zIndex;
+    // Оверлей (подсказка) рисуется последним — выше любого слоя очереди.
+    if (g.sprite) g.sprite.renderOrder = g.overlay ? 900 : zIndex > 0 ? 100 : 0;
   }
 
   // ============================================================
@@ -1134,6 +1180,15 @@ export class ThreeJSRenderer implements IRenderer {
     this.overlayCamera.bottom = h;
     this.overlayCamera.updateProjectionMatrix();
 
+    // Туман — плоскость на весь экран. Без этого она оставалась квадом 1×1
+    // в углу, и в 3D туман топей не рисовался вообще (хотя его альфа росла).
+    if (this.fogMesh) {
+      this.fogMesh.scale.set(w, h, 1);
+      // Камера оверлея задана как top=0, bottom=h, поэтому видимая область —
+      // [0, w] × [0, h], а +y направлен вниз по экрану.
+      this.fogMesh.position.set(w / 2, h / 2, 0);
+    }
+
     // Экранная вигнетка создаётся в координатах viewW/viewH (виртуальных) —
     // масштабируем оверлей под реальный размер.
     const sx = w / Math.max(1, this.viewW);
@@ -1266,18 +1321,8 @@ export class ThreeJSRenderer implements IRenderer {
     mat.map = g.texture;
     mat.opacity = g.alpha;
     mat.transparent = g.alpha < 1;
-    mat.depthWrite = g.alpha >= 0.98;
 
     g.sprite.visible = g.visible && !g.skip3D && g.cmds.length > 0;
-    // Низ рисунка (без padding канваса) — это линия земли спрайта: арт
-    // нарисован так, что тень/подошва лежит на его нижней границе. Ставим
-    // именно её на поверхность рельефа, иначе низ спрайта уходит под землю.
-    const groundPx = g.posSet ? maxY - g.pad : 0;
-    g.sprite.position.set(
-      g.pos.x / PX_PER_UNIT,
-      this.groundHeight(g.pos.x, g.pos.y) + groundPx / PX_PER_UNIT + g.elevation,
-      g.pos.y / PX_PER_UNIT,
-    );
     g.sprite.scale.set(w / PX_PER_UNIT, h / PX_PER_UNIT, 1);
     // Точка (0,0) локальной системы Graphics — центр «ног»; билборд ставит
     // изображение так же, как это делал THREE.Sprite.
@@ -1285,8 +1330,66 @@ export class ThreeJSRenderer implements IRenderer {
       clamp01((0 - minX) / w),
       clamp01(1 - (0 - minY) / h),
     );
+
+    // Оверлей (подсказки) — без теста глубины, поверх всей сцены.
+    mat.depthTest = !g.overlay;
+    mat.depthWrite = !g.overlay && g.alpha >= 0.98;
+    g.sprite.renderOrder = g.overlay ? 900 : 10;
+
+    // Просвечивание: вторая плоскость только там, где объект перекрыт.
+    if (g.xray) {
+      this.ensureXRaySprite(g);
+      if (g.xraySprite) {
+        g.xraySprite.material.map = g.texture;
+        g.xraySprite.material.needsUpdate = true;
+        g.xraySprite.scale.copy(g.sprite.scale);
+        g.xraySprite.center.set(g.sprite.center.x, g.sprite.center.y);
+        g.xraySprite.visible = g.sprite.visible;
+      }
+    } else if (g.xraySprite) {
+      g.xraySprite.visible = false;
+    }
+
+    this.placeSprite(g);
     g.dirty = false;
     g.hasContent = true;
+  }
+
+  /**
+   * Поставить плоскость Graphics в мир по g.pos и высоте рельефа.
+   *
+   * Низ рисунка (без padding канваса) — это линия земли спрайта: арт
+   * нарисован так, что тень/подошва лежит на его нижней границе. Ставим
+   * именно её на поверхность рельефа, иначе низ спрайта уходит под землю.
+   */
+  private placeSprite(g: InternalGraphics): void {
+    const x = g.pos.x / PX_PER_UNIT;
+    const z = g.pos.y / PX_PER_UNIT;
+    const groundPx = g.posSet ? g.bounds.minY + g.bounds.height - g.pad : 0;
+    const y = (g.posSet ? this.groundHeight(g.pos.x, g.pos.y) : 0) + groundPx / PX_PER_UNIT + g.elevation;
+    if (g.sprite) g.sprite.position.set(x, y, z);
+    if (g.xraySprite) g.xraySprite.position.set(x, y, z);
+  }
+
+  /** Создать плоскость-силуэт для просвечивания сквозь геометрию. */
+  private ensureXRaySprite(g: InternalGraphics): void {
+    if (g.xraySprite || !g.texture || !g.sprite) return;
+    const mat = new THREE.MeshBasicMaterial({
+      map: g.texture,
+      transparent: true,
+      opacity: 0.5,
+      depthWrite: false,
+      // Fragment проходит только там, где в буфере глубин уже лежит БЛИЖЕ
+      // геометрия — то есть ровно в зоне перекрытия.
+      depthFunc: THREE.GreaterDepth,
+      side: THREE.DoubleSide,
+      color: 0x9fc4dc,
+    });
+    const silhouette = this.makeBillboard(mat);
+    silhouette.renderOrder = 12;
+    silhouette.visible = false;
+    this.scene.add(silhouette);
+    g.xraySprite = silhouette;
   }
 
   private disposeGraphics(g: InternalGraphics): void {
@@ -1295,6 +1398,12 @@ export class ThreeJSRenderer implements IRenderer {
       g.sprite.material.dispose();
       this.releaseBillboard(g.sprite);
       g.sprite = null;
+    }
+    if (g.xraySprite) {
+      g.xraySprite.parent?.remove(g.xraySprite);
+      g.xraySprite.material.dispose();
+      this.releaseBillboard(g.xraySprite);
+      g.xraySprite = null;
     }
     g.texture?.dispose();
     g.texture = null;
@@ -1332,11 +1441,14 @@ export class ThreeJSRenderer implements IRenderer {
 
   private buildFogOverlay(): void {
     const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 144;
+    canvas.width = 89;
+    canvas.height = 128;
     this.fogCanvas = canvas;
     this.fogTexture = new THREE.CanvasTexture(canvas);
     this.fogTexture.colorSpace = THREE.SRGBColorSpace;
+    // Камера оверлея перевёрнута по Y — без этого туман рисовался бы
+    // зеркально по вертикали (дыра ясности уезжала бы в другую половину экрана).
+    this.fogTexture.flipY = false;
     const material = new THREE.MeshBasicMaterial({
       map: this.fogTexture,
       transparent: true,
@@ -1352,6 +1464,18 @@ export class ThreeJSRenderer implements IRenderer {
     this.fogMesh = mesh;
   }
 
+  /** Размер холста тумана — по пропорциям экрана (иначе клубы растянуты). */
+  private sizeFogCanvas(): void {
+    if (!this.fogCanvas) return;
+    const h = 128;
+    const w = Math.max(48, Math.round((this.screenW / Math.max(1, this.screenH)) * h));
+    if (this.fogCanvas.width !== w || this.fogCanvas.height !== h) {
+      this.fogCanvas.width = w;
+      this.fogCanvas.height = h;
+      this.fogDirty = true;
+    }
+  }
+
   private rebuildFog(): void {
     if (!this.fogMesh || !this.fogCanvas || !this.fogTexture) return;
     const shader = this.fogShader;
@@ -1360,38 +1484,68 @@ export class ThreeJSRenderer implements IRenderer {
     this.fogMesh.visible = visible;
     if (!visible || !this.fogDirty) return;
 
+    this.sizeFogCanvas();
     const w = this.fogCanvas.width;
     const h = this.fogCanvas.height;
     const ctx = this.fogCanvas.getContext('2d');
     if (!ctx) return;
     ctx.clearRect(0, 0, w, h);
 
-    // Позиция игрока в UV вьюпорта.
-    const px = ((shader?.uniforms.uPlayerPosX as number) ?? 0.5) * w;
-    const py = ((shader?.uniforms.uPlayerPosY as number) ?? 0.5) * h;
-    const radiusUV = (shader?.uniforms.uFogRadius as number) ?? 0.35;
-    const r = Math.max(8, radiusUV * Math.min(w, h));
+    // Центр ясности — экранная проекция игрока. UV виртуального вьюпорта
+    // (480×270) к реальному экрану не относятся, поэтому считаем сами.
+    const pw = {
+      x: (shader?.uniforms.uPlayerWorldX as number) ?? 0,
+      y: (shader?.uniforms.uPlayerWorldY as number) ?? 0,
+    };
+    const sp = this.worldToScreen(pw);
+    const px = (sp.x / Math.max(1, this.screenW)) * w;
+    const py = (sp.y / Math.max(1, this.screenH)) * h;
 
-    const grad = ctx.createRadialGradient(px, py, r * 0.55, px, py, r * 1.35);
-    grad.addColorStop(0, `rgba(6,10,16,0)`);
-    grad.addColorStop(0.55, `rgba(6,10,16,${(alpha * 0.55).toFixed(3)})`);
-    grad.addColorStop(1, `rgba(6,10,16,${Math.min(0.96, alpha * 0.96).toFixed(3)})`);
+    // Цвет тумана — тот же серо-сизый, что в 2D-шейдере (0.40, 0.42, 0.48).
+    // Радиус ясности в 3D-виде сопоставим с размером экрана, поэтому туман
+    // строим как пелену с осветлением вокруг игрока, а не как чёткое кольцо.
+    const FOG = '102,107,122';
+    const minDim = Math.min(w, h);
+    const inner = minDim * 0.18;
+    const outer = Math.max(w, h) * 0.78;
+    const grad = ctx.createRadialGradient(px, py, inner, px, py, outer);
+    grad.addColorStop(0, `rgba(${FOG},${(alpha * 0.2).toFixed(3)})`);
+    grad.addColorStop(0.55, `rgba(${FOG},${(alpha * 0.48).toFixed(3)})`);
+    grad.addColorStop(1, `rgba(${FOG},${Math.min(0.9, alpha * 0.9).toFixed(3)})`);
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, w, h);
 
-    // Дыры у святилищ.
+    // Клубы: без них пелена читается ровной винеткой.
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2 + 0.6;
+      const dist = outer * (0.35 + ((i * 37) % 9) / 26);
+      const bx = px + Math.cos(a) * dist;
+      const by = py + Math.sin(a) * dist;
+      const br = minDim * (0.22 + ((i * 17) % 7) / 22);
+      const g2 = ctx.createRadialGradient(bx, by, br * 0.15, bx, by, br);
+      g2.addColorStop(0, `rgba(${FOG},${(alpha * 0.3).toFixed(3)})`);
+      g2.addColorStop(1, `rgba(${FOG},0)`);
+      ctx.fillStyle = g2;
+      ctx.beginPath();
+      ctx.arc(bx, by, br, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Дыры у святилищ — по экранной проекции их мировых координат.
     const count = Math.min(10, (shader?.uniforms.uShrineCount as number) ?? 0);
     for (let i = 0; i < count; i++) {
-      const uv = shader?.uniforms[`uShrineUV${i}`] as [number, number] | undefined;
-      if (!uv) continue;
-      const sx = uv[0] * w;
-      const sy = uv[1] * h;
-      const hole = 0.09 * Math.min(w, h);
-      const g2 = ctx.createRadialGradient(sx, sy, hole * 0.2, sx, sy, hole);
-      g2.addColorStop(0, 'rgba(0,0,0,0.85)');
-      g2.addColorStop(1, 'rgba(0,0,0,0)');
+      const wx = shader?.uniforms[`uShrineWorldX${i}`] as number | undefined;
+      const wy = shader?.uniforms[`uShrineWorldY${i}`] as number | undefined;
+      if (wx === undefined || wy === undefined) continue;
+      const s = this.worldToScreen({ x: wx, y: wy });
+      const sx = (s.x / Math.max(1, this.screenW)) * w;
+      const sy = (s.y / Math.max(1, this.screenH)) * h;
+      const hole = Math.min(w, h) * 0.22;
+      const g3 = ctx.createRadialGradient(sx, sy, hole * 0.2, sx, sy, hole);
+      g3.addColorStop(0, 'rgba(0,0,0,0.9)');
+      g3.addColorStop(1, 'rgba(0,0,0,0)');
       ctx.globalCompositeOperation = 'destination-out';
-      ctx.fillStyle = g2;
+      ctx.fillStyle = g3;
       ctx.beginPath();
       ctx.arc(sx, sy, hole, 0, Math.PI * 2);
       ctx.fill();
@@ -1401,8 +1555,9 @@ export class ThreeJSRenderer implements IRenderer {
     this.fogTexture.needsUpdate = true;
     this.fogDirty = false;
 
-    // Плоскость тумана растягиваем на весь экран (в координатах оверлея).
-    this.fogMesh.position.set(this.screenW / 2, -this.screenH / 2, 0);
+    // Плоскость тумана растягиваем на весь экран (в координатах оверлея:
+    // камера оверлея перевёрнута, видимая область — [0, w] × [0, h]).
+    this.fogMesh.position.set(this.screenW / 2, this.screenH / 2, 0);
     this.fogMesh.scale.set(this.screenW, this.screenH, 1);
   }
 }

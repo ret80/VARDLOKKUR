@@ -8,13 +8,14 @@ import type { InteractableHit } from '../ecs/ecs-systems/interaction-system';
 import { getRenderQueue, RENDER_LAYER } from '../render/RenderQueue';
 
 /**
- * Высота подсказки над землёй (мировые единицы, 1 = тайл).
+ * Высота подсказки над землёй (мировые единицы, 1 = тайл = 16 px).
  *
- * В 2D подсказка поднимается смещением по экрану (y - 20), а в 3D это
- * смещение уводит её вглубь по земле — без подъёма буква «E» висела на
- * уровне лица персонажа. 1.5 юнита ≈ 24 px: над головой (рост ~1.1 юнита).
+ * Персонаж ростом ~27 px (1.7 юнита), поэтому 1.75 — подсказка стоит
+ * сразу над головой. Раньше высоту заменял сдвиг точки на 20 px вверх по
+ * экрану; в 3D он уводил подсказку на тайл с лишним на север — она висела
+ * над крышей здания позади, а не над собеседником.
  */
-const HINT_ELEVATION = 1.5;
+const HINT_ELEVATION = 1.75;
 
 /**
  * OverlayLayer — слой оверлеев (screen-space UI).
@@ -37,6 +38,8 @@ export class OverlayLayer implements IRenderLayer {
     // Подсказка — Graphics без привязки к слою (рендерится через RenderQueue)
     this.hintG = renderer.createGraphics();
     renderer.setGraphicsElevation(this.hintG, HINT_ELEVATION);
+    // Подсказка всегда читается: дом или дерево перед ней не перекрывают её.
+    renderer.setGraphicsOverlay(this.hintG, true);
   }
 
   update(_ctx: RenderLayerContext): void {
@@ -59,9 +62,11 @@ export class OverlayLayer implements IRenderLayer {
       return;
     }
 
-    // Мировые координаты интерактивного объекта
+    // Мировые координаты интерактивного объекта. Высоту даёт elevation,
+    // поэтому по земле точку не сдвигаем — только лёгкое покачивание вверх-вниз.
     const hx = this.nearestInteractable.x;
-    const hy = this.nearestInteractable.y - 20 + Math.sin(this.time * 5) * 1.5;
+    const hy = this.nearestInteractable.y;
+    r.setGraphicsElevation(this.hintG, HINT_ELEVATION + Math.sin(this.time * 5) * 0.06);
 
     // Очистить и нарисовать подсказку в ЛОКАЛЬНЫХ координатах (центр в 0,0).
     // Позиция задаётся через RenderQueue entry — flush() сдвинет Graphics в (hx, hy).

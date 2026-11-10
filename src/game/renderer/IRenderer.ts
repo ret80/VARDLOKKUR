@@ -147,6 +147,18 @@ export interface IRenderer {
    * В 2D проекции не нужно (там высота — это смещение по экрану) — no-op.
    */
   setGraphicsElevation(handle: GraphicsHandle, worldUnits: number): void;
+  /**
+   * Рисовать Graphics поверх всей сцены (без проверки глубины): подсказки,
+   * маркеры. В 3D иначе подсказку перекрывает дом или дерево перед ней.
+   * В 2D слои уже дают тот же порядок — можно оставить no-op.
+   */
+  setGraphicsOverlay(handle: GraphicsHandle, overlay: boolean): void;
+  /**
+   * Просвечивать силуэт Graphics сквозь геометрию (игрок за домом).
+   * В 3D рисуется второй плоскостью только там, где объект перекрыт
+   * другой геометрией; в 2D — no-op.
+   */
+  setGraphicsXRay(handle: GraphicsHandle, enabled: boolean): void;
   /** Получить внутренний PixiJS Graphics по handle (для батч-переиспользования) */
   getGraphicsPixi(handle: GraphicsHandle): any;
 
