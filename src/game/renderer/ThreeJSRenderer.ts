@@ -151,6 +151,8 @@ export class ThreeJSRenderer implements IRenderer {
   private renderer!: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
   private camera!: THREE.PerspectiveCamera;
+  /** Временный вектор направления взгляда (без аллокаций в кадре). */
+  private readonly cameraForward = new THREE.Vector3();
   private overlayScene = new THREE.Scene();
   private overlayCamera!: THREE.OrthographicCamera;
   private nextId = 1;
@@ -1180,18 +1182,24 @@ export class ThreeJSRenderer implements IRenderer {
   }
 
   /**
-   * Повернуть все билборды к камере ТОЛЬКО вокруг вертикали.
+   * Развернуть все билборды параллельно плоскости экрана.
    *
-   * THREE.Sprite разворачивает плоскость целиком к камере: при наклоне 58°
-   * спрайт заваливается назад и персонажи «лежат». Здесь плоскость остаётся
-   * вертикальной (как штык), поворот считается по горизонтальному направлению
-   * на камеру.
+   * THREE.Sprite разворачивает плоскость целиком к камере по её центру: при
+   * наклоне 58° спрайт заваливается назад и персонажи «лежат». Здесь плоскость
+   * остаётся вертикальной и разворачивается общим для всей сцены углом — по
+   * горизонтальному направлению взгляда камеры.
+   *
+   * Целиться в точку камеры от каждого спрайта нельзя: дальний край карточки
+   * уходит глубже и на наклонной камере проецируется выше, поэтому карточки у
+   * краёв экрана «подворачиваются» к центру. Общий yaw держит их ровно по экрану.
    */
   private updateBillboardFacing(): void {
-    const cam = this.camera.position;
-    for (const b of this.billboards) {
-      b.rotation.y = Math.atan2(cam.x - b.position.x, cam.z - b.position.z);
-    }
+    if (this.billboards.size === 0) return;
+    this.camera.getWorldDirection(this.cameraForward);
+    // Горизонтальная составляющая взгляда; при взгляде строго вниз её нет.
+    const len = Math.hypot(this.cameraForward.x, this.cameraForward.z);
+    const yaw = len > 1e-4 ? Math.atan2(-this.cameraForward.x, -this.cameraForward.z) : 0;
+    for (const b of this.billboards) b.rotation.y = yaw;
   }
 
   private resolveTexture(source: TextureHandle | string): THREE.Texture {
@@ -1416,7 +1424,8 @@ interface BillboardCenter {
  * Заменяет THREE.Sprite для всего мира: спрайт всегда разворачивается к
  * камере всей плоскостью, поэтому при камере с наклоном 58° картинка
  * заваливается назад и персонажи выглядят лежащими. Плоскость же остаётся
- * строго вертикальной и «смотрит» на камеру по горизонтали — как щит на шесте.
+ * строго вертикальной и разворачивается общим углом сцены (параллельно экрану) —
+ * как щит на шесте.
  *
  * `center` повторяет семантику Sprite.center: (0,0) — низ-лево изображения,
  * (0.5,0) — низ-центр (точка привязки на земле).
