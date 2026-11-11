@@ -265,9 +265,12 @@ function carveForConnectivity(w: WorldData, walls: Uint8Array, start: number): v
               ftarget = r;
             }
             const flanks = stairFlanks(w, walls, region, fc, fdir, ftarget);
-            // На прямом участке кромки: с обеих сторон уступ продолжается, без
-            // поворота/угла террасы. Угловые стыки допускаем только когда без
-            // них регион не связать (второй проход).
+            // Лестницы не ставятся на воду и не ставятся возле угловых тайлов
+            // террасы (у которых 3+ соседа другого уровня).
+            if (flanks.nearCornerTile) continue;
+            if (w.tiles[c] === Tl.WATER || w.tiles[ni] === Tl.WATER) continue;
+            // На прямом участке кромки, без поворота/угла террасы. Угловые
+            // стыки — только если иначе регион не связать (второй проход).
             if (!allowCorner && flanks.corners > 0) continue;
             const sc = stairValue(flanks);
             if (!best || sc > best.score) best = { c, ni, bit, opp, dx, dy, nr, score: sc };
@@ -404,6 +407,8 @@ interface StairFlanks {
   twins: number;
   /** Сколько препятствий на самой лестнице и на подходе. */
   blocked: number;
+  /** Рядом есть угловой тайл террасы (у него 3+ соседа другого уровня). */
+  nearCornerTile: boolean;
 }
 
 /**
@@ -423,11 +428,12 @@ function stairFlanks(
   targetRegion: number,
 ): StairFlanks {
   const { W, height } = w;
-  const fl: StairFlanks = { walled: 0, open: 0, corners: 0, twins: 0, blocked: 0 };
+  const fl: StairFlanks = { walled: 0, open: 0, corners: 0, twins: 0, blocked: 0, nearCornerTile: false };
   if (!height) return fl;
   const [dx, dy, bit] = dir;
   const cx = c % W, cy = (c / W) | 0;
   const lvl = elevLevel(height[c]);
+  const highI = (cy + dy) * W + (cx + dx);
 
   for (const [px, py] of [[-dy, dx], [dy, -dx]] as const) {
     const fx = cx + px, fy = cy + py;
@@ -442,6 +448,32 @@ function stairFlanks(
     if (region[hi] === targetRegion && region[fi] === region[c]) fl.twins++;
   }
 
+  // Нельзя ставить лестницу возле углового тайла террасы: если у тайла
+  // террасы 3 (или 4) соседа другого уровня — это выступ/угол, лестница
+  // рядом с ним запрещена. Проверяем верхнюю клетку стыка и её соседей
+  // того же уровня вдоль кромки.
+  const isTerraceCorner = (i: number): boolean => {
+    const hlv = elevLevel(height[i]);
+    let same = 0;
+    for (const [ddx, ddy] of WALL_DIRS) {
+      const nx = (i % W) + ddx, ny = ((i / W) | 0) + ddy;
+      if (!inB(w, nx, ny)) continue;
+      const ni = ny * W + nx;
+      if (elevLevel(height[ni]) === hlv) same++;
+    }
+    return same <= 1; // 3+ из 4 направлений — не того же уровня
+  };
+  if (inB(w, cx + dx, cy + dy) && isTerraceCorner(highI)) fl.nearCornerTile = true;
+  // Соседи верхней клетки вдоль кромки (возможная вторая створка/фланги).
+  for (const [px, py] of [[-dy, dx], [dy, -dx]] as const) {
+    const hx = cx + dx + px, hy = cy + dy + py;
+    if (!inB(w, hx, hy)) continue;
+    const hi = hy * W + hx;
+    if (elevLevel(height[hi]) === elevLevel(height[highI]) && isTerraceCorner(hi)) {
+      fl.nearCornerTile = true;
+    }
+  }
+
   /* Препятствие на самой лестнице или на подходе делает её бесполезной:
      игрок поднимается и упирается в камень, дерево или забор. */
   for (let k = -1; k <= 2; k++) {
@@ -454,7 +486,8 @@ function stairFlanks(
 
 /** Численная оценка стыка: больше — лучше. */
 function stairValue(f: StairFlanks): number {
-  return (f.walled + f.open >= 2 ? 2000 : 0)
+  return (f.nearCornerTile ? -100000 : 0)
+    + (f.walled + f.open >= 2 ? 2000 : 0)
     + (f.walled + f.open) * 400
     - f.corners * 300
     + f.twins * 40
