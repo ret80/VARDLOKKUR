@@ -222,9 +222,14 @@ export class ThreeJSRenderer implements IRenderer {
   private fogMesh: THREE.Mesh | null = null;
   private fogVisible = false;
   private fogDirty = true;
+  
+  /** Ссылка на FogRenderer для уведомления о потере/восстановлении контекста */
+  private fogRendererInstance: import('../renderers/fog/FogRenderer').FogRenderer | null = null;
 
   private resizeObserver: ResizeObserver | null = null;
   private disposed = false;
+  private contextLost = false;
+  private pendingContextRestore = false;
 
   // ============================================================
   // Lifecycle
@@ -275,10 +280,19 @@ export class ThreeJSRenderer implements IRenderer {
 
     cv.addEventListener('webglcontextlost', (e) => {
       e.preventDefault();
-      logger.error('renderer', '3D: WebGL context lost');
+      logger.warn('renderer', '3D: WebGL context lost');
+      this.contextLost = true;
+      // Уведомляем FogRenderer о потере контекста
+      this.fogRendererInstance?.onContextLost();
     });
     cv.addEventListener('webglcontextrestored', () => {
       logger.info('renderer', '3D: WebGL context restored');
+      this.contextLost = false;
+      this.pendingContextRestore = true;
+      // Уведомляем FogRenderer о восстановлении контекста
+      this.fogRendererInstance?.onContextRestored();
+      // Пересоздаём текстуры и геометрию для нового контекста
+      this.rebuildAfterContextRestore();
     });
 
     this.camera = new THREE.PerspectiveCamera(CAM_FOV, 1, 0.5, 200);
@@ -324,6 +338,14 @@ export class ThreeJSRenderer implements IRenderer {
     logger.info('renderer', 'ThreeJSRenderer destroyed');
   }
 
+  /**
+   * Установить ссылку на FogRenderer для уведомления о потере/восстановлении контекста.
+   * Вызывается из ecs-game-loop после инициализации FogRenderer.
+   */
+  setFogRenderer(fogRenderer: import('../renderers/fog/FogRenderer').FogRenderer | null): void {
+    this.fogRendererInstance = fogRenderer;
+  }
+
   resize(width: number, height: number): void {
     // width/height — виртуальный низкобитный вьюпорт; для 3D важны только
     // пропорции и позиция камеры, реальный размер берём из контейнера.
@@ -334,12 +356,23 @@ export class ThreeJSRenderer implements IRenderer {
   }
 
   render(): void {
-    if (!this.renderer) return;
+    // При потере контекста рендер невозможен — пропускаем кадр
+    if (!this.renderer || this.contextLost) return;
+    
+    if (this.pendingContextRestore) {
+      this.pendingContextRestore = false;
+      // При восстановлении контекста пересоздаём заново все GPU-ресурсы
+      this.recreateRenderResources();
+    }
+    
     this.updateCamera();
     this.rebuildDirtyGraphics();
     this.updateBillboardFacing();
     // Последний проход кадра: предельная дальность — то, что нельзя показать.
     this.applyDrawDistance();
+    
+    // Проверяем контекст перед каждым вызовом рендера (на случай потери в процессе)
+    if (!this.renderer || this.contextLost) return;
 
     // Туман болота медленно дрейфует: слои — в разные стороны.
     if (this.swampFogTextures.length) {
@@ -1648,6 +1681,64 @@ export class ThreeJSRenderer implements IRenderer {
     const y = (g.posSet ? this.groundHeight(g.pos.x, g.pos.y) : 0) + groundPx / PX_PER_UNIT + g.elevation;
     if (g.sprite) g.sprite.position.set(x, y, z);
     if (g.xraySprite) g.xraySprite.position.set(x, y, z);
+  }
+
+  /**
+   * Пересоздать GPU-ресурсы после восстановления WebGL-контекста.
+   * Вызывается из обработчика webglcontextrestored.
+   */
+  private recreateRenderResources(): void {
+    // Пересоздаём туманный оверлей
+    this.buildFogOverlay();
+    this.fogDirty = true;
+
+    // Пересоздаём все CanvasTexture -> они привязаны к контексту
+    for (const g of this.graphics.values()) {
+      if (g.texture) {
+        g.texture.dispose();
+        g.texture = new THREE.CanvasTexture(g.canvas);
+        g.texture.colorSpace = THREE.SRGBColorSpace;
+        g.texture.magFilter = THREE.NearestFilter;
+        g.texture.minFilter = THREE.LinearMipmapLinearFilter;
+        g.texture.generateMipmaps = true;
+      }
+      // Пересоздаём спрайт с новым материалом
+      if (g.sprite) {
+        const oldMat = g.sprite.material;
+        const mat = new THREE.MeshBasicMaterial({
+          map: g.texture ?? new THREE.Texture(),
+          transparent: true,
+          alphaTest: 0.35,
+          depthWrite: g.alpha >= 0.98,
+          side: THREE.DoubleSide,
+        });
+        oldMat.dispose();
+        g.sprite.material = mat;
+        g.sprite.material.map = g.texture ?? new THREE.Texture();
+        g.sprite.material.needsUpdate = true;
+      }
+      // Пересоздаём xray спрайт если есть
+      if (g.xraySprite && g.texture) {
+        g.xraySprite.material.map = g.texture;
+        g.xraySprite.material.needsUpdate = true;
+      }
+    }
+
+    // Пересоздаём текстуры сущностей
+    for (const t of this.textures.values()) {
+      if (t.canvas && t.texture instanceof THREE.CanvasTexture) {
+        t.texture.dispose();
+        t.texture = new THREE.CanvasTexture(t.canvas);
+        t.texture.colorSpace = THREE.SRGBColorSpace;
+        t.texture.magFilter = THREE.NearestFilter;
+        t.texture.needsUpdate = true;
+      }
+    }
+
+    // Пересоздаём туман
+    this.rebuildFog();
+
+    logger.info('renderer', 'Render resources recreated after context restore');
   }
 
   /** Создать плоскость-силуэт для просвечивания сквозь геометрию. */

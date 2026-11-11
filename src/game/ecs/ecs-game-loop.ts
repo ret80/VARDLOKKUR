@@ -61,6 +61,7 @@ import { RenderPipeline } from '../engine/render-pipeline';
 import { TextureCacheManager } from '../renderers/core/TextureCacheManager';
 import { EntityLayer } from '../engine/entity-layer';
 import { FogRenderer } from '../renderers/fog/FogRenderer';
+import { ThreeJSRenderer } from '../renderer/ThreeJSRenderer';
 import { OverlayLayer } from '../engine/overlay-layer';
 import { ParticleLayer } from '../engine/particle-layer';
 import {
@@ -330,6 +331,12 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   let fogRenderer: FogRenderer | null = null;
   fogRenderer = new FogRenderer();
   fogRenderer.init(renderer);
+  
+  // Связываем FogRenderer с ThreeJSRenderer для обработки потери контекста
+  const threeRenderer = renderer instanceof ThreeJSRenderer ? renderer : null;
+  if (threeRenderer) {
+    threeRenderer.setFogRenderer(fogRenderer);
+  }
 
   // Локальные копии для updateConfig
   let config_map = map;

@@ -255,6 +255,8 @@ export class FogRenderer {
   private _shrineCount = 0;
   private _viewW = 640;
   private _viewH = 480;
+  /** Флаг: WebGL-контекст потерян, туман нужно отключить */
+  private _contextLost = false;
 
   // Константы
   private readonly SHRINE_HOLE_RADIUS_UV = 0.05; // ~32 пикселя для экрана 640
@@ -391,6 +393,12 @@ export class FogRenderer {
    * @param viewH — высота viewport
    */
   update(time: number, playerPos: { x: number; y: number }, camPos: { x: number; y: number }, viewW: number, viewH: number): void {
+    // При потере контекста шейдер становится невалидным — пропускаем обновление
+    if (this._contextLost) {
+      this._enabled = false;
+      this._syncVisibility();
+      return;
+    }
     if (!this._shader || !this._enabled) return;
 
     const r = this._renderer;
@@ -449,6 +457,62 @@ export class FogRenderer {
     }
     r.setShaderUniform(this._shader, 'uShrineCount', this._shrineCount);
     r.setShaderUniform(this._shader, 'uShrineTransitionUV', transitionUV);
+  }
+
+  /**
+   * Уведомить о потере/восстановлении WebGL-контекста.
+   * Вызывается из ThreeJSRenderer при webglcontextlost/restored.
+   */
+  onContextLost(): void {
+    this._contextLost = true;
+    this._enabled = false;
+    this._syncVisibility();
+  }
+
+  onContextRestored(): void {
+    this._contextLost = false;
+    // Пытаемся пересоздать шейдер при восстановлении контекста
+    if (!this._shader) {
+      this.tryInitShader();
+    }
+  }
+
+  /** Попытка пересоздать шейдер (вызывается при восстановлении контекста) */
+  private tryInitShader(): void {
+    if (!this._renderer) return;
+    const renderer = this._renderer;
+    
+    const shaderUniforms: Record<string, unknown> = {
+      uTime: 0,
+      uPlayerPosX: 0.5,
+      uPlayerPosY: 0.5,
+      uPlayerWorldX: 0,
+      uPlayerWorldY: 0,
+      uFogRadiusPx: 300,
+      uCamOffsetX: 0,
+      uCamOffsetY: 0,
+      uFogAlpha: 0,
+      uFogRadius: 1.0,
+      uShrineCount: 0,
+      uShrineHoleRadius: this.SHRINE_HOLE_RADIUS_UV,
+      uShrineTransitionUV: 0.02,
+    };
+    for (let i = 0; i < this.SHRINE_COUNT_MAX; i++) {
+      shaderUniforms[`uShrineUV${i}`] = [0, 0];
+      shaderUniforms[`uShrineWorldX${i}`] = 0;
+      shaderUniforms[`uShrineWorldY${i}`] = 0;
+    }
+
+    try {
+      this._shader = renderer.createShader(FOG_VERTEX, FOG_FRAGMENT, shaderUniforms);
+      if (this._placeholder) {
+        renderer.applyFilterToQuad(this._placeholder, this._shader);
+      }
+      this._enabled = true;
+      this._syncVisibility();
+    } catch (err) {
+      console.warn('[fog] shader reinit failed after context restore:', err);
+    }
   }
 
   /** Уничтожить FogRenderer и освободить ресурсы */
