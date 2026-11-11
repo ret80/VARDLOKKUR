@@ -420,9 +420,17 @@ export class Engine {
     this.physicsBackend = await preparePhysics();
 
     // Игровой цикл
+    const safeTick = (dt: number) => {
+      try {
+        this.tick(dt);
+      } catch (err) {
+        logger.error('engine', `Ошибка кадра: ${String(err)}`);
+      }
+    };
+
     if (app) {
       app.ticker.maxFPS = 60;
-      app.ticker.add((tk) => this.tick(Math.min(tk.deltaMS / 1000, 0.05)));
+      app.ticker.add((tk) => safeTick(Math.min(tk.deltaMS / 1000, 0.05)));
       this.started = true;
     } else {
       // 3D: свой RAF-цикл (Pixi ticker недоступен)
@@ -432,7 +440,7 @@ export class Engine {
         if (!this.started) return;
         const dt = Math.min((now - last) / 1000, 0.05);
         last = now;
-        this.tick(dt);
+        safeTick(dt);
         this.rafId = requestAnimationFrame(loop);
       };
       this.rafId = requestAnimationFrame(loop);
