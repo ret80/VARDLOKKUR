@@ -389,7 +389,6 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
 
   const near = opts.near ?? { x: W / 2, y: H / 2 };
   const dNear = (x: number, y: number): number => Math.hypot(x - near.x, y - near.y);
-  const rnd = pondRnd((W * 7919 + H * 104729 + Math.round(near.x) * 31 + Math.round(near.y)) >>> 0);
 
   // Море: вода/берег, достижимые с края карты (прошлые озёра не в счёт).
   const sea = new Uint8Array(N);
@@ -592,6 +591,9 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
         const dl = lvAt(nx, ny) - lvAt(cx2, cy2);
         if (dl > 0) cost += 30 * dl;       // подъём невыгоден
         else if (dl === 0) cost += 2;      // ровный участок почти как спуск
+        else cost += 24;                   // сброс: платим за сам перепад, а не
+                                           // за его высоту — ручей падает одним
+                                           // водопадом, а не сыпется ступеньками
         const nd = dist[cur] + cost;
         if (dist[ni] !== -1 && dist[ni] <= nd) continue;
         dist[ni] = nd;
@@ -603,8 +605,7 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
     // Устье — достижимая клетка у самого берега, и обязательно НИЗКО: иначе
     // русло заканчивалось на кромке утёса над морем, спуск не рисовался и
     // водопадов не было вовсе (ручей «висел» на плато).
-    let goal = -1, goalCost = Infinity;
-    let fallbackGoal = -1, fallbackCost = Infinity;
+    let goal = -1, goalCost = Infinity, goalLv = 99;
     for (let i = 0; i < N; i++) {
       if (dist[i] < 0) continue;
       const gx = i % W, gy = (i / W) | 0;
@@ -616,14 +617,15 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
         if (tiles[ni] === Tl.SHORE || sea[ni]) { nearShore = true; break; }
       }
       if (!nearShore) continue;
-      if (lvAt(gx, gy) <= 1) {
-        if (dist[i] < goalCost) { goalCost = dist[i]; goal = i; }
-      } else if (dist[i] < fallbackCost) {
-        fallbackCost = dist[i];
-        fallbackGoal = i;
+      // Низший уровень важнее длины: устье должно стоять на уровне моря,
+      // иначе ручей упирался в кромку утёса и не падал в воду.
+      const gl = lvAt(gx, gy);
+      if (gl < goalLv || (gl === goalLv && dist[i] < goalCost)) {
+        goalLv = gl;
+        goalCost = dist[i];
+        goal = i;
       }
     }
-    if (goal < 0) goal = fallbackGoal;
     if (goal < 0) { pondSpot = pondSpot ?? pond; continue; }
 
     const path: number[] = [];

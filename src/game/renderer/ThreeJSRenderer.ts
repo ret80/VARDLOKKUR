@@ -35,6 +35,7 @@ import {
   type TerrainMesh,
 } from '../world3d/terrain-mesh';
 import { createCliffFaceCanvas } from '../world3d/cliff-texture';
+import { createWaterfallCanvas } from '../world3d/waterfall-texture';
 import {
   buildFence3D,
   buildHouses3D,
@@ -457,10 +458,20 @@ export class ThreeJSRenderer implements IRenderer {
       group.add(m);
     }
 
-    // Водопады ручья на перепадах «вода над водой».
+    // Водопады ручья: своя текстура падающей воды (струя + пена у основания).
+    // Раньше сюда шёл тайл воды из атласа земли, и стена выходила серой с
+    // белыми полосами — спуск читался как «вода течёт по уступам».
     if (mesh.waterfalls.indices.length > 0) {
       const geo = buildBufferGeometry(mesh.waterfalls);
-      const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+      const fallTex = new THREE.CanvasTexture(createWaterfallCanvas());
+      fallTex.colorSpace = THREE.SRGBColorSpace;
+      fallTex.magFilter = THREE.NearestFilter;
+      fallTex.minFilter = THREE.LinearMipmapLinearFilter;
+      fallTex.generateMipmaps = true;
+      fallTex.wrapS = THREE.RepeatWrapping;
+      fallTex.wrapT = THREE.RepeatWrapping;
+      fallTex.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
+      const mat = new THREE.MeshBasicMaterial({ map: fallTex, side: THREE.DoubleSide });
       const m = new THREE.Mesh(geo, mat);
       m.frustumCulled = false;
       m.renderOrder = -8.4;

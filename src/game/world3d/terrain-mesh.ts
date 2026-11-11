@@ -14,6 +14,7 @@
  */
 
 import { T, Tl, Biome, isSolidTileId, elevLevel, ELEV_LEVELS } from '../generators/types';
+import { FALL_FOAM_V } from './waterfall-texture';
 
 /** Пикселей на мировую единицу (совпадает с T). */
 export const PX_PER_UNIT = T;
@@ -328,7 +329,7 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
           const nt = inBounds ? (map.tiles[ny * W + nx] ?? 0) : -1;
           // Оба тайла — вода: грань между ними читается как водопад ручья.
           if (isWaterTile(t) && isWaterTile(nt)) {
-            addWaterfall(waterfalls, x, y, side.bit, yTop, yHigh, u, v);
+            addWaterfall(waterfalls, x, y, side.bit, yTop, yHigh);
           } else {
             cliffs.setTint(...cliffTintAt(inBounds ? nx : x, inBounds ? ny : y, map));
             addCliff(cliffs, x, y, side.bit, yTop, yHigh);
@@ -373,10 +374,13 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
   };
 }
 
-/** Сколько уровней террас между нижней и верхней кромками грани. */
-function levelsBetween(yLow: number, yHigh: number): number {
-  return Math.max(1, Math.round((yHigh - yLow) / TERRACE_HEIGHT));
-}
+/**
+ * Высота полосы пены у основания водопада (мировые единицы).
+ *
+ * Пена фиксированной высоты, а не доля от перепада: иначе на сбросе в три
+ * террасы брызги разъезжались в белое полотно.
+ */
+const FALL_FOAM_H = 0.2;
 
 /** Вода: море и озёра/ручьи (POOL) — на них нет травяного козырька. */
 function isWaterTile(t: number): boolean {
@@ -391,14 +395,14 @@ function isWaterTile(t: number): boolean {
  * биом задаёт только тон: снег светлее и холоднее, топь — самая тёмная.
  */
 const CLIFF_TINT: Record<number, readonly [number, number, number]> = {
-  [Biome.SNOW]: [0.84, 0.89, 0.97],
-  [Biome.FOREST]: [0.62, 0.68, 0.74],
-  [Biome.SWAMP]: [0.52, 0.58, 0.56],
-  [Biome.MEADOW]: [0.70, 0.75, 0.80],
-  [Biome.RUINS]: [0.66, 0.70, 0.76],
-  [Biome.RIDGE]: [0.77, 0.82, 0.89],
+  [Biome.SNOW]: [0.86, 0.84, 0.82],
+  [Biome.FOREST]: [0.56, 0.40, 0.27],
+  [Biome.SWAMP]: [0.42, 0.33, 0.25],
+  [Biome.MEADOW]: [0.68, 0.51, 0.34],
+  [Biome.RUINS]: [0.62, 0.53, 0.44],
+  [Biome.RIDGE]: [0.66, 0.59, 0.50],
 };
-const CLIFF_TINT_DEFAULT: readonly [number, number, number] = [0.70, 0.74, 0.80];
+const CLIFF_TINT_DEFAULT: readonly [number, number, number] = [0.66, 0.50, 0.34];
 
 /** Тон грани по биому клетки (без данных о биомах — нейтральный камень). */
 function cliffTintAt(x: number, y: number, map: TerrainMap): readonly [number, number, number] {
@@ -434,7 +438,7 @@ function addCliff(
         x1 / T, yLow, y0 / T,
         x1 / T, yHigh, y0 / T,
         x0 / T, yHigh, y0 / T,
-        x, vA, x + 1, vA, x + 1, vB, x, vB,
+        uA, vA, uB, vA, uB, vB, uA, vB,
       );
       break;
     case WB_S:
@@ -443,7 +447,7 @@ function addCliff(
         x0 / T, yLow, y1 / T,
         x0 / T, yHigh, y1 / T,
         x1 / T, yHigh, y1 / T,
-        x + 1, vA, x, vA, x, vB, x + 1, vB,
+        uB, vA, uA, vA, uA, vB, uB, vB,
       );
       break;
     case WB_W:
@@ -452,7 +456,7 @@ function addCliff(
         x0 / T, yLow, y0 / T,
         x0 / T, yHigh, y0 / T,
         x0 / T, yHigh, y1 / T,
-        uA + 1, vA, uA, vA, uA, vB, uA + 1, vB,
+        uB, vA, uA, vA, uA, vB, uB, vB,
       );
       break;
     default: // WB_E
@@ -461,7 +465,7 @@ function addCliff(
         x1 / T, yLow, y1 / T,
         x1 / T, yHigh, y1 / T,
         x1 / T, yHigh, y0 / T,
-        uA, vA, uA + 1, vA, uA + 1, vB, uA, vB,
+        uA, vA, uB, vA, uB, vB, uA, vB,
       );
       break;
   }
@@ -536,60 +540,54 @@ function addLip(
 }
 
 /**
- * Водная грань на перепаде «вода над водой» — водопад ручья.
+ * Водопад на перепаде «вода над водой»: падающая струя и пена у основания.
  *
- * Вместо каменной грани ставится N поясов воды: каждый берёт весь тайл
- * воды из текстуры земли. Так ручей, спускающийся по террасам, читается
- * единым потоком, а не обрывом суши.
+ * Раньше здесь ставились пояса воды из атласа земли — по одному на каждый
+ * уровень перепада. Ручей, спускавшийся ступеньками, превращался в широкую
+ * стену с белыми полосами, то есть читался как «вода течёт по уступам».
+ *
+ * Теперь это одна вертикальная струя во всю высоту сброса (собственная
+ * текстура водопада, см. waterfall-texture.ts) и полоса пены у основания —
+ * как на референсе.
  */
 function addWaterfall(
   b: MeshBuilder,
   x: number, y: number,
   bit: number,
   yLow: number, yHigh: number,
-  u: (px: number) => number,
-  v: (py: number) => number,
 ): void {
   const x0 = x * T, x1 = x * T + T, y0 = y * T, y1 = y * T + T;
-  const reps = levelsBetween(yLow, yHigh);
-  const stepH = (yHigh - yLow) / reps;
-  const uA = u(x0), uB = u(x1);
-  const vT = v(y0), vB = v(y1);
 
-  for (let i = 0; i < reps; i++) {
-    const ya = yLow + i * stepH;
-    const yb = ya + stepH;
-    switch (bit) {
-      case WB_N:
-        b.quad(
-          x0 / T, ya, y0 / T, x1 / T, ya, y0 / T,
-          x1 / T, yb, y0 / T, x0 / T, yb, y0 / T,
-          uA, vB, uB, vB, uB, vT, uA, vT,
-        );
-        break;
-      case WB_S:
-        b.quad(
-          x1 / T, ya, y1 / T, x0 / T, ya, y1 / T,
-          x0 / T, yb, y1 / T, x1 / T, yb, y1 / T,
-          uB, vB, uA, vB, uA, vT, uB, vT,
-        );
-        break;
-      case WB_W:
-        b.quad(
-          x0 / T, ya, y1 / T, x0 / T, ya, y0 / T,
-          x0 / T, yb, y0 / T, x0 / T, yb, y1 / T,
-          uA, vB, uB, vB, uB, vT, uA, vT,
-        );
-        break;
-      default: // WB_E
-        b.quad(
-          x1 / T, ya, y0 / T, x1 / T, ya, y1 / T,
-          x1 / T, yb, y1 / T, x1 / T, yb, y0 / T,
-          uA, vB, uB, vB, uB, vT, uA, vT,
-        );
-        break;
-    }
+  /** Ширина грани: две точки на плоскости стыка, в пикселях карты. */
+  let ax: number, az: number, bx: number, bz: number;
+  switch (bit) {
+    case WB_N: ax = x0; az = y0; bx = x1; bz = y0; break;
+    case WB_S: ax = x1; az = y1; bx = x0; bz = y1; break;
+    case WB_W: ax = x0; az = y1; bx = x0; bz = y0; break;
+    default: ax = x1; az = y0; bx = x1; bz = y1; break;   // WB_E
   }
+
+  /** Квад грани: yA..yB по высоте, UV — u 0..1 по ширине, va..vb по v. */
+  const face = (yA: number, yB: number, va: number, vb: number): void => {
+    b.quad(
+      ax / T, yA, az / T,
+      bx / T, yA, bz / T,
+      bx / T, yB, bz / T,
+      ax / T, yB, az / T,
+      0, va, 1, va, 1, vb, 0, vb,
+    );
+  };
+
+  // Пена — фиксированной высоты у основания; струя занимает всё остальное.
+  const foamTop = Math.min(yHigh, yLow + FALL_FOAM_H);
+  const bodyH = yHigh - foamTop;
+  if (bodyH > 0.001) {
+    // Чем выше сброс, тем длиннее струи: v тянется из тела текстуры (0.25..1),
+    // поэтому на высоких падениях вода не повторяет пену по всей стене.
+    const vTop = Math.min(1, FALL_FOAM_V + 0.75 * bodyH);
+    face(foamTop, yHigh, FALL_FOAM_V, vTop);
+  }
+  if (foamTop > yLow) face(yLow, foamTop, 0, FALL_FOAM_V);
 }
 
 /**
