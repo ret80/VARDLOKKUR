@@ -217,6 +217,13 @@ export interface IRenderer {
   screenToWorld(screenPos: Vec2): Vec2;
   /** Проверить, виден ли объект в текущем viewport */
   isVisibleInViewport(worldPos: Vec2, radius: number): boolean;
+  /**
+   * Прямоугольник земли (мир, px), который реально видит 3D-камера: AABB
+   * трапеции видимой земли с запасом за края экрана. Наклонная перспектива
+   * видит шире плоского viewport, поэтому в 3D-режиме отсечение идёт по нему.
+   * null/undefined — рендерер 2D (отсекаем по viewport).
+   */
+  getGroundCullRect?(): { x: number; y: number; w: number; h: number } | null;
 
   // === Debug ===
   /** Статистика рендеринга */

@@ -36,6 +36,16 @@ let _dungeonWallGraphics: GraphicsHandle | null = null;
  */
 let _villageGraphics: GraphicsHandle[] = [];
 
+/**
+ * Handles стен/домов, попавших в очередь в прошлом кадре и в этом.
+ *
+ * Тайлы вне области отсечения вообще не попадают в очередь, поэтому в
+ * RenderQueue.flush они не скрываются — без явного скрытия они оставались
+ * висеть на экране там, где камера их уже не видит.
+ */
+let _enqueuedPrev = new Set<GraphicsHandle>();
+let _enqueuedNow = new Set<GraphicsHandle>();
+
 /** Handle батча земли — нужен 3D-рендереру для текстуры рельефа. */
 export function getGroundGraphicsHandle(): GraphicsHandle | null {
   return _groundGraphics;
@@ -144,6 +154,7 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
             visible: true,
             handle: tile.handle as GraphicsHandle,
           });
+          _enqueuedNow.add(tile.handle as GraphicsHandle);
         }
       }
     }
@@ -172,10 +183,23 @@ export function mapRenderSystem(world: World, opts: MapRenderSystemOptions = {})
           visible: true,
           handle: tile.handle as GraphicsHandle,
         });
+        _enqueuedNow.add(tile.handle as GraphicsHandle);
       }
     }
     // Конец if (viewport) для walls/houses
   }
+
+  // Скрыть то, что было в очереди в прошлом кадре, а сейчас выпало из
+  // области отсечения: иначе такие тайлы продолжали бы рисоваться.
+  if (opts.renderer) {
+    for (const h of _enqueuedPrev) {
+      if (!_enqueuedNow.has(h)) opts.renderer.setGraphicsVisible(h, false);
+    }
+  }
+  const swap = _enqueuedPrev;
+  _enqueuedPrev = _enqueuedNow;
+  _enqueuedNow = swap;
+  _enqueuedNow.clear();
 
   // === 4. Скрываем legacy-спрайты карты ===
   hideLegacyLayerSprites(opts.renderer);
@@ -416,5 +440,7 @@ export function destroyAllMapTileGraphics(
     }
   }
   MapTiles.clear();
+  _enqueuedPrev.clear();
+  _enqueuedNow.clear();
   _legacyHiddenOnce = false;
 }

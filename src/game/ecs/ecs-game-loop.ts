@@ -292,9 +292,29 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
   // Создаём пайплайн и добавляем слои
   const pipeline = new RenderPipeline();
   pipeline.queue = renderQueue; // task_14: подключаем очередь к пайплайну
+  /**
+   * Область отсечения текущего кадра (мир, px).
+   *
+   * В 3D плоский viewport не описывает видимую землю: наклонная перспектива
+   * видит трапецию шире экранного прямоугольника, и деревья с домами
+   * появлялись уже на глазах. 3D-рендерер отдаёт AABB земли под пирамидой
+   * камеры с запасом и предельной дальностью — в 2D остаётся viewport.
+   */
+  const cullViewport = (fallback?: Viewport): Viewport => {
+    if (isRendererInitialized()) {
+      try {
+        const rect = getRenderer().getGroundCullRect?.();
+        if (rect) return { camX: rect.x, camY: rect.y, viewW: rect.w, viewH: rect.h };
+      } catch {
+        // рендерер не готов — отсекаем по экранному viewport
+      }
+    }
+    return fallback ?? { camX: cam.x, camY: cam.y, viewW, viewH };
+  };
+
   // Viewport culling: RenderQueue.flush получает актуальные параметры камеры
   // (cam.x/cam.y обновляются CameraController'ом в каждом кадре)
-  pipeline.viewportProvider = () => ({ camX: cam.x, camY: cam.y, viewW, viewH });
+  pipeline.viewportProvider = cullViewport;
   pipeline.addLayer(entityLayer);
   pipeline.addLayer(particleLayer);
   pipeline.addLayer(overlayLayer);
@@ -949,9 +969,7 @@ export function createEcsGameLoop(config: EcsGameLoopConfig) {
     // RenderQueue; при уничтожении сущности MapState — выгрузка и удаление
     // Graphics через IRenderer. Динамические объекты регистрирует
     // renderSystem (EntityLayer ниже) — очереди они не конфликтуют.
-    const renderViewport: Viewport | undefined = configViewportProvider
-      ? configViewportProvider()
-      : { camX: cam.x, camY: cam.y, viewW, viewH };
+    const renderViewport: Viewport | undefined = cullViewport(configViewportProvider?.());
     mapRenderSystem(world, {
       renderer: renderer ?? undefined,
       viewport: renderViewport,

@@ -66,6 +66,25 @@ const CAM_FOV = 38;
 const CAM_BACK = CAM_DISTANCE * Math.cos((CAM_PITCH_DEG * Math.PI) / 180);
 const CAM_HEIGHT = CAM_DISTANCE * Math.sin((CAM_PITCH_DEG * Math.PI) / 180);
 
+/**
+ * Запас отсечения за краем экрана (мировые единицы).
+ *
+ * Объект должен появляться раньше, чем покажется его край: плоский viewport
+ * срабатывал уже в кадре, и деревья с домами «выстреливали» на кромке.
+ */
+const CULL_MARGIN_UNITS = 3;
+/**
+ * Предельная дальность отрисовки от цели камеры (мировые единицы).
+ * Дальше этого билборды не рисуются вовсе — даже если луч угла экрана
+ * дотягивается до их клетки (далёкое уходит в туман всё равно).
+ */
+const MAX_DRAW_UNITS = 46;
+
+/** Углы экрана в NDC — лучи для расчёта видимой площади земли. */
+const CULL_CORNERS: ReadonlyArray<readonly [number, number]> = [
+  [-1, -1], [1, -1], [1, 1], [-1, 1],
+];
+
 // ============================================================
 // Внутренние типы
 // ============================================================
@@ -160,6 +179,14 @@ export class ThreeJSRenderer implements IRenderer {
   private camera!: THREE.PerspectiveCamera;
   /** Временный вектор направления взгляда (без аллокаций в кадре). */
   private readonly cameraForward = new THREE.Vector3();
+  /** Прямоугольник земли под пирамидой камеры (мир, px) с запасом. */
+  private cullRectPx: { x: number; y: number; w: number; h: number } | null = null;
+  /** Луч угла экрана — для расчёта области отсечения (без аллокаций в кадре). */
+  private readonly cullRaycaster = new THREE.Raycaster();
+  private readonly cullNdc = new THREE.Vector2();
+  private readonly cullHit = new THREE.Vector3();
+  /** Плоскость земли камеры для расчёта области отсечения (переиспользуется). */
+  private readonly cullPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private overlayScene = new THREE.Scene();
   private overlayCamera!: THREE.OrthographicCamera;
   private nextId = 1;
@@ -288,6 +315,8 @@ export class ThreeJSRenderer implements IRenderer {
     this.updateCamera();
     this.rebuildDirtyGraphics();
     this.updateBillboardFacing();
+    // Последний проход кадра: предельная дальность — то, что нельзя показать.
+    this.applyDrawDistance();
 
     this.renderer.autoClear = true;
     this.renderer.render(this.scene, this.camera);
@@ -1175,11 +1204,103 @@ export class ThreeJSRenderer implements IRenderer {
   }
 
   isVisibleInViewport(worldPos: Vec2, radius: number): boolean {
+    // В 3D видимая площадь шире плоского viewport — берём землю под пирамидой.
+    const rect = this.cullRectPx;
+    if (rect) {
+      return (
+        worldPos.x + radius >= rect.x &&
+        worldPos.x - radius <= rect.x + rect.w &&
+        worldPos.y + radius >= rect.y &&
+        worldPos.y - radius <= rect.y + rect.h
+      );
+    }
     const d = Math.hypot(
       worldPos.x - (this.cameraPos.x + this.viewW / 2),
       worldPos.y - (this.cameraPos.y + this.viewH / 2),
     );
     return d < Math.max(this.viewW, this.viewH) * 0.9 + radius;
+  }
+
+  /**
+   * Область земли, которую реально видит камера (мир, px), с запасом.
+   *
+   * Плоский viewport описывает экран, а наклонная перспектива видит по земле
+   * трапецию: её дальний край уходит на 30–40 юнитов, а передний — ближе
+   * нижней кромки экрана. Отсечение по viewport поэтому срабатывало уже
+   * в кадре. Здесь все четыре угла экрана проецируются на плоскость земли,
+   * AABB трапеции расширяется на CULL_MARGIN_UNITS и ограничивается
+   * MAX_DRAW_UNITS вокруг цели камеры.
+   */
+  private updateCullRect(): void {
+    if (!this.camera) return;
+    this.cullPlane.constant = -this.cameraGroundY();
+
+    let minX = Infinity, minZ = Infinity, maxX = -Infinity, maxZ = -Infinity;
+    let hitAll = true;
+    for (const [nx, ny] of CULL_CORNERS) {
+      this.cullNdc.set(nx, ny);
+      this.cullRaycaster.setFromCamera(this.cullNdc, this.camera);
+      if (!this.cullRaycaster.ray.intersectPlane(this.cullPlane, this.cullHit)) {
+        hitAll = false;
+        break;
+      }
+      if (this.cullHit.x < minX) minX = this.cullHit.x;
+      if (this.cullHit.x > maxX) maxX = this.cullHit.x;
+      if (this.cullHit.z < minZ) minZ = this.cullHit.z;
+      if (this.cullHit.z > maxZ) maxZ = this.cullHit.z;
+    }
+
+    // Цель камеры видна всегда: к ней же привязана предельная дальность.
+    const tx = (this.cameraPos.x + this.viewW / 2) / PX_PER_UNIT;
+    const tz = (this.cameraPos.y + this.viewH / 2) / PX_PER_UNIT;
+    if (!hitAll) {
+      // Луч ушёл за горизонт — берём предельный радиус вокруг цели.
+      minX = Math.min(tx, tx - CULL_MARGIN_UNITS);
+      maxX = tx + CULL_MARGIN_UNITS;
+      minZ = Math.min(tz, tz - CULL_MARGIN_UNITS);
+      maxZ = tz + CULL_MARGIN_UNITS;
+    }
+    minX = Math.min(minX, tx);
+    maxX = Math.max(maxX, tx);
+    minZ = Math.min(minZ, tz);
+    maxZ = Math.max(maxZ, tz);
+
+    // Предельная дальность: дальше не рисуем вовсе (см. applyDrawDistance).
+    minX = Math.max(minX, tx - MAX_DRAW_UNITS);
+    maxX = Math.min(maxX, tx + MAX_DRAW_UNITS);
+    minZ = Math.max(minZ, tz - MAX_DRAW_UNITS);
+    maxZ = Math.min(maxZ, tz + MAX_DRAW_UNITS);
+
+    this.cullRectPx = {
+      x: (minX - CULL_MARGIN_UNITS) * PX_PER_UNIT,
+      y: (minZ - CULL_MARGIN_UNITS) * PX_PER_UNIT,
+      w: (maxX - minX + CULL_MARGIN_UNITS * 2) * PX_PER_UNIT,
+      h: (maxZ - minZ + CULL_MARGIN_UNITS * 2) * PX_PER_UNIT,
+    };
+  }
+
+  /** Область земли под пирамидой камеры (мир, px) — для отсечения систем. */
+  getGroundCullRect(): { x: number; y: number; w: number; h: number } | null {
+    return this.cullRectPx ? { ...this.cullRectPx } : null;
+  }
+
+  /**
+   * Предельная дальность: билборды дальше MAX_DRAW_UNITS от цели камеры
+   * не рисуются вовсе. Считается после сборки графики — видимость на кадр
+   * решается здесь, чтобы далёкие объекты не оставались в сцене.
+   */
+  private applyDrawDistance(): void {
+    const tx = (this.cameraPos.x + this.viewW / 2) / PX_PER_UNIT;
+    const tz = (this.cameraPos.y + this.viewH / 2) / PX_PER_UNIT;
+    const maxSq = MAX_DRAW_UNITS * MAX_DRAW_UNITS;
+    for (const g of this.graphics.values()) {
+      if (!g.sprite || g.skip3D || g.overlay) continue;
+      const dx = g.sprite.position.x - tx;
+      const dz = g.sprite.position.z - tz;
+      const near = dx * dx + dz * dz <= maxSq;
+      g.sprite.visible = g.visible && near && g.cmds.length > 0;
+      if (!near && g.xraySprite) g.xraySprite.visible = false;
+    }
   }
 
   getStats(): { sprites: number; textures: number; drawCalls: number } {
@@ -1243,6 +1364,7 @@ export class ThreeJSRenderer implements IRenderer {
     this.camera.position.set(cx, groundY + CAM_HEIGHT, cz + CAM_BACK);
     this.camera.lookAt(cx, groundY + CAM_LOOK_Y, cz);
     this.camera.updateMatrixWorld();
+    this.updateCullRect();
   }
 
   private cameraGroundY(): number {
