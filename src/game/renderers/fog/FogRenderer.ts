@@ -302,20 +302,30 @@ export class FogRenderer {
       shaderUniforms[`uShrineWorldY${i}`] = 0;
     }
 
-    this._shader = renderer.createShader(FOG_VERTEX, FOG_FRAGMENT, shaderUniforms);
+    try {
+      this._shader = renderer.createShader(FOG_VERTEX, FOG_FRAGMENT, shaderUniforms);
 
-    // Создаём fullscreen quad для screen-space fog filter
-    this._placeholder = renderer.createFullscreenQuad();
-    renderer.applyFilterToQuad(this._placeholder, this._shader);
+      // Создаём fullscreen quad для screen-space fog filter
+      this._placeholder = renderer.createFullscreenQuad();
+      renderer.applyFilterToQuad(this._placeholder, this._shader);
 
-    // Создаём placeholder layer для совместимости с setEnabled
-    this._fogLayer = renderer.createLayer('fog', 65);
+      // Создаём placeholder layer для совместимости с setEnabled
+      this._fogLayer = renderer.createLayer('fog', 65);
 
-    this._enabled = true;
-    // На старте альфа тумана равна 0 — quad должен быть скрыт сразу,
-    // иначе filter отрисуется поверх мира до первого update().
-    this._quadVisible = true;
-    this._syncVisibility();
+      this._enabled = true;
+      // На старте альфа тумана равна 0 — quad должен быть скрыт сразу,
+      // иначе filter отрисуется поверх мира до первого update().
+      this._quadVisible = true;
+      this._syncVisibility();
+    } catch (err) {
+      // Без рабочего WebGL/шейдеров туман недоступен — не валим запуск игры.
+      this._shader = 0 as ShaderHandle;
+      this._placeholder = 0 as GraphicsHandle;
+      this._fogLayer = 0 as LayerHandle;
+      this._enabled = false;
+      this._quadVisible = false;
+      console.warn('[fog] shader init failed, fog disabled:', err);
+    }
   }
 
   /** Получить рендерер */
@@ -338,7 +348,7 @@ export class FogRenderer {
    * с еле заметной пеленой.
    */
   private _syncVisibility(): void {
-    if (!this._placeholder) return;
+    if (!this._placeholder || !this._shader) return;
     const visible = this._enabled && this._fogAlpha > 0.004;
     if (visible === this._quadVisible) return;
     this._quadVisible = visible;
@@ -444,11 +454,11 @@ export class FogRenderer {
   /** Уничтожить FogRenderer и освободить ресурсы */
   destroy(): void {
     if (this._placeholder) {
-      this._renderer.destroyGraphics(this._placeholder);
+      try { this._renderer.destroyGraphics(this._placeholder); } catch {}
       this._placeholder = null;
     }
     if (this._shader) {
-      this._renderer.destroyShader(this._shader);
+      try { this._renderer.destroyShader(this._shader); } catch {}
       this._shader = null;
     }
     if (this._fogLayer) {
