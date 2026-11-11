@@ -15,6 +15,7 @@
 
 import { T, Tl, Biome, isSolidTileId, elevLevel, ELEV_LEVELS } from '../generators/types';
 import { FALL_FOAM_V } from './waterfall-texture';
+import { CLIFF_ROWS } from './cliff-texture';
 
 /** Пикселей на мировую единицу (совпадает с T). */
 export const PX_PER_UNIT = T;
@@ -36,10 +37,14 @@ export const TERRACE_HEIGHT = 0.9;
 const RAMP_DEPTH_PX = T;
 
 /**
- * Ступеней в марше лестницы. Совпадает с RAMP_STEPS в 2D-арте пандуса
- * (geometry/tile-geom.ts): три проступи на один марш.
+ * Ступеней в марше лестницы.
+ *
+ * Было 4: каждая ступень — четверть террасы (0.225 ед.) и текстурный срез в
+ * четверть ряда кладки, поэтому марш читался как стопка тонких полос породы,
+ * а не как ступени. Теперь ступень = ровно один ряд кладки (0.45 ед. при
+ * TERRACE_HEIGHT 0.9 и CLIFF_ROWS 2), марш из двух ступеней.
  */
-const RAMP_STEPS = 4;
+const RAMP_STEPS = 2;
 
 /** Биты маски стен (см. generators/terrain-walls WallBit). */
 const WB_N = 1, WB_E = 2, WB_S = 4, WB_W = 8;
@@ -690,16 +695,18 @@ function addRamp(
       u(ax), v(az), u(bx), v(bz), u(cx), v(cz), u(dx), v(dz),
     );
 
-    // Подступенок под задней кромкой проступи — блоки породы (тая же
-    // текстура, что у утёсов; V по абсолютной высоте, поэтому слои сходятся
-    // с соседними гранями).
+    // Подступенок под задней кромкой проступи — блоки породы (та же текстура,
+    // что у утёсов).
     const yBot = yTop - stepH;
     const [rx1, rz1] = at(sB, c0);
     const [rx2, rz2] = at(sB, c1);
     const uA = alongZ ? x : y;
     const uB = alongZ ? x + 1 : y + 1;
-    const vBot = yBot / TERRACE_HEIGHT;
-    const vTop = yTop / TERRACE_HEIGHT;
+    // Один подступенок = один ряд кладки: v растянут на весь нижний ряд
+    // текстуры (шов у основания, светлая кромка сверху). Абсолютная высота тут
+    // не годилась — срез в четверть ряда давал слоёную стену.
+    const vBot = 0.5;
+    const vTop = 0.5 + 1 / CLIFF_ROWS;
     cliffs.quad(
       rx1 / T, yBot, rz1 / T,
       rx2 / T, yBot, rz2 / T,
