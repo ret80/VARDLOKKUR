@@ -237,7 +237,8 @@ function carveForConnectivity(w: WorldData, walls: Uint8Array, start: number): v
   const opened = new Set<number>();
   const key = (i: number, bit: number): number => i * 16 + bit;
 
-  const connect = (allowCorner: boolean): void => {
+  const connect = (allowCorner: boolean, maxOne: boolean = false): boolean => {
+    let carvedAny = false;
     for (;;) {
       let best: { c: number; ni: number; bit: number; opp: number; dx: number; dy: number; nr: number; score: number } | null = null;
       for (const r of openRegions) {
@@ -253,14 +254,27 @@ function carveForConnectivity(w: WorldData, walls: Uint8Array, start: number): v
             if (!walk(ni)) continue;
             const nr = region[ni];
             if (nr < 0 || nr === r || seen[nr]) continue;
-            const flanks = stairFlanks(w, walls, region, c, dir, nr);
+            // Нормализуем направление: оцениваем стык от НИЖНЕЙ клетки к
+            // ВЫСОКОЙ, иначе спуск всегда считается угловым.
+            const clv0 = elevLevel(height[c]);
+            const nlv0 = elevLevel(height[ni]);
+            let fc = c, fdir: readonly [number, number, number, number] = dir, ftarget = nr;
+            if (clv0 > nlv0) {
+              fc = ni;
+              fdir = ([-dx, -dy, opp, bit] as unknown) as readonly [number, number, number, number];
+              ftarget = r;
+            }
+            const flanks = stairFlanks(w, walls, region, fc, fdir, ftarget);
             if (!allowCorner && flanks.corners > 0) continue;
             const sc = stairValue(flanks);
             if (!best || sc > best.score) best = { c, ni, bit, opp, dx, dy, nr, score: sc };
           }
         }
       }
-      if (!best) return;
+      if (!best) return carvedAny;
+      // (сдвиг вдоль края не удался — угловые лестницы остаются редкими,
+      //  необходимыми для связности; визуально они одиночные ступени, а не
+      //  обёртка вокруг угла.)
 
       seen[best.nr] = 1;
       openRegions.add(best.nr);
@@ -278,6 +292,8 @@ function carveForConnectivity(w: WorldData, walls: Uint8Array, start: number): v
       walls[lowIsC ? best.ni : best.c] &= ~lobit;
       opened.add(key(lowCell, lbit));
       clearStairApproach(w, lowCell, ldx, ldy, touched);
+      carvedAny = true;
+      if (maxOne) return true;
 
       // Вторая створка: соседняя клетка того же уровня, упирающаяся в тот же
       // регион. Лестница становится шириной в две клетки.
@@ -305,10 +321,13 @@ function carveForConnectivity(w: WorldData, walls: Uint8Array, start: number): v
         break;
       }
     }
+    return carvedAny;
   };
 
   connect(false);
-  connect(true);
+  while (connect(true, true)) {
+    connect(false);
+  }
 
   /* Очищенные клетки раньше были препятствиями — стен на них никто не считал.
      Восстанавливаем кромку, иначе через дырку от камня можно подняться без
@@ -414,7 +433,7 @@ function stairFlanks(
     const hx = fx + dx, hy = fy + dy;
     const hi = inB(w, hx, hy) ? hy * W + hx : -1;
     if (hi < 0 || elevLevel(height[hi]) <= lvl) { fl.corners++; continue; } // кромка кончилась
-    if (!(walls[fi] & bit)) { fl.open++; continue; }                    // створка уже открыта
+    if (!(walls[fi] & bit)) { fl.open++; continue; } // створка уже открыта
     fl.walled++;
     if (region[hi] === targetRegion && region[fi] === region[c]) fl.twins++;
   }
