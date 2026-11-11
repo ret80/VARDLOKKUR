@@ -63,6 +63,20 @@ const DWALL_CAP_PX = 5;
 /** Высота невидимых стен в nav-геометрии (заведомо выше walkableClimb). */
 const NAV_WALL_HEIGHT = 1.5;
 
+/**
+ * Ширина кромки-обводки на ВЕРХНЕЙ клетке уступа (в пикселях тайла).
+ *
+ * Камера смотрит с юга, поэтому видна только южная грань утёса; с севера, востока
+ * и запада перепад высот на глаз не читался — особенно если грунт плато и низа
+ * совпадает по тайлам. Поэтому по кромке плато поверх грунта кладётся полоска
+ * кладки: она видна со всех четырёх сторон и обозначает границу перепада.
+ */
+const RIM_PX = 6;
+/** Подъём кромки над грунтом (в мировых единицах) — без мерцания на стыке. */
+const RIM_UP = 0.012;
+/** Противоположная сторона клетки (см. WB_*). */
+const WB_OPP: Record<number, number> = { [WB_N]: WB_S, [WB_E]: WB_W, [WB_S]: WB_N, [WB_W]: WB_E };
+
 export interface MeshData {
   positions: Float32Array;
   uvs: Float32Array;
@@ -78,6 +92,8 @@ export interface TerrainMesh {
   cliffs: MeshData;
   /** Травяные козырьки на верхней кромке утёсов (текстура земли). */
   lips: MeshData;
+  /** Обводка кромки уступа на верхней клетке — полоска кладки (текстура стены). */
+  rims: MeshData;
   /** Водные грани на перепаде «вода над водой» — водопады ручья. */
   waterfalls: MeshData;
   /**
@@ -261,6 +277,7 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
   const ground = new MeshBuilder();
   const cliffs = new MeshBuilder();
   const lips = new MeshBuilder();
+  const rims = new MeshBuilder();
   const waterfalls = new MeshBuilder();
   const dungeonWalls = new MeshBuilder();
   const nav = new NavBuilderData();
@@ -355,6 +372,13 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
           continue;
         }
 
+        // Сосед НИЖЕ — это мы стоим на плато: кладём по своей кромке полоску
+        // кладки поверх грунта. Стену ставит низкая клетка (бит у неё), и с
+        // трёх сторон её грани не видно — обводка даёт читаемую границу.
+        if (nl < lvl) {
+          if (wallBit(nx, ny, WB_OPP[side.bit])) addRim(rims, x, y, side.bit, yTop, uw, vw);
+          continue;
+        }
         if (nl <= lvl) continue; // подъём рисует только низкая клетка
         cliffs.setTint(...cliffTintAt(x, y, map));
         addRamp(ground, cliffs, nav, x, y, side.bit, yTop, yAtLevel(nl), u, v);
@@ -366,6 +390,7 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
     ground: ground.toMesh(),
     cliffs: cliffs.toMesh(),
     lips: lips.toMesh(),
+    rims: rims.toMesh(),
     waterfalls: waterfalls.toMesh(),
     dungeonWalls: dungeonWalls.toMesh(),
     wallTexture: wallTex,
@@ -489,6 +514,51 @@ function addCliff(
  * цвет козырька точно совпадает с травой плато, как на референсе, где дёрн
  * свисает над обрывом. Над водой козырёк не ставится.
  */
+/**
+ * Обводка кромки уступа на ВЕРХНЕЙ клетке плато.
+ *
+ * Камера смотрит с юга: южную грань утёса видно хорошо, а северную, восточную
+ * и западную — почти нет (а если тайл плато совпадает с тайлом низа, границы
+ * не видно вообще). Поэтому по кромке плато поверх грунта кладётся ПМЛОСКА
+ * кладки: стена как бы наползает на верхний тайл, и перепад читается с любой
+ * стороны.
+ */
+function addRim(
+  b: MeshBuilder,
+  x: number, y: number,
+  bit: number,
+  yTop: number,
+  uw: (px: number) => number,
+  vw: (py: number) => number,
+): void {
+  const R = RIM_PX / T;
+  const yR = yTop + RIM_UP;
+  const x0 = x, x1 = x + 1, z0 = y, z1 = y + 1;
+  const u0 = uw(x * T), u1 = uw(x * T + T);
+  const uz0 = uw(y * T), uz1 = uw(y * T + T);
+  const vT = vw(0);            // кромка у стены
+  const vB = vw(RIM_PX);       // внутрь плато
+
+  switch (bit) {
+    case WB_N:
+      b.quad(x0, yR, z0, x1, yR, z0, x1, yR, z0 + R, x0, yR, z0 + R,
+        u0, vT, u1, vT, u1, vB, u0, vB);
+      break;
+    case WB_S:
+      b.quad(x0, yR, z1 - R, x1, yR, z1 - R, x1, yR, z1, x0, yR, z1,
+        u0, vB, u1, vB, u1, vT, u0, vT);
+      break;
+    case WB_W:
+      b.quad(x0, yR, z0, x0, yR, z1, x0 + R, yR, z1, x0 + R, yR, z0,
+        uz0, vT, uz1, vT, uz1, vB, uz0, vB);
+      break;
+    default: // WB_E
+      b.quad(x1 - R, yR, z0, x1 - R, yR, z1, x1, yR, z1, x1, yR, z0,
+        uz0, vB, uz1, vB, uz1, vT, uz0, vT);
+      break;
+  }
+}
+
 function addLip(
   b: MeshBuilder,
   x: number, y: number,

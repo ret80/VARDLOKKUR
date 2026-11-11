@@ -422,19 +422,20 @@ export class ThreeJSRenderer implements IRenderer {
       group.add(m);
     }
 
+    // Грань утёса — собственная тайловая текстура блоков породы (раньше
+    // сюда шла растянутая полоса земли и стены разъезжались в муть).
+    // Та же текстура идёт на обводку кромки (rims).
+    const cliffTex = new THREE.CanvasTexture(createCliffFaceCanvas());
+    cliffTex.colorSpace = THREE.SRGBColorSpace;
+    cliffTex.magFilter = THREE.NearestFilter;
+    cliffTex.minFilter = THREE.NearestMipmapLinearFilter;
+    cliffTex.generateMipmaps = true;
+    cliffTex.wrapS = THREE.RepeatWrapping;
+    cliffTex.wrapT = THREE.RepeatWrapping;
+    cliffTex.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
+
     if (mesh.cliffs.indices.length > 0) {
       const geo = buildBufferGeometry(mesh.cliffs);
-      // Грань утёса — собственная тайловая текстура блоков породы (раньше
-      // сюда шла растянутая полоса земли и стены разъезжались в муть).
-      const cliffTex = new THREE.CanvasTexture(createCliffFaceCanvas());
-      cliffTex.colorSpace = THREE.SRGBColorSpace;
-      cliffTex.magFilter = THREE.NearestFilter;
-      cliffTex.minFilter = THREE.NearestMipmapLinearFilter;
-      cliffTex.generateMipmaps = true;
-      cliffTex.wrapS = THREE.RepeatWrapping;
-      cliffTex.wrapT = THREE.RepeatWrapping;
-      cliffTex.anisotropy = Math.min(4, this.renderer.capabilities.getMaxAnisotropy());
-
       const mat = new THREE.MeshBasicMaterial({
         map: cliffTex,
         color: 0xffffff,
@@ -444,6 +445,28 @@ export class ThreeJSRenderer implements IRenderer {
       const m = new THREE.Mesh(geo, mat);
       m.frustumCulled = false;
       m.renderOrder = -9;
+      group.add(m);
+    }
+
+    // Обводка кромки уступа на верхней клетке: полоска кладки поверх грунта.
+    // Южную грань утёса видно и так, а северную/восточную/западную — нет;
+    // обводка даёт читаемую границу перепада со всех сторон.
+    if (mesh.rims.indices.length > 0) {
+      const geo = buildBufferGeometry(mesh.rims);
+      const mat = new THREE.MeshBasicMaterial({
+        map: cliffTex,
+        // Кромка темнее вертикальной грани: на светлом грунте (снег) и на
+        // зелёном она читается как граница перепада, а не сливается с тайлом.
+        color: 0x7d8794,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      });
+      const m = new THREE.Mesh(geo, mat);
+      m.frustumCulled = false;
+      m.renderOrder = -8.9;
       group.add(m);
     }
 
