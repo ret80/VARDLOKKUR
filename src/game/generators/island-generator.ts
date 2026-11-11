@@ -36,6 +36,15 @@ export const H_SPOT = 0.20;
 /** Высота уровней высот 0..ELEV_LEVELS */
 export const LEVEL_HEIGHT: ReadonlyArray<number> = [H_BASE, H_SPOT, 0.40, 0.54, 0.70, 0.87];
 
+/**
+ * Блок нарезки террас рельефа (в тайлах).
+ *
+ * Внутри блока уровень высоты один и тот же, поэтому кромка террасы — прямая
+ * стена длиной в блок с углом 90°, а не ступеньки по одному тайлу. Меньше 3 —
+ * снова мелкая лесенка, больше 5 — террасы становятся слишком грубыми.
+ */
+const TERRACE_BLOCK = 4;
+
 export interface IslandResult {
   w: WorldData;
   cx: number;
@@ -176,7 +185,15 @@ export class IslandGenerator {
    * ровной низиной — это болото.
    */
   private reliefTier(x: number, y: number): number {
-    const n = this.noiseHills.value(x * 0.03 + 11.3, y * 0.03 + 7.9);
+    // Рельеф сэмплится по центру блока, а не по клетке: шум 0.03 давал
+    // кромку-«лесенку» со ступеньками в один тайл, и в 3D обрыв читался не
+    // стеной, а цепочкой отдельных плиток кладки (грань рисуется по клетке,
+    // см. world3d/terrain-mesh). Блочная нарезка даёт ровную террасу и
+    // сплошную стену длиной в блок с настоящими углами.
+    const b = TERRACE_BLOCK;
+    const qx = Math.floor(x / b) * b + b / 2;
+    const qy = Math.floor(y / b) * b + b / 2;
+    const n = this.noiseHills.value(qx * 0.03 + 11.3, qy * 0.03 + 7.9);
     if (n > 0.86) return 3;
     if (n > 0.74) return 2;
     if (n > 0.62) return 1;
