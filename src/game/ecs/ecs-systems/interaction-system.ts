@@ -24,6 +24,7 @@ import {
 } from '../ecs-components';
 import { dist2 } from '../../utils';
 import { T, Tl, tileAt, solidTileAt } from '../../world';
+import { elevLevel } from '../../generators/types';
 import {
   InteractionHandlerRegistry,
   ChestItemHandlerRegistry,
@@ -104,7 +105,19 @@ function findNearest(world: World, playerEid: number, store: GameStore): Interac
   let best: InteractableHit | null = null;
   let bd = INTERACTION_RANGE * INTERACTION_RANGE;
 
-  const consider = (kind: string, eid: number, ref: any, x: number, y: number) => {
+  /* Высота: объект на уступе нельзя открыть, стоя снизу — иначе игрок
+     взаимодействует сквозь обрыв террасы. */
+  const height = m.height;
+  const lvAt = (x: number, y: number): number => {
+    if (!height) return 0;
+    const tx = Math.floor(x / T), ty = Math.floor(y / T);
+    if (tx < 0 || ty < 0 || tx >= m.W || ty >= m.H) return 0;
+    return elevLevel(height[ty * m.W + tx]);
+  };
+  const playerLv = lvAt(playerX, playerY);
+
+  const consider = (kind: string, eid: number, ref: any, x: number, y: number, sameLevel = false) => {
+    if (sameLevel && lvAt(x, y) !== playerLv) return;
     const d2 = dist2(x, y, playerX, playerY);
     if (d2 < bd) {
       bd = d2;
@@ -122,7 +135,7 @@ function findNearest(world: World, playerEid: number, store: GameStore): Interac
   for (const eid of query(world, [Position, Chest])) {
     if (!Chest[eid]) continue;
     if (!Chest[eid].opened) {
-      consider('chest', eid, { item: poolGet(StringPool.chestItems, Chest[eid].item) }, Position[eid].x, Position[eid].y);
+      consider('chest', eid, { item: poolGet(StringPool.chestItems, Chest[eid].item) }, Position[eid].x, Position[eid].y, true);
     }
   }
 
@@ -130,7 +143,7 @@ function findNearest(world: World, playerEid: number, store: GameStore): Interac
   for (const eid of query(world, [Position, Pedestal])) {
     if (!Pedestal[eid]) continue;
     if (!Pedestal[eid].taken) {
-      consider('pedestal', eid, { id: poolGet(StringPool.pedestalIds, Pedestal[eid].id), guardsLeft: Pedestal[eid].guardsLeft, guardsSpawned: !!Pedestal[eid].guardsSpawned }, Position[eid].x, Position[eid].y);
+      consider('pedestal', eid, { id: poolGet(StringPool.pedestalIds, Pedestal[eid].id), guardsLeft: Pedestal[eid].guardsLeft, guardsSpawned: !!Pedestal[eid].guardsSpawned }, Position[eid].x, Position[eid].y, true);
     }
   }
 
