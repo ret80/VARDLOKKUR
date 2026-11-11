@@ -749,10 +749,79 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
   };
   for (const p of pondSpot) mark(at(p.x, p.y));
   if (streamPath) {
+    streamPath = extendStreamMouth(w, streamPath);
     for (const i of streamPath) mark(i);
     placeStreamBridge(w, streamPath);
   }
   return true;
+}
+
+/**
+ * Устье: довести русло до самой морской воды.
+ *
+ * Дейкстра ведёт ручей только по суше, поэтому последняя клетка русла — это
+ * ГРУНТ у берега, а между ним и морем остаётся полоса песка. В игре ручей
+ * обрывался в песке, не доходя до воды. Здесь берег докапывается до первой
+ * клетки моря: идём по песку (SHORE) и помечаем путь руслом.
+ *
+ * Высоту новых клеток ставим как у последней клетки русла: берег и так ровный,
+ * новых уступов у устья не появляется.
+ *
+ * @returns путь с добавленными клетками устья (или исходный, если до воды
+ *          не дойти за `maxLen` шагов).
+ */
+function extendStreamMouth(w: WorldData, path: number[], maxLen = 10): number[] {
+  const { W, H, tiles, height } = w;
+  if (!path.length) return path;
+  const N = W * H;
+  const start = path[path.length - 1];
+  const seaWater = (i: number): boolean => tiles[i] === Tl.WATER;
+  const touchesSea = (i: number): boolean => {
+    const x = i % W, y = (i / W) | 0;
+    for (const [dx, dy] of POND_DIRS) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      if (seaWater(ny * W + nx)) return true;
+    }
+    return false;
+  };
+  if (touchesSea(start)) return path;
+
+  const prev = new Int32Array(N).fill(-1);
+  const seen = new Uint8Array(N);
+  const q: number[] = [start];
+  seen[start] = 1;
+  let found = -1;
+  for (let h = 0; h < q.length && h < 300; h++) {
+    const cur = q[h];
+    if (cur !== start && touchesSea(cur)) { found = cur; break; }
+    const cx = cur % W, cy = (cur / W) | 0;
+    for (const [dx, dy] of POND_DIRS) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
+      const ni = ny * W + nx;
+      if (seen[ni]) continue;
+      // Идём только по песку: море не трогаем, скалы и деревья не рубим.
+      if (tiles[ni] !== Tl.SHORE) continue;
+      seen[ni] = 1;
+      prev[ni] = cur;
+      q.push(ni);
+    }
+  }
+  if (found < 0) return path;
+
+  const add: number[] = [];
+  for (let cur = found; cur !== -1 && cur !== start; cur = prev[cur]) add.push(cur);
+  if (!add.length || add.length > maxLen) return path;
+  add.reverse();
+
+  // Берег ровный по высоте; держим устье на уровне последней клетки русла,
+  // чтобы в самом устье не появился новый уступ.
+  if (height) {
+    const hMouth = height[start];
+    for (const i of add) height[i] = hMouth;
+  }
+  return path.concat(add);
 }
 
 /**

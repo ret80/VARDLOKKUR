@@ -74,8 +74,6 @@ const NAV_WALL_HEIGHT = 1.5;
 const RIM_PX = 4;
 /** Подъём кромки над грунтом (в мировых единицах) — без мерцания на стыке. */
 const RIM_UP = 0.012;
-/** Противоположная сторона клетки (см. WB_*). */
-const WB_OPP: Record<number, number> = { [WB_N]: WB_S, [WB_E]: WB_W, [WB_S]: WB_N, [WB_W]: WB_E };
 
 export interface MeshData {
   positions: Float32Array;
@@ -342,6 +340,10 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
         const [nx, ny] = side.nb;
         const inBounds = nx >= 0 && ny >= 0 && nx < W && ny < H;
         const nl = inBounds ? (levels[ny * W + nx] ?? -1) : -1;
+        const t = map.tiles[y * W + x] ?? 0;
+        const nt = inBounds ? (map.tiles[ny * W + nx] ?? 0) : -1;
+        // Оба тайла — вода: стык читается как водопад ручья.
+        const waterOverWater = isWaterTile(t) && isWaterTile(nt);
         // Ступеньки выключены (см. TERRAIN_STAIRS_ENABLED): любой ПОДЪЁМ без
         // бита стены — всё равно утёс. Иначе на берегу и у кромки воды остаются
         // марши-лесенки там, где маска стен не ставится (вода непроходима).
@@ -352,10 +354,7 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
         // высота выше walkableClimb, поэтому recast не соединит поверхности.
         if (blocked) {
           const yHigh = nl > lvl ? yAtLevel(nl) : yAtLevel(lvl + 1);
-          const t = map.tiles[y * W + x] ?? 0;
-          const nt = inBounds ? (map.tiles[ny * W + nx] ?? 0) : -1;
-          // Оба тайла — вода: грань между ними читается как водопад ручья.
-          if (isWaterTile(t) && isWaterTile(nt)) {
+          if (waterOverWater) {
             addWaterfall(waterfalls, x, y, side.bit, yTop, yHigh);
           } else {
             cliffs.setTint(...cliffTintAt(inBounds ? nx : x, inBounds ? ny : y, map));
@@ -379,6 +378,16 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
         // клетки есть бит стены: у воды и у солидов биты не ставятся, и полоса
         // рвалась пропусками. Перепад виден — значит и кромка нужна.
         if (nl < lvl) {
+          // По сливу ручья кромку не ведём: полоса перекрывала струю, а
+          // перепад и так читается водопадом.
+          if (waterOverWater) continue;
+          // Бит стены у нижней клетки ставится только между ПРОХОДИМЫМИ
+          // клетками. Над водой и над солидом (скала, дерево) грань утёса
+          // не рисует никто — дорисовываем её здесь, иначе под кромкой дыра.
+          if (isSolidTileId(nt)) {
+            cliffs.setTint(...cliffTintAt(nx, ny, map));
+            addCliff(cliffs, x, y, side.bit, yAtLevel(nl), yTop);
+          }
           addRim(rims, x, y, side.bit, yTop, uw, vw);
           continue;
         }

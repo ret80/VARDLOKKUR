@@ -116,16 +116,10 @@ export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number
       renderer.drawRect(g, { x: x + 2, y: y + 5, width: 6, height: 1 }, rgb(0x4d7f9c));
       renderer.drawRect(g, { x: x + 9, y: y + 11, width: 5, height: 1 }, rgb(0x4d7f9c));
       break;
-    // Мост через ручей: доски настила поперёк воды, по краям — тёмные лаги.
-    case Tl.BRIDGE:
-      renderer.drawRect(g, tileRect, rgb(0x243038));
-      renderer.drawRect(g, { x: x + 1, y, width: T - 2, height: T }, rgb(0x6b5334));
-      for (let i = 1; i < T - 1; i += 3) {
-        renderer.drawRect(g, { x: x + 1, y: y + i, width: T - 2, height: 1 }, rgb(0x59452b));
-      }
-      renderer.drawRect(g, { x: x + 1, y, width: 1, height: T }, rgb(0x8a6b45));
-      renderer.drawRect(g, { x: x + T - 2, y, width: 1, height: T }, rgb(0x8a6b45));
-      break;
+    // Мост через ручей: доски настила поперёк воды, по краям — лаги.
+    // Ориентацию настила задаёт карта (см. drawTileBatch), здесь — как в
+    // тайлсете: настил идёт север-юг.
+    case Tl.BRIDGE: drawBridgeLocal(g, x, y, renderer, false); break;
     case Tl.VILLAGE:
     // PALISADE — стена поверх обычного деревенского грунта (не спец-тайл)
     case Tl.PALISADE: dither(0x635a4c, 0x575043, 0x6f6658); break;
@@ -187,7 +181,35 @@ export function drawTileLocal(g: GraphicsHandle, t: number, x: number, y: number
 }
 
 /**
- * Нарисовать все ground-тайлы карты в один Graphics-батч.
+ * Мост через ручей с разворотом настила.
+ *
+ * `deckEW = false` — настил идёт СЕВЕР-ЮГ: лаги по левой/правой кромке, доски
+ * поперёк (так тайл нарисован в тайлсете). `deckEW = true` — настил идёт
+ * ЗАПАД-ВОСТОК: лаги по верхней/нижней кромке, доски вертикальные. Мост всегда
+ * кладётся поперёк воды, иначе он читается как мост вдоль русла.
+ */
+export function drawBridgeLocal(
+  g: GraphicsHandle, x: number, y: number, renderer: IRenderer, deckEW: boolean,
+): void {
+  renderer.drawRect(g, { x, y, width: T, height: T }, rgb(0x243038));
+  if (!deckEW) {
+    renderer.drawRect(g, { x: x + 1, y, width: T - 2, height: T }, rgb(0x6b5334));
+    for (let i = 1; i < T - 1; i += 3) {
+      renderer.drawRect(g, { x: x + 1, y: y + i, width: T - 2, height: 1 }, rgb(0x59452b));
+    }
+    renderer.drawRect(g, { x: x + 1, y, width: 1, height: T }, rgb(0x8a6b45));
+    renderer.drawRect(g, { x: x + T - 2, y, width: 1, height: T }, rgb(0x8a6b45));
+    return;
+  }
+  renderer.drawRect(g, { x, y: y + 1, width: T, height: T - 2 }, rgb(0x6b5334));
+  for (let i = 1; i < T - 1; i += 3) {
+    renderer.drawRect(g, { x: x + i, y: y + 1, width: 1, height: T - 2 }, rgb(0x59452b));
+  }
+  renderer.drawRect(g, { x, y: y + 1, width: T, height: 1 }, rgb(0x8a6b45));
+  renderer.drawRect(g, { x, y: y + T - 2, width: T, height: 1 }, rgb(0x8a6b45));
+}
+
+/**
  * Батч живёт в мировых координатах (позиция Graphics = 0,0).
  * Все тайлы рисуются в ЛОКАЛЬНЫХ координатах батча (x*T, y*T),
  * позиция Graphics НЕ меняется — иначе весь батч сдвинется.
@@ -223,6 +245,19 @@ export function drawTileBatch(renderer: IRenderer, g: GraphicsHandle, map: World
           }
         }
       }
+      // Мост: настил всегда ПОПЕРЁК воды. Если русло течёт север-юг (вода
+      // сверху/снизу), настил кладётся запад-восток — иначе мост стоит вдоль
+      // реки, как повёрнутый на 90°.
+      if (t === Tl.BRIDGE) {
+        const wet = (xx: number, yy: number): boolean => {
+          if (xx < 0 || yy < 0 || xx >= W || yy >= H) return false;
+          const wt = map.tiles[yy * W + xx];
+          return wt === Tl.WATER || wt === Tl.POOL || wt === Tl.STREAM;
+        };
+        drawBridgeLocal(g, x * T, y * T, renderer, wet(x, y - 1) || wet(x, y + 1));
+        continue;
+      }
+
       // Рисуем в локальных координатах батча — позиция Graphics = (0,0)
       drawTileLocal(g, t, x * T, y * T, renderer);
     }

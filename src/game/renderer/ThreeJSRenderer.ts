@@ -466,7 +466,9 @@ export class ThreeJSRenderer implements IRenderer {
       });
       const m = new THREE.Mesh(geo, mat);
       m.frustumCulled = false;
-      m.renderOrder = -8.9;
+      // Кромка — последняя из частей рельефа: козырёк (-8.5) и водопад (-8.4)
+      // рисуются раньше и могут перекрыть полосу по пикселям стыка.
+      m.renderOrder = -8.35;
       group.add(m);
     }
 
