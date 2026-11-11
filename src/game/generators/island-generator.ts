@@ -532,16 +532,26 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
   const rough = (t: number): boolean =>
     t === Tl.TREE || t === Tl.ROCK || t === Tl.FIR || t === Tl.DEADTREE || t === Tl.COLUMN;
 
-  /** Ровная площадка под озеро: диск радиуса r в одном уровне высоты. */
-  const spotOk = (x: number, y: number, r: number, meadowOnly: boolean): boolean => {
+  /**
+   * Ровная площадка под озеро: диск радиуса r в одном уровне высоты плюс
+   * кольцо отступа `margin` вокруг него.
+   *
+   * Кольцо нужно, чтобы озеро не легло на самый край террасы: тогда его берег
+   * упирался бы в обрыв и озеро «свисало» с уступа. Если ровного места с
+   * отступом нет, берём тир с меньшим радиусом и в крайнем случае без отступа.
+   */
+  const spotOk = (x: number, y: number, r: number, meadowOnly: boolean, margin = 2): boolean => {
     const lvl = lvAt(x, y);
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
+    const rr = r + margin;
+    for (let dy = -rr; dy <= rr; dy++) {
+      for (let dx = -rr; dx <= rr; dx++) {
         const nx = x + dx, ny = y + dy;
         if (!inb(nx, ny)) return false;
-        if (dx * dx + dy * dy > r * r) continue;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > rr * rr) continue;
         const ni = at(nx, ny);
-        if (lvAt(nx, ny) !== lvl) return false;
+        if (lvAt(nx, ny) !== lvl) return false;   // ни края террасы, ни перепада
+        if (d2 > r * r) continue;                // дальше — только кольцо отступа
         if (!soft(tiles[ni])) return false;
         if (meadowOnly && biomes && biomes[ni] !== Biome.MEADOW) return false;
       }
@@ -552,8 +562,9 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
   /** Скан площадок одного тира: по близости к старту, а не к центру карты. */
   const collect = (
     minLevel: number, r: number, dMin: number, dMax: number, seaMin: number, meadowOnly: boolean,
-  ): Array<{ x: number; y: number }> => {
-    const out: Array<{ x: number; y: number }> = [];
+    margin = 2,
+  ): Array<{ x: number; y: number; r: number }> => {
+    const out: Array<{ x: number; y: number; r: number }> = [];
     for (let y = 6; y < H - 6; y++) {
       for (let x = 6; x < W - 6; x++) {
         const i = at(x, y);
@@ -563,8 +574,8 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
         if (d < dMin || d > dMax) continue;
         if (meadowOnly && biomes && biomes[i] !== Biome.MEADOW) continue;
         if (!soft(tiles[i])) continue;
-        if (!spotOk(x, y, r, meadowOnly)) continue;
-        out.push({ x, y });
+        if (!spotOk(x, y, r, meadowOnly, margin)) continue;
+        out.push({ x, y, r });
       }
     }
     return out;
@@ -573,12 +584,14 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
   // Сначала высокое ровное плато рядом со стартом, затем пониже и подальше,
   // в крайнем случае — любая ровная возвышенность: озеро должно быть всегда.
   const tiers = [
-    collect(2, 3, 12, 48, 20, true),
-    collect(1, 2, 12, 60, 16, true),
-    collect(1, 2, 8, 84, 10, true),
-    collect(1, 1, 6, 120, 6, false),
+    collect(2, 4, 12, 48, 20, true, 2),
+    collect(2, 3, 12, 48, 20, true, 2),
+    collect(1, 3, 12, 60, 16, true, 2),
+    collect(1, 2, 12, 60, 16, true, 1),
+    collect(1, 2, 8, 84, 10, true, 1),
+    collect(1, 1, 6, 120, 6, false, 0),
   ];
-  const cands: Array<{ x: number; y: number }> = [];
+  const cands: Array<{ x: number; y: number; r: number }> = [];
   for (const list of tiers) {
     for (const c of list) {
       if (!cands.some((p) => p.x === c.x && p.y === c.y)) cands.push(c);
@@ -587,21 +600,23 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
   }
   if (cands.length === 0) {
     // Нет ровной площадки — берём любую возвышенность подальше от моря.
-    let best: { x: number; y: number } | null = null;
+    let best: { x: number; y: number; r: number } | null = null;
     let bestScore = -Infinity;
     for (let y = 6; y < H - 6; y++) {
       for (let x = 6; x < W - 6; x++) {
         if (lvAt(x, y) < 1) continue;
         if (!soft(tiles[at(x, y)])) continue;
         const score = seaDist[at(x, y)] - dNear(x, y) * 0.3;
-        if (score > bestScore) { bestScore = score; best = { x, y }; }
+        if (score > bestScore) { bestScore = score; best = { x, y, r: 1 }; }
       }
     }
     if (!best) return false;
     cands.push(best);
   }
-  // Ближние к старту — первыми; при равенстве выше — интереснее.
-  cands.sort((a, b) => dNear(a.x, a.y) - dNear(b.x, b.y) || lvAt(b.x, b.y) - lvAt(a.x, a.y));
+  // Сначала самое БОЛЬШОЕ озеро (широкая терраса должна получить широкое
+  // озеро, а не лужицу), при равном радиусе — ближе к старту.
+  cands.sort((a, b) => b.r - a.r || dNear(a.x, a.y) - dNear(b.x, b.y)
+    || lvAt(b.x, b.y) - lvAt(a.x, a.y));
 
   let pondSpot: Array<{ x: number; y: number }> | null = null;
   let streamPath: number[] | null = null;
@@ -610,11 +625,12 @@ export function carveHillPondStream(w: WorldData, opts: PondHint = {}): boolean 
   for (let attempt = 0; attempt < TRIES; attempt++) {
     const c = cands[attempt];
 
-    /* --- 1. Озерцо: круг радиусом ~2 клетки --- */
+    /* --- 1. Озерцо: круг радиусом r (тир уже проверён spotOk) --- */
+    const pr = c.r;
     const pond: Array<{ x: number; y: number }> = [];
-    for (let dy = -2; dy <= 2; dy++) {
-      for (let dx = -2; dx <= 2; dx++) {
-        if (dx * dx + dy * dy > 4) continue;
+    for (let dy = -pr; dy <= pr; dy++) {
+      for (let dx = -pr; dx <= pr; dx++) {
+        if (dx * dx + dy * dy > pr * pr) continue;
         const x = c.x + dx, y = c.y + dy;
         if (!inb(x, y)) continue;
         pond.push({ x, y });
@@ -847,8 +863,12 @@ function placeStreamBridge(w: WorldData, path: number[]): void {
     return !isSolidTileId(t);
   };
 
-  const mid = path[Math.floor(path.length * 0.55)];
-  const mx = mid % W, my = (mid / W) | 0;
+  // Мост — на ровном участке БЛИЖЕ К УСТЬЮ: там русло уже спустилось на
+  // нижнюю террасу, берега одной высоты и переход действительно нужен. Мост
+  // сразу под водопадом бесполезен: с плато на него всё равно не сойти.
+  // Последние клетки русла (устье, пляж) пропускаем.
+  const tail = path[Math.max(0, path.length - 5)];
+  const mx = tail % W, my = (tail / W) | 0;
 
   const pick = (sameLevelOnly: boolean, loose = false): number => {
     let best = -1, bestD = Infinity;

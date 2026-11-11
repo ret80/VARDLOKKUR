@@ -74,6 +74,8 @@ const NAV_WALL_HEIGHT = 1.5;
 const RIM_PX = 4;
 /** Подъём кромки над грунтом (в мировых единицах) — без мерцания на стыке. */
 const RIM_UP = 0.012;
+/** Противоположная сторона клетки (см. WB_*). */
+const WB_OPP: Record<number, number> = { [WB_N]: WB_S, [WB_E]: WB_W, [WB_S]: WB_N, [WB_W]: WB_E };
 
 export interface MeshData {
   positions: Float32Array;
@@ -378,9 +380,15 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
         // клетки есть бит стены: у воды и у солидов биты не ставятся, и полоса
         // рвалась пропусками. Перепад виден — значит и кромка нужна.
         if (nl < lvl) {
-          // По сливу ручья кромку не ведём: полоса перекрывала струю, а
-          // перепад и так читается водопадом.
-          if (waterOverWater) continue;
+          // Слив ручья: кромку не ведём (полоса перекрывала струю), но водопад
+          // обязателен. Нижняя клетка рисует его по биту стены, а бит ставится
+          // только между водными тайлами — если его нет, рисуем струю сами.
+          if (waterOverWater) {
+            if (!wallBit(nx, ny, WB_OPP[side.bit] ?? 0)) {
+              addWaterfall(waterfalls, x, y, side.bit, yAtLevel(nl), yTop);
+            }
+            continue;
+          }
           // Бит стены у нижней клетки ставится только между ПРОХОДИМЫМИ
           // клетками. Над водой и над солидом (скала, дерево) грань утёса
           // не рисует никто — дорисовываем её здесь, иначе под кромкой дыра.
@@ -388,7 +396,29 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
             cliffs.setTint(...cliffTintAt(nx, ny, map));
             addCliff(cliffs, x, y, side.bit, yAtLevel(nl), yTop);
           }
-          addRim(rims, x, y, side.bit, yTop, uw, vw);
+          // Торцы полосы: если соседняя вдоль кромки клетка уступ продолжает,
+          // торец закрыт её полосой. Если нет — это угол, нужен уголок.
+          const dropsOff = (cx: number, cy: number, ddx: number, ddy: number): boolean => {
+            const bx2 = cx + ddx, by2 = cy + ddy;
+            if (cx < 0 || cy < 0 || cx >= W || cy >= H) return false;
+            if (bx2 < 0 || by2 < 0 || bx2 >= W || by2 >= H) return false;
+            return (levels[by2 * W + bx2] ?? 0) < (levels[cy * W + cx] ?? 0);
+          };
+          let caps = 0;
+          if (side.bit === WB_N) {
+            if (!dropsOff(x - 1, y, 0, -1)) caps |= 1;
+            if (!dropsOff(x + 1, y, 0, -1)) caps |= 2;
+          } else if (side.bit === WB_S) {
+            if (!dropsOff(x - 1, y, 0, 1)) caps |= 1;
+            if (!dropsOff(x + 1, y, 0, 1)) caps |= 2;
+          } else if (side.bit === WB_W) {
+            if (!dropsOff(x, y - 1, -1, 0)) caps |= 1;
+            if (!dropsOff(x, y + 1, -1, 0)) caps |= 2;
+          } else {
+            if (!dropsOff(x, y - 1, 1, 0)) caps |= 1;
+            if (!dropsOff(x, y + 1, 1, 0)) caps |= 2;
+          }
+          addRim(rims, x, y, side.bit, yTop, uw, vw, caps);
           continue;
         }
         if (nl <= lvl) continue; // подъём рисует только низкая клетка
@@ -542,6 +572,8 @@ function addRim(
   yTop: number,
   uw: (px: number) => number,
   vw: (py: number) => number,
+  /** Какие торцы полосы открыты: 1 — младший (x/y), 2 — старший. */
+  caps = 0,
 ): void {
   const R = RIM_PX / T;
   const yR = yTop + RIM_UP;
@@ -567,6 +599,32 @@ function addRim(
     default: // WB_E
       b.quad(x1 - R, yR, z0, x1 - R, yR, z1, x1, yR, z1, x1, yR, z0,
         uz0, vB, uz1, vB, uz1, vT, uz0, vT);
+      break;
+  }
+
+  // Открытые торцы: соседняя клетка уступ не продолжает — это угол. Кладём
+  // квадратик R×R ЗА линией стены (на её торец), чтобы две перпендикулярные
+  // полосы смыкались, а не обрывались, не доходя друг до друга.
+  const capAt = (ax: number, az: number): void => {
+    b.quad(ax, yR, az, ax + R, yR, az, ax + R, yR, az + R, ax, yR, az + R,
+      u0, vT, u1, vT, u1, vB, u0, vB);
+  };
+  switch (bit) {
+    case WB_N:
+      if (caps & 1) capAt(x0 - R, z0 - R);
+      if (caps & 2) capAt(x1, z0 - R);
+      break;
+    case WB_S:
+      if (caps & 1) capAt(x0 - R, z1);
+      if (caps & 2) capAt(x1, z1);
+      break;
+    case WB_W:
+      if (caps & 1) capAt(x0 - R, z0 - R);
+      if (caps & 2) capAt(x0 - R, z1);
+      break;
+    default: // WB_E
+      if (caps & 1) capAt(x1, z0 - R);
+      if (caps & 2) capAt(x1, z1);
       break;
   }
 }
