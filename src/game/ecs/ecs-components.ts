@@ -54,6 +54,8 @@ export const Enemy = aos<{
   contactCd: number; guardOf: number; guardPedestalEid: number;
   fade: number; dropDew: number; leashX: number; leashY: number;
   fogOnly: number; nearLitShrine: number;
+  /** Высота полёта 0..1 (1 — над головой игрока, 0 — на уровне земли): вороны */
+  lift: number;
 }>();
 
 // ============================================================

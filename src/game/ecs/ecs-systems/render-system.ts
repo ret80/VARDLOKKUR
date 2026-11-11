@@ -56,6 +56,7 @@ import {
   playerToRenderData,
 } from '../../renderers/ecs-mappers';
 import type { RenderContext } from '../../renderers';
+import { ENEMY_FLY_LIFT_UNITS } from '../../renderers/enemy/BaseEnemyRenderer';
 import { FloatTextLayer } from '../../renderers/float/FloatTextLayer';
 import { logger } from '../../debug/logger';
 import { getRenderQueue, RENDER_LAYER, type RenderEntry } from '../../render/RenderQueue';
@@ -475,6 +476,12 @@ export class RenderSystem {
       if (sprite === undefined) continue;
 
       const data = mapper(eid);
+      // Летающие враги (вороны) поднимаются над землёй на свой lift: высота
+      // задаётся в мировых единицах, тень остаётся на земле.
+      if (isEnemy) {
+        const lift = (data as { lift?: number }).lift ?? 0;
+        r.setGraphicsElevation(sprite as unknown as GraphicsHandle, lift * ENEMY_FLY_LIFT_UNITS);
+      }
       try {
         (renderer as any).render(sprite, data, { time, renderer: r });
       } catch (err) {

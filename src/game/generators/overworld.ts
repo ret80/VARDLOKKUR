@@ -15,7 +15,7 @@ import {
 import { VillageGenerator } from "./village-generator";
 import { GlobalRoadGenerator } from "./global-road-generator";
 import { NavBuilder } from "./nav-builder";
-import { buildTerrainWalls, flattenRampSurfaces, WallBit } from "./terrain-walls";
+import { buildTerrainWalls, flattenRampSurfaces, TERRAIN_STAIRS_ENABLED, WallBit } from "./terrain-walls";
 import { passageMask, forbiddenMask, isPassageTile, STATIC_BODY_R } from "./passages";
 import { findWalkableNear, clearAround, floodReach, setTile, tileAt } from "./utils";
 
@@ -1052,7 +1052,8 @@ export function generateOverworld(seed: number): WorldData {
   // Ворота не должны упираться в уступ: в коридоре перед каждым проёмом
   // снимаем биты стен (деревня целиком на одном уровне — см. findVillageRect,
   // но подступы к воротам остаются «пандусом» на любых соседних террасах).
-  if (w.walls) {
+  // Сборка «без ступенек»: проёмы ворот тоже НЕ пробивают уступ.
+  if (w.walls && TERRAIN_STAIRS_ENABLED) {
     const OPP: Record<number, number> = {
       [WallBit.N]: WallBit.S, [WallBit.S]: WallBit.N,
       [WallBit.E]: WallBit.W, [WallBit.W]: WallBit.E,

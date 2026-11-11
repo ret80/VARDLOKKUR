@@ -14,6 +14,7 @@
  */
 
 import { T, Tl, Biome, isSolidTileId, elevLevel, ELEV_LEVELS } from '../generators/types';
+import { TERRAIN_STAIRS_ENABLED } from '../generators/terrain-walls';
 import { FALL_FOAM_V } from './waterfall-texture';
 import { CLIFF_ROWS } from './cliff-texture';
 
@@ -324,7 +325,11 @@ export function buildTerrainMesh(map: TerrainMap, opts: TerrainMeshOptions = {})
         const [nx, ny] = side.nb;
         const inBounds = nx >= 0 && ny >= 0 && nx < W && ny < H;
         const nl = inBounds ? (levels[ny * W + nx] ?? -1) : -1;
-        const blocked = !inBounds || wallBit(x, y, side.bit);
+        // Ступеньки выключены (см. TERRAIN_STAIRS_ENABLED): любой ПОДЪЁМ без
+        // бита стены — всё равно утёс. Иначе на берегу и у кромки воды остаются
+        // марши-лесенки там, где маска стен не ставится (вода непроходима).
+        const blocked = !inBounds || wallBit(x, y, side.bit)
+          || (!TERRAIN_STAIRS_ENABLED && nl > lvl);
 
         // Закрытый стык — вертикальная стена и для рендера, и для navmesh:
         // высота выше walkableClimb, поэтому recast не соединит поверхности.

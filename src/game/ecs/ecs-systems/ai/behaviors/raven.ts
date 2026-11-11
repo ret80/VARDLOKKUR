@@ -59,6 +59,14 @@ export class RavenBrain extends EnemyBrain {
       );
     }
 
+    // Высота полёта: в спокойном полёте и на орбите ворон держится НАД
+    // головой игрока (lift = 1), и только заход на атаку опускает его на
+    // уровень земли (lift = 0). Раньше птица рисовалась на земле и читалась
+    // как наземный враг.
+    const wantLift = Enemy[eid].state === EnemyState.dive ? 0 : 1;
+    const curLift = Enemy[eid].lift || 0;
+    Enemy[eid].lift = curLift + (wantLift - curLift) * Math.min(1, dt * 7);
+
     if (Velocity[eid].x !== 0) Direction[eid].x = Velocity[eid].x >= 0 ? 1 : -1;
   }
 }

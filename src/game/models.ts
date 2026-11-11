@@ -239,6 +239,8 @@ export interface IEnemyData {
   leash: Vec | null;
   dropDew: boolean;
   nearLitShrine: boolean;
+  /** Высота полёта 0..1: 1 — ворон парит над игроком, 0 — уровень земли (заход на атаку) */
+  lift: number;
 
   /** Предыдущие данные для детекции изменений (DYNAMIC_TEXTURE) */
   prevData?: IEnemyData | null;

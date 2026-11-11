@@ -29,7 +29,7 @@ function reaperData(state: string): IEnemyData {
     facing: { x: 0, y: 0 }, t: 0, state,
     aggro: true, dead: false, hidden: false,
     lungeT: 0, freezeT: 0, flashT: 0,
-    seed: 1, fade: 1, leash: null, dropDew: false, nearLitShrine: false,
+    seed: 1, fade: 1, leash: null, dropDew: false, nearLitShrine: false, lift: 0,
   };
 }
 

@@ -7,6 +7,15 @@ import type { IEnemyData } from "../../models";
 import { px } from "../core/primitives";
 
 /**
+ * Высота полёта (в пикселях спрайта) для lift = 1.
+ *
+ * Мировые единицы = пиксели / PX_PER_UNIT (16), т.е. 20 px = 1.25 ед. — ворон
+ * парит на головой игрока (его спрайт ~27 px высотой), а при атаке опускается.
+ */
+export const ENEMY_FLY_LIFT_PX = 20;
+export const ENEMY_FLY_LIFT_UNITS = ENEMY_FLY_LIFT_PX / 16;
+
+/**
  * Базовый рендерер врагов: тень, bob, tint(flash/frozen), alpha(hidden*fade), hp-бар.
  * Дочерние классы реализуют только тело через template method `drawBody`.
  *
@@ -28,8 +37,14 @@ export abstract class BaseEnemyRenderer implements Renderer<IEnemyData> {
     const tint = (c: number) => (flash ? 0xffffff : frozen ? 0x9fd8e8 : c);
     const a = (e.hidden ? 0.25 : 1) * e.fade;
 
-    // общая тень
-    r.drawEllipse(g, 0, 5, 6, 2.2, { r: 0x05 / 255, g: 0x08 / 255, b: 0x0d / 255, a: 0.5 * a });
+    // Тень остаётся на ЗЕМЛЕ: летающего врага поднимает elevation (см.
+    // ENEMY_FLY_LIFT_UNITS и render-system), поэтому в локальных координатах
+    // тень уходит вниз на ту же высоту и уменьшается — птица читается в небе.
+    const lift = e.lift || 0;
+    const shK = 1 - lift * 0.4;
+    r.drawEllipse(g, 0, 5 + lift * ENEMY_FLY_LIFT_PX, 6 * shK, 2.2 * shK, {
+      r: 0x05 / 255, g: 0x08 / 255, b: 0x0d / 255, a: 0.5 * a * (1 - lift * 0.35),
+    });
 
     this.drawBody(g, data, { ...ctx, tint, a });
 

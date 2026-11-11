@@ -173,6 +173,7 @@ export class EntityFactory {
       fade: 1, dropDew: 0,
       leashX: 0, leashY: 0, fogOnly: 0, nearLitShrine: 0,
       guardPedestalEid: 0,
+      lift: 0,
     };
     EnemyAI[eid] = {
       path: 0, lightspeedT: 0, slowT: 0, freezeT: 0, flashT: 0,
@@ -229,6 +230,7 @@ export class EntityFactory {
       fade: 0, dropDew: 0,
       leashX: 0, leashY: 0, fogOnly: 0, nearLitShrine: 0,
       guardPedestalEid: 0,
+      lift: 0,
     };
     EnemyAI[eid] = {
       path: 0, lightspeedT: 0, slowT: 0, freezeT: 0, flashT: 0,

@@ -14,7 +14,7 @@ import { describe, expect, it } from "vitest";
 import { generateOverworld } from "../generators/overworld";
 import { T, Tl, elevLevel, idx, isSolidTileId } from "../generators/types";
 import {
-  WALL_DIRS, edgeOpen, flattenRampSurfaces,
+  TERRAIN_STAIRS_ENABLED, WALL_DIRS, edgeOpen, flattenRampSurfaces,
 } from "../generators/terrain-walls";
 
 const SEEDS = [1, 3, 11];
@@ -79,17 +79,28 @@ describe("уступы террас", () => {
       }
 
       expect(walled, `seed ${seed}: уступы не обнесены стенами`).toBeGreaterThan(0);
-      expect(stepRamp, `seed ${seed}: нет ступенек на дорогах/берегу`).toBeGreaterThan(0);
-      /* Каждый «пробитый» стык обязан быть нужен для связности террас. */
-      /* Ручей режет террасу водой: берега расходятся по разным регионам, и
-         связности нужен ещё один пандус у моста — это заложено в допуск. */
-      const bridgeBonus = tiles.includes(Tl.BRIDGE) ? 1 : 0;
-      expect(stepCarved, `seed ${seed}: лишние проходы сквозь уступы`).toBeLessThanOrEqual(regions - 1 + bridgeBonus);
-      expect(stepCarved, `seed ${seed}: террасы не соединены подъёмами`).toBeGreaterThan(0);
+      if (TERRAIN_STAIRS_ENABLED) {
+        expect(stepRamp, `seed ${seed}: нет ступенек на дорогах/берегу`).toBeGreaterThan(0);
+        /* Каждый «пробитый» стык обязан быть нужен для связности террас. */
+        /* Ручей режет террасу водой: берега расходятся по разным регионам, и
+           связности нужен ещё один пандус у моста — это заложено в допуск. */
+        const bridgeBonus = tiles.includes(Tl.BRIDGE) ? 1 : 0;
+        expect(stepCarved, `seed ${seed}: лишние проходы сквозь уступы`).toBeLessThanOrEqual(regions - 1 + bridgeBonus);
+        expect(stepCarved, `seed ${seed}: террасы не соединены подъёмами`).toBeGreaterThan(0);
+      } else {
+        /* Сборка «без ступенек» (TERRAIN_STAIRS_ENABLED = false): подъёмов нет
+           вообще — каждый перепад уровней остаётся уступом, ни на террасу,
+           ни с неё попасть нельзя. */
+        expect(stepRamp, `seed ${seed}: на дорогах/берегу остались ступеньки`).toBe(0);
+        expect(stepCarved, `seed ${seed}: остались пробитые подъёмы сквозь уступы`).toBe(0);
+      }
       /* Берег и озёра — ровная полоса, изнутри без перепадов. */
       expect(bandSeams, `seed ${seed}: берег/озеро не выровнены`).toBe(0);
 
-      /* Связность: от спавна по открытым стыкам достижим весь крупнейший массив. */
+      /* Связность: от спавна по открытым стыкам достижим весь крупнейший массив.
+         Только когда ступеньки разрешены — в «безлестничной» сборке подъёмов
+         нет по замыслу, и достижим лишь свой уровень. */
+      if (!TERRAIN_STAIRS_ENABLED) continue;
       const start = idx(w, Math.floor(w.spawn.x / T), Math.floor(w.spawn.y / T));
       const comp = new Int32Array(W * H).fill(-1);
       let largest = 0;

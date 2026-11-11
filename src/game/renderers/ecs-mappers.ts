@@ -52,7 +52,7 @@ export function eidToEnemyData(
       x: 0, y: 0, kind: 'default' as any, r: 10, hp: 0, maxHp: 0,
       facing: { x: 0, y: 0 }, t: 0, state: 'idle', aggro: false,
       dead: false, hidden: false, lungeT: 0, freezeT: 0, flashT: 0,
-      seed: 0, fade: 1, leash: null, dropDew: false, nearLitShrine: false, prevData,
+      seed: 0, fade: 1, leash: null, dropDew: false, nearLitShrine: false, lift: 0, prevData,
     };
   }
   const kind = poolGet(StringPool.enemyKinds, Enemy[eid].kind) as EnemyKind;
@@ -79,6 +79,7 @@ export function eidToEnemyData(
     flashT: Enemy[eid].flashT,
     seed: Enemy[eid].seed,
     fade: Enemy[eid].fade,
+    lift: Enemy[eid].lift || 0,
     leash: (Enemy[eid].leashX !== 0 || Enemy[eid].leashY !== 0)
       ? { x: Enemy[eid].leashX, y: Enemy[eid].leashY }
       : null,

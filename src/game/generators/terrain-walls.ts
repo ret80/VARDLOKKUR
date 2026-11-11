@@ -32,6 +32,18 @@ export const WALL_DIRS: ReadonlyArray<readonly [number, number, number, number]>
 /** Толщина физической стены в пикселях. Стык клеток — центр полосы. */
 export const WALL_COLLIDER_T = 3;
 
+/**
+ * Ступеньки, пандусы и лестницы в рельефе — ВЫКЛЮЧЕНЫ.
+ *
+ * Сборка «без ступенек»: КАЖДЫЙ перепад высоты остаётся отвесным уступом.
+ * Забраться на террасу или спуститься с неё нельзя никаким способом — ни по
+ * дороге, ни по берегу, ни через ворота поселения (все они раньше открывали
+ * стык террас «пандусом» и рисовали на нём ступеньки).
+ *
+ * Флаг оставлен, чтобы вернуть прежнюю генерацию пандусов одним значением.
+ */
+export const TERRAIN_STAIRS_ENABLED = false;
+
 const walkable = (w: WorldData, i: number): boolean => !isSolidTileId(w.tiles[i]);
 
 /**
@@ -119,7 +131,7 @@ export function buildTerrainWalls(w: WorldData, from?: Vec): Uint8Array | null {
         const ni = ny * W + nx;
         if (!walkable(w, ni)) continue;
         if (lv(ni) <= li) continue;
-        if (isRampSurface(ti) && isRampSurface(tiles[ni])) continue; // ступенька
+        if (TERRAIN_STAIRS_ENABLED && isRampSurface(ti) && isRampSurface(tiles[ni])) continue; // ступенька
         walls[i] |= bit;
       }
     }
@@ -129,7 +141,7 @@ export function buildTerrainWalls(w: WorldData, from?: Vec): Uint8Array | null {
         иначе не попасть, открываем одним пандусом — пандусов ровно столько,
         сколько нужно связности, всё остальное остаётся стенами. */
   const start = spawnCell(w, from);
-  if (start >= 0) carveForConnectivity(w, walls, start);
+  if (TERRAIN_STAIRS_ENABLED && start >= 0) carveForConnectivity(w, walls, start);
 
   w.walls = walls;
   return walls;
