@@ -10,6 +10,7 @@ import {
 import { ENEMY_STATS } from "../balance";
 import {
   IslandGenerator, R_MOUNT, LEVEL_HEIGHT, H_BASE, ISLAND_RX, ISLAND_RY,
+  carveHillPondStream,
 } from "./island-generator";
 import { VillageGenerator } from "./village-generator";
 import { GlobalRoadGenerator } from "./global-road-generator";
@@ -1039,6 +1040,10 @@ export function generateOverworld(seed: number): WorldData {
   // (физика + отрисовка) и пробиваются пандусы — подъём только «где разрешено».
   // Мост через ручей ставится после всей раскладки: декор и дороги могли
   // затереть настил, поставленный ещё при генерации острова.
+  // Озерцо на луговой возвышенности и ручей к морю — рядом со стартом игрока:
+  // выбор площадки требует known-спавн, поэтому режем воду здесь, после
+  // деревень и декора (раньше генератор острова ставил её по центру карты).
+  carveHillPondStream(w, { near: { x: w.spawn.x / T, y: w.spawn.y / T } });
   ensureStreamBridge(w);
   // Берег и озёра ровняем ещё раз: озёра-лужи появились уже на этапе декора.
   flattenRampSurfaces(w);

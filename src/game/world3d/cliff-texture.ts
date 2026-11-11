@@ -57,11 +57,11 @@ export function createCliffFaceCanvas(): HTMLCanvasElement {
     const shift = Math.floor(rand() * 5);
     while (x < CLIFF_TEX) {
       const w = 4 + Math.floor(rand() * 4);          // 4..7 px
-      const shade = 0.80 + rand() * 0.20;
+      const shade = 0.84 + rand() * 0.16;
       ctx.fillStyle = gray(shade);
       ctx.fillRect(x + shift, y0 + 1, w - 1, rowH - 2);
       // Шов блока — тёмная вертикаль (переносим через край тайла).
-      ctx.fillStyle = gray(shade * 0.62);
+      ctx.fillStyle = gray(shade * 0.55);
       ctx.fillRect((x + shift + w - 1) % CLIFF_TEX, y0 + 1, 1, rowH - 2);
       x += w;
     }
@@ -69,7 +69,7 @@ export function createCliffFaceCanvas(): HTMLCanvasElement {
     // Светлая кромка сверху и тень снизу — «плита» получает объём.
     ctx.fillStyle = gray(1);
     ctx.fillRect(0, y0, CLIFF_TEX, 1);
-    ctx.fillStyle = gray(0.30);
+    ctx.fillStyle = gray(0.24);
     ctx.fillRect(0, y0 + rowH - 1, CLIFF_TEX, 1);
   }
 

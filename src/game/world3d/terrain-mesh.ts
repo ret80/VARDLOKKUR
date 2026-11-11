@@ -391,14 +391,14 @@ function isWaterTile(t: number): boolean {
  * биом задаёт только тон: снег светлее и холоднее, топь — самая тёмная.
  */
 const CLIFF_TINT: Record<number, readonly [number, number, number]> = {
-  [Biome.SNOW]: [0.58, 0.64, 0.72],
-  [Biome.FOREST]: [0.36, 0.41, 0.46],
-  [Biome.SWAMP]: [0.30, 0.35, 0.36],
-  [Biome.MEADOW]: [0.44, 0.48, 0.52],
-  [Biome.RUINS]: [0.42, 0.45, 0.49],
-  [Biome.RIDGE]: [0.50, 0.55, 0.60],
+  [Biome.SNOW]: [0.84, 0.89, 0.97],
+  [Biome.FOREST]: [0.62, 0.68, 0.74],
+  [Biome.SWAMP]: [0.52, 0.58, 0.56],
+  [Biome.MEADOW]: [0.70, 0.75, 0.80],
+  [Biome.RUINS]: [0.66, 0.70, 0.76],
+  [Biome.RIDGE]: [0.77, 0.82, 0.89],
 };
-const CLIFF_TINT_DEFAULT: readonly [number, number, number] = [0.46, 0.50, 0.55];
+const CLIFF_TINT_DEFAULT: readonly [number, number, number] = [0.70, 0.74, 0.80];
 
 /** Тон грани по биому клетки (без данных о биомах — нейтральный камень). */
 function cliffTintAt(x: number, y: number, map: TerrainMap): readonly [number, number, number] {
