@@ -45,6 +45,17 @@ export const LEVEL_HEIGHT: ReadonlyArray<number> = [H_BASE, H_SPOT, 0.40, 0.54, 
  */
 const TERRACE_BLOCK = 4;
 
+/**
+ * Уровень плато дикой суши (лес и луг).
+ *
+ * Один уступ над низом: кромка плато — ОДНА стена высотой в террасу (0.9).
+ * Пока уровней было четыре (0..3), склон превращался в лестницу из
+ * параллельных уступов — именно её и было видно в 3D.
+ */
+const PLATEAU_LEVEL = 1;
+/** Порог шума рельефа: выше — плато (доля плато ≈ треть суши) */
+const PLATEAU_NOISE = 0.68;
+
 export interface IslandResult {
   w: WorldData;
   cx: number;
@@ -86,6 +97,10 @@ export class IslandGenerator {
     // Высоты считаем ПОСЛЕ финальной раскладки биомов: болото всегда база,
     // снег — только террасы горы, пятна-возвышенности — только на лугах.
     this.assignHeights();
+    // Кромку плато и горы выравниваем по блокам: одиночные блоки-выступы
+    // давали на диагонали короткие стенки в одну клетку — в 3D это читалось
+    // ступеньками. После прохода кромка идёт прогонами по 2+ блока.
+    this.snapPlateauBlocks();
     this.applyBiomesToTiles();
     // Ровные берег и озёра (см. flattenRampSurfaces): внутри полосы берега
     // иначе набираются невидимые микроперепады, по которым игрок поднимался
@@ -149,7 +164,12 @@ export class IslandGenerator {
    * поэтому строгое вложение террас (6 ⊃ 7 ⊃ 8) сохраняется для любой точки.
    */
   private mountainTier(x: number, y: number): number {
-    const dx = x - this.cx, dy = y - this.cy;
+    // Как и рельеф, гора сэмплится по центру блока: эллипс на квадратной
+    // сетке иначе даёт кромку-лесенку с шагом в одну клетку.
+    const b = TERRACE_BLOCK;
+    const qx = Math.floor(x / b) * b + b / 2;
+    const qy = Math.floor(y / b) * b + b / 2;
+    const dx = qx - this.cx, dy = qy - this.cy;
     if (dx * dx + dy * dy > R_MOUNT * R_MOUNT) return 0;
     const ang = Math.atan2(dy, dx);
     const wob = 1 + (this.noiseHills.value(Math.cos(ang) * 1.9, Math.sin(ang) * 1.9) - 0.5) * 0.22;
@@ -185,19 +205,19 @@ export class IslandGenerator {
    * ровной низиной — это болото.
    */
   private reliefTier(x: number, y: number): number {
-    // Рельеф сэмплится по центру блока, а не по клетке: шум 0.03 давал
-    // кромку-«лесенку» со ступеньками в один тайл, и в 3D обрыв читался не
-    // стеной, а цепочкой отдельных плиток кладки (грань рисуется по клетке,
-    // см. world3d/terrain-mesh). Блочная нарезка даёт ровную террасу и
-    // сплошную стену длиной в блок с настоящими углами.
+    // Два уровня на всю дикую сушу: низ (0) и плато (PLATEAU_LEVEL).
+    //
+    // Раньше шум давал 0..3, и на склоне вставала лестница из террас по 0.9:
+    // каждая со своей стеной, в 3D — марш из параллельных уступов, а не стена.
+    // Промежуточных уровней больше нет, поэтому кромка плато — ОДНА стена.
+    //
+    // Сэмпл берётся по центру блока, а не по клетке: иначе кромка выходит
+    // «лесенкой» со ступеньками в один тайл (шум на квадратной сетке).
     const b = TERRACE_BLOCK;
     const qx = Math.floor(x / b) * b + b / 2;
     const qy = Math.floor(y / b) * b + b / 2;
     const n = this.noiseHills.value(qx * 0.03 + 11.3, qy * 0.03 + 7.9);
-    if (n > 0.86) return 3;
-    if (n > 0.74) return 2;
-    if (n > 0.62) return 1;
-    return 0;
+    return n > PLATEAU_NOISE ? PLATEAU_LEVEL : 0;
   }
 
   /** Поле высот: ровные «столы» террас по биомам (финальная раскладка) */
@@ -210,6 +230,66 @@ export class IslandGenerator {
         if (b === Biome.SNOW) { this.height[i] = LEVEL_HEIGHT[this.mountainTier(x, y)]; continue; }
         if (b === Biome.SWAMP) { this.height[i] = H_BASE; continue; } // топь — всегда база
         this.height[i] = LEVEL_HEIGHT[this.reliefTier(x, y)];
+      }
+    }
+  }
+
+  /**
+   * Выровнять кромку плато/горы по блокам нарезки.
+   *
+   * Поле высот постоянно внутри блока 4×4, поэтому граница уровней идёт по
+   * сетке блоков. Но шум/эллипс может выставить вперёд ОДИН блок — это и есть
+   * короткая стенка в четыре клетки, торчащая из ряда. Проход фильтром «по
+   * большинству» 3×3 блока убирает одиночные выступы и выемки: кромка после
+   * него идёт прогонами в два блока и длиннее, углы — 90°.
+   *
+   * Блоки с водой/берегом не трогаются — там своя геометрия (пляж, ручей).
+   */
+  private snapPlateauBlocks(passes = 3): void {
+    const b = TERRACE_BLOCK;
+    const bw = Math.ceil(this.W / b), bh = Math.ceil(this.H / b);
+    const levelAt = (bx: number, by: number): number => {
+      const x = Math.min(this.W - 1, bx * b + (b >> 1));
+      const y = Math.min(this.H - 1, by * b + (b >> 1));
+      const i = idx(this, x, y);
+      const t = this.tiles[i];
+      if (t === Tl.WATER || t === Tl.SHORE || t === Tl.POOL || t === Tl.STREAM) return -1;
+      return elevLevel(this.height[i]);
+    };
+
+    for (let pass = 0; pass < passes; pass++) {
+      const src = new Int16Array(bw * bh);
+      for (let by = 0; by < bh; by++) for (let bx = 0; bx < bw; bx++) src[by * bw + bx] = levelAt(bx, by);
+
+      for (let by = 0; by < bh; by++) {
+        for (let bx = 0; bx < bw; bx++) {
+          const k = by * bw + bx;
+          const own = src[k];
+          if (own < 0) continue;
+          const cnt = new Map<number, number>();
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              if (!dx && !dy) continue;
+              const nx = bx + dx, ny = by + dy;
+              if (nx < 0 || ny < 0 || nx >= bw || ny >= bh) continue;
+              const v = src[ny * bw + nx];
+              if (v < 0) continue;
+              cnt.set(v, (cnt.get(v) || 0) + 1);
+            }
+          }
+          let best = own, bestN = cnt.get(own) || 0;
+          for (const [v, n] of cnt) if (n > bestN) { best = v; bestN = n; }
+          // Простое большинство по блокам (ничья 4:4 — оставляем как есть).
+          // Так убираются одиночные блоки-выступы и выемки на диагонали: они и
+          // давали короткие стенки в четыре клетки, читавшиеся ступеньками.
+          if (best === own || bestN < 5) continue;
+          for (let y = by * b; y < Math.min(this.H, by * b + b); y++) {
+            for (let x = bx * b; x < Math.min(this.W, bx * b + b); x++) {
+              const i = idx(this, x, y);
+              this.height[i] = LEVEL_HEIGHT[best];
+            }
+          }
+        }
       }
     }
   }
