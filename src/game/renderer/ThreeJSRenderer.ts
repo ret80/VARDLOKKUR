@@ -42,6 +42,7 @@ import {
   collectHouses,
   makeFenceTexture,
 } from '../world3d/village-mesh';
+import { buildSwampFog, createSwampFogTexture } from '../world3d/swamp-fog';
 import type { WorldData } from '../world';
 
 // ============================================================
@@ -211,6 +212,9 @@ export class ThreeJSRenderer implements IRenderer {
   private terrainGroup: THREE.Group | null = null;
   /** 3D-геометрия деревни: дома и частокол (заменяет 2D-билборды). */
   private villageGroup: THREE.Group | null = null;
+  /** Туман над болотом: полупрозрачные «ковры» на двух высотах. */
+  private swampFogMeshes: THREE.Mesh[] = [];
+  private swampFogTextures: THREE.CanvasTexture[] = [];
 
   private fogShader: FogShaderState | null = null;
   private fogCanvas: HTMLCanvasElement | null = null;
@@ -318,6 +322,17 @@ export class ThreeJSRenderer implements IRenderer {
     this.updateBillboardFacing();
     // Последний проход кадра: предельная дальность — то, что нельзя показать.
     this.applyDrawDistance();
+
+    // Туман болота медленно дрейфует: слои — в разные стороны.
+    if (this.swampFogTextures.length) {
+      const t = performance.now() * 0.000012;
+      for (let i = 0; i < this.swampFogTextures.length; i++) {
+        this.swampFogTextures[i].offset.set(
+          t * (i ? -0.7 : 1) + i * 0.37,
+          t * (i ? 1.15 : 0.42),
+        );
+      }
+    }
 
     this.renderer.autoClear = true;
     this.renderer.render(this.scene, this.camera);
@@ -525,6 +540,8 @@ export class ThreeJSRenderer implements IRenderer {
 
     // Дома и частокол — настоящей геометрией вместо 2D-спрайтов.
     this.buildVillage3D(map, villageBillboards);
+    // Туман над болотом — слоями плоскостей (см. buildSwampFog3D).
+    this.buildSwampFog3D(map);
 
     this.updateCamera();
     logger.info('renderer', `3D terrain built: ${map.W}x${map.H}`);
@@ -594,8 +611,63 @@ export class ThreeJSRenderer implements IRenderer {
     );
   }
 
+  /**
+   * Туман над болотом: два полупрозрачных «ковра» над клетками биома SWAMP.
+   *
+   * Полноценный объёмный туман (ray-marching по фрусталям) для тайловой игры
+   * слишком дорог, поэтому берём классический для игр приём — слои
+   * горизонтальных плоскостей с мягкой облачной текстурой. Нижний слой гуще,
+   * верхний реже: вместе они читаются как объёмная дымка, а не как плоская
+   * пелена. Текстура бесшовная и медленно дрейфует (см. render).
+   */
+  private buildSwampFog3D(map: TerrainMap): void {
+    if (map.isDungeon || !this.terrain) return;
+    const world = map as unknown as WorldData;
+    const canvas = createSwampFogTexture();
+    const layers: Array<{ y: number; opacity: number }> = [
+      { y: 0.42, opacity: 0.3 },
+      { y: 1.05, opacity: 0.17 },
+    ];
+    for (const L of layers) {
+      const data = buildSwampFog(world, (tx, ty) => this.terrain!.heightAtTile(tx, ty), L.y);
+      if (!data) continue;
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.minFilter = THREE.LinearFilter;
+      tex.magFilter = THREE.LinearFilter;
+      const geo = buildBufferGeometry(data);
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        opacity: L.opacity,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const m = new THREE.Mesh(geo, mat);
+      m.frustumCulled = false;
+      m.renderOrder = -6.4;
+      this.scene.add(m);
+      this.swampFogMeshes.push(m);
+      this.swampFogTextures.push(tex);
+    }
+    if (this.swampFogMeshes.length) {
+      logger.info('renderer', `Swamp fog: ${this.swampFogMeshes.length} layers`);
+    }
+  }
+
   /** Удалить рельеф (при смене карты). */
   clearTerrain(): void {
+    for (const m of this.swampFogMeshes) {
+      m.geometry?.dispose();
+      const mat = m.material as THREE.MeshBasicMaterial | undefined;
+      mat?.dispose();
+      this.scene.remove(m);
+    }
+    this.swampFogMeshes = [];
+    for (const t of this.swampFogTextures) t.dispose();
+    this.swampFogTextures = [];
     if (this.villageGroup) {
       for (const child of [...this.villageGroup.children]) {
         const m = child as THREE.Mesh;

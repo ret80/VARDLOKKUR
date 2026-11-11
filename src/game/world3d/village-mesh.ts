@@ -34,7 +34,9 @@ const C = {
   window: 0xf8e0a0,
   windowCold: 0xb8d0e8,
   snow: 0xeef6fc,
-  ruinWall: 0x3a3229,
+  ruinWall: 0x6b5a45,
+  ruinTop: 0x8a7458,
+  rubble: 0x4e4338,
 } as const;
 
 /** Цвет частокола (для отрисовки текстуры) */
@@ -240,6 +242,10 @@ export function buildHouses3D(
   const dark = new PartBuilder();
   /** Окна: цвет зависит от варианта дома, поэтому копятся отдельными частями. */
   const windows: Part[] = [];
+  /** Развалины: остатки стен, их светлые рваные кромки и осыпь. */
+  const ruinWalls = new PartBuilder();
+  const ruinTops = new PartBuilder();
+  const rubble = new PartBuilder();
 
   for (const hs of houses) {
     const x0 = hs.x;
@@ -255,18 +261,18 @@ export function buildHouses3D(
     const wy0 = baseY + FOUNDATION_H;
     const wy1 = wy0 + HOUSE_WALL_H;
     const wx0 = x0 + 0.08, wz0 = z0 + 0.08, wx1 = x1 - 0.08, wz1 = z1 - 0.08;
-    const wallTarget = hs.ruined ? dark : walls;
-    wallTarget.box(wx0, wy0, wz0, wx1, wy1, wz1);
+    if (hs.ruined) {
+      // Руины: сплошного сруба нет — стены разобраны на обломки с проломами,
+      // кровли нет, у основания осыпь (см. addRuinedHouse). Раньше здесь был
+      // тёмный бокс во весь дом — издалека он читался чёрным пятном.
+      addRuinedHouse(ruinWalls, ruinTops, rubble, wx0, wz0, wx1, wz1, wy0, hs.x, hs.y);
+      continue;
+    }
+
+    walls.box(wx0, wy0, wz0, wx1, wy1, wz1);
     // Боковые грани чуть темнее — «объём» без освещения
     wallsSide.quad(wx1, wy0, wz1, 0, 0, wx1, wy0, wz0, 1, 0, wx1, wy1, wz0, 1, 1, wx1, wy1, wz1, 0, 1);
     wallsSide.quad(wx0, wy0, wz0, 0, 0, wx0, wy0, wz1, 1, 0, wx0, wy1, wz1, 1, 1, wx0, wy1, wz0, 0, 1);
-
-    if (hs.ruined) {
-      // Руины: только обломки стен, без кровли
-      const halfH = wy1 - 0.55;
-      dark.quad(wx0, halfH, wz1, 0, 0, wx1, halfH, wz1, 1, 0, wx1, wy1, wz1, 1, 1, wx0, wy1, wz1, 0, 1);
-      continue;
-    }
 
     // Кровля: южный скат светлее северного, конёк и карниз — светлое дерево
     const ridgeAlongX = hs.w >= hs.h;
@@ -331,8 +337,76 @@ export function buildHouses3D(
   if (!details.empty) out.push({ color: C.door, data: details.toMesh() });
   if (!snowParts.empty) out.push({ color: C.snow, data: snowParts.toMesh() });
   if (!dark.empty) out.push({ color: C.beam, data: dark.toMesh() });
+  if (!ruinWalls.empty) out.push({ color: C.ruinWall, data: ruinWalls.toMesh() });
+  if (!ruinTops.empty) out.push({ color: C.ruinTop, data: ruinTops.toMesh() });
+  if (!rubble.empty) out.push({ color: C.rubble, data: rubble.toMesh() });
   for (const d of windows) out.push(d);
   return out;
+}
+
+/**
+ * Разрушенный дом: остатки стен с проломами, без кровли.
+ *
+ * Каждая стена разобрана на три сегмента: часть выбита полностью, высота
+ * остальных гуляет, сверху светлая рваная кромка, у основания — осыпь из
+ * обломков. Сплошной бокс во весь дом читался чёрным пятном.
+ */
+function addRuinedHouse(
+  walls: PartBuilder,
+  tops: PartBuilder,
+  rubble: PartBuilder,
+  wx0: number, wz0: number, wx1: number, wz1: number,
+  baseY: number,
+  seedX: number,
+  seedY: number,
+): void {
+  const SEG = 3;
+  const T2 = 0.16;                 // толщина остатка стены
+  const hMax = HOUSE_WALL_H;
+  const hash = (i: number, s: number): number => {
+    const v = Math.sin((seedX * 7 + i) * 127.1 + (seedY * 5 + s) * 311.7) * 43758.5453;
+    return v - Math.floor(v);
+  };
+
+  const seg = (x0: number, z0: number, x1: number, z1: number, h: number): void => {
+    if (h <= 0.08) return;
+    walls.box(x0, baseY, z0, x1, baseY + h, z1);
+    // Светлая рваная кромка сверху
+    tops.quad(
+      x0, baseY + h - 0.02, z0, 0, 0,
+      x1, baseY + h - 0.02, z0, 1, 0,
+      x1, baseY + h + 0.03, z1, 1, 1,
+      x0, baseY + h + 0.03, z1, 0, 1,
+    );
+  };
+
+  const lenX = wx1 - wx0;
+  for (let i = 0; i < SEG; i++) {
+    const ax = wx0 + (lenX * i) / SEG;
+    const bx = wx0 + (lenX * (i + 1)) / SEG;
+    const hS = hash(i, 1) < 0.3 ? 0 : (0.22 + hash(i, 2) * 0.7) * hMax;
+    const hN = hash(i, 3) < 0.3 ? 0 : (0.2 + hash(i, 4) * 0.65) * hMax;
+    seg(ax, wz1 - T2, bx, wz1, hS);
+    seg(ax, wz0, bx, wz0 + T2, hN);
+  }
+
+  const lenZ = wz1 - wz0;
+  for (let i = 0; i < SEG; i++) {
+    const az = wz0 + (lenZ * i) / SEG;
+    const bz = wz0 + (lenZ * (i + 1)) / SEG;
+    const hW = hash(i, 5) < 0.35 ? 0 : (0.2 + hash(i, 6) * 0.75) * hMax;
+    const hE = hash(i, 7) < 0.35 ? 0 : (0.2 + hash(i, 8) * 0.6) * hMax;
+    seg(wx0, az, wx0 + T2, bz, hW);
+    seg(wx1 - T2, az, wx1, bz, hE);
+  }
+
+  for (let i = 0; i < 6; i++) {
+    const px = wx0 + 0.2 + hash(i, 11) * Math.max(0.2, lenX - 0.7);
+    const pz = wz0 + 0.2 + hash(i, 12) * Math.max(0.2, lenZ - 0.7);
+    const s = 0.16 + hash(i, 13) * 0.22;
+    const hh = 0.1 + hash(i, 14) * 0.16;
+    rubble.box(px, baseY, pz, px + s, baseY + hh, pz + s);
+  }
 }
 
 /* ============================================================

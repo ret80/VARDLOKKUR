@@ -60,6 +60,9 @@ describe("уступы террас", () => {
 
       /* Классификация стыков «нижняя клетка → более высокий сосед». */
       let walled = 0, stepRamp = 0, stepCarved = 0, bandSeams = 0;
+      /* Какие пары регионов соединяют пробитые стыки: лестница шириной в две
+         клетки даёт два стыка, но это ОДНА связь террас. */
+      const joined = new Set<string>();
       for (let y = 0; y < H; y++) {
         for (let x = 0; x < W; x++) {
           const i = y * W + x;
@@ -73,7 +76,11 @@ describe("уступы террас", () => {
             if ((t === Tl.SHORE && nt === Tl.SHORE) || (t === Tl.POOL && nt === Tl.POOL)) bandSeams++;
             if (walls[i] & bit) walled++;
             else if (RAMP.has(t) && RAMP.has(nt)) stepRamp++;
-            else stepCarved++;
+            else {
+              stepCarved++;
+              const a = reg[i], b = reg[ni];
+              joined.add(a < b ? `${a}|${b}` : `${b}|${a}`);
+            }
           }
         }
       }
@@ -85,7 +92,7 @@ describe("уступы террас", () => {
         /* Ручей режет террасу водой: берега расходятся по разным регионам, и
            связности нужен ещё один пандус у моста — это заложено в допуск. */
         const bridgeBonus = tiles.includes(Tl.BRIDGE) ? 1 : 0;
-        expect(stepCarved, `seed ${seed}: лишние проходы сквозь уступы`).toBeLessThanOrEqual(regions - 1 + bridgeBonus);
+        expect(joined.size, `seed ${seed}: лишние проходы сквозь уступы`).toBeLessThanOrEqual(regions - 1 + bridgeBonus);
         expect(stepCarved, `seed ${seed}: террасы не соединены подъёмами`).toBeGreaterThan(0);
       } else {
         /* Сборка «без ступенек» (TERRAIN_STAIRS_ENABLED = false): подъёмов нет

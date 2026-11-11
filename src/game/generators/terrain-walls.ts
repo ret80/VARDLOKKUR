@@ -33,16 +33,16 @@ export const WALL_DIRS: ReadonlyArray<readonly [number, number, number, number]>
 export const WALL_COLLIDER_T = 3;
 
 /**
- * Ступеньки, пандусы и лестницы в рельефе — ВЫКЛЮЧЕНЫ.
+ * Ступеньки, пандусы и лестницы в рельефе — ВКЛЮЧЕНЫ.
  *
- * Сборка «без ступенек»: КАЖДЫЙ перепад высоты остаётся отвесным уступом.
- * Забраться на террасу или спуститься с неё нельзя никаким способом — ни по
- * дороге, ни по берегу, ни через ворота поселения (все они раньше открывали
- * стык террас «пандусом» и рисовали на нём ступеньки).
+ * По террасам снова можно подниматься, но не где попало: лестница одна на
+ * регион (см. carveForConnectivity) и ставится в наиболее «зажатом» месте —
+ * так, чтобы слева и справа от неё была стена, а не угол террасы. Ширина —
+ * одна клетка, либо две, если рядом есть подходящая пара.
  *
- * Флаг оставлен, чтобы вернуть прежнюю генерацию пандусов одним значением.
+ * Флаг оставлен, чтобы отключить лестницы одним значением.
  */
-export const TERRAIN_STAIRS_ENABLED = false;
+export const TERRAIN_STAIRS_ENABLED = true;
 
 const walkable = (w: WorldData, i: number): boolean => !isSolidTileId(w.tiles[i]);
 
@@ -218,33 +218,125 @@ function carveForConnectivity(w: WorldData, walls: Uint8Array, start: number): v
     members.push(cells);
   }
 
-  /* 2. BFS по регионам: новый регион = один пробитый стык. */
+  /* 2. Регионы соединяем ЛЕСТНИЦАМИ: каждый новый регион открывается одним
+        стыком, выбранным по оценке stairScore (не в углу, по возможности —
+        сразу двумя клетками в ширину). */
   const startRegion = region[start];
   if (startRegion < 0) return;
   const seen = new Uint8Array(members.length);
   seen[startRegion] = 1;
-  const queue: number[] = [startRegion];
-  for (let qi = 0; qi < queue.length; qi++) {
-    const r = queue[qi];
-    for (const c of members[r]) {
-      const cx = c % W, cy = (c / W) | 0;
-      const clv = elevLevel(height[c]);
-      for (const [dx, dy, bit, opp] of WALL_DIRS) {
-        const nx = cx + dx, ny = cy + dy;
-        if (!inB(w, nx, ny)) continue;
-        const ni = ny * W + nx;
-        if (!walk(ni)) continue;
-        const nr = region[ni];
-        if (nr === r || seen[nr]) continue;
-        seen[nr] = 1;
-        // Стык регионов разного уровня — пробиваем пандус.
-        const nlv = elevLevel(height[ni]);
-        if (clv < nlv) walls[c] &= ~bit;
-        else if (nlv < clv) walls[ni] &= ~opp;
-        queue.push(nr);
+  const openRegions = new Set<number>([startRegion]);
+
+  for (;;) {
+    let best: { c: number; ni: number; bit: number; opp: number; dx: number; dy: number; nr: number; score: number } | null = null;
+    for (const r of openRegions) {
+      for (const c of members[r]) {
+        const cx = c % W, cy = (c / W) | 0;
+        for (const dir of WALL_DIRS) {
+          const [dx, dy, bit, opp] = dir;
+          const nx = cx + dx, ny = cy + dy;
+          if (!inB(w, nx, ny)) continue;
+          const ni = ny * W + nx;
+          if (!walk(ni)) continue;
+          const nr = region[ni];
+          if (nr === r || seen[nr]) continue;
+          const sc = stairScore(w, walls, region, c, dir, nr);
+          if (!best || sc > best.score) best = { c, ni, bit, opp, dx, dy, nr, score: sc };
+        }
       }
     }
+    if (!best) break;
+    seen[best.nr] = 1;
+    openRegions.add(best.nr);
+
+    const clv = elevLevel(height[best.c]);
+    const nlv = elevLevel(height[best.ni]);
+    // Нормализуем: дальше работаем от НИЖНЕЙ клетки — на ней лежит бит стены.
+    const lowIsC = clv < nlv;
+    const lowCell = lowIsC ? best.c : best.ni;
+    const lbit = lowIsC ? best.bit : best.opp;
+    const lobit = lowIsC ? best.opp : best.bit;
+    const ldx = lowIsC ? best.dx : -best.dx;
+    const ldy = lowIsC ? best.dy : -best.dy;
+    walls[lowCell] &= ~lbit;
+    walls[lowIsC ? best.ni : best.c] &= ~lobit;
+
+    // Вторая створка: соседняя клетка того же уровня, упирающаяся в тот же
+    // регион. Лестница становится шириной в две клетки.
+    const lx = lowCell % W, ly = (lowCell / W) | 0;
+    for (const fb of flankBits(lbit)) {
+      const row = WALL_DIRS.find((d) => d[2] === fb);
+      if (!row) continue;
+      const fx = lx + row[0], fy = ly + row[1];
+      if (!inB(w, fx, fy)) continue;
+      const fi = fy * W + fx;
+      if (isSolidTileId(w.tiles[fi])) continue;
+      if (elevLevel(height[fi]) !== clv) continue;
+      if (region[fi] !== region[lowCell]) continue;
+      const hx = fx + ldx, hy = fy + ldy;
+      if (!inB(w, hx, hy)) continue;
+      const hi = hy * W + hx;
+      if (!walk(hi)) continue;
+      if (region[hi] !== best.nr) continue;
+      if (elevLevel(height[hi]) !== nlv) continue;
+      if (!(walls[fi] & lbit)) continue;
+      walls[fi] &= ~lbit;
+      walls[hi] &= ~lobit;
+      break;
+    }
   }
+}
+
+/** Перпендикулярные стыку стороны клетки: по ним лестница «зажата». */
+function flankBits(bit: number): readonly [number, number] {
+  return bit === WallBit.N || bit === WallBit.S
+    ? ([WallBit.E, WallBit.W] as const)
+    : ([WallBit.N, WallBit.S] as const);
+}
+
+/**
+ * Оценка места под лестницу: больше — лучше.
+ *
+ * Главное правило — лестница не должна стоять в углу террасы: слева и справа
+ * от неё нужна стена (продолжение кромки), а не поворот. Поэтому за каждый
+ * закрытый бок даём плюс, за открытый стык или обрыв рядом — минус. Плюс бонус,
+ * если рядом есть парная клетка того же уровня: тогда лестница выйдет в две
+ * клетки шириной, по ней удобнее проходить.
+ */
+function stairScore(
+  w: WorldData,
+  walls: Uint8Array,
+  region: Int32Array,
+  c: number,
+  dir: readonly [number, number, number, number],
+  targetRegion: number,
+): number {
+  const { W, height } = w;
+  if (!height) return -1000;
+  const [dx, dy, bit] = dir;
+  const cx = c % W, cy = (c / W) | 0;
+  const lvl = elevLevel(height[c]);
+  let score = 0;
+  /* «Стена слева/справа» — это ПРОДОЛЖЕНИЕ кромки террасы вбок, а не стена
+     самого тайла: именно она видна рядом с лестницей. Кромка продолжается,
+     если соседняя клетка того же уровня тоже упирается вверх в том же
+     направлении. Где кромка поворачивает или кончается — там угол. */
+  for (const [px, py] of [[-dy, dx], [dy, -dx]] as const) {
+    const fx = cx + px, fy = cy + py;
+    if (!inB(w, fx, fy)) { score += 6; continue; }          // край карты — как стена
+    const fi = fy * W + fx;
+    if (isSolidTileId(w.tiles[fi])) { score += 6; continue; } // вода/скала сбоку
+    if (elevLevel(height[fi]) !== lvl) { score -= 5; continue; } // кромка повернула
+    const hx = fx + dx, hy = fy + dy;
+    if (!inB(w, hx, hy)) { score += 6; continue; }
+    const hi = hy * W + hx;
+    if (elevLevel(height[hi]) <= lvl) { score -= 5; continue; }  // кромка кончилась
+    score += 6;                                             // слева/справа стена
+    if (region[hi] === targetRegion && region[fi] === region[c] && !(walls[fi] & bit)) {
+      score += 8;                                           // можно сделать двойную
+    }
+  }
+  return score;
 }
 
 /**
