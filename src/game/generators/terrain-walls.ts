@@ -265,6 +265,9 @@ function carveForConnectivity(w: WorldData, walls: Uint8Array, start: number): v
               ftarget = r;
             }
             const flanks = stairFlanks(w, walls, region, fc, fdir, ftarget);
+            // На прямом участке кромки: с обеих сторон уступ продолжается, без
+            // поворота/угла террасы. Угловые стыки допускаем только когда без
+            // них регион не связать (второй проход).
             if (!allowCorner && flanks.corners > 0) continue;
             const sc = stairValue(flanks);
             if (!best || sc > best.score) best = { c, ni, bit, opp, dx, dy, nr, score: sc };
@@ -324,10 +327,11 @@ function carveForConnectivity(w: WorldData, walls: Uint8Array, start: number): v
     return carvedAny;
   };
 
+  // Сначала — только прямые участки кромки (не на углах террас). Если
+  // какой-то регион иначе недостижим, прорубаем ему один стык в лучшем
+  // доступном месте — только там, где это нужно для связности.
   connect(false);
-  while (connect(true, true)) {
-    connect(false);
-  }
+  connect(true);
 
   /* Очищенные клетки раньше были препятствиями — стен на них никто не считал.
      Восстанавливаем кромку, иначе через дырку от камня можно подняться без
