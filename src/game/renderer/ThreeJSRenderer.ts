@@ -241,7 +241,25 @@ export class ThreeJSRenderer implements IRenderer {
     // (в подземелье пол и стены становились чёрными).
     this.scene.fog = new THREE.Fog(0x05080d, CAM_DISTANCE * 1.5, CAM_DISTANCE * 3.4);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `WebGL недоступен: не удалось создать 3D-рендерер. ${msg}. ` +
+        `Проверьте, что в браузере включена аппаратная графика/WebGL и страница открыта в поддерживаемом окружении.`
+      );
+    }
+    const gl = renderer.getContext();
+    if (!gl) {
+      renderer.dispose();
+      throw new Error(
+        'WebGL недоступен: браузер не вернул WebGL-контекст. ' +
+        'Проверьте, что WebGL включён и доступен в этом окружении.'
+      );
+    }
+    this.renderer = renderer;
     this.renderer.setClearColor(0x05080d, 1);
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     this.renderer.setPixelRatio(dpr);
